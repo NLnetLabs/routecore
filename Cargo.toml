@@ -3,7 +3,6 @@ authors = ["The NLnet Labs RPKI team <rpki-team@nlnetlabs.nl>"]
 categories = ["network-programming"]
 description = "A Library with Building Blocks for BGP Routing"
 documentation = "https://docs.rs/routecore/"
-edition = "2018"
 homepage = "https://nlnetlabs.nl/projects/routing/rotonda/"
 keywords = ["routing", "bgp"]
 license = "BSD-3-Clause"
