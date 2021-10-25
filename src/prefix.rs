@@ -65,7 +65,11 @@ impl Bits {
 
     /// Clears the bits in the host portion of a prefix.
     fn clear_host(self, len: u8) -> Self {
-        Bits(self.0 & (u128::MAX << (128u8.saturating_sub(len))))
+        if len > 0 {
+            Bits(self.0 & (u128::MAX << (128u8.saturating_sub(len))))
+        } else {
+            Bits(0)
+        }
     }
 
     /// Returns a value ith all but the first `prefix_len` bits set.
