@@ -1,11 +1,9 @@
+use std::borrow::Cow;
 use std::fmt;
 use std::fmt::{Debug, Display};
 
 use crate::asn::{AsId, AsPath};
 use crate::prefix::Prefix;
-use crate::addr::AddressFamily;
-
-use num::PrimInt;
 
 //------------ Traits for Record ---------------------------------------------
 
@@ -42,18 +40,40 @@ impl SenderId for u32 {}
 type SenderIdInt = u32;
 type LogicalTime = u64;
 
-pub trait Record
+pub trait Record<'a>
 where
     Self: Clone,
 {
-    type SenderId: crate::record::SenderId;
     type Key: crate::record::Key;
     type Meta: crate::record::Meta;
 
-    fn new(sender_id: Self::SenderId, key: Self::Key, meta: Self::Meta, ltime: u64) -> Self;
+    fn new(key: Self::Key, meta: &'a Self::Meta) -> Self;
+    fn new_with_local_meta(key: Self::Key, local_meta: Self::Meta) -> Self;
+    fn key(&'a self) -> Self::Key;
+    fn meta(&'a self) -> Cow<'a, Self::Meta>;
+}
+
+pub trait MessageRecord<'a>
+where
+    Self: Clone + Record<'a>,
+{
+    type SenderId: crate::record::SenderId;
+
+    fn new(
+        key: <Self as Record<'a>>::Key,
+        meta: <Self as Record<'a>>::Meta,
+        sender_id: Self::SenderId,
+        ltime: u64,
+    ) -> Self;
+    fn new_from_record(record: Self, sender_id: Self::SenderId, ltime: u64) -> Self;
+    fn into_message(self, sender_id: Self::SenderId, ltime: u64) -> Self;
     fn sender_id(&self) -> Self::SenderId;
-    fn key(&self) -> Self::Key;
-    fn meta(&self) -> Self::Meta;
+    fn key(&'a self) -> <Self as Record<'a>>::Key {
+        <Self as Record>::key(self)
+    }
+    fn meta(&'a self) -> Cow<<Self as Record<'a>>::Meta> {
+        Cow::Owned(<Self as Record>::meta(self).into_owned())
+    }
     fn ltime(&self) -> u64;
     fn set_ltime(&mut self, ltime: u64) -> u64;
     fn inc_ltime(&mut self) -> u64 {
@@ -66,7 +86,7 @@ where
 //----------------- Route -------------------------------------------------------------
 
 #[derive(Clone)]
-pub struct Route<Nlri, Meta>
+pub struct Route<'a, Nlri, Meta>
 where
     Nlri: crate::record::Nlri,
     Meta: crate::record::Meta,
@@ -74,16 +94,55 @@ where
     sender_id: SenderIdInt,
     key: (LogicalTime, SenderIdInt),
     nlri: Nlri,
-    attributes: Meta,
+    attributes: Cow<'a, Meta>,
     ltime: LogicalTime,
 }
 
-impl Record for Route<PrefixNlri, ExampleBgpPathAttributes> {
-    type Meta = BgpNlriMeta;
+impl<'a> Record<'a> for Route<'a, PrefixNlri, ExampleBgpPathAttributes> {
+    type Meta = BgpNlriMeta<'a>;
     type Key = (LogicalTime, SenderIdInt);
+
+    fn key(&'a self) -> <Self as Record<'a>>::Key {
+        (self.ltime, self.sender_id)
+    }
+
+    fn meta(&'a self) -> Cow<crate::record::BgpNlriMeta<'a>> {
+        Cow::Owned(BgpNlriMeta {
+            attributes: Cow::Borrowed(&self.attributes),
+            nlri: self.nlri.clone(),
+        })
+    }
+
+    fn new(key: Self::Key, meta: &'a Self::Meta) -> Self {
+        Route {
+            sender_id: key.1,
+            key,
+            nlri: meta.nlri.clone(),
+            attributes: Cow::Borrowed(&meta.attributes),
+            ltime: key.0,
+        }
+    }
+
+    fn new_with_local_meta(key: Self::Key, local_meta: Self::Meta) -> Self {
+        Route {
+            sender_id: key.1,
+            key,
+            nlri: local_meta.nlri,
+            attributes: local_meta.attributes,
+            ltime: key.0,
+        }
+    }
+}
+
+impl<'a> MessageRecord<'a> for Route<'a, PrefixNlri, ExampleBgpPathAttributes> {
     type SenderId = SenderIdInt;
 
-    fn new(sender_id: Self::SenderId, key: Self::Key, meta: Self::Meta, ltime: u64) -> Self {
+    fn new(
+        key: <Self as Record<'a>>::Key,
+        meta: <Self as Record<'a>>::Meta,
+        sender_id: Self::SenderId,
+        ltime: u64,
+    ) -> Self {
         Route {
             sender_id,
             key,
@@ -95,17 +154,6 @@ impl Record for Route<PrefixNlri, ExampleBgpPathAttributes> {
 
     fn sender_id(&self) -> Self::SenderId {
         self.sender_id
-    }
-
-    fn key(&self) -> Self::Key {
-        (self.ltime, self.sender_id)
-    }
-
-    fn meta(&self) -> crate::record::BgpNlriMeta {
-        BgpNlriMeta {
-            nlri: self.nlri.clone(),
-            attributes: self.attributes.clone(),
-        }
     }
 
     fn ltime(&self) -> LogicalTime {
@@ -120,35 +168,80 @@ impl Record for Route<PrefixNlri, ExampleBgpPathAttributes> {
     fn timestamp(&self) -> LogicalTime {
         self.ltime
     }
+
+    fn new_from_record(record: Self, sender_id: Self::SenderId, ltime: u64) -> Self {
+        Self {
+            key: record.key,
+            nlri: record.nlri,
+            attributes: record.attributes,
+            sender_id,
+            ltime,
+        }
+    }
+
+    fn into_message(mut self, sender_id: SenderIdInt, ltime: u64) -> Self {
+        self.sender_id = sender_id;
+        self.ltime = ltime;
+        self
+    }
 }
 
 //-------------------- SinglePrefixRoute -----------------------------------------------
 
-#[derive(Clone, Copy)]
-pub struct SinglePrefixRoute<Meta>
+#[derive(Clone)]
+pub struct SinglePrefixRoute<'a, Meta>
 where
     Meta: crate::record::Meta,
 {
     pub sender_id: SenderIdInt,
     pub ltime: LogicalTime,
     pub prefix: Prefix,
-    pub meta: Meta,
+    pub meta: Cow<'a, Meta>,
 }
 
-impl<Meta: crate::record::Meta> Record for SinglePrefixRoute<Meta>
-where
-    Meta: crate::record::Meta + Copy,
-{
+impl<'a, Meta: crate::record::Meta> Record<'a> for SinglePrefixRoute<'a, Meta> {
     type Meta = Meta;
     type Key = Prefix;
+
+    fn key(&'a self) -> <Self as Record<'a>>::Key {
+        self.prefix
+    }
+
+    fn meta(&'a self) -> Cow<<Self as Record<'a>>::Meta> {
+        Cow::Borrowed(&self.meta)
+    }
+
+    fn new(prefix: Self::Key, meta: &'a Self::Meta) -> Self {
+        Self {
+            prefix,
+            meta: Cow::Borrowed(meta),
+            sender_id: SenderIdInt::default(),
+            ltime: LogicalTime::default(),
+        }
+    }
+
+    fn new_with_local_meta(prefix: Self::Key, meta: Self::Meta) -> Self {
+        Self {
+            prefix,
+            meta: Cow::Owned(meta),
+            sender_id: SenderIdInt::default(),
+            ltime: LogicalTime::default(),
+        }
+    }
+}
+
+impl<'a, Meta: crate::record::Meta> MessageRecord<'a> for SinglePrefixRoute<'a, Meta>
+where
+    Meta: crate::record::Meta,
+{
     type SenderId = SenderIdInt;
 
-    fn new(sender_id: Self::SenderId, key: Self::Key, meta: Self::Meta, ltime: u64) -> Self {
+    fn new(key: Self::Key, meta: Self::Meta, sender_id: Self::SenderId, ltime: u64) -> Self {
         SinglePrefixRoute {
+            prefix: key,
+            meta: Cow::Owned(meta),
             sender_id,
             ltime,
-            prefix: key,
-            meta,
         }
     }
 
@@ -156,12 +249,12 @@ where
         self.sender_id
     }
 
-    fn key(&self) -> Self::Key {
+    fn key(&'a self) -> Self::Key {
         self.prefix
     }
 
-    fn meta(&self) -> Self::Meta {
-        self.meta
+    fn meta(&'a self) -> Cow<'a, Self::Meta> {
+        Cow::Borrowed(&self.meta)
     }
 
     fn ltime(&self) -> u64 {
@@ -176,16 +269,36 @@ where
     fn timestamp(&self) -> u64 {
         self.ltime
     }
+
+    fn new_from_record(record: Self, sender_id: Self::SenderId, ltime: u64) -> Self {
+        Self {
+            sender_id,
+            ltime,
+            prefix: record.prefix,
+            meta: record.meta,
+        }
+    }
+
+    fn into_message(mut self, sender_id: Self::SenderId, ltime: u64) -> Self {
+        self.sender_id = sender_id;
+        self.ltime = ltime;
+        self
+    }
+
+    fn inc_ltime(&mut self) -> u64 {
+        let ltime = self.ltime();
+        self.set_ltime(ltime + 1)
+    }
 }
 
-impl<Meta> std::fmt::Display for SinglePrefixRoute<Meta>
+impl<'a, Meta> std::fmt::Display for SinglePrefixRoute<'a, Meta>
 where
     Meta: crate::record::Meta,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "{}/{} {}",
+            "{}/{}-{}",
             self.prefix.addr(),
             self.prefix.len(),
             self.meta.summary()
@@ -193,7 +306,7 @@ where
     }
 }
 
-impl<T> Debug for SinglePrefixRoute<T>
+impl<'a, T> Debug for SinglePrefixRoute<'a, T>
 where
     T: Meta,
 {
@@ -214,14 +327,14 @@ pub trait MergeUpdate {
 
 pub trait Meta
 where
-    Self: Debug + Sized + Display + Clone + MergeUpdate,
+    Self: Debug + Sized + Display + Clone,
 {
     fn summary(&self) -> String;
 }
 
 impl<T> Meta for T
 where
-    T: Debug + Display + Clone + MergeUpdate,
+    T: Debug + Display + Clone,
 {
     fn summary(&self) -> String {
         format!("{}", self)
@@ -252,20 +365,22 @@ impl MergeUpdate for NoMeta {
 }
 
 #[derive(Clone, Debug)]
-pub struct BgpNlriMeta {
+pub struct BgpNlriMeta<'a> {
     nlri: PrefixNlri,
-    attributes: ExampleBgpPathAttributes,
+    attributes: Cow<'a, ExampleBgpPathAttributes>,
 }
 
-impl Display for BgpNlriMeta {
+impl<'a> Display for BgpNlriMeta<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}, {}", self.nlri, self.attributes)
     }
 }
 
-impl MergeUpdate for BgpNlriMeta {
+impl<'a> MergeUpdate for BgpNlriMeta<'a> {
     fn merge_update(&mut self, update_meta: Self) -> Result<(), Box<dyn std::error::Error>> {
-        self.attributes.merge_update(update_meta.attributes)?;
+        self.attributes
+            .to_mut()
+            .merge_update(update_meta.attributes.into_owned())?;
         Ok(())
     }
 }
