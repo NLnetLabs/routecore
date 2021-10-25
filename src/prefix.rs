@@ -1,13 +1,11 @@
 //! IP address resources.
 
-use std::{error, fmt};
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::net::{AddrParseError, IpAddr, Ipv4Addr, Ipv6Addr};
 use std::num::ParseIntError;
 use std::str::FromStr;
-#[cfg(feature = "serde")] use serde::{
-    Deserialize, Deserializer, Serialize, Serializer
-};
-
+use std::{error, fmt};
 
 //------------ Bits ----------------------------------------------------------
 
@@ -79,13 +77,11 @@ impl Bits {
     fn into_max(self, prefix_len: u8) -> Self {
         if prefix_len >= 128 {
             self
-        }
-        else {
+        } else {
             Self(self.0 | (!0 >> prefix_len as usize))
         }
     }
 }
-
 
 //--- From
 
@@ -111,7 +107,7 @@ impl From<IpAddr> for Bits {
     fn from(addr: IpAddr) -> Self {
         match addr {
             IpAddr::V4(addr) => Self::from(addr),
-            IpAddr::V6(addr) => Self::from(addr)
+            IpAddr::V6(addr) => Self::from(addr),
         }
     }
 }
@@ -134,17 +130,15 @@ impl From<Bits> for Ipv6Addr {
     }
 }
 
-
 //--- Debug
 
 impl fmt::Debug for Bits {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_tuple("Bits")
-        .field(&format_args!("{}", self.into_v6()))
-        .finish()
+            .field(&format_args!("{}", self.into_v6()))
+            .finish()
     }
 }
-
 
 //------------ Prefix --------------------------------------------------------
 
@@ -167,8 +161,18 @@ pub struct Prefix {
 
 impl Prefix {
     /// Creates a new prefix without checking.
-    fn new_unchecked(bits: Bits, family_and_len: u8) -> Self {
-        Prefix { bits, family_and_len }
+    fn new_unchecked(bits: Bits, len: u8, v6: bool) -> Self {
+        if v6 {
+            Prefix {
+                bits,
+                family_and_len: len | 0x80,
+            }
+        } else {
+            Prefix {
+                bits,
+                family_and_len: len,
+            }
+        }
     }
 
     /// Creates a new prefix from an address and a length.
@@ -194,16 +198,16 @@ impl Prefix {
     pub fn new_v4(addr: Ipv4Addr, len: u8) -> Result<Self, PrefixError> {
         // Check prefix length.
         if len > 32 {
-            return Err(PrefixError::LenOverflow)
+            return Err(PrefixError::LenOverflow);
         }
         // Check that host bits are zero.
         let bits = Bits::from_v4(addr);
         if !bits.is_host_zero(len) {
-            return Err(PrefixError::NonZeroHost)
+            return Err(PrefixError::NonZeroHost);
         }
 
         // Contruct a value
-        Ok(Self::new_unchecked(bits, len))
+        Ok(Self::new_unchecked(bits, len, false))
     }
 
     /// Creates a new prefix from an IPv6 adddress and a prefix length.
@@ -215,16 +219,16 @@ impl Prefix {
     pub fn new_v6(addr: Ipv6Addr, len: u8) -> Result<Self, PrefixError> {
         // Check prefix length.
         if len > 128 {
-            return Err(PrefixError::LenOverflow)
+            return Err(PrefixError::LenOverflow);
         }
         // Check that host bits are zero.
         let bits = Bits::from_v6(addr);
         if !bits.is_host_zero(len) {
-            return Err(PrefixError::NonZeroHost)
+            return Err(PrefixError::NonZeroHost);
         }
 
         // Contruct a value, set the left-most bit in len.
-        Ok(Self::new_unchecked(bits, len | 0x80))
+        Ok(Self::new_unchecked(bits, len, true))
     }
 
     /// Creates a new prefix zeroing out host bits.
@@ -236,25 +240,29 @@ impl Prefix {
     }
 
     /// Creates a new prefix zeroing out host bits.
-    pub fn new_v4_relaxed(
-        addr: Ipv4Addr, len: u8
-    ) -> Result<Self, PrefixError> {
+    pub fn new_v4_relaxed(addr: Ipv4Addr, len: u8) -> Result<Self, PrefixError> {
         // Check prefix length.
         if len > 32 {
-            return Err(PrefixError::LenOverflow)
+            return Err(PrefixError::LenOverflow);
         }
-        Ok(Self::new_unchecked(Bits::from_v4(addr).clear_host(len), len))
+        Ok(Self::new_unchecked(
+            Bits::from_v4(addr).clear_host(len),
+            len,
+            false,
+        ))
     }
 
     /// Creates a new prefix zeroing out host bits.
-    pub fn new_v6_relaxed(
-        addr: Ipv6Addr, len: u8
-    ) -> Result<Self, PrefixError> {
+    pub fn new_v6_relaxed(addr: Ipv6Addr, len: u8) -> Result<Self, PrefixError> {
         // Check prefix length.
         if len > 128 {
-            return Err(PrefixError::LenOverflow)
+            return Err(PrefixError::LenOverflow);
         }
-        Ok(Self::new_unchecked(Bits::from_v6(addr).clear_host(len), len))
+        Ok(Self::new_unchecked(
+            Bits::from_v6(addr).clear_host(len),
+            len,
+            true,
+        ))
     }
 
     /// Returns whether the prefix is for an IPv4 address.
@@ -272,8 +280,7 @@ impl Prefix {
     pub fn family_len(self) -> u8 {
         if self.is_v4() {
             32
-        }
-        else {
+        } else {
             128
         }
     }
@@ -282,8 +289,7 @@ impl Prefix {
     pub fn addr(self) -> IpAddr {
         if self.is_v4() {
             self.bits.into_v4().into()
-        }
-        else {
+        } else {
             self.bits.into_v6().into()
         }
     }
@@ -306,8 +312,7 @@ impl Prefix {
         let bits = self.bits.into_max(self.len());
         if self.is_v4() {
             bits.into_v4().into()
-        }
-        else {
+        } else {
             bits.into_v6().into()
         }
     }
@@ -316,12 +321,12 @@ impl Prefix {
     pub fn covers(self, other: Self) -> bool {
         // Differing families? Not covering.
         if self.is_v4() != other.is_v4() {
-            return false
+            return false;
         }
 
         // If self is more specific than other, it can’t cover it.
         if self.len() > other.len() {
-            return false
+            return false;
         }
 
         // If we have two host prefixes, they need to be identical.
@@ -329,11 +334,10 @@ impl Prefix {
         // work at least in the v6 case.)
         if self.is_v4() {
             if self.len() == 32 && other.len() == 32 {
-                return self == other
+                return self == other;
             }
-        }
-        else if self.len() == 128 && other.len() == 128 {
-            return self == other
+        } else if self.len() == 128 && other.len() == 128 {
+            return self == other;
         }
 
         // other now needs to start with the same bits as self.
@@ -343,50 +347,38 @@ impl Prefix {
     }
 }
 
-
 //--- From
-
 
 #[cfg(feature = "repository")]
 impl From<crate::repository::roa::FriendlyRoaIpAddress> for Prefix {
     fn from(addr: crate::repository::roa::FriendlyRoaIpAddress) -> Self {
-        Prefix::new(
-            addr.address(), addr.address_length()
-        ).expect("ROA IP address with illegal prefix length")
+        Prefix::new(addr.address(), addr.address_length())
+            .expect("ROA IP address with illegal prefix length")
     }
 }
 
 #[cfg(feature = "repository")]
 impl From<Prefix> for crate::repository::resources::IpBlock {
     fn from(src: Prefix) -> Self {
-        crate::repository::resources::Prefix::new(
-            src.addr(), src.len()
-        ).into()
+        crate::repository::resources::Prefix::new(src.addr(), src.len()).into()
     }
 }
-
 
 //--- Deserialize and Serialize
 
 #[cfg(feature = "serde")]
 impl<'de> Deserialize<'de> for Prefix {
-    fn deserialize<D: Deserializer<'de>>(
-        deserializer: D
-    ) -> Result<Self, D::Error> {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         struct Visitor;
 
         impl<'de> serde::de::Visitor<'de> for Visitor {
             type Value = Prefix;
 
-            fn expecting(
-                &self, formatter: &mut fmt::Formatter
-            ) -> fmt::Result {
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
                 write!(formatter, "a string with a IPv4 or IPv6 prefix")
             }
 
-            fn visit_str<E: serde::de::Error>(
-                self, v: &str
-            ) -> Result<Self::Value, E> {
+            fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<Self::Value, E> {
                 Prefix::from_str(v).map_err(E::custom)
             }
         }
@@ -397,13 +389,10 @@ impl<'de> Deserialize<'de> for Prefix {
 
 #[cfg(feature = "serde")]
 impl Serialize for Prefix {
-    fn serialize<S: Serializer>(
-        &self, serializer: S
-    ) -> Result<S::Ok, S::Error> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         serializer.collect_str(self)
     }
 }
-
 
 //--- FromStr and Display
 
@@ -412,15 +401,11 @@ impl FromStr for Prefix {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         if s.is_empty() {
-            return Err(ParsePrefixError::Empty)
+            return Err(ParsePrefixError::Empty);
         }
         let slash = s.find('/').ok_or(ParsePrefixError::MissingLen)?;
-        let addr = IpAddr::from_str(&s[..slash]).map_err(
-            ParsePrefixError::InvalidAddr
-        )?;
-        let len = u8::from_str(&s[slash + 1..]).map_err(
-            ParsePrefixError::InvalidLen
-        )?;
+        let addr = IpAddr::from_str(&s[..slash]).map_err(ParsePrefixError::InvalidAddr)?;
+        let len = u8::from_str(&s[slash + 1..]).map_err(ParsePrefixError::InvalidLen)?;
         Prefix::new(addr, len).map_err(ParsePrefixError::InvalidPrefix)
     }
 }
@@ -430,7 +415,6 @@ impl fmt::Display for Prefix {
         write!(f, "{}/{}", self.addr(), self.len())
     }
 }
-
 
 //============ Errors ========================================================
 
@@ -469,8 +453,7 @@ impl fmt::Display for PrefixError {
     }
 }
 
-impl error::Error for PrefixError { }
-
+impl error::Error for PrefixError {}
 
 //------------ ParsePrefixError ----------------------------------------------
 
@@ -498,9 +481,7 @@ impl fmt::Display for ParsePrefixError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             ParsePrefixError::Empty => f.write_str("empty string"),
-            ParsePrefixError::MissingLen => {
-                f.write_str("missing length portion")
-            }
+            ParsePrefixError::MissingLen => f.write_str("missing length portion"),
             ParsePrefixError::InvalidAddr(err) => {
                 write!(f, "invalid address: {}", err)
             }
@@ -512,4 +493,4 @@ impl fmt::Display for ParsePrefixError {
     }
 }
 
-impl error::Error for ParsePrefixError { }
+impl error::Error for ParsePrefixError {}
