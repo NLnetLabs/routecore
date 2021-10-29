@@ -5,7 +5,6 @@ use std::{error, fmt, ops};
 use std::fmt::Display;
 
 #[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
 
 //------------ AsId ----------------------------------------------------------
 
@@ -183,8 +182,28 @@ impl From<Vec<u32>> for AsSet {
 }
 
 #[cfg(feature="serde")]
-#[serde(transparent)]
-impl<'de> serde::de::Deserialize<'de> for AsSet {}
+impl<'de> serde::de::Deserialize<'de> for AsSet {
+    fn deserialize<D: serde::de::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct Visitor;
+
+        impl<'de> serde::de::Visitor<'de> for Visitor {
+            type Value = AsSet;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                write!(formatter, "an AS set")
+            }
+
+            fn visit_seq<S: serde::de::SeqAccess<'de>>(self, mut seq: S) -> Result<Self::Value, S::Error> {
+                let mut asns = Vec::new();
+                while let Some(asn) = seq.next_element()? {
+                    asns.push(asn);
+                }
+                Ok(AsSet { asns })
+            }
+        }
+        deserializer.deserialize_seq(Visitor)
+    }
+}
 
 #[derive(Clone, Debug)]
 pub enum AsSequence {
