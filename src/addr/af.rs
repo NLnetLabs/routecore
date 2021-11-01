@@ -1,10 +1,17 @@
 use num::PrimInt;
-use std::fmt::{Debug};
+use std::fmt::Debug;
 
-//------------ Address Family (trait) --------------------------------------------------------
-
+//------------ AddressFamily (trait) --------------------------------------------------------
+/// The address family of an IP address as a Trait.
+/// 
+/// The idea of this trait is that each family will have a separate type to be
+/// able to only take the amount of memory needs. Useful when building trees
+/// with large amounts of addresses/prefixes. Used by rotonda-store for this
+/// purpose.
 pub trait AddressFamily: PrimInt + Debug {
+    /// The byte representation of the family filled with 1s.
     const BITMASK: Self;
+    /// The number of bits in the byte representation of the family.
     const BITS: u8;
     fn fmt_net(net: Self) -> String;
     // returns the specified nibble from `start_bit` to (and
@@ -19,6 +26,9 @@ pub trait AddressFamily: PrimInt + Debug {
 
     fn into_ipaddr(self) -> std::net::IpAddr;
 }
+
+
+//-------------- Ipv4 Type ---------------------------------------------------------------------
 
 pub type IPv4 = u32;
 
@@ -49,6 +59,9 @@ impl AddressFamily for IPv4 {
     }
 }
 
+
+//-------------- Ipv6 Type ---------------------------------------------------------------------
+
 pub type IPv6 = u128;
 
 impl AddressFamily for IPv6 {
@@ -76,70 +89,3 @@ impl AddressFamily for IPv6 {
         std::net::IpAddr::V6(std::net::Ipv6Addr::from(self))
     }
 }
-
-//------------ Addr ----------------------------------------------------------
-
-// #[derive(Clone, Copy, Debug)]
-// pub enum Addr {
-//     V4(u32),
-//     V6(u128),
-// }
-
-// impl Addr {
-//     pub fn to_bits(&self) -> u128 {
-//         match self {
-//             Addr::V4(addr) => *addr as u128,
-//             Addr::V6(addr) => *addr,
-//         }
-//     }
-
-//     pub fn to_ipaddr(&self) -> std::net::IpAddr {
-//         match self {
-//             Addr::V4(addr) => IpAddr::V4(std::net::Ipv4Addr::from(*addr)),
-//             Addr::V6(addr) => IpAddr::V6(std::net::Ipv6Addr::from(*addr)),
-//         }
-//     }
-// }
-
-// impl From<Ipv4Addr> for Addr {
-//     fn from(addr: Ipv4Addr) -> Self {
-//         Self::V4(addr.into())
-//     }
-// }
-
-// impl From<Ipv6Addr> for Addr {
-//     fn from(addr: Ipv6Addr) -> Self {
-//         Self::V6(addr.into())
-//     }
-// }
-
-// impl From<IpAddr> for Addr {
-//     fn from(addr: IpAddr) -> Self {
-//         match addr {
-//             IpAddr::V4(addr) => addr.into(),
-//             IpAddr::V6(addr) => addr.into(),
-//         }
-//     }
-// }
-// impl From<u32> for Addr {
-//     fn from(addr: u32) -> Self {
-//         addr.into()
-//     }
-// }
-
-// impl FromStr for Addr {
-//     type Err = <IpAddr as FromStr>::Err;
-
-//     fn from_str(s: &str) -> Result<Self, Self::Err> {
-//         IpAddr::from_str(s).map(Into::into)
-//     }
-// }
-
-// impl fmt::Display for Addr {
-//     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-//         match self {
-//             Addr::V4(addr) => write!(f, "{}", std::net::Ipv4Addr::from(*addr)),
-//             Addr::V6(addr) => write!(f, "{}", std::net::Ipv6Addr::from(*addr)),
-//         }
-//     }
-// }

@@ -3,7 +3,7 @@ use std::fmt;
 use std::fmt::{Debug, Display};
 
 use crate::asn::{AsId, AsPath};
-use crate::prefix::Prefix;
+use crate::addr::Prefix;
 
 //------------ Traits for Record ---------------------------------------------
 
