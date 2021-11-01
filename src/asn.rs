@@ -4,8 +4,6 @@ use std::str::FromStr;
 use std::{error, fmt, ops};
 use std::fmt::Display;
 
-#[cfg(feature = "serde")]
-
 //------------ AsId ----------------------------------------------------------
 
 /// An AS number.
