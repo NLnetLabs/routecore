@@ -1,3 +1,5 @@
+//! Types and traits for IP Addresses and Prefixes.
+
 mod af;
 mod prefix;
 

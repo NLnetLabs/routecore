@@ -1,3 +1,5 @@
+//! Types for Autonomous Systems Numbers (ASN) and ASN collections
+
 #[cfg(feature = "repository")]
 use bcder::{decode, encode};
 use std::str::FromStr;
@@ -6,7 +8,7 @@ use std::fmt::Display;
 
 //------------ AsId ----------------------------------------------------------
 
-/// An AS number.
+/// An AS number (ASN)
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct AsId(u32);
 
@@ -154,8 +156,36 @@ impl error::Error for ParseAsIdError {}
 
 //-------------- AS Collections ----------------------------------------------
 
+// RFC 4271 AS_PATH
+///
+/// A sequence of AS_SETs and AS_SEQUENCEs as described in
+/// in RFC 4271 as an AS_PATH
+/// 
+/// Yes, a AS_PATH is a sequence of sequences. From RFC 4271:
+/// 
+/// ```text
+/// b) AS_PATH (Type Code 2):
+/// AS_PATH is a well-known mandatory attribute that is composed
+/// of a sequence of AS path segments.  Each AS path segment is
+/// represented by a triple <path segment type, path segment
+/// length, path segment value>.
+///
+/// The path segment type is a 1-octet length field with the
+/// following values defined:
+///
+///    Value      Segment Type
+///
+///   1         AS_SET: unordered set of ASes a route in the
+///                 UPDATE message has traversed
+///
+///    2         AS_SEQUENCE: ordered set of ASes a route in
+///                 the UPDATE message has traversed
+/// ```
+/// 
+/// See also [`AsSequence`](struct.AsSequence.html) and
+/// [`AsSet`](struct.AsSet.html).
 #[derive(Clone, Debug)]
-pub struct AsPath(Vec<AsSequence>);
+pub struct AsPath(pub Vec<AsSegment>);
 
 impl Display for AsPath {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -167,15 +197,16 @@ impl Display for AsPath {
     }
 }
 
+/// RFC 4271 AS_SET
+/// 
+/// Part of an AS_PATH. See [`AsPath`](struct.AsPath.html).
 #[derive(Debug, Clone)]
-pub struct AsSet {
-    asns: Vec<AsId>,
-}
+pub struct AsSet(pub Vec<AsId>);
 
 impl From<Vec<u32>> for AsSet {
     fn from(asns: Vec<u32>) -> Self {
         let asns = asns.into_iter().map(AsId).collect();
-        AsSet { asns }
+        AsSet(asns)
     }
 }
 
@@ -196,37 +227,63 @@ impl<'de> serde::de::Deserialize<'de> for AsSet {
                 while let Some(asn) = seq.next_element()? {
                     asns.push(asn);
                 }
-                Ok(AsSet { asns })
+                Ok(AsSet(asns))
             }
         }
         deserializer.deserialize_seq(Visitor)
     }
 }
 
+/// RFC 4271 AS_SEQUENCE
+///
+/// Part of an `AS_PATH`. See [`AsPath`](struct.AsPath.html).
 #[derive(Clone, Debug)]
-pub enum AsSequence {
-    Empty,
-    AS(AsId),
-    AsSet(AsSet),
+pub struct AsSequence(pub Vec<AsId>);
+
+impl Display for AsSequence {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut as_str = String::new();
+        for as_id in &self.0 {
+            as_str.push_str(&format!("AS{} ", as_id));
+        }
+        f.write_str(&as_str)
+    }
 }
 
-impl std::fmt::Display for AsSequence {
+impl From<Vec<u32>> for AsSequence {
+    fn from(asns: Vec<u32>) -> Self {
+        let asns = asns.into_iter().map(AsId).collect();
+        AsSequence(asns)
+    }
+}
+
+/// RFC 4271 AS_PATH Path Segment
+///
+/// Part of an `AS_PATH`. See [`AsPath`](struct.AsPath.html).
+#[derive(Clone, Debug)]
+pub enum AsSegment {
+    Empty,
+    AsSet(AsSet),
+    AsSequence(AsSequence),
+}
+
+impl std::fmt::Display for AsSegment {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
-            AsSequence::AS(asn) => write!(f, "AS{}", asn),
-            AsSequence::AsSet(asns) => {
+            AsSegment::AsSequence(asn) => write!(f, "AS{}", asn),
+            AsSegment::AsSet(asns) => {
                 let mut asns_str = String::new();
-                for asn in &asns.asns {
+                for asn in &asns.0 {
                     asns_str.push_str(&format!("AS{},", asn));
                 }
                 write!(f, "{{{}}}", asns_str)
             }
-            AsSequence::Empty => write!(f, ""),
+            AsSegment::Empty => write!(f, ""),
         }
     }
 }
 
-impl std::str::FromStr for AsSequence {
+impl std::str::FromStr for AsSegment {
     type Err = std::num::ParseIntError;
     fn from_str(as_set: &str) -> Result<Self, std::num::ParseIntError> {
         let mut as_seq = vec![];
@@ -236,9 +293,9 @@ impl std::str::FromStr for AsSequence {
         }
 
         match as_seq.len() {
-            1 => Ok(AsSequence::AS(AsId(as_seq[0]))),
-            l if l > 1 => Ok(AsSequence::AsSet(as_seq.into())),
-            _ => Ok(AsSequence::Empty),
+            1 => Ok(AsSegment::AsSet(as_seq.into())),
+            l if l > 1 => Ok(AsSegment::AsSequence(as_seq.into())),
+            _ => Ok(AsSegment::Empty),
         }
     }
 }

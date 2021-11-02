@@ -30,6 +30,7 @@ pub trait AddressFamily: PrimInt + Debug {
 
 //-------------- Ipv4 Type ---------------------------------------------------------------------
 
+/// Exactly fitting IPv4 bytes (4 octets).
 pub type IPv4 = u32;
 
 impl AddressFamily for IPv4 {
@@ -62,6 +63,7 @@ impl AddressFamily for IPv4 {
 
 //-------------- Ipv6 Type ---------------------------------------------------------------------
 
+/// Exactly fitting IPv6 bytes (16 octets).
 pub type IPv6 = u128;
 
 impl AddressFamily for IPv6 {
