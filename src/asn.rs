@@ -2,11 +2,11 @@
 
 #[cfg(feature = "repository")]
 use bcder::{decode, encode};
+use std::fmt::Display;
 use std::str::FromStr;
 use std::{error, fmt, ops};
-use std::fmt::Display;
 
-//------------ AsId ----------------------------------------------------------
+//------------ AsId ---------------------------------------------------------
 
 /// An AS number (ASN)
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -30,12 +30,16 @@ impl AsId {
 #[cfg(feature = "repository")]
 impl AsId {
     /// Takes an AS number from the beginning of an encoded value.
-    pub fn take_from<S: decode::Source>(cons: &mut decode::Constructed<S>) -> Result<Self, S::Err> {
+    pub fn take_from<S: decode::Source>(
+        cons: &mut decode::Constructed<S>,
+    ) -> Result<Self, S::Err> {
         cons.take_u32().map(AsId)
     }
 
     /// Skips over the AS number at the beginning of an encoded value.
-    pub fn skip_in<S: decode::Source>(cons: &mut decode::Constructed<S>) -> Result<(), S::Err> {
+    pub fn skip_in<S: decode::Source>(
+        cons: &mut decode::Constructed<S>,
+    ) -> Result<(), S::Err> {
         cons.take_u32().map(|_| ())
     }
 
@@ -47,7 +51,9 @@ impl AsId {
     }
 
     /// Skips the content of an AS number value.
-    pub fn skip_content<S: decode::Source>(content: &mut decode::Content<S>) -> Result<(), S::Err> {
+    pub fn skip_content<S: decode::Source>(
+        content: &mut decode::Content<S>,
+    ) -> Result<(), S::Err> {
         content.to_u32().map(|_| ())
     }
 
@@ -99,21 +105,32 @@ impl<'de> serde::de::Deserialize<'de> for AsId {
     /// This implementation is extremely flexible with regards to how the AS
     /// number can be encoded. It allows integers as well as string with and
     /// without the `AS` prefix.
-    fn deserialize<D: serde::de::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+    fn deserialize<D: serde::de::Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<Self, D::Error> {
         struct Visitor;
 
         impl<'de> serde::de::Visitor<'de> for Visitor {
             type Value = AsId;
 
-            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+            fn expecting(
+                &self,
+                formatter: &mut fmt::Formatter,
+            ) -> fmt::Result {
                 write!(formatter, "an AS number")
             }
 
-            fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<Self::Value, E> {
+            fn visit_str<E: serde::de::Error>(
+                self,
+                v: &str,
+            ) -> Result<Self::Value, E> {
                 AsId::from_str(v).map_err(E::custom)
             }
 
-            fn visit_u32<E: serde::de::Error>(self, v: u32) -> Result<Self::Value, E> {
+            fn visit_u32<E: serde::de::Error>(
+                self,
+                v: u32,
+            ) -> Result<Self::Value, E> {
                 Ok(v.into())
             }
         }
@@ -140,7 +157,7 @@ impl fmt::Display for AsId {
     }
 }
 
-//------------ ParseAsIdError ------------------------------------------------
+//------------ ParseAsIdError -----------------------------------------------
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ParseAsIdError;
@@ -153,16 +170,15 @@ impl fmt::Display for ParseAsIdError {
 
 impl error::Error for ParseAsIdError {}
 
-
-//-------------- AS Collections ----------------------------------------------
+//-------------- AS Collections ---------------------------------------------
 
 // RFC 4271 AS_PATH
 ///
 /// A sequence of AS_SETs and AS_SEQUENCEs as described in
 /// in RFC 4271 as an AS_PATH
-/// 
+///
 /// Yes, a AS_PATH is a sequence of sequences. From RFC 4271:
-/// 
+///
 /// ```text
 /// b) AS_PATH (Type Code 2):
 /// AS_PATH is a well-known mandatory attribute that is composed
@@ -181,7 +197,7 @@ impl error::Error for ParseAsIdError {}
 ///    2         AS_SEQUENCE: ordered set of ASes a route in
 ///                 the UPDATE message has traversed
 /// ```
-/// 
+///
 /// See also [`AsSequence`](struct.AsSequence.html) and
 /// [`AsSet`](struct.AsSet.html).
 #[derive(Clone, Debug)]
@@ -198,7 +214,7 @@ impl Display for AsPath {
 }
 
 /// RFC 4271 AS_SET
-/// 
+///
 /// Part of an AS_PATH. See [`AsPath`](struct.AsPath.html).
 #[derive(Debug, Clone)]
 pub struct AsSet(pub Vec<AsId>);
@@ -210,19 +226,27 @@ impl From<Vec<u32>> for AsSet {
     }
 }
 
-#[cfg(feature="serde")]
+#[cfg(feature = "serde")]
 impl<'de> serde::de::Deserialize<'de> for AsSet {
-    fn deserialize<D: serde::de::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+    fn deserialize<D: serde::de::Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<Self, D::Error> {
         struct Visitor;
 
         impl<'de> serde::de::Visitor<'de> for Visitor {
             type Value = AsSet;
 
-            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+            fn expecting(
+                &self,
+                formatter: &mut fmt::Formatter,
+            ) -> fmt::Result {
                 write!(formatter, "an AS set")
             }
 
-            fn visit_seq<S: serde::de::SeqAccess<'de>>(self, mut seq: S) -> Result<Self::Value, S::Error> {
+            fn visit_seq<S: serde::de::SeqAccess<'de>>(
+                self,
+                mut seq: S,
+            ) -> Result<Self::Value, S::Error> {
                 let mut asns = Vec::new();
                 while let Some(asn) = seq.next_element()? {
                     asns.push(asn);

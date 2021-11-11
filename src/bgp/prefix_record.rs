@@ -1,5 +1,5 @@
-use std::fmt;
 use std::borrow::Cow;
+use std::fmt;
 
 use crate::{
     addr::Prefix,
@@ -8,13 +8,12 @@ use crate::{
 
 impl Key for Prefix where Self: Copy + Sized {}
 
-
 //------------ PrefixRecord -------------------------------------------------
 
 /// Record with a single prefix as key and arbitrary meta-data
-/// 
+///
 /// PrefixRecord is the `atomic record` type that has a single prefix as the
-/// key, and the path attributes of the NLRI it is contained in. Useful to 
+/// key, and the path attributes of the NLRI it is contained in. Useful to
 /// disassemble BGP packets into several atomic records.
 
 #[derive(Clone)]
@@ -59,13 +58,19 @@ impl<'a, Meta: crate::record::Meta> Record<'a> for PrefixRecord<'a, Meta> {
     }
 }
 
-impl<'a, Meta: crate::record::Meta> crate::record::MessageRecord<'a> for PrefixRecord<'a, Meta>
+impl<'a, Meta: crate::record::Meta> crate::record::MessageRecord<'a>
+    for PrefixRecord<'a, Meta>
 where
     Meta: crate::record::Meta,
 {
     type SenderId = SenderIdInt;
 
-    fn new(key: Self::Key, meta: Self::Meta, sender_id: Self::SenderId, ltime: u64) -> Self {
+    fn new(
+        key: Self::Key,
+        meta: Self::Meta,
+        sender_id: Self::SenderId,
+        ltime: u64,
+    ) -> Self {
         PrefixRecord {
             prefix: key,
             meta: Cow::Owned(meta),
@@ -99,7 +104,11 @@ where
         self.ltime
     }
 
-    fn new_from_record(record: Self, sender_id: Self::SenderId, ltime: u64) -> Self {
+    fn new_from_record(
+        record: Self,
+        sender_id: Self::SenderId,
+        ltime: u64,
+    ) -> Self {
         Self {
             sender_id,
             ltime,
@@ -247,7 +256,6 @@ impl<'a, Meta: crate::record::Meta> std::ops::Index<usize>
         }
     }
 }
-
 
 //------------ RecordSetIter ------------------------------------------------
 

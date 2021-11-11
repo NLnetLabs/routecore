@@ -1,29 +1,30 @@
 //! Generic record types
 //!
 //! Records hold snippets of information that are contained in a
-//! BGP packet. The type of the key is variable: it can be an NLRI, or the NLRI
-//! can be disassembled into several records with the prefixes contained in
-//! the NLRI as key.
+//! BGP packet. The type of the key is variable: it can be an NLRI, or the 
+//! NLRI can be disassembled into several records with the prefixes contained
+//! in the NLRI as key.
 //!
-//! A record can be turned into a message (MessageRecord trait) to be ready to
-//! be send to other units, or external systems. A message has no references
-//! (anymore).
-//! 
-//! example: 
-//! BGP packet → disassemble into records → turn into message → send to other units
-//! 
+//! A record can be turned into a message (MessageRecord trait) to be ready
+//! to be send to other units, or external systems. A message has no
+//! references (anymore).
+//!
+//! example:
+//! BGP packet → disassemble into records → turn into message → send to other
+//! units
+//!
 //! See ```bgp``` module for records specific to BGP.
 use std::borrow::Cow;
 use std::fmt;
 
-//------------ Traits for Record ---------------------------------------------
+//------------ Traits for Record --------------------------------------------
 
 /// Trait for types that act as keys for records.
 ///
 /// These traits must be implemented by all record types.
 
-/// Trait that describes the record key, a key can be a NLRI (or a part of that),
-/// but it can also be other TLVs originating from a BGP packet.
+/// Trait that describes the record key, a key can be a NLRI (or a part of
+/// that), but it can also be other TLVs originating from a BGP packet.
 
 /// Key of a record
 pub trait Key {}
@@ -46,12 +47,12 @@ pub type LogicalTime = u64;
 
 /// Generic Record trait
 ///
-/// The Record trait describes any type that has a key and metadata, and that it
-/// is not a message (yet). The type should accomodate both holding metadata as
-/// a reference, as well as storing the metadata inside itself.
+/// The Record trait describes any type that has a key and metadata, and that
+/// it is not a message (yet). The type should accomodate both holding
+/// metadata as a reference, as well as storing the metadata inside itself.
 ///
-/// Types implementing this trait should be used to disassemble BGP packets into
-/// storable data points.
+/// Types implementing this trait should be used to disassemble BGP packets
+/// into storable data points.
 pub trait Record<'a>
 where
     Self: Clone,
@@ -66,14 +67,15 @@ where
 }
 
 /// Record as a stand-alone message
-/// 
-/// The MessageRecord trait describes a record turned message. It should have at
-/// least two fields, `sender_id` and `ltime` (or be able to synthesize those).
 ///
-/// A generic record type (that implements the Record trait) should be able to
-/// be turned into a message record. The message should own all the data it holds
-/// so it can be cut loose and send off to other systems through cloning and/or
-/// serialization.
+/// The MessageRecord trait describes a record turned message. It should have
+/// at least two fields, `sender_id` and `ltime` (or be able to synthesize
+/// those).
+///
+/// A generic record type (that implements the Record trait) should be able
+/// to be turned into a message record. The message should own all the data
+/// it holds so it can be cut loose and send off to other systems through
+/// cloning and/or serialization.
 ///
 /// The MessageRecord type should be used to send messages to other units or
 /// external systems.
@@ -90,7 +92,11 @@ where
         // Logical Time of this message (Lamport timestamp)
         ltime: u64,
     ) -> Self;
-    fn new_from_record(record: Self, sender_id: Self::SenderId, ltime: u64) -> Self;
+    fn new_from_record(
+        record: Self,
+        sender_id: Self::SenderId,
+        ltime: u64,
+    ) -> Self;
     fn into_message(self, sender_id: Self::SenderId, ltime: u64) -> Self;
     fn sender_id(&self) -> Self::SenderId;
     fn key(&'a self) -> <Self as Record<'a>>::Key {
@@ -108,15 +114,19 @@ where
     fn timestamp(&self) -> u64;
 }
 
-//----------------------- meta-data traits/types-------------------------------
+//----------------------- meta-data traits/types-----------------------------
 
 /// Trait that describes how an existing record gets merged
 ///
-/// MergeUpdate must be implemented by a type that implements Meta if it wants
-/// to be able to be stored. It should describe how the metadata for an existing
-/// record should be merged with newly arriving records for the same key.
+/// MergeUpdate must be implemented by a type that implements Meta if it
+/// wants to be able to be stored. It should describe how the metadata for an
+/// existing record should be merged with newly arriving records for the same
+/// key.
 pub trait MergeUpdate {
-    fn merge_update(&mut self, update_meta: Self) -> Result<(), Box<dyn std::error::Error>>;
+    fn merge_update(
+        &mut self,
+        update_meta: Self,
+    ) -> Result<(), Box<dyn std::error::Error>>;
 }
 
 /// Trait for types that can be used as metadata of a record
@@ -138,9 +148,9 @@ where
 
 /// Tree-wide empty meta-data type
 ///
-/// A special type that indicates that there's no metadata in the tree storing
-/// the prefixes. Note that this is different from a tree with optional
-/// meta-data.
+/// A special type that indicates that there's no metadata in the tree
+/// storing the prefixes. Note that this is different from a tree with
+/// optional meta-data.
 #[derive(Clone, Copy)]
 pub enum NoMeta {
     Empty,
@@ -159,7 +169,10 @@ impl fmt::Display for NoMeta {
 }
 
 impl MergeUpdate for NoMeta {
-    fn merge_update(&mut self, _: NoMeta) -> Result<(), Box<dyn std::error::Error>> {
+    fn merge_update(
+        &mut self,
+        _: NoMeta,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         Ok(())
     }
 }
