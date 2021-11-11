@@ -19,8 +19,13 @@ where
 
 /// Record based on a RFC 4271 Route.
 ///
+<<<<<<< HEAD
 /// Route is a record that holds a route as described in RFC 4271, which is a NRLI used
 /// as a key and a set of (path) attributes.
+=======
+/// Route is a record that holds a route as described in RFC 4271, which is a
+/// NRLI used as a key and a set of (path) attributes.
+>>>>>>> 072d476 (reflow 78)
 #[derive(Clone)]
 pub struct Route<'a, Nlri, Meta>
 where
