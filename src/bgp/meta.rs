@@ -20,7 +20,10 @@ impl<'a> std::fmt::Display for BgpNlriMeta<'a> {
 }
 
 impl<'a> MergeUpdate for BgpNlriMeta<'a> {
-    fn merge_update(&mut self, update_meta: Self) -> Result<(), Box<dyn std::error::Error>> {
+    fn merge_update(
+        &mut self,
+        update_meta: Self,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         self.attributes
             .to_mut()
             .merge_update(update_meta.attributes.into_owned())?;
@@ -77,7 +80,10 @@ impl fmt::Display for ExampleBgpPathAttributes {
 }
 
 impl MergeUpdate for ExampleBgpPathAttributes {
-    fn merge_update(&mut self, update_meta: Self) -> Result<(), Box<dyn std::error::Error>> {
+    fn merge_update(
+        &mut self,
+        update_meta: Self,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         self.origin = update_meta.origin;
         self.as_path = update_meta.as_path;
         self.next_hop = update_meta.next_hop;

@@ -1,27 +1,26 @@
-use std::fmt;
 use std::borrow::Cow;
+use std::fmt;
 
 use crate::addr::Prefix;
-use crate::record::{LogicalTime, MessageRecord, Record, SenderIdInt};
 use crate::bgp::{BgpNlriMeta, ExampleBgpPathAttributes};
-
+use crate::record::{LogicalTime, MessageRecord, Record, SenderIdInt};
 
 /// Network Layer Reachability Information (NLRI)
-/// 
-/// NLRI can be pretty generic, it's not only a bunch of prefixes, it can also be
-/// FlowSpec data etc.
+///
+/// NLRI can be pretty generic, it's not only a bunch of prefixes, it can
+/// also be FlowSpec data etc.
 pub trait Nlri
 where
     Self: Clone,
 {
 }
 
-//----------------- Route -------------------------------------------------------------
+//----------------- Route ---------------------------------------------------
 
 /// Record based on a RFC 4271 Route.
-/// 
-/// Route is a record that holds a route as described in RFC 4271, which is a NRLI used
-/// as a key and a set of (path) attributes.
+///
+/// Route is a record that holds a route as described in RFC 4271, which is a
+/// NRLI used as a key and a set of (path) attributes.
 #[derive(Clone)]
 pub struct Route<'a, Nlri, Meta>
 where
@@ -71,7 +70,9 @@ impl<'a> Record<'a> for Route<'a, PrefixNlri, ExampleBgpPathAttributes> {
     }
 }
 
-impl<'a> MessageRecord<'a> for Route<'a, PrefixNlri, ExampleBgpPathAttributes> {
+impl<'a> MessageRecord<'a>
+    for Route<'a, PrefixNlri, ExampleBgpPathAttributes>
+{
     type SenderId = SenderIdInt;
 
     fn new(
@@ -106,7 +107,11 @@ impl<'a> MessageRecord<'a> for Route<'a, PrefixNlri, ExampleBgpPathAttributes> {
         self.ltime
     }
 
-    fn new_from_record(record: Self, sender_id: Self::SenderId, ltime: u64) -> Self {
+    fn new_from_record(
+        record: Self,
+        sender_id: Self::SenderId,
+        ltime: u64,
+    ) -> Self {
         Self {
             key: record.key,
             nlri: record.nlri,
@@ -122,7 +127,6 @@ impl<'a> MessageRecord<'a> for Route<'a, PrefixNlri, ExampleBgpPathAttributes> {
         self
     }
 }
-
 
 /// NLRI that consists of multiple prefixes.
 #[derive(Clone, Debug)]

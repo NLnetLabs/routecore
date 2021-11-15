@@ -1,9 +1,9 @@
 //! Record types and traits for BGP packets
-//! 
+//!
 //! These type and traits built on top of the `Record` type specifically to
 //! handle BGP packets.
-//! 
-//! example: 
+//!
+//! example:
 //! BGP packet → disassemble into records → turn into message will translate
 //! into:
 //!
@@ -11,13 +11,13 @@
 //!
 //! | Record | Content |
 //! |--------|---------|
-//! | 1      | { key: WITHDRAWR_Prefix; meta: NoMeta } |
+//! | 1      | { key: WITHDRAW_Prefix; meta: NoMeta } |
 //! | 2      | { key: NLRI; meta: Bgpttributes } |
 //! | 3      | { key: MP_REACH_NLRI; meta: BgpExtAttributes } |
 //! | 4      | { key: MP_UNREACH_NLRI; meta: BgpExtAttributes } |
 //!
 //! --- or ---
-//! 
+//!
 //! | Record | Content |
 //! |--------|---------|
 //! | 1 | { key: WITHDRAW_Prefix; meta: NoMeta } |
@@ -28,10 +28,10 @@
 //! | 6 | { key: MP_REACH_NLRI_Prefix#2; meta: BgpExtAttributes } |
 //! | 4 | { key: MP_UNREACH_NLRI_Prefix#1; meta: NoMeta } |
 
-mod route;
-mod prefix_record;
 mod meta;
+mod prefix_record;
+mod route;
 
-pub use route::*;
-pub use prefix_record::*;
 pub use meta::*;
+pub use prefix_record::*;
+pub use route::*;

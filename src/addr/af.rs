@@ -1,21 +1,21 @@
 use num::PrimInt;
 use std::fmt::Debug;
 
-//------------ AddressFamily (trait) --------------------------------------------------------
+//------------ AddressFamily (trait) ----------------------------------------
 /// The address family of an IP address as a Trait.
-/// 
-/// The idea of this trait is that each family will have a separate type to be
-/// able to only take the amount of memory needs. Useful when building trees
-/// with large amounts of addresses/prefixes. Used by rotonda-store for this
-/// purpose.
+///
+/// The idea of this trait is that each family will have a separate type to
+/// be able to only take the amount of memory needs. Useful when building
+/// trees with large amounts of addresses/prefixes. Used by rotonda-store for
+/// this purpose.
 pub trait AddressFamily: PrimInt + Debug {
     /// The byte representation of the family filled with 1s.
     const BITMASK: Self;
     /// The number of bits in the byte representation of the family.
     const BITS: u8;
     fn fmt_net(net: Self) -> String;
-    // returns the specified nibble from `start_bit` to (and
-    // including) `start_bit + len` and shifted to the right.
+    // returns the specified nibble from `start_bit` to (and including)
+    // `start_bit + len` and shifted to the right.
     fn get_nibble(net: Self, start_bit: u8, len: u8) -> u32;
 
     #[cfg(feature = "dynamodb")]
@@ -27,8 +27,7 @@ pub trait AddressFamily: PrimInt + Debug {
     fn into_ipaddr(self) -> std::net::IpAddr;
 }
 
-
-//-------------- Ipv4 Type ---------------------------------------------------------------------
+//-------------- Ipv4 Type --------------------------------------------------
 
 /// Exactly fitting IPv4 bytes (4 octets).
 pub type IPv4 = u32;
@@ -60,8 +59,7 @@ impl AddressFamily for IPv4 {
     }
 }
 
-
-//-------------- Ipv6 Type ---------------------------------------------------------------------
+//-------------- Ipv6 Type --------------------------------------------------
 
 /// Exactly fitting IPv6 bytes (16 octets).
 pub type IPv6 = u128;
