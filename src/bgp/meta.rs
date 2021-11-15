@@ -34,7 +34,7 @@ impl<'a> MergeUpdate for BgpNlriMeta<'a> {
 #[derive(Clone, Debug)]
 pub struct ExampleBgpPathAttributes {
     pub origin: AsId,
-    pub as_path: AsPath,
+    pub as_path: AsPath<Vec<AsId>>,
     pub next_hop: std::net::IpAddr,
     pub med: u32,
     pub local_pref: u32,
