@@ -325,6 +325,18 @@ impl fmt::Display for SegmentType {
 ///
 /// An AS path is a sequence of path segments. The type is generic over some
 /// type that provides access to a slice of `Asn`s.
+//
+//  As AS paths are really a sequence of sequences, we employ a bit of
+//  trickery to store them in a single sequence of `Asn`s. Specifically, each
+//  segment is preceded by a sentinel element describing the segment type and
+//  the length. Since we have a sequence of ASNs, we need to abuse `Asn` for
+//  this purpose. Both the type and the length are `u8`s in BGP, so there is
+//  plenty space in a 32 bit ASN for them. The specific encoding can be found
+//  in `decode_sentinel` and `encode_sentinel` below.
+//
+//  So, the first element in the path is a sentinel, followed by as many real
+//  ASNs as is encoded in the sentinel, followed by another sentinel and so
+//  on.
 #[derive(Clone, Debug)]
 #[cfg_attr(
     feature = "serde",
@@ -469,7 +481,7 @@ impl Default for AsPathBuilder {
 }
 
 
-//------------ AsID as path segment sentinel ---------------------------------
+//------------ ASN as path segment sentinel ----------------------------------
 
 /// Converts a sentinel `Asn` into a segment type and length.
 fn decode_sentinel(sentinel: Asn) -> (SegmentType, u8) {
