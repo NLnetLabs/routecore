@@ -12,10 +12,12 @@ version = "0.0.2-dev"
 
 [dependencies]
 num = "^0.3"
-serde = {version = "1.0.95", optional = true, features = ["derive"]}
+
+# Optional dependencies that, if included, introduce additional functionality.
+bcder = { version = "0.6", optional = true }
+serde = { version = "1.0.95", optional = true, features = ["derive"] }
 
 [dev-dependencies]
-serde_json      = "1.0.40"
 serde_test      = "1.0"
 
 [features]
