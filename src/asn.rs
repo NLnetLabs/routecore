@@ -1,7 +1,8 @@
 //! Types for Autonomous Systems Numbers (ASN) and ASN collections
 
 use std::str::FromStr;
-use std::{borrow, error, fmt, ops};
+use std::convert::{TryFrom, TryInto};
+use std::{error, fmt, ops};
 
 
 //------------ AsId ----------------------------------------------------------
@@ -23,19 +24,6 @@ impl AsId {
     /// Converts an AS number into a `u32`.
     pub fn into_u32(self) -> u32 {
         self.0
-    }
-
-    /// Converts the AS number into a segment type and length.
-    ///
-    /// This is an internal method used by `AsPath` below to encode all
-    /// segments into a single sequence of ASNs.
-    fn into_type_and_len(self) -> (SegmentType, u8) {
-        (((self.0 >> 8) as u8).into(), self.0 as u8)
-    }
-
-    /// Converts segment type and length into an AS number.
-    fn from_type_and_len(t: SegmentType, len: u8) -> Self {
-        AsId((u8::from(t) as u32) << 8 | (len as u32))
     }
 }
 
@@ -208,165 +196,32 @@ impl fmt::Display for AsId {
 }
 
 
-//------------ AsSet ---------------------------------------------------------
-
-/// An unordered set of AS numbers.
-/// 
-/// This type is one of the variants of an [`AsSegment`] in an [`AsPath`]. It
-/// describes an unordered set of ASes a route has traversed.
-///
-/// The type is a thin wrapper around a slice of [`AsId`]s, either as an
-/// actual (unsized) slice or an owned form, e.g., a vec.
-#[derive(Debug)]
-pub struct AsSet([AsId]);
-
-impl AsSet {
-    /// Creates a reference to an AS set slice from an `AsId` slice.
-    fn from_slice(slice: &[AsId]) -> &Self {
-        unsafe { &*(slice as *const [AsId] as *const AsSet) }
-    }
-
-    /// Returns a reference to a slice of the AS numbers.
-    pub fn as_slice(&self) -> &[AsId] {
-        self.0.as_ref()
-    }
-}
-
-//--- AsRef and Borrow
-
-impl AsRef<[AsId]> for AsSet {
-    fn as_ref(&self) -> &[AsId] {
-        self.as_slice()
-    }
-}
-
-impl borrow::Borrow<[AsId]> for AsSet {
-    fn borrow(&self) -> &[AsId] {
-        self.as_slice()
-    }
-}
-
-
-//--- Display
-
-impl fmt::Display for AsSet {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        for item in self.as_slice() {
-            write!(f, "{} ", item)?;
-        }
-        Ok(())
-    }
-}
-
-
-//------------ AsSequence ----------------------------------------------------
-
-/// An ordered set of AS numbers.
-/// 
-/// This type is one of the variants of an [`PathSegment`] in an [`AsPath`].
-/// It describes an ordered set of ASes a route has traversed.
-///
-/// The type is a thin wrapper around a slice of [`AsId`]s, either as an
-/// actual (unsized) slice or an owned form, e.g., a vec.
-#[derive(Debug)]
-pub struct AsSequence([AsId]);
-
-impl AsSequence {
-    /// Creates a reference to an AS set slice from an `AsId` slice.
-    fn from_slice(slice: &[AsId]) -> &Self {
-        unsafe { &*(slice as *const [AsId] as *const AsSequence) }
-    }
-
-    /// Returns a reference to a slice of the AS numbers.
-    pub fn as_slice(&self) -> &[AsId] {
-        self.0.as_ref()
-    }
-}
-
-
-//--- AsRef and Borrow
-
-impl AsRef<[AsId]> for AsSequence {
-    fn as_ref(&self) -> &[AsId] {
-        self.as_slice()
-    }
-}
-
-impl borrow::Borrow<[AsId]> for AsSequence {
-    fn borrow(&self) -> &[AsId] {
-        self.as_slice()
-    }
-}
-
-
-//--- Display
-
-impl fmt::Display for AsSequence {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        for item in self.as_slice() {
-            write!(f, "{},", item)?;
-        }
-        Ok(())
-    }
-}
-
-
 //------------ PathSegment ---------------------------------------------------
 
 /// A segment of an AS path.
-///
-/// This is either an AS set or an AS sequence.
 #[derive(Debug, Clone, Copy)]
-pub enum PathSegment<'a> {
-    Set(&'a AsSet),
-    Sequence(&'a AsSequence),
+pub struct PathSegment<'a> {
+    /// The type of the path segment.
+    stype: SegmentType,
+
+    /// The elements of the path segment.
+    elements: &'a [AsId],
 }
 
 impl<'a> PathSegment<'a> {
-    /// Returns whether the segment is a set.
-    pub fn is_set(self) -> bool {
-        matches!(self, PathSegment::Set(_))
+    /// Creates a path segment from a type and a slice of elements.
+    fn new(stype: SegmentType, elements: &'a [AsId]) -> Self {
+        PathSegment { stype, elements }
     }
 
-    /// Returns whether the segment is a set.
-    pub fn is_sequence(self) -> bool {
-        matches!(self, PathSegment::Sequence(_))
+    /// Returns the type of the segment.
+    pub fn segment_type(self) -> SegmentType {
+        self.stype
     }
 
-    /// Returns a reference to the slice of AS numbers in the segment.
-    pub fn as_slice(self) -> &'a [AsId] {
-        match self {
-            PathSegment::Set(inner) => inner.as_slice(),
-            PathSegment::Sequence(inner) => inner.as_slice(),
-        }
-    }
-}
-
-//--- From
-
-impl<'a> From<&'a AsSet> for PathSegment<'a> {
-    fn from(set: &'a AsSet) -> Self {
-        PathSegment::Set(set)
-    }
-}
-
-impl<'a> From<&'a AsSequence> for PathSegment<'a> {
-    fn from(seq: &'a AsSequence) -> Self {
-        PathSegment::Sequence(seq)
-    }
-}
-
-//--- AsRef and Borrow
-
-impl AsRef<[AsId]> for PathSegment<'_> {
-    fn as_ref(&self) -> &[AsId] {
-        self.as_slice()
-    }
-}
-
-impl borrow::Borrow<[AsId]> for PathSegment<'_> {
-    fn borrow(&self) -> &[AsId] {
-        self.as_slice()
+    /// Returns a slice with the elements of the segment.
+    pub fn elements(self) -> &'a [AsId] {
+        self.elements
     }
 }
 
@@ -375,10 +230,91 @@ impl borrow::Borrow<[AsId]> for PathSegment<'_> {
 
 impl fmt::Display for PathSegment<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match *self {
-            PathSegment::Set(inner) => inner.fmt(f),
-            PathSegment::Sequence(inner) => inner.fmt(f),
+        write!(f, "{}(", self.stype)?;
+        if let Some((first, tail)) = self.elements.split_first() {
+            write!(f, "{}", first)?;
+            for elem in tail {
+                write!(f, ", {}", elem)?;
+            }
         }
+        write!(f, ")")
+    }
+}
+
+
+//------------ SegmentType ---------------------------------------------------
+
+/// The type of a path segment.
+///
+/// This is a private helper type for encoding the type into, er, other
+/// things.
+#[derive(Clone, Copy, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum SegmentType {
+    /// The segment is an AS_SET.
+    ///
+    /// An AS_SET is an unordered set of autonomous systems that a route in
+    /// an UPDATE BGP message has traversed.
+    Set,
+
+    /// The segment is an AS_SEQUENCE.
+    ///
+    /// An AS_SET is an ordered set of autonomous systems that a route in
+    /// an UPDATE BGP message has traversed.
+    Sequence,
+
+    /// The segment is an AS_CONFED_SEQUENCE.
+    ///
+    /// An AS_CONFED_SEQUENCE is an ordered set of Member Autonomous Systems
+    /// in the local confederation that the UPDATE message has traversed.
+    ConfedSequence,
+
+    /// The segment is an AS_CONFED_SET.
+    ///
+    /// An AS_CONFED_SET is an unordered set of Member Autonomous Systems
+    /// in the local confederation that the UPDATE message has traversed.
+    ConfedSet,
+}
+
+
+//--- TryFrom and From
+
+impl TryFrom<u8> for SegmentType {
+    type Error = InvalidSegmentTypeError;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            1 => Ok(SegmentType::Set),
+            2 => Ok(SegmentType::Sequence),
+            3 => Ok(SegmentType::ConfedSequence),
+            4 => Ok(SegmentType::ConfedSet),
+            _ => Err(InvalidSegmentTypeError)
+        }
+    }
+}
+
+impl From<SegmentType> for u8 {
+    fn from(value: SegmentType) -> u8 {
+        match value {
+            SegmentType::Set => 1,
+            SegmentType::Sequence => 2,
+            SegmentType::ConfedSequence => 3,
+            SegmentType::ConfedSet => 4,
+        }
+    }
+}
+
+
+//--- Display
+
+impl fmt::Display for SegmentType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str(match *self {
+            SegmentType::Set => "AS_SET",
+            SegmentType::Sequence => "AS_SEQUENCE",
+            SegmentType::ConfedSequence => "AS_CONFED_SEQUENCE", 
+            SegmentType::ConfedSet => "AS_CONFED_SET",
+        })
     }
 }
 
@@ -418,14 +354,11 @@ impl<'a> Iterator for AsPath<&'a [AsId]> {
     type Item = PathSegment<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let (tpe, len) = self.segments.first()?.into_type_and_len();
-        self.segments = self.segments.split_first().unwrap().1;
-        let (res, tail) = self.segments.split_at(len as usize);
+        let (&first, segments) = self.segments.split_first()?;
+        let (stype, len) = decode_sentinel(first);
+        let (res, tail) = segments.split_at(len as usize);
         self.segments = tail;
-        Some(match tpe {
-            SegmentType::Set => AsSet::from_slice(res).into(),
-            SegmentType::Sequence => AsSequence::from_slice(res).into(),
-        })
+        Some(PathSegment::new(stype, res))
     }
 }
 
@@ -441,7 +374,6 @@ impl<T: AsRef<[AsId]>> fmt::Display for AsPath<T> {
     }
 }
 
-
 //------------ AsPathBuilder -------------------------------------------------
 
 #[derive(Clone, Debug)]
@@ -451,9 +383,6 @@ pub struct AsPathBuilder {
 
     /// The index of the head element of the currently build segment.
     curr_start: usize,
-
-    /// The type of the currently built segment.
-    curr_type: SegmentType,
 }
 
 impl AsPathBuilder {
@@ -463,41 +392,28 @@ impl AsPathBuilder {
     /// sequence type.
     pub fn new() -> Self {
         AsPathBuilder {
-            segments: vec![AsId(0)],
+            segments: vec![encode_sentinel(SegmentType::Sequence, 0)],
             curr_start: 0,
-            curr_type: SegmentType::Sequence,
         }
-    }
-
-    /// Starts a new set segment.
-    ///
-    /// Finishes the currently built segment if it isn’t empty.
-    pub fn start_set(&mut self) {
-        self.start(SegmentType::Set)
-    }
-
-    /// Starts a new sequence segment.
-    ///
-    /// Finishes the currently built segment if it isn’t empty.
-    pub fn start_sequence(&mut self) {
-        self.start(SegmentType::Sequence)
     }
 
     /// Internal version of the two start methods.
-    fn start(&mut self, tpe: SegmentType) {
+    pub fn start(&mut self, stype: SegmentType) {
         let len = self.segment_len();
         if len > 0 {
-            self.segments[self.curr_start] = AsId::from_type_and_len(
-                self.curr_type, len as u8
+            update_sentinel_len(
+                &mut self.segments[self.curr_start], len as u8
             );
             self.curr_start = self.segments.len();
-            self.segments.push(AsId(0));
+            self.segments.push(encode_sentinel(stype, 0));
         }
-        self.curr_type = tpe;
+        else {
+            self.segments[self.curr_start] = encode_sentinel(stype, 0);
+        }
     }
 
     /// Returns the length of the currently built segment.
-    fn segment_len(&self) -> usize {
+    pub fn segment_len(&self) -> usize {
         self.segments.len() - self.curr_start - 1
     }
 
@@ -531,8 +447,8 @@ impl AsPathBuilder {
     pub fn finalize<U: From<Vec<AsId>>>(mut self) -> AsPath<U> {
         let len = self.segment_len();
         if len > 0 {
-            self.segments[self.curr_start] = AsId::from_type_and_len(
-                self.curr_type, len as u8
+            update_sentinel_len(
+                &mut self.segments[self.curr_start], len as u8
             );
         }
         AsPath { segments: self.segments.into() }
@@ -549,35 +465,25 @@ impl Default for AsPathBuilder {
 }
 
 
-//------------ SegmentType ---------------------------------------------------
+//------------ AsID as path segment sentinel ---------------------------------
 
-/// The type of a path segment.
-///
-/// This is a private helper type for encoding the type into, er, other
-/// things.
-#[derive(Clone, Copy, Debug)]
-enum SegmentType {
-    Set,
-    Sequence,
+/// Converts a sentinel `AsId` into a segment type and length.
+fn decode_sentinel(sentinel: AsId) -> (SegmentType, u8) {
+    (
+        ((sentinel.0 >> 8) as u8)
+            .try_into().expect("illegally encoded AS path"),
+        sentinel.0 as u8
+    )
 }
 
-impl From<u8> for SegmentType {
-    fn from(value: u8) -> SegmentType {
-        match value {
-            0 => SegmentType::Set,
-            1 => SegmentType::Sequence,
-            _ => unreachable!()
-        }
-    }
+/// Converts segment type and length into a sentinel `AsId`.
+fn encode_sentinel(t: SegmentType, len: u8) -> AsId {
+    AsId((u8::from(t) as u32) << 8 | (len as u32))
 }
 
-impl From<SegmentType> for u8 {
-    fn from(value: SegmentType) -> u8 {
-        match value {
-            SegmentType::Set => 0,
-            SegmentType::Sequence => 1
-        }
-    }
+/// Updates the length portion of a sentinel `AsId`.
+fn update_sentinel_len(sentinel: &mut AsId, len: u8) {
+    sentinel.0 = (sentinel.0 & 0xFFFF_FF00) | len as u32
 }
 
 
@@ -597,6 +503,8 @@ impl fmt::Display for ParseAsIdError {
 impl error::Error for ParseAsIdError {}
 
 
+//------------ LongSegmentError ----------------------------------------------
+
 #[derive(Clone, Copy, Debug)]
 pub struct LongSegmentError;
 
@@ -607,6 +515,20 @@ impl fmt::Display for LongSegmentError {
 }
 
 impl error::Error for LongSegmentError { }
+
+
+//------------ InvalidSegmentTypeError ---------------------------------------
+
+#[derive(Clone, Copy, Debug)]
+pub struct InvalidSegmentTypeError;
+
+impl fmt::Display for InvalidSegmentTypeError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str("invalid segment type")
+    }
+}
+
+impl error::Error for InvalidSegmentTypeError { }
 
 
 //============ Tests =========================================================
