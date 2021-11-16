@@ -326,6 +326,10 @@ impl fmt::Display for SegmentType {
 /// An AS path is a sequence of path segments. The type is generic over some
 /// type that provides access to a slice of `AsId`s.
 #[derive(Clone, Debug)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize, serde::Deserialize)
+)]
 pub struct AsPath<T> {
     /// The segments of the path.
     segments: T,
