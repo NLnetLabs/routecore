@@ -5,20 +5,20 @@ use std::convert::{TryFrom, TryInto};
 use std::{error, fmt, ops};
 
 
-//------------ AsId ----------------------------------------------------------
+//------------ Asn -----------------------------------------------------------
 
 /// An AS number (ASN).
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
-pub struct AsId(u32);
+pub struct Asn(u32);
 
-impl AsId {
-    pub const MIN: AsId = AsId(std::u32::MIN);
-    pub const MAX: AsId = AsId(std::u32::MAX);
+impl Asn {
+    pub const MIN: Asn = Asn(std::u32::MIN);
+    pub const MAX: Asn = Asn(std::u32::MAX);
 
     /// Creates an AS number from a `u32`.
     pub fn from_u32(value: u32) -> Self {
-        AsId(value)
+        Asn(value)
     }
 
     /// Converts an AS number into a `u32`.
@@ -28,12 +28,12 @@ impl AsId {
 }
 
 #[cfg(feature = "bcder")]
-impl AsId {
+impl Asn {
     /// Takes an AS number from the beginning of an encoded value.
     pub fn take_from<S: bcder::decode::Source>(
         cons: &mut bcder::decode::Constructed<S>
     ) -> Result<Self, S::Err> {
-        cons.take_u32().map(AsId)
+        cons.take_u32().map(Asn)
     }
 
     /// Skips over an AS number at the beginning of an encoded value.
@@ -47,7 +47,7 @@ impl AsId {
     pub fn parse_content<S: bcder::decode::Source>(
         content: &mut bcder::decode::Content<S>,
     ) -> Result<Self, S::Err> {
-        content.to_u32().map(AsId)
+        content.to_u32().map(Asn)
     }
 
     /// Skips the content of an AS number value.
@@ -64,21 +64,21 @@ impl AsId {
 
 //--- From
 
-impl From<u32> for AsId {
+impl From<u32> for Asn {
     fn from(id: u32) -> Self {
-        AsId(id)
+        Asn(id)
     }
 }
 
-impl From<AsId> for u32 {
-    fn from(id: AsId) -> Self {
+impl From<Asn> for u32 {
+    fn from(id: Asn) -> Self {
         id.0
     }
 }
 
 //--- FromStr
 
-impl FromStr for AsId {
+impl FromStr for Asn {
     type Err = ParseAsIdError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -88,7 +88,7 @@ impl FromStr for AsId {
             s
         };
 
-        u32::from_str(s).map(AsId).map_err(|_| ParseAsIdError)
+        u32::from_str(s).map(Asn).map_err(|_| ParseAsIdError)
     }
 }
 
@@ -105,7 +105,7 @@ impl FromStr for AsId {
 /// derived implementation, i.e., it serializes as a newtype struct with an
 /// `u32`. This, of course, is also understood by the `Deserialize` impl.
 #[cfg(feature = "serde")]
-impl AsId {
+impl Asn {
     /// Serializes an AS number as an `u32`.
     pub fn serialize_as_u32<S: serde::Serializer>(
         &self, serializer: S
@@ -129,7 +129,7 @@ impl AsId {
 }
 
 #[cfg(feature = "serde")]
-impl<'de> serde::Deserialize<'de> for AsId {
+impl<'de> serde::Deserialize<'de> for Asn {
     /// Deserialize an AS number.
     ///
     /// This implementation is extremely flexible with regards to how the AS
@@ -141,7 +141,7 @@ impl<'de> serde::Deserialize<'de> for AsId {
         struct Visitor;
 
         impl<'de> serde::de::Visitor<'de> for Visitor {
-            type Value = AsId;
+            type Value = Asn;
 
             fn expecting(
                 &self, formatter: &mut fmt::Formatter
@@ -152,7 +152,7 @@ impl<'de> serde::Deserialize<'de> for AsId {
             fn visit_str<E: serde::de::Error>(
                 self, v: &str
             ) -> Result<Self::Value, E> {
-                AsId::from_str(v).map_err(E::custom)
+                Asn::from_str(v).map_err(E::custom)
             }
 
             fn visit_u32<E: serde::de::Error>(
@@ -167,29 +167,29 @@ impl<'de> serde::Deserialize<'de> for AsId {
             ) -> Result<Self::Value, D::Error> {
                 <u32 as serde::Deserialize>::deserialize(
                     deserializer
-                ).map(AsId)
+                ).map(Asn)
             }
         }
 
         deserializer.deserialize_newtype_struct(
-            "AsId", Visitor
+            "Asn", Visitor
         )
     }
 }
 
 //--- Add
 
-impl ops::Add<u32> for AsId {
+impl ops::Add<u32> for Asn {
     type Output = Self;
 
     fn add(self, rhs: u32) -> Self {
-        AsId(self.0.checked_add(rhs).unwrap())
+        Asn(self.0.checked_add(rhs).unwrap())
     }
 }
 
 //--- Display
 
-impl fmt::Display for AsId {
+impl fmt::Display for Asn {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "AS{}", self.0)
     }
@@ -205,12 +205,12 @@ pub struct PathSegment<'a> {
     stype: SegmentType,
 
     /// The elements of the path segment.
-    elements: &'a [AsId],
+    elements: &'a [Asn],
 }
 
 impl<'a> PathSegment<'a> {
     /// Creates a path segment from a type and a slice of elements.
-    fn new(stype: SegmentType, elements: &'a [AsId]) -> Self {
+    fn new(stype: SegmentType, elements: &'a [Asn]) -> Self {
         PathSegment { stype, elements }
     }
 
@@ -220,7 +220,7 @@ impl<'a> PathSegment<'a> {
     }
 
     /// Returns a slice with the elements of the segment.
-    pub fn elements(self) -> &'a [AsId] {
+    pub fn elements(self) -> &'a [Asn] {
         self.elements
     }
 }
@@ -324,7 +324,7 @@ impl fmt::Display for SegmentType {
 /// An AS path.
 ///
 /// An AS path is a sequence of path segments. The type is generic over some
-/// type that provides access to a slice of `AsId`s.
+/// type that provides access to a slice of `Asn`s.
 #[derive(Clone, Debug)]
 #[cfg_attr(
     feature = "serde",
@@ -335,9 +335,9 @@ pub struct AsPath<T> {
     segments: T,
 }
 
-impl<T: AsRef<[AsId]>> AsPath<T> {
+impl<T: AsRef<[Asn]>> AsPath<T> {
     /// Returns an iterator over the segments of the path.
-    pub fn iter(&self) -> AsPath<&[AsId]> {
+    pub fn iter(&self) -> AsPath<&[Asn]> {
         AsPath { segments: self.segments.as_ref() }
     }
 }
@@ -345,16 +345,16 @@ impl<T: AsRef<[AsId]>> AsPath<T> {
 
 //--- IntoIterator and Iterator
 
-impl<'a, T: AsRef<[AsId]>> IntoIterator for &'a AsPath<T> {
+impl<'a, T: AsRef<[Asn]>> IntoIterator for &'a AsPath<T> {
     type Item = PathSegment<'a>;
-    type IntoIter = AsPath<&'a [AsId]>;
+    type IntoIter = AsPath<&'a [Asn]>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.iter()
     }
 }
 
-impl<'a> Iterator for AsPath<&'a [AsId]> {
+impl<'a> Iterator for AsPath<&'a [Asn]> {
     type Item = PathSegment<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -369,7 +369,7 @@ impl<'a> Iterator for AsPath<&'a [AsId]> {
 
 //--- Display
 
-impl<T: AsRef<[AsId]>> fmt::Display for AsPath<T> {
+impl<T: AsRef<[Asn]>> fmt::Display for AsPath<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for item in self {
             write!(f, "{}", item)?;
@@ -383,7 +383,7 @@ impl<T: AsRef<[AsId]>> fmt::Display for AsPath<T> {
 #[derive(Clone, Debug)]
 pub struct AsPathBuilder {
     /// A vec with the elements we have so far.
-    segments: Vec<AsId>,
+    segments: Vec<Asn>,
 
     /// The index of the head element of the currently build segment.
     curr_start: usize,
@@ -425,7 +425,7 @@ impl AsPathBuilder {
     ///
     /// This can fail if it would result in a segment that is longer than
     /// 255 ASNs.
-    pub fn push(&mut self, asn: AsId) -> Result<(), LongSegmentError> {
+    pub fn push(&mut self, asn: Asn) -> Result<(), LongSegmentError> {
         if self.segment_len() == 255 {
             return Err(LongSegmentError)
         }
@@ -438,7 +438,7 @@ impl AsPathBuilder {
     /// This can fail if it would result in a segment that is longer than
     /// 255 ASNs.
     pub fn extend_from_slice(
-        &mut self, other: &[AsId]
+        &mut self, other: &[Asn]
     ) -> Result<(), LongSegmentError> {
         if self.segment_len() + other.len() > 255 {
             return Err(LongSegmentError)
@@ -448,7 +448,7 @@ impl AsPathBuilder {
     }
 
     /// Finalizes and returns the AS path.
-    pub fn finalize<U: From<Vec<AsId>>>(mut self) -> AsPath<U> {
+    pub fn finalize<U: From<Vec<Asn>>>(mut self) -> AsPath<U> {
         let len = self.segment_len();
         if len > 0 {
             update_sentinel_len(
@@ -471,8 +471,8 @@ impl Default for AsPathBuilder {
 
 //------------ AsID as path segment sentinel ---------------------------------
 
-/// Converts a sentinel `AsId` into a segment type and length.
-fn decode_sentinel(sentinel: AsId) -> (SegmentType, u8) {
+/// Converts a sentinel `Asn` into a segment type and length.
+fn decode_sentinel(sentinel: Asn) -> (SegmentType, u8) {
     (
         ((sentinel.0 >> 8) as u8)
             .try_into().expect("illegally encoded AS path"),
@@ -480,13 +480,13 @@ fn decode_sentinel(sentinel: AsId) -> (SegmentType, u8) {
     )
 }
 
-/// Converts segment type and length into a sentinel `AsId`.
-fn encode_sentinel(t: SegmentType, len: u8) -> AsId {
-    AsId((u8::from(t) as u32) << 8 | (len as u32))
+/// Converts segment type and length into a sentinel `Asn`.
+fn encode_sentinel(t: SegmentType, len: u8) -> Asn {
+    Asn((u8::from(t) as u32) << 8 | (len as u32))
 }
 
-/// Updates the length portion of a sentinel `AsId`.
-fn update_sentinel_len(sentinel: &mut AsId, len: u8) {
+/// Updates the length portion of a sentinel `Asn`.
+fn update_sentinel_len(sentinel: &mut Asn, len: u8) {
     sentinel.0 = (sentinel.0 & 0xFFFF_FF00) | len as u32
 }
 
@@ -545,23 +545,23 @@ mod test_serde {
     #[test]
     fn as_id() {
         assert_tokens(
-            &AsId(0),
-            &[Token::NewtypeStruct { name: "AsId" }, Token::U32(0)]
+            &Asn(0),
+            &[Token::NewtypeStruct { name: "Asn" }, Token::U32(0)]
         );
         assert_de_tokens(
-            &AsId(0),
+            &Asn(0),
             &[Token::U32(0)]
         );
         assert_de_tokens(
-            &AsId(0),
+            &Asn(0),
             &[Token::Str("0")]
         );
         assert_de_tokens(
-            &AsId(0),
+            &Asn(0),
             &[Token::Str("AS0")]
         );
         assert_de_tokens(
-            &AsId(0),
+            &Asn(0),
             &[Token::Str("as0")]
         );
     }
