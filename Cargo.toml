@@ -11,9 +11,8 @@ name = "routecore"
 version = "0.0.2-dev"
 
 [dependencies]
-num = "^0.3"
 
-# Optional dependencies that, if included, introduce additional functionality.
+# Optional dependencies which, if included, introduce additional functionality.
 bcder = { version = "0.6", optional = true }
 serde = { version = "1.0.95", optional = true, features = ["derive"] }
 
