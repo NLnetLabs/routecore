@@ -79,7 +79,7 @@ impl From<Asn> for u32 {
 //--- FromStr
 
 impl FromStr for Asn {
-    type Err = ParseAsIdError;
+    type Err = ParseAsnError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let s = if s.len() > 2 && s[..2].eq_ignore_ascii_case("as") {
@@ -88,7 +88,7 @@ impl FromStr for Asn {
             s
         };
 
-        u32::from_str(s).map(Asn).map_err(|_| ParseAsIdError)
+        u32::from_str(s).map(Asn).map_err(|_| ParseAsnError)
     }
 }
 
@@ -505,18 +505,18 @@ fn update_sentinel_len(sentinel: &mut Asn, len: u8) {
 
 //============ Error Types ===================================================
 
-//------------ ParseAsIdError ------------------------------------------------
+//------------ ParseAsnError ------------------------------------------------
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct ParseAsIdError;
+pub struct ParseAsnError;
 
-impl fmt::Display for ParseAsIdError {
+impl fmt::Display for ParseAsnError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.write_str("invalid AS number")
     }
 }
 
-impl error::Error for ParseAsIdError {}
+impl error::Error for ParseAsnError {}
 
 
 //------------ LongSegmentError ----------------------------------------------
