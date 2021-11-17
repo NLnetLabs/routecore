@@ -32,6 +32,7 @@ mod meta;
 mod prefix_record;
 mod route;
 
-pub use meta::*;
-pub use prefix_record::*;
-pub use route::*;
+pub use self::meta::*;
+pub use self::prefix_record::*;
+pub use self::route::*;
+
