@@ -1,0 +1,38 @@
+name: ci
+on: [push, pull_request]
+jobs:
+  test:
+    name: test
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macOS-latest]
+        rust: [1.52.0, stable, beta, nightly]
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v1
+    - name: Install Rust
+      uses: hecrj/setup-rust-action@v1
+      with:
+        rust-version: ${{ matrix.rust }}
+
+    # Because of all the features, we run build and test twice -- once with
+    # full features and once without any features at all -- to make it more
+    # likely that everything works.
+
+    # Clippy.
+    #
+    # Only do this once with all features enabled.
+    - if: matrix.rust != 'beta'
+      run: rustup component add clippy
+    - if: matrix.rust != 'beta'
+      run: cargo clippy --all --all-features -- -D warnings
+
+    # Build
+    - run: cargo build --verbose --all --all-features
+    - run: cargo build --verbose --all
+
+    # Test
+    - run: cargo test --verbose --all --all-features
+    - run: cargo test --verbose --all
+
