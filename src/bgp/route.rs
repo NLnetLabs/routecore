@@ -134,6 +134,12 @@ pub struct PrefixNlri {
     nlri: Vec<Prefix>,
 }
 
+impl PrefixNlri {
+    pub fn nlri(&self) -> &[Prefix] {
+        &self.nlri
+    }
+}
+
 impl fmt::Display for PrefixNlri {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "PrefixNlri")
