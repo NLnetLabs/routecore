@@ -174,8 +174,8 @@ impl Asn {
     ///
     /// This function can only be used with self-describing serialization
     /// formats as it uses `Deserializer::deserialize_any`. It accepts an
-    /// AS number both as a `u32` number and a string with or without a
-    /// case-insensitive `"AS"` prefix.
+    /// AS number as any kind of integer as well as a string with or without
+    /// a case-insensitive `"AS"` prefix.
     pub fn deserialize_from_any<'de, D: serde::de::Deserializer<'de>>(
         deserializer: D
     ) -> Result<Self, D::Error> {
@@ -190,10 +190,52 @@ impl Asn {
                 write!(formatter, "an AS number")
             }
 
+            fn visit_u8<E: serde::de::Error>(
+                self, v: u8
+            ) -> Result<Self::Value, E> {
+                Ok(Asn(v.into()))
+            }
+
+            fn visit_u16<E: serde::de::Error>(
+                self, v: u16
+            ) -> Result<Self::Value, E> {
+                Ok(Asn(v.into()))
+            }
+
             fn visit_u32<E: serde::de::Error>(
                 self, v: u32
             ) -> Result<Self::Value, E> {
                 Ok(Asn(v))
+            }
+
+            fn visit_u64<E: serde::de::Error>(
+                self, v: u64
+            ) -> Result<Self::Value, E> {
+                Ok(Asn(v.try_into().map_err(E::custom)?))
+            }
+
+            fn visit_i8<E: serde::de::Error>(
+                self, v: i8
+            ) -> Result<Self::Value, E> {
+                Ok(Asn(v.try_into().map_err(E::custom)?))
+            }
+
+            fn visit_i16<E: serde::de::Error>(
+                self, v: i16
+            ) -> Result<Self::Value, E> {
+                Ok(Asn(v.try_into().map_err(E::custom)?))
+            }
+
+            fn visit_i32<E: serde::de::Error>(
+                self, v: i32
+            ) -> Result<Self::Value, E> {
+                Ok(Asn(v.try_into().map_err(E::custom)?))
+            }
+
+            fn visit_i64<E: serde::de::Error>(
+                self, v: i64
+            ) -> Result<Self::Value, E> {
+                Ok(Asn(v.try_into().map_err(E::custom)?))
             }
 
             fn visit_str<E: serde::de::Error>(
@@ -626,13 +668,19 @@ mod test_serde {
             Asn,
             #[serde(deserialize_with = "Asn::deserialize_from_any")]
             Asn,
+            #[serde(deserialize_with = "Asn::deserialize_from_any")]
+            Asn,
+            #[serde(deserialize_with = "Asn::deserialize_from_any")]
+            Asn,
         );
 
         assert_de_tokens(
-            &AsnTest(Asn(0),Asn(0),Asn(0),Asn(0)),
+            &AsnTest(Asn(0), Asn(0), Asn(0), Asn(0), Asn(0), Asn(0)),
             &[
-                Token::TupleStruct { name: "AsnTest", len: 4 },
+                Token::TupleStruct { name: "AsnTest", len: 5 },
                 Token::U32(0),
+                Token::U64(0),
+                Token::I64(0),
                 Token::Str("0"),
                 Token::Str("AS0"),
                 Token::Str("As0"),
