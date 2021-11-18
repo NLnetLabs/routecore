@@ -9,7 +9,7 @@ use std::{error, fmt, ops};
 
 /// An AS number (ASN).
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct Asn(u32);
 
 impl Asn {
@@ -92,28 +92,33 @@ impl FromStr for Asn {
     }
 }
 
+
 //--- Serialize and Deserialize
 
 /// # Serialization
 ///
-/// Because there is no commonly agreed upon standard serialization format for
-/// AS numbers, we are offering three methods that can be used with Serde’s
-/// `serialize_with` field attribute. The implementation of the `Deserialize`
-/// trait understands all three options, so no special treatment is necessary.
+/// With the `"serde"` feature enabled, `Asn` implements the `Serialize` and
+/// `Deserialize` traits via _serde-derive_ as a newtype wrapping a `u32`.
 ///
-/// There also is a implementation for `Serialize` which will use the
-/// derived implementation, i.e., it serializes as a newtype struct with an
-/// `u32`. This, of course, is also understood by the `Deserialize` impl.
+/// However, ASNs are often serialized as a string prefix with `AS`. In order
+/// to allow this, a number of methods are provided that can be used with
+/// Serde’s field attributes to choose how to serialize an ASN as part of a
+/// struct.
 #[cfg(feature = "serde")]
 impl Asn {
-    /// Serializes an AS number as an `u32`.
+    /// Serializes an AS number as a simple `u32`.
+    ///
+    /// Normally, you wouldn’t need to use this method, as the default
+    /// implementation serializes the ASN as a newtype struct with a `u32`
+    /// inside which most serialization formats will turn into a sole `u32`.
+    /// However, in case your format doesn’t, you can use this method.
     pub fn serialize_as_u32<S: serde::Serializer>(
         &self, serializer: S
     ) -> Result<S::Ok, S::Error> {
         serializer.serialize_u32(self.0)
     }
 
-    /// Seriaizes an AS number as a string without prefix.
+    /// Serializes an AS number as a string without prefix.
     pub fn serialize_as_bare_str<S: serde::Serializer>(
         &self, serializer: S
     ) -> Result<S::Ok, S::Error> {
@@ -121,21 +126,28 @@ impl Asn {
     }
 
     /// Seriaizes an AS number as a string with a `AS` prefix.
-    pub fn serialize_as_prefix_str<S: serde::Serializer>(
+    pub fn serialize_as_str<S: serde::Serializer>(
         &self, serializer: S
     ) -> Result<S::Ok, S::Error> {
         serializer.collect_str(&format_args!("AS{}", self.0))
     }
-}
 
-#[cfg(feature = "serde")]
-impl<'de> serde::Deserialize<'de> for Asn {
-    /// Deserialize an AS number.
+    /// Deserializes an AS number from a simple `u32`.
     ///
-    /// This implementation is extremely flexible with regards to how the AS
-    /// number can be encoded. It allows integers as well as string with and
-    /// without the `AS` prefix.
-    fn deserialize<D: serde::de::Deserializer<'de>>(
+    /// Normally, you wouldn’t need to use this method, as the default
+    /// implementation deserializes the ASN from a newtype struct with a
+    /// `u32` inside for which most serialization formats will use a sole
+    /// `u32`. However, in case your format doesn’t, you can use this method.
+    pub fn deserialize_from_u32<'de, D: serde::Deserializer<'de>>(
+        deserializer: D
+    ) -> Result<Self, D::Error> {
+        <u32 as serde::Deserialize>::deserialize(deserializer).map(Into::into)
+    }
+
+    /// Deserializes an AS number from a string.
+    ///
+    /// The string may or may not have a case-insensitive `"AS"` prefix.
+    pub fn deserialize_from_str<'de, D: serde::de::Deserializer<'de>>(
         deserializer: D
     ) -> Result<Self, D::Error> {
         struct Visitor;
@@ -154,26 +166,8 @@ impl<'de> serde::Deserialize<'de> for Asn {
             ) -> Result<Self::Value, E> {
                 Asn::from_str(v).map_err(E::custom)
             }
-
-            fn visit_u32<E: serde::de::Error>(
-                self, v: u32
-            ) -> Result<Self::Value, E> {
-                Ok(v.into())
-            }
-
-            fn visit_newtype_struct<D: serde::Deserializer<'de>>(
-                self,
-                deserializer: D,
-            ) -> Result<Self::Value, D::Error> {
-                <u32 as serde::Deserialize>::deserialize(
-                    deserializer
-                ).map(Asn)
-            }
         }
-
-        deserializer.deserialize_newtype_struct(
-            "Asn", Visitor
-        )
+        deserializer.deserialize_str(Visitor)
     }
 }
 
@@ -552,29 +546,36 @@ impl error::Error for InvalidSegmentTypeError { }
 #[cfg(all(test, feature = "serde"))]
 mod test_serde {
     use super::*;
-    use serde_test::{Token, assert_tokens, assert_de_tokens};
+    use serde_test::{Token, assert_tokens};
     
     #[test]
-    fn as_id() {
+    fn asn() {
+        #[derive(Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+        struct AsnTest(
+            Asn,
+
+            #[serde(
+                deserialize_with = "Asn::deserialize_from_u32",
+                serialize_with = "Asn::serialize_as_u32",
+            )]
+            Asn,
+
+            #[serde(
+                deserialize_with = "Asn::deserialize_from_str",
+                serialize_with = "Asn::serialize_as_str",
+            )]
+            Asn,
+        );
+
         assert_tokens(
-            &Asn(0),
-            &[Token::NewtypeStruct { name: "Asn" }, Token::U32(0)]
-        );
-        assert_de_tokens(
-            &Asn(0),
-            &[Token::U32(0)]
-        );
-        assert_de_tokens(
-            &Asn(0),
-            &[Token::Str("0")]
-        );
-        assert_de_tokens(
-            &Asn(0),
-            &[Token::Str("AS0")]
-        );
-        assert_de_tokens(
-            &Asn(0),
-            &[Token::Str("as0")]
+            &AsnTest ( Asn(0), Asn(0), Asn(0) ),
+            &[
+                Token::TupleStruct { name: "AsnTest", len: 3 },
+                Token::NewtypeStruct { name: "Asn" }, Token::U32(0),
+                Token::U32(0),
+                Token::Str("AS0"),
+                Token::TupleStructEnd,
+            ]
         );
     }
 }
