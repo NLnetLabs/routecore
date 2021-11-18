@@ -169,6 +169,41 @@ impl Asn {
         }
         deserializer.deserialize_str(Visitor)
     }
+
+    /// Deserializes an AS number as either a string or `u32`.
+    ///
+    /// This function can only be used with self-describing serialization
+    /// formats as it uses `Deserializer::deserialize_any`. It accepts an
+    /// AS number both as a `u32` number and a string with or without a
+    /// case-insensitive `"AS"` prefix.
+    pub fn deserialize_from_any<'de, D: serde::de::Deserializer<'de>>(
+        deserializer: D
+    ) -> Result<Self, D::Error> {
+        struct Visitor;
+
+        impl<'de> serde::de::Visitor<'de> for Visitor {
+            type Value = Asn;
+
+            fn expecting(
+                &self, formatter: &mut fmt::Formatter
+            ) -> fmt::Result {
+                write!(formatter, "an AS number")
+            }
+
+            fn visit_u32<E: serde::de::Error>(
+                self, v: u32
+            ) -> Result<Self::Value, E> {
+                Ok(Asn(v))
+            }
+
+            fn visit_str<E: serde::de::Error>(
+                self, v: &str
+            ) -> Result<Self::Value, E> {
+                Asn::from_str(v).map_err(E::custom)
+            }
+        }
+        deserializer.deserialize_any(Visitor)
+    }
 }
 
 //--- Add
@@ -546,7 +581,7 @@ impl error::Error for InvalidSegmentTypeError { }
 #[cfg(all(test, feature = "serde"))]
 mod test_serde {
     use super::*;
-    use serde_test::{Token, assert_tokens};
+    use serde_test::{Token, assert_de_tokens, assert_tokens};
     
     #[test]
     fn asn() {
@@ -574,6 +609,33 @@ mod test_serde {
                 Token::NewtypeStruct { name: "Asn" }, Token::U32(0),
                 Token::U32(0),
                 Token::Str("AS0"),
+                Token::TupleStructEnd,
+            ]
+        );
+    }
+
+    #[test]
+    fn asn_any() {
+        #[derive(Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+        struct AsnTest(
+            #[serde(deserialize_with = "Asn::deserialize_from_any")]
+            Asn,
+            #[serde(deserialize_with = "Asn::deserialize_from_any")]
+            Asn,
+            #[serde(deserialize_with = "Asn::deserialize_from_any")]
+            Asn,
+            #[serde(deserialize_with = "Asn::deserialize_from_any")]
+            Asn,
+        );
+
+        assert_de_tokens(
+            &AsnTest(Asn(0),Asn(0),Asn(0),Asn(0)),
+            &[
+                Token::TupleStruct { name: "AsnTest", len: 4 },
+                Token::U32(0),
+                Token::Str("0"),
+                Token::Str("AS0"),
+                Token::Str("As0"),
                 Token::TupleStructEnd,
             ]
         );
