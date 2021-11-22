@@ -248,7 +248,7 @@ impl fmt::Display for PathSegment<'_> {
 ///
 /// This is a private helper type for encoding the type into, er, other
 /// things.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum SegmentType {
     /// The segment is an AS_SET.
@@ -383,8 +383,14 @@ impl<'a> Iterator for AsPath<&'a [Asn]> {
 
 impl<T: AsRef<[Asn]>> fmt::Display for AsPath<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut first = true;
         for item in self {
-            write!(f, "{}", item)?;
+            if first {
+                write!(f, "{}", item)?;
+                first = false;
+            } else {
+                write!(f, ", {}", item)?;
+            }
         }
         Ok(())
     }
@@ -392,7 +398,7 @@ impl<T: AsRef<[Asn]>> fmt::Display for AsPath<T> {
 
 //------------ AsPathBuilder -------------------------------------------------
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct AsPathBuilder {
     /// A vec with the elements we have so far.
     segments: Vec<Asn>,
@@ -413,7 +419,7 @@ impl AsPathBuilder {
         }
     }
 
-    /// Internal version of the two start methods.
+    /// Starts a new segment, closing the current one, if any.
     pub fn start(&mut self, stype: SegmentType) {
         let len = self.segment_len();
         if len > 0 {
@@ -579,3 +585,185 @@ mod test_serde {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn asn() {
+        assert_eq!(Asn::from_u32(1234), Asn(1234));
+        assert_eq!(Asn(1234).into_u32(), 1234);
+
+        assert_eq!(Asn::from(1234_u32), Asn(1234));
+        assert_eq!(u32::from(Asn(1234)), 1234_u32);
+
+        assert_eq!(format!("{}", Asn(1234)).as_str(), "AS1234");
+
+        assert_eq!("0".parse::<Asn>(), Ok(Asn(0)));
+        assert_eq!("AS1234".parse::<Asn>(), Ok(Asn(1234)));
+        assert_eq!("as1234".parse::<Asn>(), Ok(Asn(1234)));
+        assert_eq!("As1234".parse::<Asn>(), Ok(Asn(1234)));
+        assert_eq!("aS1234".parse::<Asn>(), Ok(Asn(1234)));
+        assert_eq!("1234".parse::<Asn>(), Ok(Asn(1234)));
+
+        assert_eq!("".parse::<Asn>(), Err(ParseAsnError));
+        assert_eq!("-1234".parse::<Asn>(), Err(ParseAsnError));
+        assert_eq!("4294967296".parse::<Asn>(), Err(ParseAsnError));
+    }
+
+    #[test]
+    fn path_segment() {
+        assert!(SegmentType::try_from(1_u8).is_ok());
+        assert_eq!(
+            SegmentType::try_from(1_u8).unwrap(),
+            SegmentType::Set
+        );
+        assert_eq!(
+            SegmentType::try_from(2_u8).unwrap(),
+            SegmentType::Sequence
+        );
+        assert_eq!(
+            SegmentType::try_from(3_u8).unwrap(),
+            SegmentType::ConfedSequence
+        );
+        assert_eq!(
+            SegmentType::try_from(4_u8).unwrap(),
+            SegmentType::ConfedSet
+        );
+        for i in 5_u8..=255 {
+            assert!(SegmentType::try_from(i).is_err());
+        }
+
+        assert_eq!(u8::from(SegmentType::Set), 1);
+        assert_eq!(u8::from(SegmentType::Sequence), 2);
+        assert_eq!(u8::from(SegmentType::ConfedSequence), 3);
+        assert_eq!(u8::from(SegmentType::ConfedSet), 4);
+
+        assert_eq!(
+            format!("{}", SegmentType::Set).as_str(),
+            "AS_SET"
+        );
+        assert_eq!(
+            format!("{}", SegmentType::Sequence).as_str(),
+            "AS_SEQUENCE"
+        );
+        assert_eq!(
+            format!("{}", SegmentType::ConfedSequence).as_str(),
+            "AS_CONFED_SEQUENCE"
+        );
+        assert_eq!(
+            format!("{}", SegmentType::ConfedSet).as_str(),
+            "AS_CONFED_SET"
+        );
+    }
+
+    #[test]
+    fn sentinel() {
+        let mut snt = encode_sentinel(SegmentType::Set, 0);
+        for i in 0_u8..=255 {
+            assert_eq!(
+                decode_sentinel(encode_sentinel(SegmentType::Set, i)),
+                (SegmentType::Set, i)
+            );
+            update_sentinel_len(&mut snt, i);
+            assert_eq!(encode_sentinel(SegmentType::Set, i), snt);
+        }
+    }
+
+    #[test]
+    fn as_path_builder() {
+        let default_pb = AsPathBuilder::default();
+        let mut pb = AsPathBuilder::new();
+        assert_eq!(default_pb, pb);
+        assert_eq!(pb.segments[0], encode_sentinel(SegmentType::Sequence, 0));
+        assert_eq!(pb.segments.len(), 1);
+        assert_eq!(pb.curr_start, 0);
+
+        pb.start(SegmentType::ConfedSet);
+        assert_eq!(
+            pb.segments[0],
+            encode_sentinel(SegmentType::ConfedSet, 0)
+        );
+        assert_eq!(pb.segments.len(), 1);
+        assert_eq!(pb.segment_len(), 0);
+        assert_eq!(pb.curr_start, 0);
+
+        assert!(pb.push(Asn(1234)).is_ok());
+        assert_eq!(pb.segments.len(), 2);
+        assert_eq!(pb.segment_len(), 1);
+        assert_eq!(pb.curr_start, 0);
+
+        // add another, new segment. start() should close the first one
+        pb.start(SegmentType::Sequence);
+        assert_eq!(pb.segments[2], encode_sentinel(SegmentType::Sequence, 0));
+        assert_eq!(pb.segments.len(), 3);
+        assert_eq!(pb.segment_len(), 0);
+        assert_eq!(pb.curr_start, 2);
+
+        assert!(pb.push(Asn(2000)).is_ok());
+        assert!(pb.push(Asn(3000)).is_ok());
+
+        assert_eq!(pb.segments.len(), 5);
+        assert_eq!(pb.segment_len(), 2);
+        assert_eq!(pb.curr_start, 2);
+
+        assert!(pb
+            .extend_from_slice(&[Asn(4000), Asn(5000), Asn(6000)])
+            .is_ok()
+        );
+        assert_eq!(pb.segments.len(), 8);
+        assert_eq!(pb.segment_len(), 5);
+        assert_eq!(pb.curr_start, 2);
+
+        let asp: AsPath<Vec<Asn>> = pb.finalize();
+
+        assert_eq!(
+            decode_sentinel(asp.segments[0]),
+            (SegmentType::ConfedSet, 1)
+        );
+        assert_eq!(
+            decode_sentinel(asp.segments[2]),
+            (SegmentType::Sequence, 2 + 3)
+        );
+
+        let ps = asp.iter().collect::<Vec<PathSegment<'_>>>();
+
+        assert_eq!(ps.len(), 2);
+        assert_eq!(ps[0].segment_type(), SegmentType::ConfedSet);
+        assert_eq!(ps[0].elements(), &[Asn(1234)]);
+        assert_eq!(ps[1].segment_type(), SegmentType::Sequence);
+        assert_eq!(
+            ps[1].elements(),
+            &[Asn(2000), Asn(3000), Asn(4000), Asn(5000), Asn(6000)]
+        );
+        assert_eq!(
+            format!("{}", ps[1]).as_str(),
+            "AS_SEQUENCE(AS2000, AS3000, AS4000, AS5000, AS6000)"
+        );
+
+        assert_eq!(
+            format!("{}", asp).as_str(),
+            "AS_CONFED_SET(AS1234), AS_SEQUENCE(AS2000, AS3000, AS4000, AS5000, AS6000)"
+        );
+
+        let mut pb2 = AsPathBuilder::new();
+        assert!(pb2.extend_from_slice(&[Asn(1234); 255]).is_ok());
+        assert!(pb2.push(Asn(1235)).is_err());
+        assert!(pb2.extend_from_slice(&[Asn(1235)]).is_err());
+
+        pb2.start(SegmentType::Set);
+        assert!(pb2.extend_from_slice(&[Asn(2345); 255]).is_ok());
+
+        let asp2: AsPath<Vec<Asn>> = pb2.finalize();
+        let mut segment_cnt = 0;
+        let mut as_cnt = 0;
+        for ps in asp2.into_iter() {
+            segment_cnt += 1;
+            for _asn in ps.elements() {
+                as_cnt += 1;
+            }
+        }
+        assert_eq!(segment_cnt, 2);
+        assert_eq!(as_cnt, 255 + 255);
+    }
+}
