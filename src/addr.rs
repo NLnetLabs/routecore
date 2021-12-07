@@ -195,47 +195,19 @@ impl FamilyAndLen {
             _ => self.0 ^ 0xFF
         }
     }
-
-    /// Returns the family and length squeezed into a result.
-    ///
-    /// This is used to simplify trait implementations below. `Ok(_)` is for
-    /// IPv4, `Err(_)` is for IPv6. This choice does _not_ indicate any kind
-    /// of preference.
-    fn into_result(self) -> Result<u8, u8> {
-        match self.0 & 0xc0 {
-            0x00 => Ok(self.0),
-            0x40 => Err(128),
-            _ => Err(self.0 ^ 0xFF)
-        }
-    }
-}
-
-
-//--- PartialOrd and Ord
-
-impl PartialOrd for FamilyAndLen {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for FamilyAndLen {
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.into_result().cmp(&other.into_result())
-    }
 }
 
 
 //------------ Prefix --------------------------------------------------------
 
 /// An IP address prefix: an IP address and a prefix length.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct Prefix {
-    /// The actual bits of the prefix.
-    bits: Bits,
-
     /// The address family and prefix length all in one.
     family_and_len: FamilyAndLen,
+
+    /// The actual bits of the prefix.
+    bits: Bits,
 }
 
 impl Prefix {
@@ -398,6 +370,49 @@ impl Prefix {
     }
 }
 
+//--- PartialOrd and Ord
+//
+// Prefixes are ordered in the following way:
+// - IPv4 comes before IPv6
+// - More-specifics come before less-specifics
+// - Other than that, prefixes are sorted numerically from low to high
+//
+// The rationale behind this ordering is that in most use cases processing a
+// more-specific before any less-specific is more efficient (i.e. longest
+// prefix matching in routing/forwarding)) or preventing unwanted intermediate
+// stage (i.e. ROAs/VRPs for less-specifics making not-yet-processed
+// more-specifics Invalid).
+
+impl PartialOrd for Prefix { 
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl Ord for Prefix {
+    fn cmp(&self, other: &Self) -> Ordering {
+
+        match (self.is_v4(), other.is_v4()) {
+            (true, false) => Ordering::Less, // v4 v6
+            (false, true) => Ordering::Greater, //v6 v4
+            // v4 v4 or v6 v6
+            (_, _) => {
+                if self.len() == other.len() {
+                    self.bits.0.cmp(&other.bits.0)
+                }
+                else {
+                    let minlen = std::cmp::min(self.len(), other.len());
+                    let mask = !(u128::MAX >> minlen);
+                    if self.bits.0 & mask == other.bits.0 & mask {
+                        // more-specific before less-specific
+                        other.len().cmp(&self.len()) 
+                    } else {
+                        self.bits.0.cmp(&other.bits.0)
+                    }
+                }
+            }
+        }
+    }
+}
 
 //--- From
 
@@ -490,7 +505,7 @@ impl fmt::Display for Prefix {
 //------------ MaxLenPrefix --------------------------------------------------
 
 /// The pair of a prefix and an optional max-len.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct MaxLenPrefix {
     /// The prefix.
     prefix: Prefix,
@@ -567,6 +582,36 @@ impl MaxLenPrefix {
     }
 }
 
+// The ordering of MaxLenPrefixes is similar to the ordering of Prefixes. The
+// only difference is the optional MaxLen. When two prefixes are equal but
+// differ in (presence of) max_len, the order is as follows:
+// - any max_len always comes before no max_len
+// - a larger (higher) max_len comes before a smaller (lower) max_len (e.g. 24
+// comes before 20) This is analog to how more-specifics come before
+// less-specifics.
+
+impl PartialOrd for MaxLenPrefix { 
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for MaxLenPrefix {
+    fn cmp(&self, other: &Self) -> Ordering {
+        match self.prefix.cmp(&other.prefix) {
+            Ordering::Less => Ordering::Less,
+            Ordering::Greater => Ordering::Greater,
+            Ordering::Equal => {
+                match (self.max_len, other.max_len) {
+                    (None, None) => Ordering::Equal,
+                    (Some(_), None) => Ordering::Less,
+                    (None, Some(_)) => Ordering::Greater,
+                    (Some(n), Some(m)) => m.cmp(&n)
+                }
+            }
+        }
+    }
+}
 
 //--- From
 
