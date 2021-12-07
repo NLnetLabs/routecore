@@ -607,6 +607,16 @@ impl FromStr for MaxLenPrefix {
     }
 }
 
+impl fmt::Display for MaxLenPrefix {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.prefix())?;
+        if let Some(max_len) = self.max_len {
+            write!(f, "-{}", max_len)?;
+        }
+        Ok(())
+    }
+}
+
 
 //============ Errors ========================================================
 
