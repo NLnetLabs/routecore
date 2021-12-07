@@ -35,7 +35,7 @@ impl Bits {
         Self::new(u128::from(u32::from(addr)) << 96)
     }
 
-    /// Creates a new address value for an IPv4 address.
+    /// Creates a new address value for an IPv6 address.
     pub fn from_v6(addr: Ipv6Addr) -> Self {
         Self::new(u128::from(addr))
     }
@@ -253,7 +253,7 @@ impl Prefix {
         }
     }
 
-    /// Creates a new prefix from an IPv4 adddress and a prefix length.
+    /// Creates a new prefix from an IPv4 address and a prefix length.
     ///
     /// The function returns an error if `len` is greater than 32.
     ///
