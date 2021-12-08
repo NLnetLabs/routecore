@@ -240,7 +240,7 @@ impl Prefix {
             return Err(PrefixError::NonZeroHost)
         }
 
-        Ok(Prefix { bits, family_and_len })
+        Ok(Prefix { family_and_len, bits })
     }
 
     /// Creates a new prefix from an IPv6 adddress and a prefix length.
@@ -258,7 +258,7 @@ impl Prefix {
             return Err(PrefixError::NonZeroHost)
         }
 
-        Ok(Prefix { bits, family_and_len })
+        Ok(Prefix { family_and_len, bits })
     }
 
     /// Creates a new prefix zeroing out host bits.
