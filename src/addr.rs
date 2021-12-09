@@ -201,6 +201,19 @@ impl FamilyAndLen {
 //------------ Prefix --------------------------------------------------------
 
 /// An IP address prefix: an IP address and a prefix length.
+///
+/// # Ordering
+///
+/// Prefixes are ordered in the following way:
+/// - IPv4 comes before IPv6
+/// - More-specifics come before less-specifics
+/// - Other than that, prefixes are sorted numerically from low to high
+///
+/// The rationale behind this ordering is that in most use cases processing a
+/// more-specific before any less-specific is more efficient (i.e. longest
+/// prefix matching in routing/forwarding)) or preventing unwanted
+/// intermediate stage (i.e. ROAs/VRPs for less-specifics making
+/// not-yet-processed more-specifics Invalid).
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct Prefix {
     /// The address family and prefix length all in one.
@@ -371,23 +384,15 @@ impl Prefix {
 }
 
 //--- PartialOrd and Ord
-//
-// Prefixes are ordered in the following way:
-// - IPv4 comes before IPv6
-// - More-specifics come before less-specifics
-// - Other than that, prefixes are sorted numerically from low to high
-//
-// The rationale behind this ordering is that in most use cases processing a
-// more-specific before any less-specific is more efficient (i.e. longest
-// prefix matching in routing/forwarding)) or preventing unwanted intermediate
-// stage (i.e. ROAs/VRPs for less-specifics making not-yet-processed
-// more-specifics Invalid).
 
+/// See [Ordering](Prefix#ordering) in the type documentation.
 impl PartialOrd for Prefix { 
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
+
+/// See [Ordering](Prefix#ordering) in the type documentation.
 impl Ord for Prefix {
     fn cmp(&self, other: &Self) -> Ordering {
 
@@ -505,6 +510,22 @@ impl fmt::Display for Prefix {
 //------------ MaxLenPrefix --------------------------------------------------
 
 /// The pair of a prefix and an optional max-len.
+///
+/// # Ordering
+/// The ordering of MaxLenPrefixes is similar to the [ordering of
+/// Prefixes](Prefix#Ordering). The only difference is the optional MaxLen.
+/// When two prefixes are equal but differ in (presence of) max_len, the order
+/// is as follows:
+/// - any max_len always comes before no max_len
+/// - a larger (higher) max_len comes before a smaller (lower) max_len (e.g.
+/// 24 comes before 20). This is analog to how more-specifics come before
+/// less-specifics.
+///
+/// Note that the max_len can either be equal to the prefix length (with no
+/// practical difference from an omitted max_len) or larger than the prefix
+/// length. The max_len can not be smaller than the prefix length. Because of
+/// that, we can safely order 'any max_len' before 'no max_len' for equal
+/// prefixes.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct MaxLenPrefix {
     /// The prefix.
@@ -582,20 +603,14 @@ impl MaxLenPrefix {
     }
 }
 
-// The ordering of MaxLenPrefixes is similar to the ordering of Prefixes. The
-// only difference is the optional MaxLen. When two prefixes are equal but
-// differ in (presence of) max_len, the order is as follows:
-// - any max_len always comes before no max_len
-// - a larger (higher) max_len comes before a smaller (lower) max_len (e.g. 24
-// comes before 20) This is analog to how more-specifics come before
-// less-specifics.
-
+/// See [Ordering](MaxLenPrefix#ordering) in the type documentation.
 impl PartialOrd for MaxLenPrefix { 
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
+/// See [Ordering](MaxLenPrefix#ordering) in the type documentation.
 impl Ord for MaxLenPrefix {
     fn cmp(&self, other: &Self) -> Ordering {
         match self.prefix.cmp(&other.prefix) {
