@@ -248,7 +248,7 @@ impl fmt::Display for PathSegment<'_> {
 ///
 /// This is a private helper type for encoding the type into, er, other
 /// things.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum SegmentType {
     /// The segment is an AS_SET.
