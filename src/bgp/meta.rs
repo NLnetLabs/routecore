@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::fmt;
 
-use crate::asn::{Asn, AsPath};
+use crate::asn::{AsPath, Asn};
 use crate::record::MergeUpdate;
 
 use super::PrefixNlri;
@@ -28,6 +28,20 @@ impl<'a> MergeUpdate for BgpNlriMeta<'a> {
             .to_mut()
             .merge_update(update_meta.attributes.into_owned())?;
         Ok(())
+    }
+
+    fn clone_merge_update(
+        &self,
+        update_meta: &Self,
+    ) -> Result<Self, Box<dyn std::error::Error>>
+    where
+        Self: std::marker::Sized,
+    {
+        let mut updated_copy = self.clone();
+        updated_copy.attributes
+            .to_mut()
+            .merge_update(update_meta.attributes.clone().into_owned())?;
+        Ok(updated_copy)
     }
 }
 
@@ -101,5 +115,17 @@ impl MergeUpdate for ExampleBgpPathAttributes {
         self.aigp = update_meta.aigp;
         self.unknown = update_meta.unknown;
         Ok(())
+    }
+
+    fn clone_merge_update(
+        &self,
+        update_meta: &Self,
+    ) -> Result<Self, Box<dyn std::error::Error>>
+    where
+        Self: std::marker::Sized,
+    {
+        let mut updated_copy = self.clone();
+        updated_copy.merge_update(update_meta.clone())?;
+        Ok(updated_copy)
     }
 }

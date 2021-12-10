@@ -1,7 +1,7 @@
 //! Generic record types
 //!
 //! Records hold snippets of information that are contained in a
-//! BGP packet. The type of the key is variable: it can be an NLRI, or the 
+//! BGP packet. The type of the key is variable: it can be an NLRI, or the
 //! NLRI can be disassembled into several records with the prefixes contained
 //! in the NLRI as key.
 //!
@@ -127,6 +127,22 @@ pub trait MergeUpdate {
         &mut self,
         update_meta: Self,
     ) -> Result<(), Box<dyn std::error::Error>>;
+
+    // This is part of the Read-Copy-Update pattern for updating a record
+    // concurrently. The Read part should be done by the caller and then
+    // the result should be passed in into this function together with
+    // the new meta-data that updates it. This function will then create
+    // a copy (in the pattern lingo, but in Rust that would be a Clone,
+    // since we're not requiring Copy for Meta) and update that with a
+    // copy of the new meta-data. It then returns the result of that merge.
+    // The caller should then proceed to insert that as a new entry
+    // in the global store.
+    fn clone_merge_update(
+        &self,
+        update_meta: &Self,
+    ) -> Result<Self, Box<dyn std::error::Error>>
+    where
+        Self: std::marker::Sized;
 }
 
 /// Trait for types that can be used as metadata of a record
@@ -174,5 +190,12 @@ impl MergeUpdate for NoMeta {
         _: NoMeta,
     ) -> Result<(), Box<dyn std::error::Error>> {
         Ok(())
+    }
+
+    fn clone_merge_update(
+        &self,
+        _: &NoMeta,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        Ok(NoMeta::Empty)
     }
 }
