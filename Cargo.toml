@@ -8,7 +8,7 @@ homepage = "https://nlnetlabs.nl/projects/routing/rotonda/"
 keywords = ["routing", "bgp"]
 license = "BSD-3-Clause"
 name = "routecore"
-version = "0.0.2-dev"
+version = "0.1.0"
 
 [dependencies]
 
