@@ -117,6 +117,7 @@ where
         }
     }
 
+    #[must_use]
     fn into_message(mut self, sender_id: Self::SenderId, ltime: u64) -> Self {
         self.sender_id = sender_id;
         self.ltime = ltime;
@@ -182,6 +183,7 @@ impl<'a, Meta: crate::record::Meta> RecordSet<'a, Meta> {
         }
     }
 
+    #[must_use]
     pub fn reverse(mut self) -> RecordSet<'a, Meta> {
         self.v4.reverse();
         self.v6.reverse();
