@@ -97,6 +97,7 @@ where
         sender_id: Self::SenderId,
         ltime: u64,
     ) -> Self;
+    #[must_use]
     fn into_message(self, sender_id: Self::SenderId, ltime: u64) -> Self;
     fn sender_id(&self) -> Self::SenderId;
     fn key(&'a self) -> <Self as Record<'a>>::Key {
