@@ -64,7 +64,12 @@ impl Bits {
 
     /// Clears the bits in the host portion of a prefix.
     fn clear_host(self, len: u8) -> Self {
-        Bits(self.0 & (u128::MAX << (128u8.saturating_sub(len))))
+        if len == 0 {
+            Bits(0)
+        }
+        else {
+            Bits(self.0 & (u128::MAX << (128u8.saturating_sub(len))))
+        }
     }
 
     /// Returns a value with all but the first `prefix_len` bits set.
@@ -1333,5 +1338,10 @@ mod test {
             ).as_str(),
             "192.168.0.0/16"
         );
+    }
+
+    #[test]
+    fn clear_host_of_zero_len_prefix() {
+        assert_eq!(Bits(0), Bits(12345).clear_host(0));
     }
 }
