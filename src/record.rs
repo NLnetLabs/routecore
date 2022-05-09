@@ -123,7 +123,10 @@ where
 /// wants to be able to be stored. It should describe how the metadata for an
 /// existing record should be merged with newly arriving records for the same
 /// key.
-pub trait MergeUpdate {
+pub trait MergeUpdate
+where
+    Self: std::hash::Hash,
+{
     fn merge_update(
         &mut self,
         update_meta: Self,
@@ -149,14 +152,14 @@ pub trait MergeUpdate {
 /// Trait for types that can be used as metadata of a record
 pub trait Meta
 where
-    Self: fmt::Debug + Sized + fmt::Display + Clone,
+    Self: fmt::Debug + Sized + fmt::Display + Clone + MergeUpdate,
 {
     fn summary(&self) -> String;
 }
 
 impl<T> Meta for T
 where
-    T: fmt::Debug + fmt::Display + Clone,
+    T: fmt::Debug + fmt::Display + Clone + MergeUpdate,
 {
     fn summary(&self) -> String {
         format!("{}", self)
@@ -168,7 +171,7 @@ where
 /// A special type that indicates that there's no metadata in the tree
 /// storing the prefixes. Note that this is different from a tree with
 /// optional meta-data.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Hash)]
 pub enum NoMeta {
     Empty,
 }

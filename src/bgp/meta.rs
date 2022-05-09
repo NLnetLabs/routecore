@@ -7,7 +7,7 @@ use crate::record::MergeUpdate;
 use super::PrefixNlri;
 
 /// BGP message metadata.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Hash)]
 pub struct BgpNlriMeta<'a> {
     pub nlri: PrefixNlri,
     pub attributes: Cow<'a, ExampleBgpPathAttributes>,
@@ -48,7 +48,7 @@ impl<'a> MergeUpdate for BgpNlriMeta<'a> {
 /// Example BGP Path Attributes
 /// <https://tools.ietf.org/html/rfc4271#section-4.3>
 /// TODO TODO!
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Hash)]
 pub struct ExampleBgpPathAttributes {
     pub origin: Asn,
     pub as_path: AsPath<Vec<Asn>>,
