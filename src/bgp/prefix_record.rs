@@ -313,3 +313,13 @@ impl<'a, M: crate::record::Meta + 'a>
         Self(iter.into_iter().collect())
     }
 }
+
+impl<'a, M: crate::record::Meta + 'a> std::ops::Index<usize>
+    for MetaDataSet<'a, M>
+{
+    type Output = &'a M;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.0[index]
+    }
+}
