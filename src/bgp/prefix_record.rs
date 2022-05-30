@@ -130,6 +130,20 @@ where
     }
 }
 
+impl<'a, Meta> From<(Prefix, &'a Meta)> for PrefixRecord<'a, Meta>
+where
+    Meta: crate::record::Meta,
+{
+    fn from((prefix, meta): (Prefix, &'a Meta)) -> Self {
+        Self {
+            prefix,
+            meta: Cow::Borrowed(meta),
+            sender_id: SenderIdInt::default(),
+            ltime: LogicalTime::default(),
+        }
+    }
+}
+
 impl<'a, Meta> std::fmt::Display for PrefixRecord<'a, Meta>
 where
     Meta: crate::record::Meta,
@@ -304,12 +318,10 @@ impl<'a, M: crate::record::Meta> fmt::Display for MetaDataSet<'a, M> {
     }
 }
 
-impl<'a, M: crate::record::Meta + 'a>
-    std::iter::FromIterator<&'a M> for MetaDataSet<'a, M>
+impl<'a, M: crate::record::Meta + 'a> std::iter::FromIterator<&'a M>
+    for MetaDataSet<'a, M>
 {
-    fn from_iter<I: IntoIterator<Item = &'a M>>(
-        iter: I,
-    ) -> Self {
+    fn from_iter<I: IntoIterator<Item = &'a M>>(iter: I) -> Self {
         Self(iter.into_iter().collect())
     }
 }
