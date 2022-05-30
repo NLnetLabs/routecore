@@ -15,6 +15,8 @@
 //!
 //! See ```bgp``` module for records specific to BGP.
 use std::borrow::Cow;
+use std::{collections::hash_map::DefaultHasher,
+    hash::Hasher};
 use std::fmt;
 
 //------------ Traits for Record --------------------------------------------
@@ -155,6 +157,14 @@ where
     Self: fmt::Debug + Sized + fmt::Display + Clone + MergeUpdate,
 {
     fn summary(&self) -> String;
+
+    fn get_hash_id(&self) -> u64 {
+        // The actual hash should be defined by implementing the Hash trait
+        // on the Meta type
+        let mut s = DefaultHasher::new();
+        self.hash(&mut s);
+        s.finish()
+    }
 }
 
 impl<T> Meta for T
