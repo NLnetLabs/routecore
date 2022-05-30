@@ -469,7 +469,7 @@ impl<T: AsRef<[Asn]>> fmt::Display for AsPath<T> {
 
 //------------ AsPathBuilder -------------------------------------------------
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AsPathBuilder {
     /// A vec with the elements we have so far.
     segments: Vec<Asn>,
