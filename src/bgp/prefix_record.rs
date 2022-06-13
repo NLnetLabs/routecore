@@ -306,6 +306,14 @@ impl<'a, M: crate::record::Meta> MetaDataSet<'a, M> {
     pub fn new(v: Vec<&'a M>) -> Self {
         Self(v)
     }
+
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
 }
 
 impl<'a, M: crate::record::Meta> fmt::Display for MetaDataSet<'a, M> {
