@@ -3,6 +3,8 @@
 use std::{error, fmt, str};
 use std::convert::{TryFrom, TryInto};
 use std::str::FromStr;
+#[cfg(feature = "bcder")]
+use bcder::decode::{self, Error as _};
 use crate::util::hex;
 
 
@@ -38,28 +40,30 @@ impl KeyIdentifier {
     ///
     /// The content of the octet string needs to be a SHA-1 hash, so it must
     /// be exactly 20 octets long.
-    pub fn take_from<S: bcder::decode::Source>(
-        cons: &mut bcder::decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
+    pub fn take_from<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
+    ) -> Result<Self, S::Error> {
         cons.take_value_if(bcder::Tag::OCTET_STRING, Self::from_content)
     }
 
-    pub fn take_opt_from<S: bcder::decode::Source>(
-        cons: &mut bcder::decode::Constructed<S>
-    ) -> Result<Option<Self>, S::Err> {
+    pub fn take_opt_from<S: decode::Source>(
+        cons: &mut decode::Constructed<S>
+    ) -> Result<Option<Self>, S::Error> {
         cons.take_opt_value_if(bcder::Tag::OCTET_STRING, Self::from_content)
     }
 
     /// Parses an encoded key identifer from a encoded content.
-    pub fn from_content<S: bcder::decode::Source>(
-        content: &mut bcder::decode::Content<S>
-    ) -> Result<Self, S::Err> {
+    pub fn from_content<S: decode::Source>(
+        content: &mut decode::Content<S>
+    ) -> Result<Self, S::Error> {
         let content = bcder::OctetString::from_content(content)?;
         if let Some(slice) = content.as_slice() {
-            Self::try_from(slice).map_err(|_| bcder::decode::Malformed.into())
+            Self::try_from(slice).map_err(|_| {
+                S::Error::malformed("invalid key identifier")
+            })
         }
         else if content.len() != 20 {
-            Err(bcder::decode::Malformed.into())
+            Err(S::Error::malformed("invalid key identifier"))
         }
         else {
             let mut res = KeyIdentifier(Default::default());
@@ -76,7 +80,7 @@ impl KeyIdentifier {
     /// Skips over an encoded key indentifier.
     pub fn skip_opt_in<S: bcder::decode::Source>(
         cons: &mut bcder::decode::Constructed<S>
-    ) -> Result<Option<()>, S::Err> {
+    ) -> Result<Option<()>, S::Error> {
         cons.take_opt_value_if(bcder::Tag::OCTET_STRING, |cons| {
             Self::from_content(cons)?;
             Ok(())

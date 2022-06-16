@@ -12,7 +12,8 @@ license = "BSD-3-Clause"
 [dependencies]
 
 # Optional dependencies which, if included, introduce additional functionality.
-bcder = { version = "0.6", optional = true }
+#cder = { version = "0.6", optional = true }
+bcder           = { git = "https://github.com/NLnetLabs/bcder.git", branch = "decode-error-trait", optional = true }
 serde = { version = "1.0.95", optional = true, features = ["derive"] }
 
 [dev-dependencies]

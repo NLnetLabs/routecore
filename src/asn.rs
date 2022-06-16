@@ -32,28 +32,28 @@ impl Asn {
     /// Takes an AS number from the beginning of an encoded value.
     pub fn take_from<S: bcder::decode::Source>(
         cons: &mut bcder::decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
+    ) -> Result<Self, S::Error> {
         cons.take_u32().map(Asn)
     }
 
     /// Skips over an AS number at the beginning of an encoded value.
     pub fn skip_in<S: bcder::decode::Source>(
         cons: &mut bcder::decode::Constructed<S>
-    ) -> Result<(), S::Err> {
+    ) -> Result<(), S::Error> {
         cons.take_u32().map(|_| ())
     }
 
     /// Parses the content of an AS number value.
     pub fn parse_content<S: bcder::decode::Source>(
         content: &mut bcder::decode::Content<S>,
-    ) -> Result<Self, S::Err> {
+    ) -> Result<Self, S::Error> {
         content.to_u32().map(Asn)
     }
 
     /// Skips the content of an AS number value.
     pub fn skip_content<S: bcder::decode::Source>(
         content: &mut bcder::decode::Content<S>
-    ) -> Result<(), S::Err> {
+    ) -> Result<(), S::Error> {
         content.to_u32().map(|_| ())
     }
 
