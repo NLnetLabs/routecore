@@ -15,8 +15,6 @@
 //!
 //! See ```bgp``` module for records specific to BGP.
 use std::borrow::Cow;
-use std::{collections::hash_map::DefaultHasher,
-    hash::Hasher};
 use std::fmt;
 
 //------------ Traits for Record --------------------------------------------
@@ -125,10 +123,7 @@ where
 /// wants to be able to be stored. It should describe how the metadata for an
 /// existing record should be merged with newly arriving records for the same
 /// key.
-pub trait MergeUpdate
-where
-    Self: std::hash::Hash,
-{
+pub trait MergeUpdate {
     fn merge_update(
         &mut self,
         update_meta: Self,
@@ -157,14 +152,6 @@ where
     Self: fmt::Debug + Sized + fmt::Display + Clone + MergeUpdate,
 {
     fn summary(&self) -> String;
-
-    fn get_hash_id(&self) -> u64 {
-        // The actual hash should be defined by implementing the Hash trait
-        // on the Meta type
-        let mut s = DefaultHasher::new();
-        self.hash(&mut s);
-        s.finish()
-    }
 }
 
 impl<T> Meta for T
