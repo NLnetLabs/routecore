@@ -4,7 +4,7 @@ use std::{error, fmt, str};
 use std::convert::{TryFrom, TryInto};
 use std::str::FromStr;
 #[cfg(feature = "bcder")]
-use bcder::decode::{self, Error as _};
+use bcder::decode::{self, Source, DecodeError};
 use crate::util::hex;
 
 
@@ -40,35 +40,35 @@ impl KeyIdentifier {
     ///
     /// The content of the octet string needs to be a SHA-1 hash, so it must
     /// be exactly 20 octets long.
-    pub fn take_from<S: decode::Source>(
+    pub fn take_from<S: Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Error> {
+    ) -> Result<Self, DecodeError<S::Error>> {
         cons.take_value_if(bcder::Tag::OCTET_STRING, Self::from_content)
     }
 
-    pub fn take_opt_from<S: decode::Source>(
+    pub fn take_opt_from<S: Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Option<Self>, S::Error> {
+    ) -> Result<Option<Self>, DecodeError<S::Error>> {
         cons.take_opt_value_if(bcder::Tag::OCTET_STRING, Self::from_content)
     }
 
-    /// Parses an encoded key identifer from a encoded content.
-    pub fn from_content<S: decode::Source>(
+    /// Parses an encoded key identifer from encoded content.
+    pub fn from_content<S: Source>(
         content: &mut decode::Content<S>
-    ) -> Result<Self, S::Error> {
-        let content = bcder::OctetString::from_content(content)?;
-        if let Some(slice) = content.as_slice() {
+    ) -> Result<Self, DecodeError<S::Error>> {
+        let octets = bcder::OctetString::from_content(content)?;
+        if let Some(slice) = octets.as_slice() {
             Self::try_from(slice).map_err(|_| {
-                S::Error::malformed("invalid key identifier")
+                content.content_err("invalid key identifier")
             })
         }
-        else if content.len() != 20 {
-            Err(S::Error::malformed("invalid key identifier"))
+        else if octets.len() != 20 {
+            Err(content.content_err("invalid key identifier"))
         }
         else {
             let mut res = KeyIdentifier(Default::default());
             let mut pos = 0;
-            for slice in &content {
+            for slice in &octets {
                 let end = pos + slice.len();
                 res.0[pos .. end].copy_from_slice(slice);
                 pos = end;
@@ -78,9 +78,9 @@ impl KeyIdentifier {
     }
 
     /// Skips over an encoded key indentifier.
-    pub fn skip_opt_in<S: bcder::decode::Source>(
-        cons: &mut bcder::decode::Constructed<S>
-    ) -> Result<Option<()>, S::Error> {
+    pub fn skip_opt_in<S: Source>(
+        cons: &mut decode::Constructed<S>
+    ) -> Result<Option<()>, DecodeError<S::Error>> {
         cons.take_opt_value_if(bcder::Tag::OCTET_STRING, |cons| {
             Self::from_content(cons)?;
             Ok(())
