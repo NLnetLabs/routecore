@@ -1,16 +1,12 @@
 # Changelog
 
-## Unreleased next version
+## 0.2.0
+
+Released 2022-07-18.
 
 Breaking Changes
 
 * Adjust to new decode error handling in bcder. ([#11])
-
-New
-
-Bug Fixes
-
-Other Changes
 
 [#11]: https://github.com/NLnetLabs/routecore/pull/11
 
