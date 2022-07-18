@@ -4,6 +4,9 @@ use std::str::FromStr;
 use std::convert::{TryFrom, TryInto};
 use std::{error, fmt, ops};
 
+#[cfg(feature = "bcder")]
+use bcder::decode::{self, DecodeError, Source};
+
 
 //------------ Asn -----------------------------------------------------------
 
@@ -30,30 +33,30 @@ impl Asn {
 #[cfg(feature = "bcder")]
 impl Asn {
     /// Takes an AS number from the beginning of an encoded value.
-    pub fn take_from<S: bcder::decode::Source>(
-        cons: &mut bcder::decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
+    pub fn take_from<S: Source>(
+        cons: &mut decode::Constructed<S>
+    ) -> Result<Self, DecodeError<S::Error>> {
         cons.take_u32().map(Asn)
     }
 
     /// Skips over an AS number at the beginning of an encoded value.
-    pub fn skip_in<S: bcder::decode::Source>(
-        cons: &mut bcder::decode::Constructed<S>
-    ) -> Result<(), S::Err> {
+    pub fn skip_in<S: Source>(
+        cons: &mut decode::Constructed<S>
+    ) -> Result<(), DecodeError<S::Error>> {
         cons.take_u32().map(|_| ())
     }
 
     /// Parses the content of an AS number value.
-    pub fn parse_content<S: bcder::decode::Source>(
-        content: &mut bcder::decode::Content<S>,
-    ) -> Result<Self, S::Err> {
+    pub fn parse_content<S: Source>(
+        content: &mut decode::Content<S>,
+    ) -> Result<Self, DecodeError<S::Error>> {
         content.to_u32().map(Asn)
     }
 
     /// Skips the content of an AS number value.
-    pub fn skip_content<S: bcder::decode::Source>(
-        content: &mut bcder::decode::Content<S>
-    ) -> Result<(), S::Err> {
+    pub fn skip_content<S: Source>(
+        content: &mut decode::Content<S>
+    ) -> Result<(), DecodeError<S::Error>> {
         content.to_u32().map(|_| ())
     }
 
@@ -469,7 +472,7 @@ impl<T: AsRef<[Asn]>> fmt::Display for AsPath<T> {
 
 //------------ AsPathBuilder -------------------------------------------------
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AsPathBuilder {
     /// A vec with the elements we have so far.
     segments: Vec<Asn>,
