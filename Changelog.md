@@ -4,11 +4,15 @@
 
 Breaking Changes
 
+* Adjust to new decode error handling in bcder. ([#11])
+
 New
 
 Bug Fixes
 
 Other Changes
+
+[#11]: https://github.com/NLnetLabs/routecore/pull/11
 
 
 ## 0.1.1
