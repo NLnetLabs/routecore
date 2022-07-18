@@ -129,7 +129,7 @@ impl<'a> MessageRecord<'a>
 }
 
 /// NLRI that consists of multiple prefixes.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Hash)]
 pub struct PrefixNlri {
     nlri: Vec<Prefix>,
 }

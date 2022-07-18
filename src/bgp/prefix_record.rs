@@ -130,6 +130,20 @@ where
     }
 }
 
+impl<'a, Meta> From<(Prefix, &'a Meta)> for PrefixRecord<'a, Meta>
+where
+    Meta: crate::record::Meta,
+{
+    fn from((prefix, meta): (Prefix, &'a Meta)) -> Self {
+        Self {
+            prefix,
+            meta: Cow::Borrowed(meta),
+            sender_id: SenderIdInt::default(),
+            ltime: LogicalTime::default(),
+        }
+    }
+}
+
 impl<'a, Meta> std::fmt::Display for PrefixRecord<'a, Meta>
 where
     Meta: crate::record::Meta,
@@ -271,7 +285,6 @@ impl<'a, Meta: crate::record::Meta> Iterator for RecordSetIter<'a, Meta> {
     type Item = PrefixRecord<'a, Meta>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        // V4 is already done.
         if self.v4.is_none() {
             return self.v6.next().map(|res| res.to_owned());
         }
@@ -281,5 +294,52 @@ impl<'a, Meta: crate::record::Meta> Iterator for RecordSetIter<'a, Meta> {
         }
         self.v4 = None;
         self.next()
+    }
+}
+
+//------------ MetaDataSet ----------------------------------------------------
+
+#[derive(Clone, Debug)]
+pub struct MetaDataSet<'a, M: crate::record::Meta>(Vec<&'a M>);
+
+impl<'a, M: crate::record::Meta> MetaDataSet<'a, M> {
+    pub fn new(v: Vec<&'a M>) -> Self {
+        Self(v)
+    }
+
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
+impl<'a, M: crate::record::Meta> fmt::Display for MetaDataSet<'a, M> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let arr_str = self.0.iter().fold("".to_string(), |pfx_arr, pfx| {
+            format!("{} {}", pfx_arr, *pfx)
+        });
+
+        write!(f, "[{}]", arr_str)
+    }
+}
+
+impl<'a, M: crate::record::Meta + 'a> std::iter::FromIterator<&'a M>
+    for MetaDataSet<'a, M>
+{
+    fn from_iter<I: IntoIterator<Item = &'a M>>(iter: I) -> Self {
+        Self(iter.into_iter().collect())
+    }
+}
+
+impl<'a, M: crate::record::Meta + 'a> std::ops::Index<usize>
+    for MetaDataSet<'a, M>
+{
+    type Output = &'a M;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.0[index]
     }
 }
