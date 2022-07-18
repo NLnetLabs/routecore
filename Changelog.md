@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased future version
+
+Breaking changes
+
+New
+
+Bug fixes
+
+Other changes
+
+
 ## 0.2.0
 
 Released 2022-07-18.
