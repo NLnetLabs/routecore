@@ -12,7 +12,7 @@ license = "BSD-3-Clause"
 [dependencies]
 
 # Optional dependencies which, if included, introduce additional functionality.
-bcder = { git = "https://github.com/NLnetLabs/bcder.git", branch = "error-redesign", optional = true }
+bcder = { version = "0.7.0", optional = true }
 serde = { version = "1.0.95", optional = true, features = ["derive"] }
 
 [dev-dependencies]
