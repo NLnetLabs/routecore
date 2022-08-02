@@ -5,7 +5,7 @@ authors = ["The NLnet Labs RPKI team <rpki-team@nlnetlabs.nl>"]
 categories = ["network-programming"]
 description = "A Library with Building Blocks for BGP Routing"
 documentation = "https://docs.rs/routecore/"
-edition = "2018"
+edition = "2021"
 keywords = ["routing", "bgp"]
 license = "BSD-3-Clause"
 
@@ -15,8 +15,13 @@ license = "BSD-3-Clause"
 bcder = { version = "0.7.0", optional = true }
 serde = { version = "1.0.95", optional = true, features = ["derive"] }
 
+
+bytes = { version = "1.1.0", optional = true}
+log = { version = "0.4.17", optional = true}
+
 [dev-dependencies]
 serde_test      = "1.0"
 
 [features]
 default = []
+bgmp = ["bytes", "log"]
