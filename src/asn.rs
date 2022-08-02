@@ -411,7 +411,7 @@ impl fmt::Display for SegmentType {
 //  So, the first element in the path is a sentinel, followed by as many real
 //  ASNs as is encoded in the sentinel, followed by another sentinel and so
 //  on.
-#[derive(Clone, Debug, Hash)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 #[cfg_attr(
     feature = "serde",
     derive(serde::Serialize, serde::Deserialize)
