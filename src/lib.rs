@@ -2,6 +2,8 @@
 
 pub mod addr;
 pub mod asn;
+#[cfg(feature = "bgmp")]
+pub mod bmp;
 pub mod bgp;
 pub mod bgpsec;
 #[cfg(feature = "bgmp")]
