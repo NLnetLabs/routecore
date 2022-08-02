@@ -14,7 +14,7 @@ fn op_to_len(op: u8) -> usize {
     }
 }
 
-struct NumericOp(u8, u64);
+pub struct NumericOp(u8, u64);
 impl NumericOp {
     pub fn end_of_list(&self) -> bool {
         self.0 & 0x80 == 0x80
@@ -27,7 +27,7 @@ impl NumericOp {
     }
 }
 
-struct BitmaskOp(u8, u64);
+pub struct BitmaskOp(u8, u64);
 impl BitmaskOp {
     pub fn end_of_list(&self) -> bool {
         self.0 & 0x80 == 0x80
@@ -61,10 +61,7 @@ impl<R: AsRef<[u8]>> Parse<R> for NumericOp {
             8 => parser.parse_u64()?,
             _ => panic!("illegal case"),
         };
-        Ok(Self {
-            0: op,
-            1: value,
-        })
+        Ok(Self(op, value))
     }
 
     fn skip(parser: &mut Parser<R>) -> Result<(), ParseError> {
@@ -82,10 +79,7 @@ impl<R: AsRef<[u8]>> Parse<R> for BitmaskOp {
             8 => parser.parse_u64()?,
             _ => panic!("illegal case"),
         };
-        Ok(Self {
-            0: op,
-            1: value,
-        })
+        Ok(Self(op, value))
     }
 
     fn skip(parser: &mut Parser<R>) -> Result<(), ParseError> {

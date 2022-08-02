@@ -26,8 +26,9 @@ impl Display for MessageError {
     fn fmt(&self, f: &mut Formatter) -> FmtResult {
         use MessageError::*;
         match self {
-            IllegalNlris => write!(f, "Illegal NLRIs"),
-            InvalidMsgType => write!(f, "Invalid Message type"),
+            Incomplete => write!(f, "incomplete message"),
+            IllegalSize => write!(f, "illegaly sized message"),
+            InvalidMsgType => write!(f, "invalid message type"),
         }
     }
 }
@@ -939,7 +940,7 @@ where
             let _info_type = parser.parse_u16()?;
             // XXX check for _info_type == 0 ?
             let info_len = parser.parse_u16()?;
-            let _info = parser.advance(info_len.into())?;
+            parser.advance(info_len.into())?;
         }
 
         parser.seek(pos)?;
@@ -986,7 +987,7 @@ where
         while parser.remaining() > 0 {
             let _info_type = parser.parse_u16()?;
             let info_len = parser.parse_u16()?;
-            let _info = parser.advance(info_len.into())?;
+            parser.advance(info_len.into())?;
         }
         parser.seek(pos)?;
         Ok(Self::for_slice(parser.parse_octets(ch.length() as usize)?))
@@ -1035,7 +1036,7 @@ where
         while parser.remaining() > 0 {
             let _info_type = parser.parse_u16()?;
             let info_len = parser.parse_u16()?;
-            let _info = parser.advance(info_len.into())?;
+            parser.advance(info_len.into())?;
         }
         parser.seek(pos)?;
         Ok(Self::for_slice(parser.parse_octets(ch.length() as usize)?))
@@ -1053,12 +1054,6 @@ where
 pub struct RouteMirroring { octets: Bytes, }
 
 impl RouteMirroring {
-    fn for_slice(s: &[u8]) -> Self {
-        Self {
-            octets: Bytes::copy_from_slice(s),
-        }
-    }
-
     /// Return the [`CommonHeader`] for this message.
     pub fn common_header(&self) -> CommonHeader {
         *CommonHeader::for_message_slice(self.as_ref())

@@ -27,8 +27,8 @@ impl Display for MessageError {
     fn fmt(&self, f: &mut Formatter) -> FmtResult {
         use MessageError::*;
         match self {
-            IllegalNlris => write!(f, "Illegal NLRIs"),
-            InvalidMsgType => write!(f, "Invalid Message type"),
+            IllegalNlris => write!(f, "illegal NLRIs"),
+            InvalidMsgType => write!(f, "invalid Message type"),
         }
     }
 }
@@ -1029,55 +1029,6 @@ impl MessageUpdate {
         //}).unwrap()
     }
 
-    fn validate_nlris(&self, add_path: AddPath) -> Result<(), MessageError> {
-
-        let nlris;
-        let nlri_len;
-
-        if let Some(pa) = self.path_attributes().find(|pa|
-            pa.type_code() == PathAttributeType::MpReachNlri
-        ) {
-            nlris = pa.value();
-            let len_nexthop: usize = nlris[3].into(); 
-            nlri_len = pa.length() as usize - 2 - 1 - len_nexthop - 1;
-        } else {
-            let wrl = self.withdrawn_routes_len() as usize;
-            let tpal = self.total_path_attribute_len() as usize;
-            nlri_len = self.length() as usize - 23 - wrl - tpal;
-            nlris = &self.as_ref()[
-                COFF+2+wrl+2+tpal
-                    ..
-                    COFF+2+wrl+2+tpal+nlri_len];
-        } 
-
-        let mut pos = 0;
-        while pos < nlri_len {
-            if add_path == AddPath::Enabled {
-                pos += 4;
-            }
-            if pos >= nlris.len() {
-                return Err(MessageError::IllegalNlris);
-            }
-            let prefix_len = nlris[pos];
-
-            let prefix_bytes = if prefix_len != 0 {
-                (prefix_len as usize - 1) / 8 + 1
-            } else {
-                0
-            };
-            if pos + prefix_bytes >= nlri_len {
-                return Err(MessageError::IllegalNlris);
-            }
-            pos += 1 + prefix_bytes;
-        }
-
-        if pos != nlri_len {
-            return Err(MessageError::IllegalNlris);
-        }
-
-        Ok(())
-    }
-
     /// Iterator over the reachable NLRIs
     ///
     /// If present, the NLRIs are taken from the MP_REACH_NLRI path attribute.
@@ -1685,30 +1636,7 @@ impl<'a> PathAttribute<'a> {
             false => 2+1, // 2 byte flags+codes, 1 byte value length
         }
     }
-
-    // not used anywhere anymore?
-    fn total_len(&self) -> usize {
-        self.hdr_len() + (self.length() as usize)
-    }
 }
-
-fn parse_pa_header<R>(parser: &mut Parser<R>)
-    -> Result<(u8, u8, usize, usize), ParseError>
-    where R: AsRef<[u8]>
-{
-        let flags = parser.parse_u8()?;
-        let typecode = parser.parse_u8()?;
-        let mut headerlen = 3;
-        let len = match flags & 0x10 == 0x10 {
-            true => {
-                headerlen += 1;
-                parser.parse_u16()? as usize
-            },
-            false => parser.parse_u8()? as usize, 
-        };
-        Ok((flags, typecode, headerlen, len))
-}
-
 
 impl<'a, R> Parse<R> for PathAttribute<'a>
 where  R: 'a + AsRef<[u8]> + OctetsRef<Range = &'a [u8]> ,
@@ -1861,7 +1789,6 @@ where  R: 'a + AsRef<[u8]> + OctetsRef<Range = &'a [u8]> ,
                 }
             },
             PathAttributeType::AttrSet => {
-                let pos = parser.pos();
                 let _origin_as = parser.parse_u32()?;
                 // The remainder of this PA is a list of ... Path Attributes.
                 // We simply take all but the first four octets (origin AS)
@@ -2121,11 +2048,13 @@ pub struct VplsNlri {
 
 #[derive(Debug)]
 pub struct FlowSpecNlri<'a> {
+    #[allow(dead_code)]
     raw: &'a[u8], 
 }
 
 #[derive(Debug)]
 pub struct RouteTargetNlri<'a> {
+    #[allow(dead_code)]
     raw: &'a[u8],
 }
 
@@ -2374,7 +2303,7 @@ where R: 'a + AsRef<[u8]> + OctetsRef<Range = &'a[u8]>
 
 impl<R: AsRef<[u8]>> Parse<R> for VplsNlri {
     fn parse(parser: &mut Parser<R>) -> Result<Self, ParseError> {
-        let len = parser.parse_u16()?;
+        let _len = parser.parse_u16()?;
         let rd = RouteDistinguisher::parse(parser)?; 
         let ve_id = parser.parse_u16()?;
         let ve_block_offset = parser.parse_u16()?;
@@ -2404,15 +2333,13 @@ where
 {
     fn parse(parser: &mut Parser<R>) -> Result<Self, ParseError> {
         let pos = parser.pos();
-        let len: u16;
-
         let len1 = parser.parse_u8()?;
-        if len1 >= 0xf0 {
+        let len: u16 = if len1 >= 0xf0 {
             let len2 = parser.parse_u8()? as u16;
-            len = (((len1 as u16) << 8) | len2) & 0x0fff;
+            (((len1 as u16) << 8) | len2) & 0x0fff
         } else {
-            len = len1 as u16;
-        }
+            len1 as u16
+        };
         while parser.pos() < pos + len as usize {
             Component::parse(parser)?;
         }
@@ -2863,7 +2790,7 @@ pub enum Community {
 impl Community {
     /// Returns the `Asn` for non well-known community tags, or None
     /// otherwise. 
-    fn asn(&self) -> Option<Asn> {
+    pub fn asn(&self) -> Option<Asn> {
         use Community::*;
         match self {
             Normal(nc) => nc.asn(),
