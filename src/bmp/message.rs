@@ -1605,3 +1605,11 @@ impl TryFrom<Message> for RouteMirroring
         }
     }
 }
+
+
+//--- Tests ------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    // TODO
+}

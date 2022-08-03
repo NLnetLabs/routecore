@@ -47,8 +47,6 @@ impl From<PrefixError> for ParseError {
 
 // This file is, roughly, ordered in the following way.
 //
-// TODO these docs are outdated since we refactored from the marker types into
-// an enum
 // First, there is the generic Message type and the header that appears in all
 // BGP messages. Then, an impl for each specific Message type with related
 // types/iters, in order of RFC 4271. So OPEN, UPDATE, NOTIFICATION,
@@ -58,18 +56,15 @@ impl From<PrefixError> for ParseError {
 // Following the impl's and helpers for these specific messages are the
 // From/TryFroms for conversion of Generic<-->Specific messages.
 //
-// Last, enums that perhaps should move to the routecore crate, and some enums
-// used for passing configuration/state.
+// Last, some enums used for passing configuration/state.
 
 //--- Generic BGP Message ----------------------------------------------------
 
-/// Full BGP message. 
+/// BGP message enum.
 ///
 /// Represents the full BGP message including the 16 byte marker, the message
 /// header and the message payload.
 ///
-/// TODO these docs are outdated since we refactored from the marker types into
-/// an enum...
 /// To distinguish between message types, marker types are used. More details
 /// on this can be found in the documentation for
 /// [`bmp::Message`][`crate::bmp::Message`].
@@ -83,24 +78,28 @@ impl From<PrefixError> for ParseError {
 ///  * TODO: `MessageKeepAlive`
 ///  * TODO: `MessageRouteRefresh`
 ///
+pub enum Message {
+    Open(MessageOpen),
+    Update(MessageUpdate),
+    Notification(MessageNotification),
+}
 
+/// BGP OPEN message, variant of the [`Message`] enum.
 #[derive(Debug, PartialEq)]
 pub struct MessageOpen {
     octets: Bytes,
 }
+
+/// BGP UPDATE message, variant of the [`Message`] enum.
 pub struct MessageUpdate {
     octets: Bytes,
     four_octet_asn: FourOctetAsn,
     add_path: AddPath,
 }
+
+/// BGP NOTIFICATION message, variant of the [`Message`] enum.
 pub struct MessageNotification {
     octets: Bytes,
-}
-
-pub enum Message {
-    Open(MessageOpen),
-    Update(MessageUpdate),
-    Notification(MessageNotification),
 }
 
 impl Message {
@@ -766,6 +765,7 @@ impl <'a>Capability<'a> {
     }
 }
 
+/// Iterator for BGP OPEN Capabilities.
 pub struct CapabilityIter<'a> {
 	octets: &'a [u8],
 	pos: usize
@@ -847,6 +847,7 @@ typeenum!(
 //
 // also see
 // https://www.iana.org/assignments/bgp-parameters/bgp-parameters.xhtml#bgp-parameters-11
+/// BGP OPEN Optional Parameter.
 pub struct Parameter<'a> {
     octets: &'a [u8],
 }
@@ -870,6 +871,7 @@ impl <'a>Parameter<'a> {
     }
 }
 
+/// Iterator over BGP OPEN Optional [`Parameter`]s.
 pub struct ParameterIter<'a> {
 	octets: &'a [u8],
 	pos: usize
@@ -1032,7 +1034,7 @@ impl MessageUpdate {
         //}).unwrap()
     }
 
-    /// Iterator over the reachable NLRIs
+    /// Iterator over the reachable NLRIs.
     ///
     /// If present, the NLRIs are taken from the MP_REACH_NLRI path attribute.
     /// Otherwise, they are taken from their conventional place at the end of
@@ -1560,6 +1562,7 @@ pub enum NextHop {
     Unimplemented(AFI, SAFI),
 }
 
+/// Iterator over all [`PathAttribute`]s in a BGP UPDATE message.
 pub struct PathAttributes<Ref> {
     parser: Parser<Ref>,
 }
@@ -1586,6 +1589,8 @@ where
         Self::parse(parser).map(|_| ())
     }
 }
+
+/// BGP Path Attribute, carried in BGP UPDATE messages.
 #[derive(Debug, PartialEq)]
 pub struct PathAttribute<'a> {
     slice: &'a[u8],
@@ -1818,7 +1823,6 @@ where  R: 'a + AsRef<[u8]> + OctetsRef<Range = &'a [u8]> ,
             //},
         }
         
-        // TODO this should go after everything is properly implemented
         parser.seek(pos)?;
         let res = parser.parse_octets(headerlen+len)?;
 
@@ -1910,6 +1914,9 @@ where
 
 //--- NLRI -------------------------------------------------------------------
 
+/// Path Identifier for BGP Multiple Paths (RFC7911).
+///
+/// Optionally used in [`BasicNlri`].
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub struct PathId(u32);
 
@@ -1922,6 +1929,7 @@ impl<R: AsRef<[u8]>> Parse<R> for PathId {
     }
 }
 
+/// MPLS labels, part of [`MplsNlri`] and [`MplsVpnNlri`].
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Labels<'a>(&'a[u8]);
 impl Labels<'_> {
@@ -1973,6 +1981,9 @@ where R: 'a + AsRef<[u8]> + OctetsRef<Range = &'a[u8]>
     }
 }
 
+/// Route Distinguisher (RD) as defined in RFC4364.
+///
+/// Used in [`MplsVpnNlri`], [`VplsNlri`] and [`NextHop`].
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct RouteDistinguisher {
     bytes: [u8; 8]
@@ -2022,17 +2033,24 @@ pub enum RouteDistinguisherType {
 
 //--- Refactoring NLRI iters using Parser ------------------------------------
 
-
+/// NLRI comprised of a [`Prefix`] and an optional [`PathId`].
+///
+/// The `BasicNlri` is extended in [`MplsNlri`] and [`MplsVpnNlri`].
 #[derive(Copy, Clone, Debug)]
 pub struct BasicNlri {
     prefix: Prefix,
     path_id: Option<PathId>,
 }
+
+/// NLRI comprised of a [`BasicNlri`] and MPLS `Labels`.
 #[derive(Debug)]
 pub struct MplsNlri<'a> {
     basic: BasicNlri,
     labels: Labels<'a>,
 }
+
+/// NLRI comprised of a [`BasicNlri`], MPLS `Labels` and a VPN
+/// `RouteDistinguisher`.
 #[derive(Debug)]
 pub struct MplsVpnNlri<'a> {
     basic: BasicNlri,
@@ -2040,6 +2058,7 @@ pub struct MplsVpnNlri<'a> {
     rd: RouteDistinguisher,
 }
 
+/// VPLS Information as defined in RFC4761.
 #[derive(Debug)]
 pub struct VplsNlri {
     rd: RouteDistinguisher,
@@ -2049,12 +2068,18 @@ pub struct VplsNlri {
     raw_label_base: u32,
 }
 
+/// NLRI containing a FlowSpec v1 specification.
+///
+/// Also see [`crate::flowspec`].
 #[derive(Debug)]
 pub struct FlowSpecNlri<'a> {
     #[allow(dead_code)]
     raw: &'a[u8], 
 }
 
+/// NLRI containing a Route Target membership as defined in RFC4684.
+///
+/// **TODO**: implement accessor methods for the contents of this NLRI.
 #[derive(Debug)]
 pub struct RouteTargetNlri<'a> {
     #[allow(dead_code)]
@@ -2388,6 +2413,10 @@ where
 //-----
 
 
+/// Iterator over the reachable NLRIs.
+///
+/// Returns items of the enum [`Nlri`], thus both conventional and
+/// BGP MultiProtocol (RFC4760) NLRIs.
 pub struct NlriIterMp<Ref> {
     parser: Parser<Ref>,
     afi: AFI,
@@ -2513,6 +2542,10 @@ where R: 'a + AsRef<[u8]> + OctetsRef<Range = &'a[u8]>
     }
 }
 
+/// Iterator over the withdrawn NLRIs.
+///
+/// Returns items of the enum [`Nlri`], thus both conventional and
+/// BGP MultiProtocol (RFC4760) withdrawn NLRIs.
 pub struct WithdrawalsIterMp<Ref> {
     parser: Parser<Ref>,
     afi: AFI,
@@ -2606,15 +2639,19 @@ where R: 'a + AsRef<[u8]> + OctetsRef<Range = &'a[u8]>
 //
 
 
+/// Conventional, RFC1997 4-byte community.
 #[derive(Debug, PartialEq)]
 pub struct NormalCommunity([u8; 4]);
 
+/// Final two octets of a [`NormalCommunity`], i.e. the 'community number'.
 #[derive(Debug, PartialEq)]
 pub struct CommunityTag(u16);
 
+/// Extended Community as defined in RFC4360.
 #[derive(Debug, PartialEq)]
 pub struct ExtendedCommunity([u8; 8]);
 
+/// Large Community as defined in RFC8092.
 #[derive(Debug, PartialEq)]
 pub struct LargeCommunity([u8; 12]);
 
@@ -2839,6 +2876,10 @@ impl From<[u8; 8]> for Community {
     }
 }
 
+/// Iterator for BGP UPDATE Communities.
+///
+/// Returns values of enum [`Community`], wrapping [`NormalCommunity`],
+/// [`ExtendedCommunity`], [`LargeCommunity`] and well-known communities.
 pub struct CommunityIter<'a> {
     slice: &'a [u8],
     pos: usize,
@@ -2870,6 +2911,7 @@ impl Iterator for CommunityIter<'_> {
     }
 }
 
+/// Iterator over [`ExtendedCommunity`]s.
 pub struct ExtCommunityIter<'a> {
     slice: &'a [u8],
     pos: usize,
@@ -2901,6 +2943,7 @@ impl Iterator for ExtCommunityIter<'_> {
     }
 }
 
+/// Iterator over [`LargeCommunity`]s.
 pub struct LargeCommunityIter<'a> {
     slice: &'a [u8],
     pos: usize,
@@ -2933,20 +2976,24 @@ impl Iterator for LargeCommunityIter<'_> {
 }
 
 //--- Aggregator -------------------------------------------------------------
+/// Path Attribute (7).
 pub struct Aggregator {
     asn: Asn,
     speaker: Ipv4Addr,
 }
 
 impl Aggregator {
+    /// Creates a new Aggregator.
     pub fn new(asn: Asn, speaker: Ipv4Addr) -> Self {
         Aggregator{ asn, speaker }
     }
 
+    /// Returns the `Asn`.
     pub fn asn(&self) -> Asn {
         self.asn
     }
 
+    /// Returns the speaker IPv4 address.
     pub fn speaker(&self) -> Ipv4Addr {
         self.speaker
     }
@@ -3123,74 +3170,6 @@ pub struct LocalPref(u32);
 /// available in the UPDATE messages themselves, but are only exchanged in the
 /// BGP OPEN messages when the session was established.
 ///
-/// # Example
-///
-/// ```rust
-/// // We will store our session information in a Hashmap:
-/// let peer_configs: HashMap<PerPeerHeader, SessionConfig> = HashMap::new();
-///
-/// # let buf = vec![
-/// #    0x03, 0x00, 0x00, 0x00, 0xba, 0x03, 0x00, 0x00,
-/// #    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-/// #    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-/// #    0x00, 0x00, 0x00, 0x00, 0x0a, 0xff, 0x00, 0x65,
-/// #    0x00, 0x00, 0x80, 0xa6, 0x0a, 0x0a, 0x0a, 0x01,
-/// #    0x54, 0xa2, 0x0e, 0x0b, 0x00, 0x0e, 0x0c, 0x20,
-/// #    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-/// #    0x00, 0x00, 0x00, 0x00, 0x0a, 0xff, 0x00, 0x53,
-/// #    0x90, 0x6e, 0x00, 0xb3, 0xff, 0xff, 0xff, 0xff,
-/// #    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-/// #    0xff, 0xff, 0xff, 0xff, 0x00, 0x3b, 0x01, 0x04,
-/// #    0x00, 0x64, 0x00, 0xb4, 0x0a, 0x0a, 0x0a, 0x67,
-/// #    0x1e, 0x02, 0x06, 0x01, 0x04, 0x00, 0x01, 0x00,
-/// #    0x01, 0x02, 0x02, 0x80, 0x00, 0x02, 0x02, 0x02,
-/// #    0x00, 0x02, 0x06, 0x41, 0x04, 0x00, 0x00, 0x00,
-/// #    0x64, 0x02, 0x04, 0x40, 0x02, 0x00, 0x78, 0xff,
-/// #    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-/// #    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00,
-/// #    0x3b, 0x01, 0x04, 0x80, 0xa6, 0x00, 0x5a, 0x0a,
-/// #    0x0a, 0x0a, 0x01, 0x1e, 0x02, 0x06, 0x01, 0x04,
-/// #    0x00, 0x01, 0x00, 0x01, 0x02, 0x02, 0x80, 0x00,
-/// #    0x02, 0x02, 0x02, 0x00, 0x02, 0x04, 0x40, 0x02,
-/// #    0x00, 0x78, 0x02, 0x06, 0x41, 0x04, 0x00, 0x00,
-/// #    0x80, 0xa6
-/// # ];
-/// #
-/// // buf is a vec of bytes representing a PeerUpNotification
-/// let bmp: PeerUpNotification = Message::from_octets(&buf).unwrap().try_into().unwrap();
-/// peer_configs.insert(bmp.per_peer_header(), bmp.session_config())
-///
-/// # let buf2 = vec![
-/// #    0x03, 0x00, 0x00, 0x00, 0x67, 0x00, 0x00, 0x00,
-/// #    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-/// #    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-/// #    0x00, 0x00, 0x00, 0x00, 0x0a, 0xff, 0x00, 0x65,
-/// #    0x00, 0x00, 0x80, 0xa6, 0x0a, 0x0a, 0x0a, 0x01,
-/// #    0x54, 0xa2, 0x0e, 0x0c, 0x00, 0x0e, 0x81, 0x09,
-/// #    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-/// #    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-/// #    0x00, 0x37, 0x02, 0x00, 0x00, 0x00, 0x1b, 0x40,
-/// #    0x01, 0x01, 0x00, 0x40, 0x02, 0x06, 0x02, 0x01,
-/// #    0x00, 0x00, 0x80, 0xa6, 0x40, 0x03, 0x04, 0x0a,
-/// #    0xff, 0x00, 0x65, 0x80, 0x04, 0x04, 0x00, 0x00,
-/// #    0x00, 0x01, 0x20, 0x0a, 0x0a, 0x0a, 0x02
-/// # ];
-/// // buf2 is a vec of bytes representing a RouteMonitoring message
-/// let rm: RouteMonitoring = Message::from_octets(&buf).unwrap().try_into().unwrap();
-/// let upd: bgp::BgpUpdate = rm.bgp_update().unwrap();
-///
-/// // Now get the SessionConfig for this peer, or fallback to the default
-/// let cfg = peer_configs
-///     .entry(rm.per_peer_header())
-///     .or_insert(SessionConfig::default());
-///
-/// // Pass the parameters to functions that require them
-/// assert_eq!(cfg.add_path, AddPath::Disabled);
-/// upd.nlris(cfg.add_path);
-/// assert_eq!(cfg.add_path, FourOctetAsn::Enabled);
-/// upd.aspath(cfg.four_octet_asns);
-///
-/// ```
 #[derive(Copy, Clone, Debug)]
 pub struct SessionConfig {
     pub four_octet_asn: FourOctetAsn,
@@ -3201,8 +3180,9 @@ pub struct SessionConfig {
 }
 
 impl Default for SessionConfig {
-    // TODO descibe this should return the most commonly occuring set of
-    // options i.e. FourOctetAsn enabled, addpath disabled, v4/unicast
+    /// The defaults for SessionConfig are Four Octet capable, no AddPath.
+    /// This should be a reasonable guess for when no other knowledge about
+    /// the session is available, and e.g. a single UPDATE is parsed.
     fn default() -> Self {
         SessionConfig {
             four_octet_asn: FourOctetAsn::Enabled,
@@ -3268,4 +3248,12 @@ pub enum FourOctetAsn {
 pub enum AddPath {
     Enabled,
     Disabled,
+}
+
+
+//--- Tests ------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    // TODO
 }
