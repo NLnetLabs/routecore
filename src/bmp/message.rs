@@ -13,6 +13,9 @@ use std::hash::Hash;
 use std::io::Cursor;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
+// Edition 2018 compat:
+// use std::convert::{TryFrom, TryInto};
+
 // --- Error stuff, refactor this crate-wide after bgmp is merged ------------
 
 #[derive(Debug)]

@@ -6,7 +6,10 @@ use crate::asn::{Asn, AsPath, AsPathBuilder, SegmentType};
 use crate::addr::{Prefix, PrefixError};
 use std::fmt::{Debug, Display, Formatter, Result as FmtResult};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
-//use std::convert::TryFrom;
+
+// Edition 2018 compat:
+//use std::convert::{TryFrom, TryInto};
+
 use std::error::Error;
 
 use crate::util::parser::{Parse, Parser, ParseError, OctetsRef};
