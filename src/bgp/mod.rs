@@ -33,11 +33,6 @@ mod prefix_record;
 mod route;
 
 #[cfg(feature = "bgmp")]
-/// BGP message parsing
-///
-/// This module contains functionality to parse BGP messages from raw bytes,
-/// providing access to its contents based on the underlying `bytes` buffer
-/// without allocating.
 pub mod message;
 
 pub use self::meta::*;

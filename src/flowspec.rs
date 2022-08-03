@@ -1,3 +1,5 @@
+//! FlowSpec v1 parsing.
+
 use crate::addr::Prefix;
 use crate::util::parser::{Parse, Parser, ParseError, OctetsRef};
 use crate::bgp::message::AFI;

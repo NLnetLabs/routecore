@@ -1,3 +1,9 @@
+//! BMP message parsing.
+//!
+//! This module contains functionality to parse BGP messages from raw bytes,
+//! providing access to its contents based on the underlying `bytes` buffer
+//! without allocating.
+
 use crate::bgp::message::{Message as BgpMsg, MessageOpen as BgpOpen, MessageUpdate as BgpUpdate, MessageNotification as BgpNotification};
 use crate::bgp::message::{AFI, SAFI, SessionConfig};
 use crate::util::parser::{Parser, Parse, ParseError, OctetsRef};

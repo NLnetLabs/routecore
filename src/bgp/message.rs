@@ -1,3 +1,9 @@
+//! BGP message parsing.
+//!
+//! This module contains functionality to parse BGP messages from raw bytes,
+//! providing access to its contents based on the underlying `bytes` buffer
+//! without allocating.
+
 use crate::flowspec::Component;
 use log::{warn, error};
 
