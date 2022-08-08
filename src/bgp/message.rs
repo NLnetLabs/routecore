@@ -26,6 +26,7 @@ use crate::typeenum; // from util::macros
 
 // --- Error stuff, refactor this crate-wide after bgmp is merged ------------
 
+/// Errors related to BGP messages.
 #[derive(Debug)]
 pub enum MessageError {
     IllegalNlris,
@@ -1557,6 +1558,7 @@ typeenum!(
     255 => RsrvdDevelopment,
 );
 
+/// Conventional and BGP-MP Next Hop variants.
 #[derive(Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum NextHop {
     Ipv4(Ipv4Addr),
@@ -2029,6 +2031,8 @@ impl RouteDistinguisher {
         self.bytes[2..8].try_into().expect("parsed before")
     }
 }
+
+/// Route Distinguisher types.
 #[derive(Eq, PartialEq, Debug)]
 pub enum RouteDistinguisherType {
     Type0,
@@ -2092,6 +2096,7 @@ pub struct RouteTargetNlri<'a> {
     raw: &'a[u8],
 }
 
+/// Conventional and BGP-MP NLRI variants.
 #[derive(Debug)]
 pub enum Nlri<'a> {
     Basic(BasicNlri),
@@ -2661,6 +2666,7 @@ pub struct ExtendedCommunity([u8; 8]);
 #[derive(Debug, PartialEq)]
 pub struct LargeCommunity([u8; 12]);
 
+/// IANA Policy options for Extended Communities.
 pub enum IanaPolicy {
     FCFS,
     StandardsAction,
@@ -2822,6 +2828,7 @@ impl Display for LargeCommunity {
 
 }
 
+/// Conventional and Extended/Large Communities variants.
 #[derive(Debug, PartialEq)]
 pub enum Community {
     Normal(NormalCommunity),
@@ -3120,6 +3127,7 @@ where
 
 //--- Types that perhaps should go into routecore ----------------------------
 
+/// BGP Message types.
 #[derive(Debug, Eq, PartialEq)]
 pub enum MsgType {
     Open,
@@ -3130,13 +3138,17 @@ pub enum MsgType {
     //Capability, // draft-ietf-idr-dynamic-cap
 }
 
-typeenum!(AFI, u16,
+typeenum!(
+/// AFI as used in BGP OPEN and UPDATE messages.
+    AFI, u16,
     1 => Ipv4,
     2 => Ipv6,
     25 => L2Vpn,
 );
 
-typeenum!(SAFI, u8,
+typeenum!(
+/// SAFI as used in BGP OPEN and UPDATE messages.
+    SAFI, u8,
     1 => Unicast,
     2 => Multicast,
     4 => MplsUnicast,
@@ -3147,6 +3159,7 @@ typeenum!(SAFI, u8,
     134 => FlowSpecVpn,
 );
 
+/// BGP Origin types as used in BGP UPDATE messages.
 #[derive(Debug)]
 pub enum OriginType {
     Igp,
@@ -3243,13 +3256,14 @@ impl SessionConfig {
     }
 }
 
-
+/// Indicates whether this session is Four Octet capable.
 #[derive(Copy, Clone, PartialEq, Debug)]
 pub enum FourOctetAsn {
     Enabled,
     Disabled,
 }
 
+/// Indicates whether AddPath is enabled for this session.
 #[derive(Copy, Clone, PartialEq, Debug)]
 pub enum AddPath {
     Enabled,
