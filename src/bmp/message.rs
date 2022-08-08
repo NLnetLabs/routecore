@@ -24,6 +24,7 @@ use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 // --- Error stuff, refactor this crate-wide after bgmp is merged ------------
 
+/// Errors related to BMP messages.
 #[derive(Debug)]
 pub enum MessageError {
     Incomplete,
@@ -534,6 +535,7 @@ pub enum PeerType {
     Undefined,
 }
 
+/// Specify which RIB the contents of a message originated from.
 pub enum RibType {
     AdjRibIn,
     AdjRibOut,
@@ -606,7 +608,7 @@ where
 }
 
 
-/// Statistics Report.
+/// Statistics Report message.
 pub struct StatisticsReport { octets: Bytes, }
 
 impl StatisticsReport {
@@ -748,6 +750,7 @@ impl PeerDownNotification {
     }
 }
 
+/// Peer Down notification message reason codes.
 #[derive(Debug, Eq, PartialEq)]
 pub enum PeerDownReason {
     Reserved,
@@ -1260,6 +1263,7 @@ impl std::fmt::Display for Stat {
     }
 }
 
+/// Iterator over statistics in a Statistics Report message.
 pub struct StatIter<'a> {
     octets: &'a [u8],
     pos: usize,
@@ -1377,12 +1381,14 @@ const COFF: usize =
 
 //--- Termination Message ----------------------------------------------------
 
+/// Iterator over TLVs in a Termination message.
 pub struct InformationIter<'a> {
     octets: &'a [u8],
     pos: usize,
     end: usize,
 }
 
+/// Termination message reason codes.
 // XXX convert this to a typeenum! ?
 #[derive(Debug)]
 pub enum TerminationInformation {
@@ -1458,6 +1464,7 @@ impl Display for TerminationInformation {
 
 //--- Route Mirroring --------------------------------------------------------
 
+/// Types of Route Mirroring TLVs.
 pub enum RouteMirroringType<'a> {
     BgpMessage(Result<BgpMsg, ParseError>),         // type 0
     InfoErrorPdu,       // type 1 code 0
@@ -1465,6 +1472,7 @@ pub enum RouteMirroringType<'a> {
     Undefined(u16, &'a [u8]),     // carries the type
 }
 
+/// Iterator over Route Mirroring TLVs.
 pub struct RouteMirroringTlvIter<'a> {
     octets: &'a [u8],
     pos: usize,
