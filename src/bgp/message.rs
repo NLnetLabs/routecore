@@ -600,7 +600,7 @@ where
             CapabilityType::ExtendedNextHop => {
                 while parser.pos() < pos + len {
                     let _afi = parser.parse_u16()?;
-                    // XXX note that SAFI is 2 bytes for this Capability
+                    // Note that SAFI is 2 bytes for this Capability.
                     let _safi = parser.parse_u16()?;
                     let _nexthop_afi = parser.parse_u16()?;
                 }
@@ -1027,7 +1027,6 @@ impl MessageUpdate {
         let wrl = self.withdrawn_routes_len() as usize;
         let tpal = self.total_path_attribute_len() as usize;
         
-        //FIXME properly .skip() towards the pa's
         let mut parser = Parser::from_ref(
             &self.as_ref()[COFF+2+wrl+2..COFF+2+wrl+2+tpal],
             sc,
@@ -1061,7 +1060,6 @@ impl MessageUpdate {
             let wrl = self.withdrawn_routes_len() as usize;
             let tpal = self.total_path_attribute_len() as usize;
              
-            // TODO properly .skip() up to NLRIs
             let parser = Parser::from_ref(
                 &self.as_ref()[COFF+2+wrl+2+tpal..],
                 sc,
@@ -1247,10 +1245,10 @@ impl MessageUpdate {
                             ) as u32
                         )
                     };
-                    // XXX in a very exotic (and incorrect?) case, we see
-                    // AS_TRANS in the AS_PATH, but no AS4_PATH path
-                    // attribute. For this reason, we check whether `as4path`
-                    // actually holds a value.
+                    // In a very exotic (and incorrect?) case, we see AS_TRANS
+                    // in the AS_PATH, but no AS4_PATH path attribute. For
+                    // this reason, we check whether `as4path` actually holds
+                    // a value.
                     if as4path.as_ref().is_some()
                         && asn == Asn::from_u32(23456) {
                         // This assert would trip the described exotic case.
@@ -3095,23 +3093,14 @@ where
         let pos = parser.pos();
         let hdr = Header::parse(parser)?;
 
-        // XXX implement enums for codes/subcodes
+        // TODO implement enums for codes/subcodes
         let _code = parser.parse_u8()?;
         let _subcode = parser.parse_u8()?;
 
 
-        // now, their might be variable length data from the current position
+        // Now, their might be variable length data from the current position
         // to the end of the message. There is no length field.
-        // The data depends on the code/subscode
-
-        /*
-        let end = parser.pos();
-        if end - pos != hdr.length() as usize {
-            return Err(ParseError::form_error(
-                "message length and parsed bytes do not match"
-            ));
-        }
-        */
+        // The data depends on the code/subscode.
         parser.seek(pos)?;
 
         Ok(
