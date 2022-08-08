@@ -3142,6 +3142,7 @@ typeenum!(
     2 => Multicast,
     4 => MplsUnicast,
     65 => Vpls,
+    70 => Evpn,
     128 => MplsVpnUnicast,
     132 => RouteTarget,
     133 => FlowSpec,
@@ -3264,5 +3265,197 @@ pub enum AddPath {
 
 #[cfg(test)]
 mod tests {
-    // TODO
+
+    // Helper for generating a .pcap, pass output to `text2pcap`.
+    fn print_pcap<T: AsRef<[u8]>>(msg: T) {
+        println!();
+        print!("000000 ");
+        for b in msg.as_ref() {
+            print!("{:02x} ", b);
+        }
+        println!();
+    }
+    
+    //--- BGP OPEN related tests ---------------------------------------------
+    mod open {
+
+        use super::super::*;
+        use super::print_pcap;
+
+        #[test]
+        fn no_optional_parameters() {
+            // BGP OPEN message, 2-octet ASN 64496, no opt params
+            let buf = vec![
+                0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                0x00, 0x1d, 0x01, 0x04, 0xfb, 0xf0, 0x00, 0x5a,
+                0xc0, 0x00, 0x02, 0x01, 0x00
+            ];
+
+            let open: MessageOpen = Message::from_octets(&buf)
+                .unwrap().try_into().unwrap();
+
+            assert_eq!(open.length(), 29);
+            assert_eq!(open.version(), 4);
+            assert_eq!(open.my_asn(), Asn::from(64496));
+            assert_eq!(open.holdtime(), 90);
+            assert_eq!(open.identifier(), &[192, 0, 2, 1]);
+            assert_eq!(open.opt_parm_len(), 0);
+            assert_eq!(open.parameters().count(), 0);
+        }
+
+        #[test]
+        fn single_capabilities() {
+            // BGP OPEN with 5 optional parameters, all Capability
+            let buf = vec![
+                0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                0x00, 0x39, 0x01, 0x04, 0x5b, 0xa0, 0x00, 0xb4,
+                0x0a, 0x00, 0x00, 0x03, 0x1c, 0x02, 0x06, 0x01,
+                0x04, 0x00, 0x01, 0x00, 0x01, 0x02, 0x02, 0x80,
+                0x00, 0x02, 0x02, 0x02, 0x00, 0x02, 0x02, 0x46,
+                0x00, 0x02, 0x06, 0x41, 0x04, 0x00, 0x64, 0x00,
+                0x64
+            ];
+
+            let open: MessageOpen = Message::from_octets(&buf)
+                .unwrap().try_into().unwrap();
+
+            assert_eq!(open.capabilities().count(), 5);
+            let mut iter = open.capabilities();
+            let cap1 = iter.next().unwrap();
+            assert_eq!(cap1.typ(), CapabilityType::MultiProtocol);
+
+            let cap2 = iter.next().unwrap();
+            assert_eq!(cap2.typ(), CapabilityType::PrestandardRouteRefresh);
+
+            let cap3 = iter.next().unwrap();
+            assert_eq!(cap3.typ(), CapabilityType::RouteRefresh);
+
+            let cap4 = iter.next().unwrap();
+            assert_eq!(cap4.typ(), CapabilityType::EnhancedRouteRefresh);
+
+            let cap5 = iter.next().unwrap();
+            assert_eq!(cap5.typ(), CapabilityType::FourOctetAsn);
+
+            assert!(iter.next().is_none());
+        }
+
+        #[test]
+        fn multiple_capabilities() {
+            // BGP OPEN with one Optional Parameter of type Capability,
+            // containing 8 Capabilities.
+            let buf = vec![
+                0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                0x00, 0x51, 0x01, 0x04, 0xfb, 0xf0, 0x00, 0xb4,
+                0xc0, 0x00, 0x02, 0x01, 0x34, 0x02, 0x32, 0x02,
+                0x00, 0x46, 0x00, 0x41, 0x04, 0x00, 0x00, 0xfb,
+                0xf0, 0x01, 0x04, 0x00, 0x01, 0x00, 0x01, 0x01,
+                0x04, 0x00, 0x02, 0x00, 0x04, 0x08, 0x04, 0x00,
+                0x02, 0x04, 0x0d, 0x40, 0x0a, 0xc0, 0x78, 0x00,
+                0x01, 0x01, 0x00, 0x00, 0x02, 0x04, 0x00, 0x45,
+                0x08, 0x00, 0x01, 0x01, 0x01, 0x00, 0x02, 0x04,
+                0x01
+            ];
+            let open: MessageOpen = Message::from_octets(&buf)
+                .unwrap().try_into().unwrap();
+            assert_eq!(open.capabilities().count(), 8);
+            let types = [
+                CapabilityType::RouteRefresh,
+                CapabilityType::EnhancedRouteRefresh,
+                CapabilityType::FourOctetAsn,
+                CapabilityType::MultiProtocol,
+                CapabilityType::MultiProtocol,
+                CapabilityType::MultipleLabels,
+                CapabilityType::GracefulRestart,
+                CapabilityType::AddPath,
+            ];
+            for (cap, cap_type) in open.capabilities().zip(types.iter()) {
+                assert_eq!(cap.typ(), *cap_type);
+            }
+
+        }
+
+        #[test]
+        fn multiple_multiprotocol() {
+            // BGP OPEN message with 15 Multiprotocol capabilities
+            let buf = vec![
+                0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                0x00, 0x9d, 0x01, 0x04, 0x5b, 0xa0, 0x00, 0xb4,
+                0xc0, 0x00, 0x02, 0x02, 0x80, 0x02, 0x06, 0x01,
+                0x04, 0x00, 0x01, 0x00, 0x01, 0x02, 0x06, 0x01,
+                0x04, 0x00, 0x01, 0x00, 0x02, 0x02, 0x06, 0x01,
+                0x04, 0x00, 0x01, 0x00, 0x04, 0x02, 0x06, 0x01,
+                0x04, 0x00, 0x01, 0x00, 0x80, 0x02, 0x06, 0x01,
+                0x04, 0x00, 0x01, 0x00, 0x84, 0x02, 0x06, 0x01,
+                0x04, 0x00, 0x01, 0x00, 0x85, 0x02, 0x06, 0x01,
+                0x04, 0x00, 0x01, 0x00, 0x86, 0x02, 0x06, 0x01,
+                0x04, 0x00, 0x02, 0x00, 0x01, 0x02, 0x06, 0x01,
+                0x04, 0x00, 0x02, 0x00, 0x02, 0x02, 0x06, 0x01,
+                0x04, 0x00, 0x02, 0x00, 0x04, 0x02, 0x06, 0x01,
+                0x04, 0x00, 0x02, 0x00, 0x80, 0x02, 0x06, 0x01,
+                0x04, 0x00, 0x02, 0x00, 0x85, 0x02, 0x06, 0x01,
+                0x04, 0x00, 0x02, 0x00, 0x86, 0x02, 0x06, 0x01,
+                0x04, 0x00, 0x19, 0x00, 0x41, 0x02, 0x06, 0x01,
+                0x04, 0x00, 0x19, 0x00, 0x46, 0x02, 0x06, 0x41,
+                0x04, 0x00, 0x01, 0x00, 0x00
+                    ];
+
+            let open: MessageOpen = Message::from_octets(&buf)
+                .unwrap().try_into().unwrap();
+
+            assert_eq!(open.multiprotocol_ids().count(), 15);
+            let protocols = [
+                (AFI::Ipv4, SAFI::Unicast),
+                (AFI::Ipv4, SAFI::Multicast),
+                (AFI::Ipv4, SAFI::MplsUnicast),
+                (AFI::Ipv4, SAFI::MplsVpnUnicast),
+                (AFI::Ipv4, SAFI::RouteTarget),
+                (AFI::Ipv4, SAFI::FlowSpec),
+                (AFI::Ipv4, SAFI::FlowSpecVpn),
+                (AFI::Ipv6, SAFI::Unicast),
+                (AFI::Ipv6, SAFI::Multicast),
+                (AFI::Ipv6, SAFI::MplsUnicast),
+                (AFI::Ipv6, SAFI::MplsVpnUnicast),
+                (AFI::Ipv6, SAFI::FlowSpec),
+                (AFI::Ipv6, SAFI::FlowSpecVpn),
+                (AFI::L2Vpn, SAFI::Vpls),
+                (AFI::L2Vpn, SAFI::Evpn),
+            ];
+
+            for (id, protocol) in open.multiprotocol_ids().zip(
+                protocols.iter()
+            ){
+                assert_eq!(id, *protocol);
+            }
+
+        }
+    }
+
+    //--- BGP UPDATE related tests -------------------------------------------
+    mod update {
+        //TODO
+    }
+
+
+    //--- BGP NOTIFICATION related tests -------------------------------------
+    mod notification {
+        //TODO
+    }
+
+
+    //--- BGP KEEPAlIVE related tests ----------------------------------------
+    mod keepalive {
+        //TODO
+    }
+
+
+    //--- BGP ROUTEREFRESH related tests -------------------------------------
+    mod routerefresh {
+        //TODO
+    }
+
+
 }
