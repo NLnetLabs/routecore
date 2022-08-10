@@ -3,11 +3,14 @@
 /// # Example 
 ///
 /// ```rust
+/// # #[macro_use] extern crate routecore;
+/// # fn main() {
 /// typeenum!(AFI, u16,
 ///     1 => Ipv4,
 ///     2 => Ipv6,
 ///     25 => L2Vpn,
 /// );
+/// # }
 /// ```
 /// This will create a `pub enum AFI`, comprised of variants `IPv4`, `IPv6`
 /// and `L2Vpn`. On this enum, the [`From`] (for conversion between the
