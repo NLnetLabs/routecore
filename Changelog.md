@@ -6,9 +6,14 @@ Breaking changes
 
 New
 
+* Parsing of BGP and BMP messages.
+
 Bug fixes
 
 Other changes
+
+* Changed Rust edition from 2018 to 2021, bumping the minimal supported Rust
+  version to 1.56.1 .
 
 
 ## 0.2.0

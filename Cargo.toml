@@ -1,11 +1,12 @@
 [package]
 name = "routecore"
-version = "0.2.1-dev"
+version = "0.3.0-dev"
 authors = ["The NLnet Labs RPKI team <rpki-team@nlnetlabs.nl>"]
 categories = ["network-programming"]
 description = "A Library with Building Blocks for BGP Routing"
 documentation = "https://docs.rs/routecore/"
 edition = "2021"
+rust-version = "1.56.1"
 keywords = ["routing", "bgp"]
 license = "BSD-3-Clause"
 
@@ -25,4 +26,4 @@ serde_test      = "1.0"
 
 [features]
 default = []
-bgmp = ["bytes", "chrono","log"]
+parsing = ["bytes", "chrono","log"]
