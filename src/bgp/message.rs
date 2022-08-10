@@ -3266,7 +3266,10 @@ pub enum AddPath {
 #[cfg(test)]
 mod tests {
 
+    use super::*;
+
     // Helper for generating a .pcap, pass output to `text2pcap`.
+    #[allow(dead_code)]
     fn print_pcap<T: AsRef<[u8]>>(msg: T) {
         println!();
         print!("000000 ");
@@ -3275,12 +3278,20 @@ mod tests {
         }
         println!();
     }
+
+    // Helpers for quickly parsing bufs into specific BGP messages
+    fn bgp_open(buf: &[u8]) -> super::MessageOpen {
+        super::Message::from_octets(&buf).unwrap().try_into().unwrap()
+    }
+
+    fn bgp_update(buf: &[u8]) -> super::MessageUpdate {
+        super::Message::from_octets(&buf).unwrap().try_into().unwrap()
+    }
     
     //--- BGP OPEN related tests ---------------------------------------------
     mod open {
 
-        use super::super::*;
-        use super::print_pcap;
+        use super::*;
 
         #[test]
         fn no_optional_parameters() {
@@ -3292,8 +3303,7 @@ mod tests {
                 0xc0, 0x00, 0x02, 0x01, 0x00
             ];
 
-            let open: MessageOpen = Message::from_octets(&buf)
-                .unwrap().try_into().unwrap();
+            let open = bgp_open(&buf);
 
             assert_eq!(open.length(), 29);
             assert_eq!(open.version(), 4);
@@ -3318,8 +3328,7 @@ mod tests {
                 0x64
             ];
 
-            let open: MessageOpen = Message::from_octets(&buf)
-                .unwrap().try_into().unwrap();
+            let open = bgp_open(&buf);
 
             assert_eq!(open.capabilities().count(), 5);
             let mut iter = open.capabilities();
@@ -3358,8 +3367,9 @@ mod tests {
                 0x08, 0x00, 0x01, 0x01, 0x01, 0x00, 0x02, 0x04,
                 0x01
             ];
-            let open: MessageOpen = Message::from_octets(&buf)
-                .unwrap().try_into().unwrap();
+
+            let open = bgp_open(&buf);
+
             assert_eq!(open.capabilities().count(), 8);
             let types = [
                 CapabilityType::RouteRefresh,
@@ -3374,6 +3384,10 @@ mod tests {
             for (cap, cap_type) in open.capabilities().zip(types.iter()) {
                 assert_eq!(cap.typ(), *cap_type);
             }
+
+            open.capabilities().zip(types.iter()).for_each(|(cap, cap_type)|{
+                assert_eq!(cap.typ(), *cap_type);
+            });
 
         }
 
@@ -3403,8 +3417,7 @@ mod tests {
                 0x04, 0x00, 0x01, 0x00, 0x00
                     ];
 
-            let open: MessageOpen = Message::from_octets(&buf)
-                .unwrap().try_into().unwrap();
+            let open = bgp_open(&buf);
 
             assert_eq!(open.multiprotocol_ids().count(), 15);
             let protocols = [
@@ -3436,7 +3449,386 @@ mod tests {
 
     //--- BGP UPDATE related tests -------------------------------------------
     mod update {
-        //TODO
+
+        use super::*;
+        use std::str::FromStr;
+
+        //TODO:
+        // X generic
+        // - incomplete msg
+        // - path attributes:
+        //   - aspath
+        //   - attributeset
+        // - announcements:
+        //   X single conventional
+        //   X multiple conventional 
+        //   x bgp-mp
+        // - withdrawals
+        //   - single conventional
+        //   X multiple conventional
+        //   x bgp-mp
+        // - communities
+        //   - normal
+        //   - extended
+        //   - large
+        //   - chained iter
+        // - MP NLRI types:
+        //   announcements:
+        //   - v4 mpls unicast
+        //   - v4 mpls unicast unreach **missing**
+        //   - v4 mpls vpn unicast
+        //   - v6 mpls unicast addpath 
+        //   - v6 mpls vpn unicast
+        //   - multicast **missing
+        //   - vpls
+        //   - flowspec
+        //   - routetarget
+        //   withdrawals:
+        //   - v4 mpls vpn unicast unreach
+        //   - v6 mpls unicast addpath unreach
+        //   - v6 mpls vpn unicast
+        //
+        //
+        // x legacy stuff:
+        //    as4path
+        //
+
+
+        #[test]
+        fn incomplete_msg() {
+            let buf = vec![
+                0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                0x00, 0x88, 0x02, 
+            ];
+            assert!(Message::from_octets(&buf).is_err());
+        }
+
+        #[test]
+        fn conventional() {
+            let buf = vec![
+                // BGP UPDATE, single conventional announcement, MultiExitDisc
+                0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x37, 0x02,
+                0x00, 0x00, 0x00, 0x1b, 0x40, 0x01, 0x01, 0x00, 0x40, 0x02,
+                0x06, 0x02, 0x01, 0x00, 0x01, 0x00, 0x00, 0x40, 0x03, 0x04,
+                0x0a, 0xff, 0x00, 0x65, 0x80, 0x04, 0x04, 0x00, 0x00, 0x00,
+                0x01, 0x20, 0x0a, 0x0a, 0x0a, 0x02
+            ];
+
+            let update = bgp_update(&buf);
+
+            assert_eq!(update.length(), 55);
+            assert_eq!(update.total_path_attribute_len(), 27);
+
+            let mut pa_iter = update.path_attributes();
+
+            let pa1 = pa_iter.next().unwrap();
+            assert_eq!(pa1.type_code(), PathAttributeType::Origin);
+            assert_eq!(pa1.flags(), 0x40);
+            assert!(!pa1.is_optional());
+            assert!(pa1.is_transitive());
+            assert!(!pa1.is_partial());
+            assert!(!pa1.is_extended_length());
+
+            assert_eq!(pa1.length(), 1);
+            assert_eq!(pa1.value(), &[0x00]); // TODO enumify Origin types
+
+            let pa2 = pa_iter.next().unwrap();
+            assert_eq!(pa2.type_code(), PathAttributeType::AsPath);
+            assert_eq!(pa2.flags(), 0x40);
+            assert_eq!(pa2.length(), 6);
+
+            let asp = pa2.value();
+            assert_eq!(asp, [0x02, 0x01, 0x00, 0x01, 0x00, 0x00]);
+
+            let mut pb = AsPathBuilder::new();
+            pb.push(Asn::from_u32(65536)).unwrap();
+            let asp: AsPath<Vec<Asn>> = pb.finalize();
+
+            assert_eq!(update.aspath().unwrap(), asp);
+
+            let pa3 = pa_iter.next().unwrap();
+            assert_eq!(pa3.type_code(), PathAttributeType::NextHop);
+            assert_eq!(pa3.flags(), 0x40);
+            assert_eq!(pa3.length(), 4);
+            assert_eq!(pa3.value(), &[10, 255, 0, 101]);
+            assert_eq!(
+                update.next_hop(),
+                Some(NextHop::Ipv4(Ipv4Addr::new(10, 255, 0, 101)))
+            );
+
+            let pa4 = pa_iter.next().unwrap();
+            assert_eq!(pa4.type_code(), PathAttributeType::MultiExitDisc);
+            assert_eq!(pa4.flags(), 0x80);
+            assert!(pa4.is_optional());
+            assert!(!pa4.is_transitive());
+            assert!(!pa4.is_partial());
+            assert!(!pa4.is_extended_length());
+            assert_eq!(pa4.length(), 4);
+            assert_eq!(pa4.value(), &[0x00, 0x00, 0x00, 0x01]);
+            assert_eq!(update.multi_exit_desc(), Some(MultiExitDisc(1)));
+
+            assert!(pa_iter.next().is_none());
+
+            let mut nlri_iter = update.nlris();
+            let nlri1 = nlri_iter.next().unwrap();
+            assert!(matches!(nlri1, Nlri::Basic(_)));
+            assert_eq!(
+                nlri1.prefix(),
+                Some(Prefix::from_str("10.10.10.2/32").unwrap())
+            );
+            assert!(nlri_iter.next().is_none());
+        }
+
+        #[test]
+        fn conventional_multiple_nlri() {
+            let buf = vec![
+                0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                0x00, 0x3c, 0x02, 0x00, 0x00, 0x00, 0x1b, 0x40,
+                0x01, 0x01, 0x00, 0x40, 0x02, 0x06, 0x02, 0x01,
+                0x00, 0x01, 0x00, 0x00, 0x40, 0x03, 0x04, 0x0a,
+                0xff, 0x00, 0x65, 0x80, 0x04, 0x04, 0x00, 0x00,
+                0x07, 0x6c, 0x20, 0x0a, 0x0a, 0x0a, 0x09, 0x1e,
+                0xc0, 0xa8, 0x61, 0x00
+            ];
+
+            let update = bgp_update(&buf);
+
+            assert_eq!(update.total_path_attribute_len(), 27);
+            assert_eq!(update.nlris().count(), 2);
+
+            let prefixes = ["10.10.10.9/32", "192.168.97.0/30"].map(|p|
+                Prefix::from_str(p).unwrap()
+            );
+
+            for (nlri, prefix) in update.nlris().zip(prefixes.iter()) {
+                assert_eq!(nlri.prefix(), Some(*prefix))
+            }
+        }
+
+        #[test]
+        fn multiple_mp_reach() {
+            // BGP UPDATE message containing MP_REACH_NLRI path attribute,
+            // comprising 5 IPv6 NLRIs
+            let buf = vec![
+                0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                0x00, 0x88, 0x02, 0x00, 0x00, 0x00, 0x71, 0x80,
+                0x0e, 0x5a, 0x00, 0x02, 0x01, 0x20, 0xfc, 0x00,
+                0x00, 0x10, 0x00, 0x01, 0x00, 0x10, 0x00, 0x00,
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0xfe, 0x80,
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x80,
+                0xfc, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10,
+                0x40, 0x20, 0x01, 0x0d, 0xb8, 0xff, 0xff, 0x00,
+                0x00, 0x40, 0x20, 0x01, 0x0d, 0xb8, 0xff, 0xff,
+                0x00, 0x01, 0x40, 0x20, 0x01, 0x0d, 0xb8, 0xff,
+                0xff, 0x00, 0x02, 0x40, 0x20, 0x01, 0x0d, 0xb8,
+                0xff, 0xff, 0x00, 0x03, 0x40, 0x01, 0x01, 0x00,
+                0x40, 0x02, 0x06, 0x02, 0x01, 0x00, 0x00, 0x00,
+                0xc8, 0x80, 0x04, 0x04, 0x00, 0x00, 0x00, 0x00
+            ];
+            let update = bgp_update(&buf);
+
+            assert_eq!(update.withdrawn_routes_len(), 0);
+            assert_eq!(update.total_path_attribute_len(), 113);
+
+            assert_eq!(update.nlris().count(), 5);
+
+            let prefixes = [
+                "fc00::10/128",
+                "2001:db8:ffff::/64",
+                "2001:db8:ffff:1::/64",
+                "2001:db8:ffff:2::/64",
+                "2001:db8:ffff:3::/64",
+            ].map(|p|
+                Prefix::from_str(p).unwrap()
+            );
+
+            for (nlri, prefix) in update.nlris().zip(prefixes.iter()) {
+                assert_eq!(nlri.prefix(), Some(*prefix))
+            }
+
+        }
+
+        #[test]
+        fn conventional_withdrawals() {
+            // BGP UPDATE with 12 conventional withdrawals
+            let buf = vec![
+                0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                0x00, 0x53, 0x02, 0x00, 0x3c, 0x20, 0x0a, 0x0a,
+                0x0a, 0x0a, 0x1e, 0xc0, 0xa8, 0x00, 0x1c, 0x20,
+                0x0a, 0x0a, 0x0a, 0x65, 0x1e, 0xc0, 0xa8, 0x00,
+                0x18, 0x20, 0x0a, 0x0a, 0x0a, 0x09, 0x20, 0x0a,
+                0x0a, 0x0a, 0x08, 0x1e, 0xc0, 0xa8, 0x61, 0x00,
+                0x20, 0x0a, 0x0a, 0x0a, 0x66, 0x1e, 0xc0, 0xa8,
+                0x00, 0x20, 0x1e, 0xc0, 0xa8, 0x62, 0x00, 0x1e,
+                0xc0, 0xa8, 0x00, 0x10, 0x1e, 0xc0, 0xa8, 0x63,
+                0x00, 0x00, 0x00
+            ];
+            let update = bgp_update(&buf);
+
+            assert_eq!(update.withdrawals().count(), 12);
+
+            let ws = [
+                "10.10.10.10/32",
+                "192.168.0.28/30",
+                "10.10.10.101/32",
+                "192.168.0.24/30",
+                "10.10.10.9/32",
+                "10.10.10.8/32",
+                "192.168.97.0/30",
+                "10.10.10.102/32",
+                "192.168.0.32/30",
+                "192.168.98.0/30",
+                "192.168.0.16/30",
+                "192.168.99.0/30",
+            ].map(|w|
+                Prefix::from_str(w).unwrap()
+            );
+
+            for (nlri, w) in update.withdrawals().zip(ws.iter()) {
+                assert_eq!(nlri.prefix(), Some(*w))
+            }
+
+        }
+
+        #[test]
+        fn multiple_mp_unreach() {
+            // BGP UPDATE with 4 MP_UNREACH_NLRI
+            let buf = vec![
+                0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                0x00, 0x41, 0x02, 0x00, 0x00, 0x00, 0x2a, 0x80,
+                0x0f, 0x27, 0x00, 0x02, 0x01, 0x40, 0x20, 0x01,
+                0x0d, 0xb8, 0xff, 0xff, 0x00, 0x00, 0x40, 0x20,
+                0x01, 0x0d, 0xb8, 0xff, 0xff, 0x00, 0x01, 0x40,
+                0x20, 0x01, 0x0d, 0xb8, 0xff, 0xff, 0x00, 0x02,
+                0x40, 0x20, 0x01, 0x0d, 0xb8, 0xff, 0xff, 0x00,
+                0x03
+            ];
+            let update = bgp_update(&buf);
+
+            assert_eq!(update.withdrawals().count(), 4);
+            
+            let ws = [
+                "2001:db8:ffff::/64",
+                "2001:db8:ffff:1::/64",
+                "2001:db8:ffff:2::/64",
+                "2001:db8:ffff:3::/64",
+            ].map(|w|
+                Prefix::from_str(w).unwrap()
+            );
+
+            for (nlri, w) in update.withdrawals().zip(ws.iter()) {
+                assert_eq!(nlri.prefix(), Some(*w))
+            }
+        }
+
+        //--- Path Attributes ------------------------------------------------
+        
+        #[test]
+        fn local_pref_multi_exit_disc() {
+            // BGP UPDATE with 5 conventional announcements, MULTI_EXIT_DISC
+            // and LOCAL_PREF path attributes
+            let buf = vec![
+                0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                0x00, 0x60, 0x02, 0x00, 0x00, 0x00, 0x30, 0x40,
+                0x01, 0x01, 0x00, 0x40, 0x02, 0x14, 0x03, 0x01,
+                0x00, 0x00, 0xfd, 0xea, 0x02, 0x03, 0x00, 0x00,
+                0x01, 0x90, 0x00, 0x00, 0x01, 0x2c, 0x00, 0x00,
+                0x01, 0xf4, 0x40, 0x03, 0x04, 0x0a, 0x04, 0x05,
+                0x05, 0x80, 0x04, 0x04, 0x00, 0x00, 0x00, 0x00,
+                0x40, 0x05, 0x04, 0x00, 0x00, 0x00, 0x64, 0x20,
+                0x0a, 0x00, 0x00, 0x09, 0x1a, 0xc6, 0x33, 0x64,
+                0x00, 0x1a, 0xc6, 0x33, 0x64, 0x40, 0x1a, 0xc6,
+                0x33, 0x64, 0x80, 0x1a, 0xc6, 0x33, 0x64, 0xc0
+            ];
+            let update = bgp_update(&buf);
+            assert_eq!(update.multi_exit_desc(), Some(MultiExitDisc(0)));
+            assert_eq!(update.local_pref(), Some(LocalPref(100)));
+        }
+
+        #[test]
+        fn atomic_aggregate() {
+            // BGP UPDATE with AGGREGATOR and ATOMIC_AGGREGATE
+            let buf = vec![
+                0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                0x00, 0x44, 0x02, 0x00, 0x00, 0x00, 0x29, 0x40,
+                0x01, 0x01, 0x00, 0x40, 0x02, 0x06, 0x02, 0x01,
+                0x00, 0x00, 0x00, 0x65, 0xc0, 0x07, 0x08, 0x00,
+                0x00, 0x00, 0x65, 0xc6, 0x33, 0x64, 0x01, 0x40,
+                0x06, 0x00, 0x40, 0x03, 0x04, 0x0a, 0x01, 0x02,
+                0x01, 0x80, 0x04, 0x04, 0x00, 0x00, 0x00, 0x00,
+                0x18, 0xc6, 0x33, 0x64
+            ];
+            let update = bgp_update(&buf);
+            let aggr = update.aggregator().unwrap();
+
+            assert!(update.is_atomic_aggregate());
+            assert_eq!(aggr.asn(), Asn::from(101));
+            assert_eq!(
+                aggr.speaker(),
+                Ipv4Addr::from_str("198.51.100.1").unwrap()
+            );
+        }
+
+        #[test]
+        fn as4path() {
+            // BGP UPDATE with AS_PATH and AS4_PATH, both containing one
+            // SEQUENCE of length 10. First four in AS_PATH are actual ASNs,
+            // last six are AS_TRANS.
+            let buf = vec![
+                0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                0x00, 0x6e, 0x02, 0x00, 0x00, 0x00, 0x53, 0x40,
+                0x01, 0x01, 0x00, 0x50, 0x02, 0x00, 0x16, 0x02,
+                0x0a, 0xfb, 0xf0, 0xfb, 0xf1, 0xfb, 0xf2, 0xfb,
+                0xf3, 0x5b, 0xa0, 0x5b, 0xa0, 0x5b, 0xa0, 0x5b,
+                0xa0, 0x5b, 0xa0, 0x5b, 0xa0, 0x40, 0x03, 0x04,
+                0xc0, 0xa8, 0x01, 0x01, 0xd0, 0x11, 0x00, 0x2a,
+                0x02, 0x0a, 0x00, 0x00, 0xfb, 0xf0, 0x00, 0x00,
+                0xfb, 0xf1, 0x00, 0x00, 0xfb, 0xf2, 0x00, 0x00,
+                0xfb, 0xf3, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+                0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+                0x00, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x01,
+                0x00, 0x0a, 0x16, 0x0a, 0x01, 0x04
+            ];
+            // TODO create test helper for specific SessionConfigs
+            let mut sc = SessionConfig::new(); sc.disable_four_octet_asn();
+            let update: MessageUpdate = Message::from_octets_with_sc(&buf, sc)
+                .unwrap().try_into().unwrap();
+
+            if let Some(aspath) = update.path_attributes().find(|pa|
+                pa.type_code() == PathAttributeType::AsPath
+            ){
+                assert_eq!(aspath.flags(), 0x50);
+                assert!(aspath.is_transitive());
+                assert!(aspath.is_extended_length());
+                assert_eq!(aspath.length(), 22);
+                //TODO check actual aspath
+            } else {
+                panic!("ASPATH path attribute not found")
+            }
+
+            if let Some(as4path) = update.path_attributes().find(|pa|
+                pa.type_code() == PathAttributeType::As4Path
+            ){
+                assert_eq!(as4path.flags(), 0xd0);
+                assert_eq!(as4path.length(), 42);
+                //TODO check actual aspath
+            } else {
+                panic!("AS4PATH path attribute not found")
+            }
+
+        }
+
     }
 
 
