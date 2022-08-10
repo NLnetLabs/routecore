@@ -1,4 +1,4 @@
 //! Types and parsing for BMP packets.
 
-#[cfg(feature = "bgmp")]
+#[cfg(feature = "parsing")]
 pub mod message;

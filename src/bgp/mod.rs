@@ -32,7 +32,7 @@ mod meta;
 mod prefix_record;
 mod route;
 
-#[cfg(feature = "bgmp")]
+#[cfg(feature = "parsing")]
 pub mod message;
 
 pub use self::meta::*;
