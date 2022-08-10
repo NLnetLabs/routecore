@@ -32,13 +32,8 @@ mod meta;
 mod prefix_record;
 mod route;
 
-#[cfg(feature = "parsing")]
 pub mod message;
 
 pub use self::meta::*;
 pub use self::prefix_record::*;
 pub use self::route::*;
-
-// once we decide to remove the feature flag:
-//pub use self::message::*;
-

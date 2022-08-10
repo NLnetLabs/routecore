@@ -26,4 +26,5 @@ serde_test      = "1.0"
 
 [features]
 default = []
-parsing = ["bytes", "chrono","log"]
+bgp = ["bytes", "log"]
+bmp = ["bgp", "bytes", "chrono", "log"]
