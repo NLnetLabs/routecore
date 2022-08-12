@@ -1698,7 +1698,7 @@ mod tests {
 
     //--- Messages -----------------------------------------------------------
     
-    // Helper.
+    // Helper to quickly parse bufs into specific BMP messages.
     fn parse_msg<T>(buf: &[u8]) -> T
     where
         T: TryFrom<Message>,

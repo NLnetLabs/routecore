@@ -3276,13 +3276,13 @@ mod tests {
         println!();
     }
 
-    // Helpers for quickly parsing bufs into specific BGP messages
-    fn bgp_open(buf: &[u8]) -> super::MessageOpen {
-        super::Message::from_octets(&buf).unwrap().try_into().unwrap()
-    }
-
-    fn bgp_update(buf: &[u8]) -> super::MessageUpdate {
-        super::Message::from_octets(&buf).unwrap().try_into().unwrap()
+    // Helper to quickly parse bufs into specific BGP messages
+    fn parse_msg<T>(buf: &[u8]) -> T
+    where
+        T: TryFrom<Message>,
+        <T as TryFrom<Message>>::Error: Debug
+    {
+        Message::from_octets(&buf).unwrap().try_into().unwrap()
     }
     
     //--- BGP OPEN related tests ---------------------------------------------
@@ -3300,7 +3300,7 @@ mod tests {
                 0xc0, 0x00, 0x02, 0x01, 0x00
             ];
 
-            let open = bgp_open(&buf);
+            let open: MessageOpen = parse_msg(&buf);
 
             assert_eq!(open.length(), 29);
             assert_eq!(open.version(), 4);
@@ -3325,7 +3325,7 @@ mod tests {
                 0x64
             ];
 
-            let open = bgp_open(&buf);
+            let open: MessageOpen = parse_msg(&buf);
 
             assert_eq!(open.capabilities().count(), 5);
             let mut iter = open.capabilities();
@@ -3365,7 +3365,7 @@ mod tests {
                 0x01
             ];
 
-            let open = bgp_open(&buf);
+            let open: MessageOpen = parse_msg(&buf);
 
             assert_eq!(open.capabilities().count(), 8);
             let types = [
@@ -3414,7 +3414,7 @@ mod tests {
                 0x04, 0x00, 0x01, 0x00, 0x00
                     ];
 
-            let open = bgp_open(&buf);
+            let open: MessageOpen = parse_msg(&buf);
 
             assert_eq!(open.multiprotocol_ids().count(), 15);
             let protocols = [
@@ -3513,7 +3513,7 @@ mod tests {
                 0x01, 0x20, 0x0a, 0x0a, 0x0a, 0x02
             ];
 
-            let update = bgp_update(&buf);
+            let update: MessageUpdate = parse_msg(&buf);
 
             assert_eq!(update.length(), 55);
             assert_eq!(update.total_path_attribute_len(), 27);
@@ -3591,7 +3591,7 @@ mod tests {
                 0xc0, 0xa8, 0x61, 0x00
             ];
 
-            let update = bgp_update(&buf);
+            let update: MessageUpdate = parse_msg(&buf);
 
             assert_eq!(update.total_path_attribute_len(), 27);
             assert_eq!(update.nlris().count(), 2);
@@ -3628,7 +3628,7 @@ mod tests {
                 0x40, 0x02, 0x06, 0x02, 0x01, 0x00, 0x00, 0x00,
                 0xc8, 0x80, 0x04, 0x04, 0x00, 0x00, 0x00, 0x00
             ];
-            let update = bgp_update(&buf);
+            let update: MessageUpdate = parse_msg(&buf);
 
             assert_eq!(update.withdrawn_routes_len(), 0);
             assert_eq!(update.total_path_attribute_len(), 113);
@@ -3667,7 +3667,7 @@ mod tests {
                 0xc0, 0xa8, 0x00, 0x10, 0x1e, 0xc0, 0xa8, 0x63,
                 0x00, 0x00, 0x00
             ];
-            let update = bgp_update(&buf);
+            let update: MessageUpdate = parse_msg(&buf);
 
             assert_eq!(update.withdrawals().count(), 12);
 
@@ -3708,7 +3708,7 @@ mod tests {
                 0x40, 0x20, 0x01, 0x0d, 0xb8, 0xff, 0xff, 0x00,
                 0x03
             ];
-            let update = bgp_update(&buf);
+            let update: MessageUpdate = parse_msg(&buf);
 
             assert_eq!(update.withdrawals().count(), 4);
             
@@ -3746,7 +3746,7 @@ mod tests {
                 0x00, 0x1a, 0xc6, 0x33, 0x64, 0x40, 0x1a, 0xc6,
                 0x33, 0x64, 0x80, 0x1a, 0xc6, 0x33, 0x64, 0xc0
             ];
-            let update = bgp_update(&buf);
+            let update: MessageUpdate = parse_msg(&buf);
             assert_eq!(update.multi_exit_desc(), Some(MultiExitDisc(0)));
             assert_eq!(update.local_pref(), Some(LocalPref(100)));
         }
@@ -3765,7 +3765,7 @@ mod tests {
                 0x01, 0x80, 0x04, 0x04, 0x00, 0x00, 0x00, 0x00,
                 0x18, 0xc6, 0x33, 0x64
             ];
-            let update = bgp_update(&buf);
+            let update: MessageUpdate = parse_msg(&buf);
             let aggr = update.aggregator().unwrap();
 
             assert!(update.is_atomic_aggregate());
