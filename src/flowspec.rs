@@ -37,20 +37,20 @@ impl BitmaskOp {
 }
 
 
-#[derive(Debug)]
-pub enum Component<'a> {
+#[derive(Copy, Clone, Debug)]
+pub enum Component<Octets> {
     DestinationPrefix(Prefix),
     SourcePrefix(Prefix),
-    IpProtocol(&'a [u8]),
-    Port(&'a [u8]),
-    DestinationPort(&'a [u8]),
-    SourcePort(&'a [u8]),
-    IcmpType(&'a [u8]),
-    IcmpCode(&'a [u8]),
-    TcpFlags(&'a [u8]), // list of (bitmask_op , value)
-    PacketLength(&'a [u8]),
-    DSCP(&'a [u8]),
-    Fragment(&'a [u8]),
+    IpProtocol(Octets),
+    Port(Octets),
+    DestinationPort(Octets),
+    SourcePort(Octets),
+    IcmpType(Octets),
+    IcmpCode(Octets),
+    TcpFlags(Octets), // list of (bitmask_op , value)
+    PacketLength(Octets),
+    DSCP(Octets),
+    Fragment(Octets),
 }
 
 impl<R: AsRef<[u8]>> Parse<R> for NumericOp {
@@ -139,9 +139,9 @@ where
     Ok(prefix)
 }
 
-impl<'a, R> Parse<R> for Component<'a>
+impl<R> Parse<R> for Component<R>
 where 
-    R: 'a + AsRef<[u8]> + OctetsRef<Range = &'a [u8]>
+    R: AsRef<[u8]> + OctetsRef<Range = R>
 {
     fn parse(parser: &mut Parser<R>) -> Result<Self, ParseError> {
 

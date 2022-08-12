@@ -7,7 +7,6 @@
 use crate::flowspec::Component;
 use log::{warn, error};
 
-use bytes::Bytes;
 use crate::asn::{Asn, AsPath, AsPathBuilder, SegmentType};
 use crate::addr::{Prefix, PrefixError};
 use std::fmt::{Debug, Display, Formatter, Result as FmtResult};
@@ -76,47 +75,54 @@ impl From<PrefixError> for ParseError {
 /// The available methods for each of the following message types are listed
 /// per `impl` in the [Implementations][Message#implementations] overview.
 ///
-///  * `MessageOpen`
-///  * `MessageUpdate`
-///  * `MessageNotification`
+///  * `OpenMessage`
+///  * `UpdateMessage`
+///  * `NotificationMessage`
 ///  * TODO: `MessageKeepAlive`
 ///  * TODO: `MessageRouteRefresh`
 ///
-pub enum Message {
-    Open(MessageOpen),
-    Update(MessageUpdate),
-    Notification(MessageNotification),
+pub enum Message<Octets: AsRef<[u8]>> {
+    Open(OpenMessage<Octets>),
+    Update(UpdateMessage<Octets>),
+    Notification(NotificationMessage<Octets>),
 }
 
 /// BGP OPEN message, variant of the [`Message`] enum.
 #[derive(Debug, Eq, PartialEq)]
-pub struct MessageOpen {
-    octets: Bytes,
+pub struct OpenMessage<Octets: AsRef<[u8]>> {
+    octets: Octets,
 }
 
 /// BGP UPDATE message, variant of the [`Message`] enum.
-pub struct MessageUpdate {
-    octets: Bytes,
+pub struct UpdateMessage<Octets: AsRef<[u8]>> {
+    octets: Octets,
     four_octet_asn: FourOctetAsn,
     add_path: AddPath,
 }
 
 /// BGP NOTIFICATION message, variant of the [`Message`] enum.
-pub struct MessageNotification {
-    octets: Bytes,
+pub struct NotificationMessage<Octets> {
+    octets: Octets
 }
 
-impl Message {
-    fn as_ref(&self) -> &[u8] {
+impl <Octets: AsRef<[u8]> + Copy>Message<Octets> {
+    //fn as_ref(&self) -> &[u8] {
+    //    match self {
+    //        Message::Open(m) => m.octets.as_ref(),
+    //        Message::Update(m) => m.octets.as_ref(),
+    //        Message::Notification(m) => m.octets.as_ref(),
+    //    }
+    //}
+    fn octets(&self) -> Octets {
         match self {
-            Message::Open(m) => m.octets.as_ref(),
-            Message::Update(m) => m.octets.as_ref(),
-            Message::Notification(m) => m.octets.as_ref(),
+            Message::Open(m) => m.octets.clone(),
+            Message::Update(m) => m.octets.clone(),
+            Message::Notification(m) => m.octets.clone(),
         }
     }
 
-    fn header(&self) -> Header {
-        Header::for_slice(self.as_ref())
+    fn header(&self) -> Header<Octets> {
+        Header::for_slice(self.octets())
     }
 
     /// Returns the length in bytes of the entire BGP message.
@@ -130,9 +136,9 @@ impl Message {
     }
 }
 
-impl MessageOpen {
-    fn header(&self) -> Header {
-        Header::for_slice(self.as_ref())
+impl <Octets: AsRef<[u8]> + Copy>OpenMessage<Octets> {
+    fn header(&self) -> Header<Octets> {
+        Header::for_slice(self.octets.clone())
     }
     /// Returns the length in bytes of the entire BGP message.
 	pub fn length(&self) -> u16 {
@@ -140,20 +146,20 @@ impl MessageOpen {
 	}
 
     /// Returns a clone of the inner `Bytes`.
-    pub fn bytes(&self) -> Bytes {
+    pub fn bytes(&self) -> Octets {
         self.octets.clone()
     }
 }
 
-impl AsRef<[u8]> for MessageOpen {
+impl<Octets: AsRef<[u8]>> AsRef<[u8]> for OpenMessage<Octets> {
     fn as_ref(&self) -> &[u8] {
         self.octets.as_ref()
     }
 }
 
-impl MessageUpdate {
-    fn header(&self) -> Header {
-        Header::for_slice(self.as_ref())
+impl<Octets: AsRef<[u8]> + Copy> UpdateMessage<Octets> {
+    fn header(&self) -> Header<Octets> {
+        Header::for_slice(self.octets.clone())
     }
     /// Returns the length in bytes of the entire BGP message.
 	pub fn length(&self) -> u16 {
@@ -161,15 +167,15 @@ impl MessageUpdate {
 	}
 }
 
-impl AsRef<[u8]> for MessageUpdate {
+impl <Octets: AsRef<[u8]>> AsRef<[u8]> for UpdateMessage<Octets> {
     fn as_ref(&self) -> &[u8] {
         self.octets.as_ref()
     }
 }
 
-impl MessageNotification {
-    fn header(&self) -> Header {
-        Header::for_slice(self.as_ref())
+impl<Octets: AsRef<[u8]> + Copy> NotificationMessage<Octets> {
+    fn header(&self) -> Header<Octets> {
+        Header::for_slice(self.octets.clone())
     }
     /// Returns the length in bytes of the entire BGP message.
 	pub fn length(&self) -> u16 {
@@ -177,15 +183,15 @@ impl MessageNotification {
 	}
 }
 
-impl AsRef<[u8]> for MessageNotification {
+impl<Octets: AsRef<[u8]>> AsRef<[u8]> for NotificationMessage<Octets> {
     fn as_ref(&self) -> &[u8] {
         self.octets.as_ref()
     }
 }
 
-impl TryFrom<Message> for MessageOpen {
+impl <Octets: AsRef<[u8]>>TryFrom<Message<Octets>> for OpenMessage<Octets>  {
     type Error = MessageError;
-    fn try_from(msg: Message) -> Result<Self, Self::Error> {
+    fn try_from(msg: Message<Octets>) -> Result<Self, Self::Error> {
         match msg {
             Message::Open(u) => Ok(u),
             _ => Err(MessageError::InvalidMsgType),
@@ -193,9 +199,9 @@ impl TryFrom<Message> for MessageOpen {
     }
 }
 
-impl TryFrom<Message> for MessageUpdate {
+impl <Octets: AsRef<[u8]>>TryFrom<Message<Octets>> for UpdateMessage<Octets> {
     type Error = MessageError;
-    fn try_from(msg: Message) -> Result<Self, Self::Error> {
+    fn try_from(msg: Message<Octets>) -> Result<Self, Self::Error> {
         match msg {
             Message::Update(u) => Ok(u),
             _ => Err(MessageError::InvalidMsgType),
@@ -203,9 +209,9 @@ impl TryFrom<Message> for MessageUpdate {
     }
 }
 
-impl TryFrom<Message> for MessageNotification {
+impl <Octets: AsRef<[u8]>>TryFrom<Message<Octets>> for NotificationMessage<Octets> {
     type Error = MessageError;
-    fn try_from(msg: Message) -> Result<Self, Self::Error> {
+    fn try_from(msg: Message<Octets>) -> Result<Self, Self::Error> {
         match msg {
             Message::Notification(u) => Ok(u),
             _ => Err(MessageError::InvalidMsgType),
@@ -214,10 +220,10 @@ impl TryFrom<Message> for MessageNotification {
 }
 
 
-impl Message {
-    pub fn from_octets<'a, B>(octets: B) -> Result<Message, ParseError>
+impl <Octets: AsRef<[u8]> + OctetsRef<Range = Octets>>Message<Octets> {
+    pub fn from_octets<'a, B>(octets: B) -> Result<Self, ParseError>
     where
-        B: 'a + AsRef<[u8]> + OctetsRef<Range = &'a [u8]>,
+        B: 'a + AsRef<[u8]> + OctetsRef<Range = Octets>,
         //Bytes: From<B>,
     {
         Self::from_octets_with_sc(octets, SessionConfig::default())
@@ -225,18 +231,18 @@ impl Message {
 
     // Pass config/state directly. Only useful for testing, or parsing of
     // stand-alone, individual messages.
-    fn from_octets_with_sc<'a, B>(octets: B, config: SessionConfig) -> Result<Message, ParseError>
+    fn from_octets_with_sc<'a, B>(octets: B, config: SessionConfig) -> Result<Self, ParseError>
     where
-        B: 'a + AsRef<[u8]> + OctetsRef<Range = &'a [u8]>,
+        B: 'a + AsRef<[u8]> + OctetsRef<Range = Octets>,
         //Bytes: From<B>,
     {
         let mut parser = Parser::from_ref(octets, config);
-        let hdr = Header::parse(&mut parser)?;
+        let hdr = Header::<Octets>::parse(&mut parser)?;
         parser.seek(0)?;
         let res = match hdr.msg_type() {
-            MsgType::Open => Message::Open(MessageOpen::parse(&mut parser)?),
-            MsgType::Update => Message::Update(MessageUpdate::parse(&mut parser)?),
-            MsgType::Notification => Message::Notification(MessageNotification::parse(&mut parser)?),
+            MsgType::Open => Message::Open(OpenMessage::parse(&mut parser)?),
+            MsgType::Update => Message::Update(UpdateMessage::parse(&mut parser)?),
+            //MsgType::Notification => Message::Notification(NotificationMessage::parse(&mut parser)?),
             _ => panic!("not implemented yet")
         };
         Ok(res)
@@ -244,19 +250,19 @@ impl Message {
 
     // XXX the from_octets now only takes a ref (because of associated Range
     // type in the OctetsRef bound), so this function makes no sense yet.
-    pub fn from_ref<'a, B>(octets: B) -> Result<Message, ParseError>
+    pub fn from_ref<'a, B>(octets: B) -> Result<Self, ParseError>
     where
-        B: 'a + AsRef<[u8]> + OctetsRef<Range = &'a [u8]>,
+        B: 'a + AsRef<[u8]> + OctetsRef<Range = Octets>,
         //Bytes: From<B>,
     {
         let mut parser = Parser::from_ref(octets, SessionConfig::default());
-        let hdr = Header::parse(&mut parser)?;
+        let hdr = Header::<Octets>::parse(&mut parser)?;
         parser.seek(0)?;
         Ok(
         match hdr.msg_type() {
-            MsgType::Open => Message::Open(MessageOpen::parse(&mut parser)?),
-            MsgType::Update => Message::Update(MessageUpdate::parse(&mut parser)?),
-            MsgType::Notification => Message::Notification(MessageNotification::parse(&mut parser)?),
+            MsgType::Open => Message::Open(OpenMessage::parse(&mut parser)?),
+            //MsgType::Update => Message::Update(UpdateMessage::parse(&mut parser)?),
+            //MsgType::Notification => Message::Notification(NotificationMessage::parse(&mut parser)?),
             _ => panic!("not implemented yet")
         }
         )
@@ -285,20 +291,23 @@ const COFF: usize = 19; // XXX replace this with .skip()'s?
         
 /// BGP Message header.
 #[derive(Clone, Copy, Default)]
-pub struct Header<'a> {
-    slice: &'a[u8],
+//pub struct Header<'a> {
+//    slice: &'a[u8],
+//}
+pub struct Header<Octets> {
+    slice: Octets,
 }
-impl<'a> Header<'a> {
-    pub fn for_slice(s: &'a[u8]) -> Self {
+impl <Octets: AsRef<[u8]>>Header<Octets> {
+    pub fn for_slice(s: Octets) -> Self {
         Header { slice: s}
     }
 
 	pub fn length(&self) -> u16 {
-		u16::from_be_bytes([self.slice[16], self.slice[17]])
+		u16::from_be_bytes([self.slice.as_ref()[16], self.slice.as_ref()[17]])
 	}
 
     pub fn msg_type(self) -> MsgType {
-        match self.slice[18] {
+        match self.slice.as_ref()[18] {
             1 => MsgType::Open,
             2 => MsgType::Update,
             3 => MsgType::Notification,
@@ -309,9 +318,9 @@ impl<'a> Header<'a> {
     }
 }
 
-impl<'a, R> Parse<R> for Header<'a>
+impl<R, Octets> Parse<R> for Header<Octets>
 where
-    R: AsRef<[u8]> + OctetsRef<Range = &'a[u8]>
+    R: AsRef<[u8]> + OctetsRef<Range = Octets>,
 {
     fn parse(parser: &mut Parser<R>) -> Result<Self, ParseError> {
         let pos = parser.pos();
@@ -319,9 +328,11 @@ where
         let _len = parser.parse_u16()?;
         let _typ = parser.parse_u8()?;
         parser.seek(pos)?;
-        let res: &[u8] = parser.parse_octets(19)?;
+        //let res: &[u8] = parser.parse_octets(19)?;
+        let res = parser.parse_octets(19)?;
         Ok(
-            Header::for_slice(res)
+            //Header::for_slice(res.as_ref())
+            Header{ slice: res }
         )
     }
     fn skip(parser: &mut Parser<R>) -> Result<(), ParseError> {
@@ -341,10 +352,10 @@ where
 ///
 /// ## Convenience methods
 ///
-/// * [`my_asn()`][`MessageOpen::my_asn`]: returns the 32bit ASN if present,
+/// * [`my_asn()`][`OpenMessage::my_asn`]: returns the 32bit ASN if present,
 /// otherwise falls back to the conventional 16bit ASN (though represented as
 /// the 32bit [`routecore::asn::Asn`][`Asn`]);
-/// * [`multiprotocol_ids()`][`MessageOpen::multiprotocol_ids`]: returns an
+/// * [`multiprotocol_ids()`][`OpenMessage::multiprotocol_ids`]: returns an
 /// iterator over all the AFI/SAFI combinations listed as Capability in the
 /// Optional Parameters. If this yields an empty iterator, one can assume the
 /// default (IPv4/Unicast) can be used, but it is up to the user to handle as
@@ -367,13 +378,22 @@ where
 //  |             Optional Parameters (variable)                    |
 //  |                                                               |
 //  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-impl MessageOpen {
-    fn for_slice(s: &[u8]) -> Self {
-        Self {
-            octets: Bytes::copy_from_slice(s),
-            //add_path: None,
-        }
-    }
+impl <Octets: AsRef<[u8]> + OctetsRef<Range = Octets>>OpenMessage<Octets> {
+    //fn for_slice(s: Octets) -> Self {
+    //    Self {
+    //        octets: s,
+    //        //add_path: None,
+    //    }
+    //}
+    //fn for_slice<T>(s: T) -> Self
+    //where
+    //    T: OctetsRef
+    //{
+    //    Self {
+    //        octets: s,
+    //        //add_path: None,
+    //    }
+    //}
 
     /// Returns the protocol version number, which should be 4.
     pub fn version(&self) -> u8 {
@@ -416,11 +436,12 @@ impl MessageOpen {
     }
 
     /// Returns an iterator over the Optional Parameters.
-	pub fn parameters(&'_ self) -> ParameterIter<'_> {
+	pub fn parameters(&self) -> ParameterIter<Octets> {
         ParameterIter::new(
-            &self.octets.as_ref()[
-                COFF+10..COFF+10+self.opt_parm_len() as usize
-            ]
+            //&self.octets.as_ref()[
+            //    COFF+10..COFF+10+self.opt_parm_len() as usize
+            //]
+            self.octets.range( COFF+10,COFF+10+self.opt_parm_len() as usize)
         )
 	}
 
@@ -428,7 +449,7 @@ impl MessageOpen {
     // Multiple Capabilities can be carried in a single Optional Parameter, or
     // multiple individual Optional Parameters can carry a single Capability
     // each. Hence the flatten.
-	pub fn capabilities(&'_ self) -> impl Iterator<Item = Capability> {
+	pub fn capabilities(&'_ self) -> impl Iterator<Item = Capability<Octets>> {
         self.parameters().filter(|p|
             p.typ() == OptionalParameterType::Capabilities
         ).flat_map(|p|
@@ -468,24 +489,24 @@ impl MessageOpen {
     /// Returns an iterator over `(AFI, SAFI)` tuples listed as
     /// MultiProtocol Capabilities in the Optional Parameters of this message.
     pub fn multiprotocol_ids(&self) -> impl Iterator<Item = (AFI,SAFI)> + '_ {
-        let res = self.capabilities().filter(|c|
+        self.capabilities().filter(|c|
             c.typ() == CapabilityType::MultiProtocol
-            ).map(|mp_cap| {
+        ).map(|mp_cap| {
             let afi = u16::from_be_bytes([
                 mp_cap.value()[0],
                 mp_cap.value()[1]
             ]);
             let safi = mp_cap.value()[3];
             (afi.into(), safi.into())
-        });
-        res
+        })
     }
 
 }
 
-impl<'a, R> Parse<R> for MessageOpen
+impl<'a, R, Octets> Parse<R> for OpenMessage<Octets>
 where
-    R: 'a + AsRef<[u8]> + OctetsRef<Range = &'a[u8]>
+    R: 'a + AsRef<[u8]> + OctetsRef<Range = Octets>,
+    Octets: AsRef<[u8]> + OctetsRef<Range = Octets>,
 {
     fn parse(parser: &mut Parser<R>) -> Result<Self, ParseError> {
         // parse header
@@ -505,7 +526,7 @@ where
         }
 
         while opt_param_len > 0 {
-            let param = Parameter::parse(parser)?;
+            let param = Parameter::<Octets>::parse(parser)?;
             opt_param_len -= 2 + param.length() as usize;
         }
 
@@ -518,7 +539,8 @@ where
         parser.seek(pos)?;
 
         Ok(
-            Self::for_slice(parser.parse_octets(hdr.length().into())?)
+            //Self::for_slice(parser.parse_octets(hdr.length().into())?)
+            Self { octets: parser.parse_octets(hdr.length().into())? }
         )
 
     }
@@ -528,9 +550,10 @@ where
     }
 }
 
-impl<'a, R> Parse<R> for Parameter<'a> 
+impl<'a, R, Octets> Parse<R> for Parameter<Octets> 
 where
-    R: 'a + AsRef<[u8]> + OctetsRef<Range = &'a[u8]>
+    Octets: AsRef<[u8]> + OctetsRef<Range = Octets>,
+    R: 'a + AsRef<[u8]> + OctetsRef<Range = Octets>,
 {
     fn parse(parser: &mut Parser<R>) -> Result<Self, ParseError> {
         let pos = parser.pos();
@@ -540,7 +563,7 @@ where
             // There might be more than Capability within a single Optional
             // Parameter, so we need to loop.
             while parser.pos() < pos + len {
-                Capability::parse(parser)?;
+                Capability::<Octets>::parse(parser)?;
             }
         } else {
             warn!("Optional Parameter in BGP OPEN other than Capability: {}",
@@ -559,9 +582,10 @@ where
     }
 }
 
-impl<'a, R> Parse<R> for Capability<'a> 
+impl<'a, R, Octets> Parse<R> for Capability<Octets> 
 where
-    R: 'a + AsRef<[u8]> + OctetsRef<Range = &'a[u8]>
+    R: 'a + AsRef<[u8]> + OctetsRef<Range = Octets>,
+    Octets: AsRef<[u8]> + OctetsRef<Range = Octets>,
 {
     fn parse(parser: &mut Parser<R>) -> Result<Self, ParseError> {
         let pos = parser.pos();
@@ -745,11 +769,11 @@ where
 // <https://www.iana.org/assignments/capability-codes/capability-codes.xhtml>
 
 #[derive(Debug)]
-pub struct Capability<'a> {
-    octets: &'a [u8],
+pub struct Capability<Octets> {
+    octets: Octets,
 }
-impl <'a>Capability<'a> {
-    pub fn for_slice(octets: &'a [u8]) -> Capability<'a> {
+impl <Octets: AsRef<[u8]> + OctetsRef<Range = Octets>>Capability<Octets> {
+    pub fn for_slice(octets: Octets) -> Capability<Octets> {
         Capability {
             octets
         }
@@ -757,26 +781,26 @@ impl <'a>Capability<'a> {
 
     /// Returns the [`CapabilityType`] of this capability.
     pub fn typ(&self) -> CapabilityType {
-        self.octets[0].into()
+        self.octets.as_ref()[0].into()
     }
 
     pub fn length(&self) -> u8 {
-        self.octets[1]
+        self.octets.as_ref()[1]
     }
 
     pub fn value(&'_ self) -> &'_ [u8] {
-        &self.octets[2..]
+        &self.octets.as_ref()[2..]
     }
 }
 
 /// Iterator for BGP OPEN Capabilities.
-pub struct CapabilityIter<'a> {
-	octets: &'a [u8],
+pub struct CapabilityIter<Octets> {
+	octets: Octets,
 	pos: usize
 }
 
-impl<'a> CapabilityIter<'a> {
-    pub fn new(slice: &'a [u8]) -> CapabilityIter<'a>
+impl<Octets: AsRef<[u8]> + OctetsRef<Range = Octets>> CapabilityIter<Octets> {
+    pub fn new(slice: Octets) -> CapabilityIter<Octets>
     {
         CapabilityIter {
             octets: slice,
@@ -784,19 +808,19 @@ impl<'a> CapabilityIter<'a> {
         }
     }
 
-    pub fn get_capability(&mut self) -> Capability<'a> {
-        let len = self.octets[self.pos+1] as usize;
-        let res = Capability::for_slice(&self.octets[self.pos..(self.pos + 2 + len)]);
+    pub fn get_capability(&mut self) -> Capability<Octets> {
+        let len = self.octets.as_ref()[self.pos+1] as usize;
+        let res = Capability::for_slice(self.octets.range(self.pos,self.pos + 2 + len));
         self.pos += 2 + len;
         res
     }
 }
 
-impl<'a> Iterator for CapabilityIter<'a> {
-    type Item = Capability<'a>;
+impl<Octets: AsRef<[u8]> + OctetsRef<Range = Octets>> Iterator for CapabilityIter<Octets> {
+    type Item = Capability<Octets>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.pos == self.octets.len() {
+        if self.pos == self.octets.as_ref().len() {
             return None;
         }
         Some(self.get_capability())
@@ -852,37 +876,38 @@ typeenum!(
 // also see
 // https://www.iana.org/assignments/bgp-parameters/bgp-parameters.xhtml#bgp-parameters-11
 /// BGP OPEN Optional Parameter.
-pub struct Parameter<'a> {
-    octets: &'a [u8],
+pub struct Parameter<Octets> {
+    octets: Octets,
 }
 
-impl <'a>Parameter<'a> {
-    pub fn for_slice(slice: &'a [u8]) -> Parameter<'a> {
+impl <Octets: AsRef<[u8]> + OctetsRef<Range = Octets>>Parameter<Octets> {
+    pub fn for_slice(slice: Octets) -> Self {
         Parameter {
             octets: slice
         }
     }
+
     pub fn typ(&self) -> OptionalParameterType {
-        self.octets[0].into()
+        self.octets.as_ref()[0].into()
     }
     
     pub fn length(&self) -> u8 {
-        self.octets[1]
+        self.octets.as_ref()[1]
     }
 
-    pub fn value(&self) -> &'a[u8] {
-        &self.octets[2..]
+    pub fn value(&self) -> Octets {
+        self.octets.range_from(2)
     }
 }
 
 /// Iterator over BGP OPEN Optional [`Parameter`]s.
-pub struct ParameterIter<'a> {
-	octets: &'a [u8],
+pub struct ParameterIter<Octets> {
+	octets: Octets,
 	pos: usize
 }
 
-impl<'a> ParameterIter<'a> {
-    pub fn new(slice: &'a [u8]) -> ParameterIter<'a>
+impl <Octets: AsRef<[u8]> + OctetsRef<Range = Octets>>ParameterIter<Octets> {
+    pub fn new(slice: Octets) -> ParameterIter<Octets>
     {
         ParameterIter {
             octets: slice,
@@ -890,19 +915,19 @@ impl<'a> ParameterIter<'a> {
         }
     }
 
-    pub fn get_parameter(&mut self) -> Parameter<'a> {
-        let len = self.octets[self.pos+1] as usize;
-        let res = Parameter::for_slice(&self.octets[self.pos..(self.pos + 2 + len)]);
+    pub fn get_parameter(&mut self) -> Parameter<Octets> {
+        let len = self.octets.as_ref()[self.pos+1] as usize;
+        let res = Parameter::for_slice(self.octets.range(self.pos, self.pos + 2 + len));
         self.pos += 2 + len;
         res
     }
 }
 
-impl<'a> Iterator for ParameterIter<'a> {
-    type Item = Parameter<'a>;
+impl<Octets: AsRef<[u8]> + OctetsRef<Range = Octets>> Iterator for ParameterIter<Octets> {
+    type Item = Parameter<Octets>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.pos == self.octets.len() {
+        if self.pos == self.octets.as_ref().len() {
             return None;
         }
         Some(self.get_parameter())
@@ -927,22 +952,22 @@ impl<'a> Iterator for ParameterIter<'a> {
 ///
 /// To accomodate for these hassles, the following methods are provided:
 ///
-/// * [`nlris()`][`MessageUpdate::nlris`] and
-/// [`withdrawals()`][`MessageUpdate::withdrawals`],
+/// * [`nlris()`][`UpdateMessage::nlris`] and
+/// [`withdrawals()`][`UpdateMessage::withdrawals`],
 /// providing iterators over announced and withdrawn prefixes ;
-/// * [`next_hop()`][`MessageUpdate::next_hop`], returning the [`NextHop`] ;
-/// * [`all_communities()`][`MessageUpdate::all_communities`], returning an
+/// * [`next_hop()`][`UpdateMessage::next_hop`], returning the [`NextHop`] ;
+/// * [`all_communities()`][`UpdateMessage::all_communities`], returning an
 /// optional `Vec` containing all conventional, Extended and Large
 /// Communities, wrapped in the [`Community`] enum.
 ///
 /// For the mandatory path attributes, we have:
 ///
-/// * [`origin()`][`MessageUpdate::origin`]
-/// * [`aspath()`][`MessageUpdate::aspath`]
+/// * [`origin()`][`UpdateMessage::origin`]
+/// * [`aspath()`][`UpdateMessage::aspath`]
 ///
 /// Other path attributes ([`PathAttribute`] of a certain
 /// [`PathAttributeType`]) can be access via the iterator provided via
-/// [`path_attributes()`][`MessageUpdate::path_attributes`].
+/// [`path_attributes()`][`UpdateMessage::path_attributes`].
 ///
 // ---BGP Update--------------------------------------------------------------
 //
@@ -958,10 +983,10 @@ impl<'a> Iterator for ParameterIter<'a> {
 //  |   Network Layer Reachability Information (variable) |
 //  +-----------------------------------------------------+
 
-impl MessageUpdate {
-    fn for_slice(s: &[u8], four_octet_asn: FourOctetAsn, add_path: AddPath) -> Self {
+impl<Octets: AsRef<[u8]> + OctetsRef<Range = Octets>> UpdateMessage<Octets> {
+    fn for_slice(s: Octets, four_octet_asn: FourOctetAsn, add_path: AddPath) -> Self {
         Self {
-            octets: Bytes::copy_from_slice(s),
+            octets: s,
             four_octet_asn,
             add_path,
         }
@@ -982,7 +1007,7 @@ impl MessageUpdate {
         ])
 	}
 
-    pub fn withdrawals(&self) -> WithdrawalsIterMp<&[u8]> {
+    pub fn withdrawals(&self) -> WithdrawalsIterMp<Octets> {
         let mut sc = SessionConfig::default();
         if self.add_path == AddPath::Enabled  {
             sc.enable_addpath();
@@ -998,7 +1023,8 @@ impl MessageUpdate {
         } else {
             let len = self.withdrawn_routes_len() as usize;
             let parser = Parser::from_ref(
-                &self.as_ref()[COFF+2..COFF+2+len],
+                //&self.as_ref()[COFF+2..COFF+2+len],
+                self.octets.range(COFF+2,COFF+2+len),
                 sc,
             );
             WithdrawalsIterMp::new(parser, AFI::Ipv4, SAFI::Unicast)
@@ -1016,7 +1042,7 @@ impl MessageUpdate {
         ])
 	}
 
-    pub fn path_attributes(&self) -> PathAttributes<&[u8]> {
+    pub fn path_attributes(&self) -> PathAttributes<Octets> {
         let mut sc = SessionConfig::default();
         sc.set_four_octet_asn(self.four_octet_asn);
         sc.set_addpath(self.add_path);
@@ -1025,11 +1051,12 @@ impl MessageUpdate {
         let tpal = self.total_path_attribute_len() as usize;
         
         let mut parser = Parser::from_ref(
-            &self.as_ref()[COFF+2+wrl+2..COFF+2+wrl+2+tpal],
+            //&self.as_ref()[COFF+2+wrl+2..COFF+2+wrl+2+tpal],
+            self.octets.range(COFF+2+wrl+2, COFF+2+wrl+2+tpal),
             sc,
         );
 
-        PathAttributes::parse(&mut parser).expect("parsed before")
+        PathAttributes::<Octets>::parse(&mut parser).expect("parsed before")
         // Or for debugging:
         //PathAttributes::parse(&mut parser).map_err(|e| {
         //    self.print_pcap();
@@ -1042,7 +1069,7 @@ impl MessageUpdate {
     /// If present, the NLRIs are taken from the MP_REACH_NLRI path attribute.
     /// Otherwise, they are taken from their conventional place at the end of
     /// the message.
-    pub fn nlris(&self) -> NlriIterMp<&[u8]> {
+    pub fn nlris(&self) -> NlriIterMp<Octets> {
         let mut sc = SessionConfig::default();
         if self.add_path == AddPath::Enabled {
             sc.enable_addpath();
@@ -1058,7 +1085,7 @@ impl MessageUpdate {
             let tpal = self.total_path_attribute_len() as usize;
              
             let parser = Parser::from_ref(
-                &self.as_ref()[COFF+2+wrl+2+tpal..],
+                self.octets.range_from(COFF+2+wrl+2+tpal),
                 sc,
             );
             NlriIterMp::new_conventional(parser)
@@ -1085,9 +1112,9 @@ impl MessageUpdate {
                     let pa = self.path_attributes().next().unwrap();
                     return Some((
                             u16::from_be_bytes(
-                                [pa.value()[0], pa.value()[1]]
+                                [pa.value().as_ref()[0], pa.value().as_ref()[1]]
                             ).into(),
-                            pa.value()[2].into()
+                            pa.value().as_ref()[2].into()
                     ));
         }
 
@@ -1105,7 +1132,7 @@ impl MessageUpdate {
         self.path_attributes().find(|pa|
             pa.type_code() == PathAttributeType::Origin
         ).map(|pa|
-            match pa.value()[0] {
+            match pa.value().as_ref()[0] {
                 0 => OriginType::Igp,
                 1 => OriginType::Egp,
                 2 => OriginType::Incomplete,
@@ -1119,32 +1146,32 @@ impl MessageUpdate {
     // strict about these things, we have to make an educated guess.
     //
     // XXX we perhaps should not guess anything, just error out instead
-    fn guess_as_octets(pa: &PathAttribute) -> u8 {
+    fn guess_as_octets(pa: &PathAttribute<Octets>) -> u8 {
         assert!(pa.type_code() == PathAttributeType::AsPath);
         let res = 4;
 
         let octets = pa.value();
         let mut pos = 0;
-        while pos < octets.len() {
-            match SegmentType::try_from(octets[pos]) {
+        while pos < octets.as_ref().len() {
+            match SegmentType::try_from(octets.as_ref()[pos]) {
                 Ok(_) => { /* continue to assume 4 octet ASNs */ },
                 Err(_) => { return 2 }
             }
-            let segmentlen = octets[pos+1] as usize;
-            if segmentlen * 4 > octets.len(){
+            let segmentlen = octets.as_ref()[pos+1] as usize;
+            if segmentlen * 4 > octets.as_ref().len(){
                 return 2;
             }
             // assume we are dealing with 4 octet stuff here
             pos = pos + 2 + segmentlen * 4;
         }
 
-        if pos > octets.len() {
+        if pos > octets.as_ref().len() {
             // Apparently we jumped over the end, so assuming 4 bytes was
             // incorrect. 
             return 2;
         }
 
-        assert!(pos == octets.len());
+        assert!(pos == octets.as_ref().len());
 
         res
     }
@@ -1158,17 +1185,17 @@ impl MessageUpdate {
             let mut aspb = AsPathBuilder::new();
 
             let mut pos = 0;
-            while pos < octets.len() {
-                let st = SegmentType::try_from(octets[pos])
+            while pos < octets.as_ref().len() {
+                let st = SegmentType::try_from(octets.as_ref()[pos])
                     .expect("parsed before");
-                let num_asns = octets[pos+1] as usize;
+                let num_asns = octets.as_ref()[pos+1] as usize;
                 aspb.start(st);
                 pos += 2;
 
                 for _ in 0..num_asns {
                     let asn = Asn::from(
                         u32::from_be_bytes(
-                            octets[pos..pos+asn_size]
+                            octets.as_ref()[pos..pos+asn_size]
                             .try_into().expect("parsed before")
                         )
                     );
@@ -1219,10 +1246,10 @@ impl MessageUpdate {
 
             let mut pos = 0;
             let mut segment_idx = 0;
-            while pos < octets.len() {
-                let st = SegmentType::try_from(octets[pos]).expect("parsed
+            while pos < octets.as_ref().len() {
+                let st = SegmentType::try_from(octets.as_ref()[pos]).expect("parsed
                     before");
-                let num_asns = octets[pos+1] as usize;
+                let num_asns = octets.as_ref()[pos+1] as usize;
                 aspb.start(st);
                 pos += 2;
 
@@ -1230,14 +1257,14 @@ impl MessageUpdate {
                     let asn = if asn_size == 4 {
                     Asn::from(
                         u32::from_be_bytes(
-                            octets[pos..pos+asn_size]
+                            octets.as_ref()[pos..pos+asn_size]
                             .try_into().expect("parsed before")
                             )
                         )
                     } else {
                     Asn::from(
                         u16::from_be_bytes(
-                            octets[pos..pos+asn_size]
+                            octets.as_ref()[pos..pos+asn_size]
                             .try_into().expect("parsed before")
                             ) as u32
                         )
@@ -1290,10 +1317,10 @@ impl MessageUpdate {
         ).map(|pa|
             NextHop::Ipv4(
                 Ipv4Addr::new(
-                    pa.value()[0],
-                    pa.value()[1],
-                    pa.value()[2],
-                    pa.value()[3],
+                    pa.value().as_ref()[0],
+                    pa.value().as_ref()[1],
+                    pa.value().as_ref()[2],
+                    pa.value().as_ref()[3],
                 )
             )
         )
@@ -1307,7 +1334,8 @@ impl MessageUpdate {
             pa.type_code() == PathAttributeType::MultiExitDisc
         ).map(|pa|
             MultiExitDisc(u32::from_be_bytes(
-                    pa.value()[0..4].try_into().expect("parsed before")
+                    pa.value().as_ref()[0..4].try_into()
+                        .expect("parsed before")
             ))
         )
     }
@@ -1318,7 +1346,8 @@ impl MessageUpdate {
             pa.type_code() == PathAttributeType::LocalPref
         ).map(|pa|
             LocalPref(u32::from_be_bytes(
-                    pa.value()[0..4].try_into().expect("parsed before")
+                    pa.value().as_ref()[0..4].try_into()
+                    .expect("parsed before")
             ))
         )
     }
@@ -1354,21 +1383,21 @@ impl MessageUpdate {
 
     //--- Communities --------------------------------------------------------
 
-    pub fn communities(&self) -> Option<CommunityIter> {
+    pub fn communities(&self) -> Option<CommunityIter<Octets>> {
         self.path_attributes().find(|pa|
             pa.type_code() == PathAttributeType::Communities
         ).map(|pa| CommunityIter::new(pa.value())
         )
     }
 
-    pub fn ext_communities(&self) -> Option<ExtCommunityIter> {
+    pub fn ext_communities(&self) -> Option<ExtCommunityIter<Octets>> {
         self.path_attributes().find(|pa|
             pa.type_code() == PathAttributeType::ExtendedCommunities
         ).map(|pa| ExtCommunityIter::new(pa.value())
         )
     }
 
-    pub fn large_communities(&self) -> Option<LargeCommunityIter> {
+    pub fn large_communities(&self) -> Option<LargeCommunityIter<Octets>> {
         self.path_attributes().find(|pa|
             pa.type_code() == PathAttributeType::LargeCommunities
         ).map(|pa| LargeCommunityIter::new(pa.value())
@@ -1424,9 +1453,10 @@ where
     }
 }
 
-impl<'a, R> Parse<R> for MessageUpdate
+impl<'a, R, Octets> Parse<R> for UpdateMessage<Octets>
 where
-    R: 'a + AsRef<[u8]> + OctetsRef<Range = &'a[u8]>
+    R: 'a + AsRef<[u8]> + OctetsRef<Range = Octets>,
+    Octets: AsRef<[u8]> + OctetsRef<Range = Octets>,
 {
     fn parse(parser: &mut Parser<R>) -> Result<Self, ParseError> {
         // parse header
@@ -1448,7 +1478,8 @@ where
             // parse pa's
             let pas = parser.parse_octets(total_path_attributes_len.into())?;
             let mut pas_parser = Parser::from_ref(pas, parser.config());
-            <PathAttributes<&[u8]> as Parse<&[u8]>>::skip(&mut pas_parser)?;
+            //<PathAttributes<&[u8]> as Parse<&[u8]>>::skip(&mut pas_parser)?;
+            <PathAttributes::<Octets> as Parse::<Octets>>::skip(&mut pas_parser)?;
         }
 
         // conventional NLRI, if any
@@ -1479,7 +1510,9 @@ where
     }
 }
 
-impl Debug for MessageUpdate
+impl<Octets> Debug for UpdateMessage<Octets>
+where
+    Octets: AsRef<[u8]> + OctetsRef<Range = Octets>
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         let mut r = write!(f, " AS_PATH: {:?}\n \
@@ -1566,47 +1599,49 @@ pub enum NextHop {
 }
 
 /// Iterator over all [`PathAttribute`]s in a BGP UPDATE message.
-pub struct PathAttributes<Ref> {
-    parser: Parser<Ref>,
+pub struct PathAttributes<Octets: OctetsRef<Range = Octets>> {
+    parser: Parser<Octets>,
 }
 
-impl<'a, R> Parse<R> for PathAttributes<R> 
+impl<Octets> Parse<Octets> for PathAttributes<Octets> 
 where
-    R: 'a + AsRef<[u8]> + Copy + OctetsRef<Range = &'a [u8]>
+    Octets: AsRef<[u8]> + OctetsRef<Range = Octets>
 {
-    fn parse(parser: &mut Parser<R>) -> Result<Self, ParseError> {
+    fn parse(parser: &mut Parser<Octets>) -> Result<Self, ParseError> {
 
-        let res = *parser;
-        
+        //let res = *parser; // XXX is this better or worse than below?
+        let pos = parser.pos();
         while parser.remaining() > 0 {
             let _pa = PathAttribute::parse(parser)?;
         }
+        parser.seek(pos)?;
         Ok(
             PathAttributes {
-                parser: res
+                //parser: res
+                parser: *parser
             }
         )
     }
 
-    fn skip(parser: &mut Parser<R>) -> Result<(), ParseError> {
+    fn skip(parser: &mut Parser<Octets>) -> Result<(), ParseError> {
         Self::parse(parser).map(|_| ())
     }
 }
 
 /// BGP Path Attribute, carried in BGP UPDATE messages.
 #[derive(Debug, Eq, PartialEq)]
-pub struct PathAttribute<'a> {
-    slice: &'a[u8],
+pub struct PathAttribute<Octets> {
+    slice: Octets,
 }
 
-impl<'a> PathAttribute<'a> {
+impl<Octets: AsRef<[u8]> + OctetsRef<Range = Octets>> PathAttribute<Octets> {
 
-    pub fn for_slice(slice: &'a[u8]) -> Self {
+    pub fn for_slice(slice: Octets) -> Self {
         PathAttribute { slice }
     }
 
     pub fn flags(&self) -> u8 {
-        self.slice[0]
+        self.slice.as_ref()[0]
     }
 
     pub fn is_optional(&self) -> bool {
@@ -1624,21 +1659,22 @@ impl<'a> PathAttribute<'a> {
     }
 
     pub fn type_code(&self) -> PathAttributeType {
-        self.slice[1].into()
+        self.slice.as_ref()[1].into()
     }
 
     pub fn length(&self) -> u16 {
         match self.is_extended_length() {
             true => u16::from_be_bytes(
-                [self.slice[2], self.slice[3]]),
-            false => self.slice[2] as u16,
+                [self.slice.as_ref()[2], self.slice.as_ref()[3]]),
+            false => self.slice.as_ref()[2] as u16,
         }
     }
 
-    pub fn value(&self) -> &'a [u8] {
+    pub fn value(&self) -> Octets {
         let start = self.hdr_len();
         let end = start + self.length() as usize;
-        &self.slice[start..end]
+        //&self.slice.as_ref()[start..end]
+        self.slice.range(start,end)
     }
 
     fn hdr_len(&self) -> usize {
@@ -1649,8 +1685,10 @@ impl<'a> PathAttribute<'a> {
     }
 }
 
-impl<'a, R> Parse<R> for PathAttribute<'a>
-where  R: 'a + AsRef<[u8]> + OctetsRef<Range = &'a [u8]> ,
+impl<R, Octets> Parse<R> for PathAttribute<Octets>
+where
+    R: AsRef<[u8]> + OctetsRef<Range = Octets>,
+    Octets: AsRef<[u8]> + OctetsRef<Range = Octets>
 {
     fn parse(parser: &mut Parser<R>) ->  Result<Self, ParseError> {
         let pos = parser.pos();
@@ -1839,19 +1877,19 @@ where  R: 'a + AsRef<[u8]> + OctetsRef<Range = &'a [u8]> ,
 
 
 // iterator
-impl<'a, R> PathAttributes<R>
-where R: 'a + AsRef<[u8]> + Copy + OctetsRef<Range = &'a [u8]> 
+impl<Octets> PathAttributes<Octets>
+where Octets: AsRef<[u8]> + OctetsRef<Range = Octets>
 {
-    fn get_path_attribute(&mut self) -> PathAttribute<'a> {
+    fn get_path_attribute(&mut self) -> PathAttribute<Octets> {
         PathAttribute::parse(&mut self.parser).expect("parsed before")
     }
 }
 
-impl<'a, R> Iterator for PathAttributes<R>
+impl<Octets> Iterator for PathAttributes<Octets>
 where
-    R: 'a + AsRef<[u8]> + Copy + OctetsRef<Range = &'a [u8]> 
+    Octets: AsRef<[u8]> + OctetsRef<Range = Octets>
 {
-    type Item = PathAttribute<'a>;
+    type Item = PathAttribute<Octets>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.parser.remaining() == 0 {
@@ -1934,14 +1972,18 @@ impl<R: AsRef<[u8]>> Parse<R> for PathId {
 
 /// MPLS labels, part of [`MplsNlri`] and [`MplsVpnNlri`].
 #[derive(Copy, Clone, Eq, Debug, PartialEq)]
-pub struct Labels<'a>(&'a[u8]);
-impl Labels<'_> {
+pub struct Labels<Octets> {
+    octets: Octets
+}
+
+impl<Octets: AsRef<[u8]>> Labels<Octets> {
     fn len(&self) -> usize {
-        self.0.len()
+        self.octets.as_ref().len()
     }
 }
-impl<'a, R> Parse<R> for Labels<'a>
-where R: 'a + AsRef<[u8]> + OctetsRef<Range = &'a[u8]>
+
+impl<R, Octets> Parse<R> for Labels<Octets>
+where R: AsRef<[u8]> + OctetsRef<Range = Octets>,
 {
     // There are two cases for Labels:
     // - in an announcement, it describes one or more MPLS labels
@@ -1975,7 +2017,7 @@ where R: 'a + AsRef<[u8]> + OctetsRef<Range = &'a[u8]>
         parser.seek(pos)?;
         let res = parser.parse_octets(len)?;
         Ok(
-            Labels(res)
+            Labels { octets: res }
         )
     }
 
@@ -2049,17 +2091,17 @@ pub struct BasicNlri {
 
 /// NLRI comprised of a [`BasicNlri`] and MPLS `Labels`.
 #[derive(Debug)]
-pub struct MplsNlri<'a> {
+pub struct MplsNlri<Octets> {
     basic: BasicNlri,
-    labels: Labels<'a>,
+    labels: Labels<Octets>,
 }
 
 /// NLRI comprised of a [`BasicNlri`], MPLS `Labels` and a VPN
 /// `RouteDistinguisher`.
 #[derive(Debug)]
-pub struct MplsVpnNlri<'a> {
+pub struct MplsVpnNlri<Octets> {
     basic: BasicNlri,
-    labels: Labels<'a>,
+    labels: Labels<Octets>,
     rd: RouteDistinguisher,
 }
 
@@ -2077,32 +2119,32 @@ pub struct VplsNlri {
 ///
 /// Also see [`crate::flowspec`].
 #[derive(Debug)]
-pub struct FlowSpecNlri<'a> {
+pub struct FlowSpecNlri<Octets> {
     #[allow(dead_code)]
-    raw: &'a[u8], 
+    raw: Octets,
 }
 
 /// NLRI containing a Route Target membership as defined in RFC4684.
 ///
 /// **TODO**: implement accessor methods for the contents of this NLRI.
 #[derive(Debug)]
-pub struct RouteTargetNlri<'a> {
+pub struct RouteTargetNlri<Octets> {
     #[allow(dead_code)]
-    raw: &'a[u8],
+    raw: Octets,
 }
 
 /// Conventional and BGP-MP NLRI variants.
 #[derive(Debug)]
-pub enum Nlri<'a> {
+pub enum Nlri<Octets> {
     Basic(BasicNlri),
-    Mpls(MplsNlri<'a>),
-    MplsVpn(MplsVpnNlri<'a>),
+    Mpls(MplsNlri<Octets>),
+    MplsVpn(MplsVpnNlri<Octets>),
     Vpls(VplsNlri),
-    FlowSpec(FlowSpecNlri<'a>),
-    RouteTarget(RouteTargetNlri<'a>),
+    FlowSpec(FlowSpecNlri<Octets>),
+    RouteTarget(RouteTargetNlri<Octets>),
 }
 
-impl Display for Nlri<'_> {
+impl<Octets> Display for Nlri<Octets> {
     fn fmt(&self, f: &mut Formatter) -> FmtResult {
         match self {
             Nlri::Vpls(n) => write!(f, "VPLS-{:?}", n.rd),
@@ -2110,7 +2152,7 @@ impl Display for Nlri<'_> {
         }
     }
 }
-impl<'a> Nlri<'a> {
+impl<Octets> Nlri<Octets> {
     fn basic(&self) -> Option<BasicNlri> { 
         match self {
             Nlri::Basic(n) => Some(*n),
@@ -2134,10 +2176,10 @@ impl<'a> Nlri<'a> {
         }
     }
 
-    pub fn labels(&self) -> Option<Labels> {
-        match self {
-            Nlri::Mpls(n) => Some(n.labels),
-            Nlri::MplsVpn(n) => Some(n.labels),
+    pub fn labels(&self) -> Option<&Labels<Octets>> {
+        match &self {
+            Nlri::Mpls(n) => Some(&n.labels),
+            Nlri::MplsVpn(n) => Some(&n.labels),
             _ => None
         }
     }
@@ -2256,8 +2298,8 @@ impl<R: AsRef<[u8]>> Parse<R> for BasicNlri {
     }
 }
 
-impl<'a, R> Parse<R> for MplsVpnNlri<'a> 
-where R: 'a + AsRef<[u8]> + OctetsRef<Range = &'a[u8]>
+impl<R> Parse<R> for MplsVpnNlri<R> 
+where R: AsRef<[u8]> + OctetsRef<Range = R>
 {
     fn parse(parser: &mut Parser<R>) -> Result<Self, ParseError> {
         let path_id = match parser.config().add_path {
@@ -2298,17 +2340,18 @@ where R: 'a + AsRef<[u8]> + OctetsRef<Range = &'a[u8]>
     }
 }
 
-impl<'a, R> Parse<R> for MplsNlri<'a>
-where R: 'a + AsRef<[u8]> + OctetsRef<Range = &'a[u8]>
+impl<Octets> Parse<Octets> for MplsNlri<Octets>
+where
+    Octets: AsRef<[u8]> + OctetsRef<Range = Octets>
 {
-    fn parse(parser: &mut Parser<R>) -> Result<Self, ParseError> {
+    fn parse(parser: &mut Parser<Octets>) -> Result<Self, ParseError> {
         let path_id = match parser.config().add_path {
             AddPath::Enabled => Some(PathId::parse(parser)?),
             _ => None
         };
 
         let mut prefix_bits = parser.parse_u8()?;
-        let labels = Labels::parse(parser)?;
+        let labels = Labels::<Octets>::parse(parser)?;
 
         // Check whether we can safely subtract the labels length from the
         // prefix size. If there is an unexpected path id, we might silently
@@ -2330,7 +2373,7 @@ where R: 'a + AsRef<[u8]> + OctetsRef<Range = &'a[u8]>
         )
     }
 
-    fn skip(parser: &mut Parser<R>) -> Result<(), ParseError> {
+    fn skip(parser: &mut Parser<Octets>) -> Result<(), ParseError> {
         Self::parse(parser).map(|_| ())
     }
 }
@@ -2361,9 +2404,9 @@ impl<R: AsRef<[u8]>> Parse<R> for VplsNlri {
     }
 }
 
-impl<'a, R> Parse<R> for FlowSpecNlri<'a>
+impl<R> Parse<R> for FlowSpecNlri<R>
 where
-    R: 'a + AsRef<[u8]> + OctetsRef<Range = &'a[u8]>
+    R: AsRef<[u8]> + OctetsRef<Range = R>
 {
     fn parse(parser: &mut Parser<R>) -> Result<Self, ParseError> {
         let pos = parser.pos();
@@ -2395,9 +2438,9 @@ where
     }
 }
 
-impl<'a, R> Parse<R> for RouteTargetNlri<'a>
+impl<R, Octets> Parse<R> for RouteTargetNlri<Octets>
 where
-    R: 'a + AsRef<[u8]> + OctetsRef<Range = &'a[u8]>
+    R: AsRef<[u8]> + OctetsRef<Range = Octets>
 {
     fn parse(parser: &mut Parser<R>) -> Result<Self, ParseError> {
 
@@ -2429,10 +2472,11 @@ pub struct NlriIterMp<Ref> {
     safi: SAFI,
 }
 
-impl<'a, R: AsRef<[u8]>> NlriIterMp<R>
-where R: 'a + OctetsRef<Range = &'a[u8]>
-    {
-    pub fn new(slice: Parser<R>) -> Self {
+impl<Octets> NlriIterMp<Octets>
+where
+    Octets: AsRef<[u8]> +  OctetsRef<Range = Octets>
+{
+    pub fn new(slice: Parser<Octets>) -> Self {
         let mut parser = slice;
         let afi: AFI = parser.parse_u16().expect("parsed before").into();
         let safi: SAFI = parser.parse_u8().expect("parsed before").into();
@@ -2449,7 +2493,7 @@ where R: 'a + OctetsRef<Range = &'a[u8]>
         }
     }
 
-    pub fn new_conventional(slice: Parser<R>) -> Self {
+    pub fn new_conventional(slice: Parser<Octets>) -> Self {
         Self {
             parser: slice,
             afi: AFI::Ipv4,
@@ -2457,7 +2501,7 @@ where R: 'a + OctetsRef<Range = &'a[u8]>
         }
     }
 
-    fn get_nlri(&mut self) -> Nlri<'a> {
+    fn get_nlri(&mut self) -> Nlri<Octets> {
         match (self.afi, self.safi) {
             (_, SAFI::MplsVpnUnicast) => {
                 Nlri::MplsVpn(MplsVpnNlri::parse(&mut self.parser).expect("parsed before"))
@@ -2482,9 +2526,9 @@ where R: 'a + OctetsRef<Range = &'a[u8]>
     }
 }
 
-impl<'a, R> Parse<R> for NlriIterMp<R>
+impl<R> Parse<R> for NlriIterMp<R>
 where
-    R: 'a + AsRef<[u8]> + Copy + OctetsRef<Range = &'a [u8]>
+    R: AsRef<[u8]> + Copy + OctetsRef<Range = R>
     {
     fn parse(parser: &mut Parser<R>) -> Result<Self, ParseError> {
         // NLRIs from MP_REACH_NLRI.
@@ -2536,10 +2580,10 @@ where
 }
 
 
-impl<'a, R> Iterator for NlriIterMp<R>
-where R: 'a + AsRef<[u8]> + OctetsRef<Range = &'a[u8]>
+impl<'a, Octets> Iterator for NlriIterMp<Octets>
+where Octets: 'a + AsRef<[u8]> + OctetsRef<Range = Octets>
 {
-    type Item = Nlri<'a>;
+    type Item = Nlri<Octets>;
     fn next(&mut self) -> Option<Self::Item> {
         if self.parser.remaining() == 0 {
             return None;
@@ -2558,10 +2602,11 @@ pub struct WithdrawalsIterMp<Ref> {
     safi: SAFI,
 }
 
-impl<'a, R: AsRef<[u8]>> WithdrawalsIterMp<R>
-where R: 'a + OctetsRef<Range = &'a[u8]>
-    {
-    pub fn new(slice: Parser<R>, afi: AFI, safi: SAFI) -> Self {
+impl<Octets> WithdrawalsIterMp<Octets>
+where
+    Octets: AsRef<[u8]> + OctetsRef<Range = Octets>
+{
+    pub fn new(slice: Parser<Octets>, afi: AFI, safi: SAFI) -> Self {
         let mut parser = slice;
         parser.config_mut().set_afi(afi);
         Self {
@@ -2571,7 +2616,7 @@ where R: 'a + OctetsRef<Range = &'a[u8]>
         }
     }
 
-    fn get_nlri(&mut self) -> Nlri<'a> {
+    fn get_nlri(&mut self) -> Nlri<Octets> {
         match (self.afi, self.safi) {
             (_, SAFI::MplsVpnUnicast) => {
                 Nlri::MplsVpn(MplsVpnNlri::parse(&mut self.parser).expect("parsed before"))
@@ -2587,9 +2632,9 @@ where R: 'a + OctetsRef<Range = &'a[u8]>
     }
 }
 
-impl<'a, R> Parse<R> for WithdrawalsIterMp<R>
+impl<R> Parse<R> for WithdrawalsIterMp<R>
 where
-    R: 'a + AsRef<[u8]> + Copy + OctetsRef<Range = &'a [u8]>
+    R: AsRef<[u8]> + Copy + OctetsRef<Range = R>
 {
     fn parse(parser: &mut Parser<R>) -> Result<Self, ParseError> {
         // NLRIs from MP_UNREACH_NLRI.
@@ -2628,10 +2673,11 @@ where
     }
 }
 
-impl<'a, R> Iterator for WithdrawalsIterMp<R>
-where R: 'a + AsRef<[u8]> + OctetsRef<Range = &'a[u8]>
+impl<Octets> Iterator for WithdrawalsIterMp<Octets>
+where
+    Octets: AsRef<[u8]> + OctetsRef<Range = Octets>
 {
-    type Item = Nlri<'a>;
+    type Item = Nlri<Octets>;
     fn next(&mut self) -> Option<Self::Item> {
         if self.parser.remaining() == 0 {
             return None;
@@ -2888,31 +2934,40 @@ impl From<[u8; 8]> for Community {
 ///
 /// Returns values of enum [`Community`], wrapping [`NormalCommunity`],
 /// [`ExtendedCommunity`], [`LargeCommunity`] and well-known communities.
-pub struct CommunityIter<'a> {
-    slice: &'a [u8],
+pub struct CommunityIter<Octets> {
+    slice: Octets,
     pos: usize,
 }
 
-impl<'a> CommunityIter<'a> {
-    fn new(slice: &[u8]) -> CommunityIter {
+impl<Octets: AsRef<[u8]>> CommunityIter<Octets> {
+    fn new(slice: Octets) -> Self {
         CommunityIter {
             slice,
             pos: 0
         }
     }
     fn get_community(&mut self) -> Community {
-        let res = TryInto::<[u8; 4]>::try_into(
-            &self.slice[self.pos .. self.pos + 4])
-            .expect("parsed before").into();
+        //let res = TryInto::<[u8; 4]>::try_into(
+        //    self.slice.as_ref()[self.pos .. self.pos + 4])
+        //    .expect("parsed before").into();
+
+        // XXX why can't we do the thing above?
+        let res = [
+            self.slice.as_ref()[self.pos],
+            self.slice.as_ref()[self.pos+1],
+            self.slice.as_ref()[self.pos+2],
+            self.slice.as_ref()[self.pos+3],
+        ].into();
+
         self.pos += 4;
         res
     }
 }
 
-impl Iterator for CommunityIter<'_> {
+impl<Octets: AsRef<[u8]>> Iterator for CommunityIter<Octets> {
     type Item = Community;
     fn next(&mut self) -> Option<Community> {
-        if self.pos == self.slice.len() {
+        if self.pos == self.slice.as_ref().len() {
             return None
         }
         Some(self.get_community())
@@ -2920,13 +2975,13 @@ impl Iterator for CommunityIter<'_> {
 }
 
 /// Iterator over [`ExtendedCommunity`]s.
-pub struct ExtCommunityIter<'a> {
-    slice: &'a [u8],
+pub struct ExtCommunityIter<Octets> {
+    slice: Octets,
     pos: usize,
 }
 
-impl<'a> ExtCommunityIter<'a> {
-    fn new(slice: &'a [u8]) -> ExtCommunityIter {
+impl<Octets: AsRef<[u8]>> ExtCommunityIter<Octets> {
+    fn new(slice: Octets) -> Self {
         ExtCommunityIter {
             slice,
             pos: 0
@@ -2934,17 +2989,17 @@ impl<'a> ExtCommunityIter<'a> {
     }
     fn get_community(&mut self) -> ExtendedCommunity {
         let res = ExtendedCommunity(
-            self.slice[self.pos..self.pos+8].try_into().expect("parsed before")
+            self.slice.as_ref()[self.pos..self.pos+8].try_into().expect("parsed before")
             );
         self.pos += 8;
         res
     }
 }
 
-impl Iterator for ExtCommunityIter<'_> {
+impl<Octets: AsRef<[u8]>> Iterator for ExtCommunityIter<Octets> {
     type Item = ExtendedCommunity;
     fn next(&mut self) -> Option<ExtendedCommunity> {
-        if self.pos == self.slice.len() {
+        if self.pos == self.slice.as_ref().len() {
             return None
         }
         Some(self.get_community())
@@ -2952,13 +3007,13 @@ impl Iterator for ExtCommunityIter<'_> {
 }
 
 /// Iterator over [`LargeCommunity`]s.
-pub struct LargeCommunityIter<'a> {
-    slice: &'a [u8],
+pub struct LargeCommunityIter<Octets> {
+    slice: Octets,
     pos: usize,
 }
 
-impl<'a> LargeCommunityIter<'a> {
-    fn new(slice: &'a [u8]) -> LargeCommunityIter {
+impl<Octets: AsRef<[u8]>> LargeCommunityIter<Octets> {
+    fn new(slice: Octets) -> Self {
         LargeCommunityIter {
             slice,
             pos: 0
@@ -2966,17 +3021,17 @@ impl<'a> LargeCommunityIter<'a> {
     }
     fn get_community(&mut self) -> LargeCommunity {
         let res = LargeCommunity(
-            self.slice[self.pos..self.pos+12].try_into().expect("parsed before")
+            self.slice.as_ref()[self.pos..self.pos+12].try_into().expect("parsed before")
             );
         self.pos += 12;
         res
     }
 }
 
-impl Iterator for LargeCommunityIter<'_> {
+impl<Octets: AsRef<[u8]>> Iterator for LargeCommunityIter<Octets> {
     type Item = LargeCommunity;
     fn next(&mut self) -> Option<LargeCommunity> {
-        if self.pos == self.slice.len() {
+        if self.pos == self.slice.as_ref().len() {
             return None
         }
         Some(self.get_community())
@@ -3056,11 +3111,11 @@ where
 /// BGP NOTIFICATION Message.
 ///
 ///
-impl MessageNotification {
+impl<Octets: AsRef<[u8]> + Copy> NotificationMessage<Octets> {
 
-    fn for_slice(s: &[u8]) -> Self {
+    fn for_slice(s: Octets) -> Self {
         Self {
-            octets: Bytes::copy_from_slice(s),
+            octets: s
             //add_path: None,
         }
     }
@@ -3081,9 +3136,9 @@ impl MessageNotification {
         }
     }
 }
-impl<'a, R> Parse<R> for MessageNotification
+impl<R> Parse<R> for NotificationMessage<R>
 where
-    R: 'a + AsRef<[u8]> + OctetsRef<Range = &'a[u8]>
+    R: AsRef<[u8]> + OctetsRef<Range = R>
 {
     fn parse(parser: &mut Parser<R>) -> Result<Self, ParseError> {
         // parse header
@@ -3276,11 +3331,11 @@ mod tests {
         println!();
     }
 
-    // Helper to quickly parse bufs into specific BGP messages
-    fn parse_msg<T>(buf: &[u8]) -> T
+    // Helper to quickly parse bufs into specific BGP messages.
+    fn parse_msg<'a, T: 'a>(buf: &'a[u8]) -> T
     where
-        T: TryFrom<Message>,
-        <T as TryFrom<Message>>::Error: Debug
+        T: TryFrom<Message<&'a[u8]>>,
+        <T as TryFrom<Message<&'a[u8]>>>::Error: Debug
     {
         Message::from_octets(&buf).unwrap().try_into().unwrap()
     }
@@ -3300,7 +3355,7 @@ mod tests {
                 0xc0, 0x00, 0x02, 0x01, 0x00
             ];
 
-            let open: MessageOpen = parse_msg(&buf);
+            let open: OpenMessage<_> = parse_msg(&buf);
 
             assert_eq!(open.length(), 29);
             assert_eq!(open.version(), 4);
@@ -3325,7 +3380,7 @@ mod tests {
                 0x64
             ];
 
-            let open: MessageOpen = parse_msg(&buf);
+            let open: OpenMessage<_> = parse_msg(&buf);
 
             assert_eq!(open.capabilities().count(), 5);
             let mut iter = open.capabilities();
@@ -3365,7 +3420,7 @@ mod tests {
                 0x01
             ];
 
-            let open: MessageOpen = parse_msg(&buf);
+            let open: OpenMessage<_> = parse_msg(&buf);
 
             assert_eq!(open.capabilities().count(), 8);
             let types = [
@@ -3414,7 +3469,7 @@ mod tests {
                 0x04, 0x00, 0x01, 0x00, 0x00
                     ];
 
-            let open: MessageOpen = parse_msg(&buf);
+            let open: OpenMessage<_> = parse_msg(&buf);
 
             assert_eq!(open.multiprotocol_ids().count(), 15);
             let protocols = [
@@ -3513,7 +3568,7 @@ mod tests {
                 0x01, 0x20, 0x0a, 0x0a, 0x0a, 0x02
             ];
 
-            let update: MessageUpdate = parse_msg(&buf);
+            let update: UpdateMessage<_> = parse_msg(&buf);
 
             assert_eq!(update.length(), 55);
             assert_eq!(update.total_path_attribute_len(), 27);
@@ -3591,7 +3646,7 @@ mod tests {
                 0xc0, 0xa8, 0x61, 0x00
             ];
 
-            let update: MessageUpdate = parse_msg(&buf);
+            let update: UpdateMessage<_> = parse_msg(&buf);
 
             assert_eq!(update.total_path_attribute_len(), 27);
             assert_eq!(update.nlris().count(), 2);
@@ -3628,7 +3683,7 @@ mod tests {
                 0x40, 0x02, 0x06, 0x02, 0x01, 0x00, 0x00, 0x00,
                 0xc8, 0x80, 0x04, 0x04, 0x00, 0x00, 0x00, 0x00
             ];
-            let update: MessageUpdate = parse_msg(&buf);
+            let update: UpdateMessage<_> = parse_msg(&buf);
 
             assert_eq!(update.withdrawn_routes_len(), 0);
             assert_eq!(update.total_path_attribute_len(), 113);
@@ -3667,7 +3722,7 @@ mod tests {
                 0xc0, 0xa8, 0x00, 0x10, 0x1e, 0xc0, 0xa8, 0x63,
                 0x00, 0x00, 0x00
             ];
-            let update: MessageUpdate = parse_msg(&buf);
+            let update: UpdateMessage<_> = parse_msg(&buf);
 
             assert_eq!(update.withdrawals().count(), 12);
 
@@ -3708,7 +3763,7 @@ mod tests {
                 0x40, 0x20, 0x01, 0x0d, 0xb8, 0xff, 0xff, 0x00,
                 0x03
             ];
-            let update: MessageUpdate = parse_msg(&buf);
+            let update: UpdateMessage<_> = parse_msg(&buf);
 
             assert_eq!(update.withdrawals().count(), 4);
             
@@ -3746,7 +3801,7 @@ mod tests {
                 0x00, 0x1a, 0xc6, 0x33, 0x64, 0x40, 0x1a, 0xc6,
                 0x33, 0x64, 0x80, 0x1a, 0xc6, 0x33, 0x64, 0xc0
             ];
-            let update: MessageUpdate = parse_msg(&buf);
+            let update: UpdateMessage<_> = parse_msg(&buf);
             assert_eq!(update.multi_exit_desc(), Some(MultiExitDisc(0)));
             assert_eq!(update.local_pref(), Some(LocalPref(100)));
         }
@@ -3765,7 +3820,7 @@ mod tests {
                 0x01, 0x80, 0x04, 0x04, 0x00, 0x00, 0x00, 0x00,
                 0x18, 0xc6, 0x33, 0x64
             ];
-            let update: MessageUpdate = parse_msg(&buf);
+            let update: UpdateMessage<_> = parse_msg(&buf);
             let aggr = update.aggregator().unwrap();
 
             assert!(update.is_atomic_aggregate());
@@ -3799,7 +3854,7 @@ mod tests {
             ];
             // TODO create test helper for specific SessionConfigs
             let mut sc = SessionConfig::new(); sc.disable_four_octet_asn();
-            let update: MessageUpdate = Message::from_octets_with_sc(&buf, sc)
+            let update: UpdateMessage<_> = Message::from_octets_with_sc(&buf, sc)
                 .unwrap().try_into().unwrap();
 
             if let Some(aspath) = update.path_attributes().find(|pa|
