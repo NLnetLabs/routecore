@@ -1203,7 +1203,7 @@ impl<'a> Iterator for InformationTlvIter<'a> {
 /// Represents the type and value of statistics in a BMP StatisticsReport.
 /// 
 /// <https://datatracker.ietf.org/doc/html/rfc7854#section-4.8>
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Eq, PartialEq)]
 pub enum Stat {
     Type0(u32),
     Type1(u32),

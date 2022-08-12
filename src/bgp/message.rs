@@ -89,7 +89,7 @@ pub enum Message {
 }
 
 /// BGP OPEN message, variant of the [`Message`] enum.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct MessageOpen {
     octets: Bytes,
 }
@@ -1594,7 +1594,7 @@ where
 }
 
 /// BGP Path Attribute, carried in BGP UPDATE messages.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct PathAttribute<'a> {
     slice: &'a[u8],
 }
@@ -1933,7 +1933,7 @@ impl<R: AsRef<[u8]>> Parse<R> for PathId {
 }
 
 /// MPLS labels, part of [`MplsNlri`] and [`MplsVpnNlri`].
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Eq, Debug, PartialEq)]
 pub struct Labels<'a>(&'a[u8]);
 impl Labels<'_> {
     fn len(&self) -> usize {
@@ -2646,19 +2646,19 @@ where R: 'a + AsRef<[u8]> + OctetsRef<Range = &'a[u8]>
 
 
 /// Conventional, RFC1997 4-byte community.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct NormalCommunity([u8; 4]);
 
 /// Final two octets of a [`NormalCommunity`], i.e. the 'community number'.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct CommunityTag(u16);
 
 /// Extended Community as defined in RFC4360.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct ExtendedCommunity([u8; 8]);
 
 /// Large Community as defined in RFC8092.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct LargeCommunity([u8; 12]);
 
 /// IANA Policy options for Extended Communities.
@@ -2824,7 +2824,7 @@ impl Display for LargeCommunity {
 }
 
 /// Conventional and Extended/Large Communities variants.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Eq, PartialEq)]
 pub enum Community {
     Normal(NormalCommunity),
     NoExport,           // 0xFFFFFF01
@@ -3158,11 +3158,11 @@ pub enum OriginType {
 //--- Newtypes ---------------------------------------------------------------
 
 /// Wrapper for the 4 byte Multi-Exit Discriminator in path attributes.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct MultiExitDisc(u32);
 
 /// Wrapper for the 4 byte Local Preference value in path attributes.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct LocalPref(u32);
 
 
@@ -3244,14 +3244,14 @@ impl SessionConfig {
 }
 
 /// Indicates whether this session is Four Octet capable.
-#[derive(Copy, Clone, PartialEq, Debug)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum FourOctetAsn {
     Enabled,
     Disabled,
 }
 
 /// Indicates whether AddPath is enabled for this session.
-#[derive(Copy, Clone, PartialEq, Debug)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum AddPath {
     Enabled,
     Disabled,
