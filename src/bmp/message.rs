@@ -289,7 +289,7 @@ impl AsRef<[u8]> for Message {
 //  |   Msg. Type   |
 //  +---------------+
 
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy, Debug, Eq, Default, PartialEq)]
 pub struct CommonHeader {
 	inner: [u8; 6]
 }
@@ -299,6 +299,7 @@ impl CommonHeader {
         assert!(s.len() >= 6);
         unsafe { &*(s.as_ptr() as *const CommonHeader) } // FIXME
     }
+
     /// Returns the BMP version of the message.
 	pub fn version(self) -> u8 {
 		self.inner[0]
@@ -318,6 +319,7 @@ impl CommonHeader {
 
 impl<Ref: AsRef<[u8]>> Parse<Ref> for CommonHeader {
     fn parse(parser: &mut Parser<Ref>) -> Result<Self, ParseError> {
+        // TODO check validity of version, length and msg type
         let mut res = Self::default();
         parser.parse_buf(&mut res.inner)?;
         Ok(res)
@@ -1388,7 +1390,7 @@ pub struct InformationIter<'a> {
 
 /// Termination message reason codes.
 // XXX convert this to a typeenum! ?
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 pub enum TerminationInformation {
     CustomString(String),
     AdminClose,             // reason 0
@@ -1623,5 +1625,421 @@ impl TryFrom<Message> for RouteMirroring
 
 #[cfg(test)]
 mod tests {
-    // TODO
+
+    use super::*;
+    use std::str::FromStr;
+    use crate::addr::Prefix;
+    use crate::bgp::message::{AFI, SAFI,PathAttributeType};
+    use crate::bgp::message::SessionConfig;
+
+    // Helper for generating a .pcap, pass output to `text2pcap`.
+    #[allow(dead_code)]
+    fn print_pcap<T: AsRef<[u8]>>(msg: T) {
+        println!();
+        print!("000000 ");
+        for b in msg.as_ref() {
+            print!("{:02x} ", b);
+        }
+        println!();
+    }
+
+    //--- Headers ------------------------------------------------------------
+    
+    #[test]
+    fn common_header_for_slice() {
+        let buf = [0x03, 0x0, 0x0, 0x0, 0x6c, 0x04];
+		let ch = CommonHeader::for_message_slice(&buf);
+        assert_eq!(ch.version(), 3);
+        assert_eq!(ch.length(), 108);
+        assert_eq!(ch.msg_type(), MessageType::InitiationMessage);
+    }
+
+    #[test]
+    fn common_header_parse() {
+        let buf = vec![0x03, 0x0, 0x0, 0x0, 0x6c, 0x04];
+        let mut parser = Parser::from_ref(&buf, SessionConfig::default());
+		let ch = CommonHeader::parse(&mut parser).unwrap();
+        assert_eq!(ch.version(), 3);
+        assert_eq!(ch.length(), 108);
+        assert_eq!(ch.msg_type(), MessageType::InitiationMessage);
+
+        assert_eq!(ch, *CommonHeader::for_message_slice(&buf));
+    }
+
+    #[test]
+    fn per_peer_header() {
+        let buf = [
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x0a, 0xff, 0x00, 0x65, 0x00, 0x01, 0x00, 0x00, 0x0a, 0x0a, 0x0a,
+            0x01, 0x54, 0xa2, 0x0e, 0x0b, 0x00, 0x0e, 0x0c, 0x20,
+        ];
+
+        let pph = PerPeerHeader::for_message_slice(&buf);
+        assert_eq!(pph.peer_type(), PeerType::GlobalInstance);
+        assert!(pph.is_ipv4());
+        assert_eq!(pph.distinguisher(), [0; 8]);
+        assert_eq!(
+            pph.address(),
+            Ipv4Addr::from_str("10.255.0.101").unwrap()
+        );
+
+        assert_eq!(pph.asn(), Asn::from_u32(65536));
+        assert_eq!(pph.bgp_id(), [10, 10, 10, 1]);
+        assert_eq!(pph.ts_seconds(), 1419906571);
+        assert_eq!(pph.ts_micros(), 920608);
+
+        assert_eq!(
+            pph.timestamp().to_string(),
+            "2014-12-30 02:29:31.920608 UTC"
+        );
+    }
+
+
+    //--- Messages -----------------------------------------------------------
+    
+    // Helper.
+    fn parse_msg<T>(buf: &[u8]) -> T
+    where
+        T: TryFrom<Message>,
+        <T as TryFrom<Message>>::Error: Debug
+    {
+        Message::from_octets(&buf).unwrap().try_into().unwrap()
+    }
+
+    #[test]
+    fn route_monitoring() {
+        // a single BMP Route Monitoring message, containing one BGP UPDATE
+        // message with 4 path attributes and 1 IPv4 NLRI
+        let buf = vec![
+            0x03, 0x00, 0x00, 0x00, 0x67, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x0a, 0xff, 0x00, 0x65,
+            0x00, 0x01, 0x00, 0x00, 0x0a, 0x0a, 0x0a, 0x01,
+            0x54, 0xa2, 0x0e, 0x0c, 0x00, 0x0e, 0x81, 0x09,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0x00, 0x37, 0x02, 0x00, 0x00, 0x00, 0x1b, 0x40,
+            0x01, 0x01, 0x00, 0x40, 0x02, 0x06, 0x02, 0x01,
+            0x00, 0x01, 0x00, 0x00, 0x40, 0x03, 0x04, 0x0a,
+            0xff, 0x00, 0x65, 0x80, 0x04, 0x04, 0x00, 0x00,
+            0x00, 0x01, 0x20, 0x0a, 0x0a, 0x0a, 0x02
+        ]; 
+        let bmp: RouteMonitoring = parse_msg(&buf);
+        assert_eq!(
+            bmp.common_header().msg_type(),
+            MessageType::RouteMonitoring
+        );
+        assert_eq!(bmp.common_header().length(), 103);
+
+        let config = SessionConfig::default();
+
+        let bgp_update = bmp.bgp_update(&config).unwrap();
+
+        //-- from here on, this actually tests the bgp parsing functionality
+        // rather than the bmp one, but let's leave it for now ---------------
+        
+        assert_eq!(bgp_update.as_ref().len(), 55);
+        assert_eq!(bgp_update.withdrawn_routes_len(), 0);
+        
+        let mut pas = bgp_update.path_attributes();
+        let pa1 = pas.next().unwrap();
+        assert_eq!(pa1.type_code(), PathAttributeType::Origin);
+        assert_eq!(pa1.flags(), 0x40);
+        assert!(pa1.is_transitive());
+        assert!(!pa1.is_optional());
+        //TODO implement enum for Origins
+        assert_eq!(pa1.value(), [0x00]); 
+        
+        let pa2 = pas.next().unwrap();
+        assert_eq!(pa2.type_code(), PathAttributeType::AsPath);
+        assert_eq!(pa2.flags(), 0x40);
+        // TODO check actual AS_PATH contents
+
+        let pa3 = pas.next().unwrap();
+        assert_eq!(pa3.type_code(), PathAttributeType::NextHop);
+        assert_eq!(pa3.flags(), 0x40);
+        assert_eq!(pa3.value(), [10, 255, 0, 101]); 
+
+        let pa4 = pas.next().unwrap();
+        assert_eq!(pa4.type_code(), PathAttributeType::MultiExitDisc);
+        assert_eq!(pa4.flags(), 0x80);
+        assert!(pa4.is_optional());
+        assert_eq!(pa4.value(), [0, 0, 0, 1]); 
+
+        assert!(pas.next().is_none());
+
+
+        // NLRI
+        let mut nlris = bgp_update.nlris();
+        let n1 = nlris.next().unwrap().prefix();
+        assert_eq!(n1, Some(Prefix::from_str("10.10.10.2/32").unwrap()));
+        assert!(nlris.next().is_none());
+    }
+
+    #[test]
+    fn statistics_report() {
+        // BMP statistics report with 13 stats.
+        let buf = vec![
+            0x03, 0x00, 0x00, 0x00, 0xba, 0x01, 0x00, 0x80,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x20, 0x01, 0x0d, 0xb8, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01,
+            0x00, 0x01, 0x00, 0x00, 0x0a, 0x00, 0x00, 0x05,
+            0x62, 0x50, 0x11, 0x57, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x0d, 0x00, 0x00, 0x00, 0x04,
+            0x00, 0x00, 0x00, 0xb0, 0x00, 0x01, 0x00, 0x04,
+            0x00, 0x00, 0x04, 0xde, 0x00, 0x02, 0x00, 0x04,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x03, 0x00, 0x04,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x04, 0x00, 0x04,
+            0x00, 0x00, 0x00, 0x0a, 0x00, 0x05, 0x00, 0x04,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x06, 0x00, 0x04,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x07, 0x00, 0x08,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x25,
+            0x00, 0x08, 0x00, 0x08, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x1c, 0x00, 0x0e, 0x00, 0x08,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0x21, 0x14,
+            0x00, 0x0f, 0x00, 0x08, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x02, 0x21, 0x14, 0x00, 0x10, 0x00, 0x0b,
+            0x00, 0x02, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x02, 0x21, 0x14, 0x00, 0x11, 0x00, 0x0b, 0x00,
+            0x02, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02,
+            0x21, 0x14
+        ];
+        let bmp: StatisticsReport = parse_msg(&buf);
+        assert_eq!(bmp.stats_count(), 13);
+        assert_eq!(bmp.stats().count(), 13);
+        use Stat::*;
+        let stats = [
+            Type0(176),
+            Type1(1246),
+            Type2(0),
+            Type3(0),
+            Type4(10),
+            Type5(0),
+            Type6(0),
+            Type7(37),
+            Type8(28),
+            Type14(139540),
+            Type15(139540),
+            Type16(AFI::Ipv6, SAFI::Unicast, 139540),
+            Type17(AFI::Ipv6, SAFI::Unicast, 139540),
+        ];
+
+        for (s1, s2) in bmp.stats().zip(stats.iter()) {
+            assert_eq!(s1, *s2);
+        }
+    }
+
+    #[test]
+    fn peer_down_notification() {
+        // BMP PeerDownNotification type 3, containing a BGP NOTIFICATION.
+        let buf = vec![
+            0x03, 0x00, 0x00, 0x00, 0x46, 0x02, 0x00, 0x80,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x20, 0x01, 0x0d, 0xb8, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01,
+            0x00, 0x01, 0x00, 0x00, 0x0a, 0x00, 0x00, 0x0a,
+            0x62, 0x2d, 0xea, 0x80, 0x00, 0x05, 0x58, 0x22,
+            0x03, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0x00, 0x15, 0x03, 0x06, 0x02
+        ];
+        let bmp: PeerDownNotification = parse_msg(&buf);
+        assert_eq!(bmp.reason(), PeerDownReason::RemoteNotification);
+        assert!(bmp.notification().is_some());
+        assert_eq!(bmp.fsm(), None);
+
+        let bgp_notification = bmp.notification().unwrap();
+        assert_eq!(bgp_notification.code(), 6);
+        assert_eq!(bgp_notification.subcode(), 2);
+    }
+
+
+    #[test]
+    fn peer_down_lacking_notification() {
+        // BMP PeerDownNotification with reason LocalNotification, but lacking
+        // the BGP NOTIFICATION.
+        let buf = vec![
+            0x03, 0x00, 0x00, 0x00, 0x31, 0x02, 0x00, 0x80,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x20, 0x01, 0x0d, 0xb8, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01,
+            0x00, 0x01, 0x00, 0x00, 0xac, 0x11, 0x11, 0x0a,
+            0x62, 0x2f, 0x06, 0x40, 0x00, 0x08, 0x6c, 0xb2,
+            0x01
+        ];
+        let bmp: PeerDownNotification = parse_msg(&buf);
+        assert_eq!(bmp.reason(), PeerDownReason::LocalNotification);
+        assert!(bmp.notification().is_none());
+    }
+
+
+    #[test]
+    fn peer_up_notification() {
+        // BMP PeerUpNotification, containing two BGP OPEN messages (the Sent
+        // OPEN and the Received OPEN), both containing 5 Capabilities in the
+        // Optional Parameters.
+        // No optional Information field.
+        // quoting RFC7854:
+        // Inclusion of the Information field is OPTIONAL.  Its presence or
+        // absence can be inferred by inspection of the Message Length in the
+        // common header. TODO implement this presence check.
+        //
+		let buf = vec![
+			0x03, 0x00, 0x00, 0x00, 0xba, 0x03, 0x00, 0x00,
+			0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+			0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+			0x00, 0x00, 0x00, 0x00, 0x0a, 0xff, 0x00, 0x65,
+			0x00, 0x00, 0xfb, 0xf0, 0x0a, 0x0a, 0x0a, 0x01,
+			0x54, 0xa2, 0x0e, 0x0b, 0x00, 0x0e, 0x0c, 0x20,
+			0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+			0x00, 0x00, 0x00, 0x00, 0x0a, 0xff, 0x00, 0x53,
+			0x90, 0x6e, 0x00, 0xb3, 0xff, 0xff, 0xff, 0xff,
+			0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+			0xff, 0xff, 0xff, 0xff, 0x00, 0x3b, 0x01, 0x04,
+			0xfb, 0xff, 0x00, 0xb4, 0x0a, 0x0a, 0x0a, 0x67,
+			0x1e, 0x02, 0x06, 0x01, 0x04, 0x00, 0x01, 0x00,
+			0x01, 0x02, 0x02, 0x80, 0x00, 0x02, 0x02, 0x02,
+			0x00, 0x02, 0x06, 0x41, 0x04, 0x00, 0x00, 0xfb,
+			0xff, 0x02, 0x04, 0x40, 0x02, 0x00, 0x78, 0xff,
+			0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+			0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00,
+			0x3b, 0x01, 0x04, 0xfb, 0xf0, 0x00, 0x5a, 0x0a,
+			0x0a, 0x0a, 0x01, 0x1e, 0x02, 0x06, 0x01, 0x04,
+			0x00, 0x01, 0x00, 0x01, 0x02, 0x02, 0x80, 0x00,
+			0x02, 0x02, 0x02, 0x00, 0x02, 0x04, 0x40, 0x02,
+			0x00, 0x78, 0x02, 0x06, 0x41, 0x04, 0x00, 0x00,
+			0xfb, 0xf0];
+
+        let bmp: PeerUpNotification = parse_msg(&buf);
+
+        assert_eq!(bmp.common_header().version(), 3);
+        assert_eq!(bmp.common_header().length(), 186);
+        assert_eq!(
+            bmp.common_header().msg_type(),
+            MessageType::PeerUpNotification
+        );
+        assert_eq!(
+            bmp.per_peer_header().peer_type(),
+            PeerType::GlobalInstance
+        );
+        assert!(bmp.per_peer_header().is_ipv4());
+        assert_eq!(bmp.per_peer_header().distinguisher(), [0; 8]);
+        assert_eq!(
+            bmp.per_peer_header().address(),
+            Ipv4Addr::from_str("10.255.0.101").unwrap()
+        );
+
+        assert_eq!(bmp.per_peer_header().asn(), Asn::from_u32(64496));
+        assert_eq!(bmp.per_peer_header().bgp_id(), [0x0a, 0x0a, 0x0a, 0x1]);
+        assert_eq!(bmp.per_peer_header().ts_seconds(), 1419906571);
+        assert_eq!(bmp.per_peer_header().ts_micros(), 920608);
+
+        assert_eq!(
+            bmp.per_peer_header().timestamp().to_string(),
+            "2014-12-30 02:29:31.920608 UTC"
+        );
+
+        // Now the actual PeerUpNotification
+        assert_eq!(bmp.local_address(), Ipv4Addr::new(10, 255, 0, 83));
+        assert_eq!(bmp.local_port(), 36974);
+        assert_eq!(bmp.remote_port(), 179);
+        
+        // Now, the two variable length BGP OPEN messages
+        // first, the sent one
+        let bgp_open_sent = bmp.bgp_open_sent();
+        assert_eq!(bgp_open_sent.version(), 4);
+        assert_eq!(bgp_open_sent.my_asn(), Asn::from_u32(64511));
+        assert_eq!(bgp_open_sent.identifier(), [10, 10, 10, 103]);
+        assert_eq!(bgp_open_sent.opt_parm_len(), 30);
+        assert_eq!(bgp_open_sent.parameters().count(), 5);
+        
+        // second, the received one
+        let bgp_open_rcvd = bmp.bgp_open_rcvd();
+        assert_eq!(bgp_open_rcvd.version(), 4);
+        assert_eq!(bgp_open_rcvd.my_asn(), Asn::from_u32(64496));
+        assert_eq!(bgp_open_rcvd.identifier(), [10, 10, 10, 1]);
+        assert_eq!(bgp_open_rcvd.opt_parm_len(), 30);
+        assert_eq!(bgp_open_rcvd.parameters().count(), 5);
+
+        let (sent, rcvd) = bmp.bgp_open_sent_rcvd();
+        assert_eq!(sent.as_ref(), bgp_open_sent.as_ref());
+        assert_eq!(rcvd, bgp_open_rcvd);
+    }
+
+    #[test]
+    fn initiation_message() {
+		// BMP Initiation Messsage with two Information TLVs:
+        // sysDesc and sysName
+		let buf = vec![
+			0x03, 0x00, 0x00, 0x00, 0x6c, 0x04, 0x00, 0x01,
+			0x00, 0x5b, 0x43, 0x69, 0x73, 0x63, 0x6f, 0x20,
+			0x49, 0x4f, 0x53, 0x20, 0x58, 0x52, 0x20, 0x53,
+			0x6f, 0x66, 0x74, 0x77, 0x61, 0x72, 0x65, 0x2c,
+			0x20, 0x56, 0x65, 0x72, 0x73, 0x69, 0x6f, 0x6e,
+			0x20, 0x35, 0x2e, 0x32, 0x2e, 0x32, 0x2e, 0x32,
+			0x31, 0x49, 0x5b, 0x44, 0x65, 0x66, 0x61, 0x75,
+			0x6c, 0x74, 0x5d, 0x0a, 0x43, 0x6f, 0x70, 0x79,
+			0x72, 0x69, 0x67, 0x68, 0x74, 0x20, 0x28, 0x63,
+			0x29, 0x20, 0x32, 0x30, 0x31, 0x34, 0x20, 0x62,
+			0x79, 0x20, 0x43, 0x69, 0x73, 0x63, 0x6f, 0x20,
+			0x53, 0x79, 0x73, 0x74, 0x65, 0x6d, 0x73, 0x2c,
+			0x20, 0x49, 0x6e, 0x63, 0x2e, 0x00, 0x02, 0x00,
+			0x03, 0x78, 0x72, 0x33
+		];
+        let init: InitiationMessage = parse_msg(&buf);
+        assert_eq!(init.information_tlvs().count(), 2);
+        let mut tlvs = init.information_tlvs();
+        let tlv1 = tlvs.next().unwrap();
+        assert_eq!(tlv1.typ(), InformationTlvType::SysDesc);
+        assert_eq!(
+            String::from_utf8_lossy(tlv1.value()),
+            "Cisco IOS XR Software, Version 5.2.2.21I[Default]\
+            \nCopyright (c) 2014 by Cisco Systems, Inc."
+        );
+
+        let tlv2 = tlvs.next().unwrap();
+        assert_eq!(tlv2.typ(), InformationTlvType::SysName);
+        assert_eq!(
+            String::from_utf8_lossy(tlv2.value()),
+            "xr3"
+        );
+
+    }
+
+    #[test]
+    fn termination_message() {
+          // BMP Termination message
+        let buf = vec![
+            0x03, 0x00, 0x00, 0x00, 0x0C, 0x05, 0x00, 0x01, 0x00,
+            0x02, 0x00, 0x03,
+        ];
+        let bmp: TerminationMessage = parse_msg(&buf);
+        assert_eq!(bmp.information().count(), 1);
+        assert_eq!(
+            bmp.information().next().unwrap(), 
+            TerminationInformation::RedundantConnection,
+        );
+
+    }
+
+    // XXX get proper RouteMirroring test data
+    #[ignore]
+    #[test]
+    fn route_mirroring() {
+        unimplemented!()
+    }
+
+    //--- Misc ---------------------------------------------------------------
+
+    // As we rely on the `size_of` of some header types, make sure their size
+    // is indeed what we expect it to be.
+    #[test]
+    fn header_sizes() {
+        assert_eq!(std::mem::size_of::<CommonHeader>(), 6);
+        assert_eq!(std::mem::size_of::<PerPeerHeader>(), 42);
+    }
+    
 }
