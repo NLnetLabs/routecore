@@ -4,12 +4,12 @@
 //! providing access to its contents based on the underlying `bytes` buffer
 //! without allocating.
 
-use crate::bgp::message::{Message as BgpMsg, MessageOpen as BgpOpen, MessageUpdate as BgpUpdate, MessageNotification as BgpNotification};
+use crate::bgp::message::{Message as BgpMsg, OpenMessage as BgpOpen, UpdateMessage as BgpUpdate, NotificationMessage as BgpNotification};
 use crate::bgp::message::{AFI, SAFI, SessionConfig};
 use crate::util::parser::{Parser, Parse, ParseError, OctetsRef};
 use crate::typeenum; // from util::macros
 
-use bytes::{Buf, Bytes};
+use bytes::Buf;
 use chrono::{DateTime, TimeZone, Utc};
 use log::warn;
 use crate::asn::Asn;
@@ -51,14 +51,14 @@ impl Error for MessageError { }
 /// additional payload. The payload often comprises one or multiple
 /// [`bgp::Message`](crate::bgp::Message)s.
 
-pub enum Message {
-    RouteMonitoring(RouteMonitoring),
-    StatisticsReport(StatisticsReport),
-    PeerDownNotification(PeerDownNotification),
-    PeerUpNotification(PeerUpNotification),
-    InitiationMessage(InitiationMessage),
-    TerminationMessage(TerminationMessage),
-    RouteMirroring(RouteMirroring),
+pub enum Message<Octets: AsRef<[u8]> + OctetsRef> {
+    RouteMonitoring(RouteMonitoring<Octets>),
+    StatisticsReport(StatisticsReport<Octets>),
+    PeerDownNotification(PeerDownNotification<Octets>),
+    PeerUpNotification(PeerUpNotification<Octets>),
+    InitiationMessage(InitiationMessage<Octets>),
+    TerminationMessage(TerminationMessage<Octets>),
+    RouteMirroring(RouteMirroring<Octets>),
 }
 
 
@@ -76,43 +76,43 @@ typeenum!(
 );
 
 
-impl AsRef<[u8]> for InitiationMessage {
+impl<Octets: AsRef<[u8]>> AsRef<[u8]> for InitiationMessage<Octets> {
     fn as_ref(&self) -> &[u8] {
         self.octets.as_ref()
     }
 }
 
-impl AsRef<[u8]> for TerminationMessage {
+impl<Octets: AsRef<[u8]>> AsRef<[u8]> for TerminationMessage<Octets> {
     fn as_ref(&self) -> &[u8] {
         self.octets.as_ref()
     }
 }
 
 
-impl AsRef<[u8]> for StatisticsReport {
+impl<Octets: AsRef<[u8]>> AsRef<[u8]> for StatisticsReport<Octets> {
     fn as_ref(&self) -> &[u8] {
         self.octets.as_ref()
     }
 }
 
-impl AsRef<[u8]> for PeerUpNotification {
+impl<Octets: AsRef<[u8]>> AsRef<[u8]> for PeerUpNotification<Octets> {
     fn as_ref(&self) -> &[u8] {
-        self.octets.as_ref()
+        self.parser.as_slice()
     }
 }
 
-impl AsRef<[u8]> for PeerDownNotification {
+impl<Octets: AsRef<[u8]>> AsRef<[u8]> for PeerDownNotification<Octets> {
     fn as_ref(&self) -> &[u8] {
-        self.octets.as_ref()
+        self.parser.as_slice()
     }
 }
 
-impl AsRef<[u8]> for RouteMonitoring {
+impl<Octets: AsRef<[u8]>> AsRef<[u8]> for RouteMonitoring<Octets> {
     fn as_ref(&self) -> &[u8] {
-        self.octets.as_ref()
+        self.parser.as_slice()
     }
 }
-impl AsRef<[u8]> for RouteMirroring {
+impl<Octets: AsRef<[u8]>> AsRef<[u8]> for RouteMirroring<Octets> {
     fn as_ref(&self) -> &[u8] {
         self.octets.as_ref()
     }
@@ -120,9 +120,9 @@ impl AsRef<[u8]> for RouteMirroring {
 
 //--- Parsing and impl of the Message enum wrapper ---------------------------
 
-impl<'a, R> Parse<R> for Message 
+impl<R> Parse<R> for Message<R>
 where
-    R: 'a + AsRef<[u8]> + OctetsRef<Range = &'a[u8]>
+    R: AsRef<[u8]> + OctetsRef//<Range = R>
 {
     fn parse(parser: &mut Parser<R>) -> Result<Self, ParseError> {
         let pos = parser.pos();
@@ -158,7 +158,10 @@ where
     }
 }
 
-impl Message {
+impl<Octets> Message<Octets>
+where
+    Octets: AsRef<[u8]> + OctetsRef//<Range = Octets>
+{
     pub fn check(src: &mut Cursor<&[u8]>) -> Result<u32, MessageError> {
         if src.remaining() >= 5 {
             let _version = src.get_u8();
@@ -173,30 +176,32 @@ impl Message {
         Err(MessageError::Incomplete)
     }
 
-    pub fn from_bytes(octets: Bytes) -> Result<Message, ParseError>
-    {
-        // TODO the SessionConfig does not make sense for BMP messages..
-        let mut parser = Parser::from_ref(octets.as_ref(), SessionConfig::default());
-        Self::parse(&mut parser)
+    //pub fn from_bytes(octets: Bytes) -> Result<Message<Octets>, ParseError>
+    //{
+    //    // TODO the SessionConfig does not make sense for BMP messages..
+    //    let mut parser = Parser::from_ref(octets.as_ref(), SessionConfig::default());
+    //    Self::parse(&mut parser)
 
-    }
-    pub fn from_octets<'a, B>(octets: B) -> Result<Message, ParseError>
-    where
-        B: 'a + AsRef<[u8]> + OctetsRef<Range = &'a [u8]>,
+    //}
+    pub fn from_octets(octets: Octets) -> Result<Message<Octets>, ParseError>
     {
         // TODO the SessionConfig does not make sense for BMP messages..
         let mut parser = Parser::from_ref(octets, SessionConfig::default());
         Self::parse(&mut parser)
     }
-    pub fn from_ref<'a, B>(octets: &'a B) -> Result<Message, ParseError>
-    where
-        B: 'a + AsRef<[u8]> + OctetsRef<Range = &'a [u8]>,
-    {
-        // TODO the SessionConfig does not make sense for BMP messages..
-        let mut parser = Parser::from_ref(octets.as_ref(), SessionConfig::default());
-        Self::parse(&mut parser)
-    }
-
+    //pub fn from_ref<>(octets: &'a B) -> Result<Message<Octets>, ParseError>
+    //where
+    //    B: 'a + AsRef<[u8]> + OctetsRef<Range = &'a [u8]>,
+    //{
+    //    // TODO the SessionConfig does not make sense for BMP messages..
+    //    let mut parser = Parser::from_ref(octets.as_ref(), SessionConfig::default());
+    //    Self::parse(&mut parser)
+    //}
+}
+impl<Octets> Message<Octets>
+where
+    Octets: AsRef<[u8]> + OctetsRef
+{
     /// Return the [`CommonHeader`] for this message.
     pub fn common_header(&self) -> CommonHeader {
         let r = match self {
@@ -227,7 +232,7 @@ impl Message {
     }
 }
 
-impl Display for Message {
+impl<Octets: AsRef<[u8]> + OctetsRef> Display for Message<Octets> {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         match self {
             Message::RouteMonitoring(_) => write!(f, "RouteMonitoring"),
@@ -241,7 +246,7 @@ impl Display for Message {
     }
 }
 
-impl Debug for Message
+impl<Octets: AsRef<[u8]> + OctetsRef> Debug for Message<Octets>
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         let _ = writeln!(f, "{:?} ({})",
@@ -252,7 +257,7 @@ impl Debug for Message
     }
 }
 
-impl AsRef<[u8]> for Message {
+impl<Octets: AsRef<[u8]> + OctetsRef> AsRef<[u8]> for Message<Octets> {
     fn as_ref(&self) -> &[u8] {
         match self {
             Message::RouteMonitoring(m) => m.as_ref(),
@@ -546,15 +551,27 @@ pub enum RibType {
 
 
 /// Route Monitoring message.
-pub struct RouteMonitoring { octets: Bytes, }
+pub struct RouteMonitoring<Octets: AsRef<[u8]>>
+{
+    parser: Parser<Octets>
+}
 
-impl RouteMonitoring {
-    fn for_slice(s: &[u8]) -> Self {
-        Self {
-            octets: Bytes::copy_from_slice(s),
-        }
-    }
+//impl<Octets: OctetsRef> RouteMonitoring<<Octets as OctetsRef>::Range>
+//where
+//    Octets: AsRef<[u8]>
+//{
+//    fn for_slice(s: Octets) -> Self
+//    {
+//        Self {
+//            octets: s
+//        }
+//    }
+//}
 
+impl<Octets> RouteMonitoring<Octets>
+where
+    Octets: AsRef<[u8]> + OctetsRef//<Range = Octets>
+{
     /// Return the [`CommonHeader`] for this message.
     pub fn common_header(&self) -> CommonHeader {
         *CommonHeader::for_message_slice(self.as_ref())
@@ -569,52 +586,86 @@ impl RouteMonitoring {
 
     /// Return the encapsulated
     /// [BGP UPDATE message](`crate::bgp::MessageUpdate`).
-    pub fn bgp_update(&self, config: &SessionConfig) -> Result<BgpUpdate, ParseError> {
-        let mut parser = Parser::from_ref(
-            &self.as_ref()[
+    pub fn bgp_update(&self, config: &SessionConfig) -> Result<BgpUpdate<Octets>, ParseError> {
+        //let mut parser = Parser::from_ref(
+        //    self.octets,
+        //    *config
+        //);
+        //parser.advance(
+        //        std::mem::size_of::<CommonHeader>() +
+        //        std::mem::size_of::<PerPeerHeader>()
+        //);
+        //let mut parser = Parser::from_ref(
+        //    self.octets.range_from(
+        //        std::mem::size_of::<CommonHeader>() +
+        //        std::mem::size_of::<PerPeerHeader>()
+        //    ),
+        //    *config,
+        //);
+        //BgpUpdate::<<Octets as OctetsRef>::Range>::parse(&mut parser)
+        self.parser.advance(
                 std::mem::size_of::<CommonHeader>() +
                 std::mem::size_of::<PerPeerHeader>()
-            ..
-            ],
-            *config,
         );
-        BgpUpdate::parse(&mut parser)
+        BgpUpdate::parse(&mut self.parser)
     }
 }
 
-impl<'a, R> Parse<R> for RouteMonitoring
+impl<R> RouteMonitoring<R>
 where
-    R: 'a + AsRef<[u8]> + OctetsRef<Range = &'a[u8]>
+    R: AsRef<[u8]> + OctetsRef,
+    //<R as OctetsRef>::Range: OctetsRef
 {
-    fn parse(parser: &mut Parser<R>) -> Result<Self, ParseError> {
+    fn parse(parser: &mut Parser<R>) -> Result<RouteMonitoring<R>, ParseError> {
         let pos = parser.pos();
         let ch = CommonHeader::parse(parser)?;
         let _pph = PerPeerHeader::parse(parser)?;
-
-        //  If we parse the encapsulated BGP UPDATE here, and it fails, this
-        //  entire BMP RouteMonitoring message is lost.
-        //  Instead, if we skip the parsing here, and do the parsing in
-        //  RouteMonitoring::bgp_update(), we can retry parsing
-        //  if we want to.
-        //let _bgp_update = BgpUpdate::parse(parser)?;
-
-        parser.seek(pos)?;
-        Ok(Self::for_slice(parser.parse_octets(ch.length() as usize)?))
-    }
-
-    fn skip(parser: &mut Parser<R>) -> Result<(), ParseError> {
-        Self::parse(parser).map(|_| ())
+        Ok(Self {
+            parser: *parser,
+        })
     }
 }
 
+//impl<R> Parse<R> for RouteMonitoring<R::Range>
+//where
+//    <R as OctetsRef>::Range: OctetsRef,
+//    R: AsRef<[u8]> + OctetsRef
+//{
+//    fn parse(parser: &mut Parser<R>) -> Result<Self, ParseError> {
+//        let pos = parser.pos();
+//        let ch = CommonHeader::parse(parser)?;
+//        let _pph = PerPeerHeader::parse(parser)?;
+//
+//        //  If we parse the encapsulated BGP UPDATE here, and it fails, this
+//        //  entire BMP RouteMonitoring message is lost.
+//        //  Instead, if we skip the parsing here, and do the parsing in
+//        //  RouteMonitoring::bgp_update(), we can retry parsing
+//        //  if we want to.
+//        //let _bgp_update = BgpUpdate::parse(parser)?;
+//
+//        parser.seek(pos)?;
+//        //Ok(Self::for_slice(parser.parse_octets(ch.length() as usize)?))
+//        Ok(Self {
+//            octets: parser.octets_ref()//parse_octets(ch.length() as usize)?
+//        })
+//    }
+//
+//    fn skip(parser: &mut Parser<R>) -> Result<(), ParseError> {
+//        Self::parse(parser).map(|_| ())
+//    }
+//}
+
 
 /// Statistics Report message.
-pub struct StatisticsReport { octets: Bytes, }
+pub struct StatisticsReport<Octets: AsRef<[u8]>> {
+    octets: Octets,
+}
 
-impl StatisticsReport {
-    fn for_slice(s: &[u8]) -> Self {
+impl<Octets: AsRef<[u8]>> StatisticsReport<Octets> {
+    // XXX the name for_slice does not make sense anymore
+    fn for_slice(s: Octets) -> Self {
         Self {
-            octets: Bytes::copy_from_slice(s),
+            octets: s,
         }
     }
 
@@ -644,9 +695,9 @@ impl StatisticsReport {
 
 }
 
-impl<'a, R> Parse<R> for StatisticsReport
+impl<R> Parse<R> for StatisticsReport<R>
 where
-    R: 'a + AsRef<[u8]> + OctetsRef<Range = &'a[u8]>
+    R: AsRef<[u8]> + OctetsRef//<Range = R>
 {
     fn parse(parser: &mut Parser<R>) -> Result<Self, ParseError> {
         let pos = parser.pos();
@@ -661,7 +712,8 @@ where
         }
 
         parser.seek(pos)?;
-        Ok(Self::for_slice(parser.parse_octets(ch.length() as usize)?))
+        //Ok(Self::for_slice(parser.parse_octets(ch.length() as usize)?))
+        Ok(Self::for_slice(parser.octets_ref()))
     }
 
     fn skip(parser: &mut Parser<R>) -> Result<(), ParseError> {
@@ -669,7 +721,7 @@ where
     }
 }
 
-impl Debug for StatisticsReport {
+impl<Octets: AsRef<[u8]>> Debug for StatisticsReport<Octets> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for s in self.stats() {
             let _ = writeln!(f, "{}", s);
@@ -680,14 +732,24 @@ impl Debug for StatisticsReport {
 
 
 /// Peer Down Notification.
-pub struct PeerDownNotification { octets: Bytes, }
+pub struct PeerDownNotification<Octets: AsRef<[u8]>> {
+    parser: Parser<Octets>,
+}
 
-impl PeerDownNotification {
-    fn for_slice(s: &[u8]) -> Self {
+impl<Octets> PeerDownNotification<Octets>
+where
+    Octets: AsRef<[u8]> + OctetsRef//<Range = Octets>
+{
+    fn for_slice(parser: Parser<Octets>) -> Self {
         Self {
-            octets: Bytes::copy_from_slice(s),
+            parser 
         }
     }
+    //fn parse(parser: Parser<Octets>) -> Result<Self, ParseError> {
+    //    Ok(Self {
+    //        parser
+    //    })
+    //}
 
     /// Return the [`CommonHeader`] for this message.
     pub fn common_header(&self) -> CommonHeader {
@@ -703,7 +765,7 @@ impl PeerDownNotification {
 
     /// Return the [`PeerDownReason`] for this message.
     pub fn reason(&self) -> PeerDownReason {
-        match self.octets.as_ref()[COFF] {
+        match self.as_ref()[COFF] {
             0 => PeerDownReason::Reserved,
             1 => PeerDownReason::LocalNotification,
             2 => PeerDownReason::LocalFsm,
@@ -717,7 +779,10 @@ impl PeerDownNotification {
     /// Return the optional encapsulated [BGP NOTIFICATION
     /// message](`crate::bgp::MessageNotification`), that should be present
     /// for the Local and Remote Notification PeerDownReasons.
-    pub fn notification(&self) -> Option<BgpNotification> {
+    pub fn notification(&self) -> Option<BgpNotification<Octets>>
+    //where
+    //    <Octets as OctetsRef>::Range: OctetsRef
+    {
         if self.reason() == PeerDownReason::LocalNotification ||
            self.reason() == PeerDownReason::RemoteNotification
         {
@@ -731,7 +796,11 @@ impl PeerDownNotification {
                     &self.as_ref()[COFF+1..],
                     SessionConfig::default(), // XXX get rid of SessionConfig
                 );
-                BgpNotification::parse(&mut parser).expect("parsed before")
+                //let mut parser = Parser::from_ref(
+                //    self.as_ref().range_from(COFF+1),
+                //    SessionConfig::default(),
+                //);
+                BgpNotification::parse(&mut self.parser).expect("parsed before")
             }
             )
         } else {
@@ -743,7 +812,7 @@ impl PeerDownNotification {
     //pub fn fsm(&self) -> Option(Bgp::FsmEvent) {
     pub fn fsm(&self) -> Option<u16> {
         if self.reason() == PeerDownReason::LocalFsm {
-            Some(u16::from_be_bytes(self.octets.as_ref()[1..=2].try_into().unwrap()))
+            Some(u16::from_be_bytes(self.as_ref()[1..=2].try_into().unwrap()))
         } else {
             None
         }
@@ -763,9 +832,9 @@ pub enum PeerDownReason {
 }
 
 
-impl<'a, R> Parse<R> for PeerDownNotification
+impl<R> Parse<R> for PeerDownNotification<R>
 where
-    R: 'a + AsRef<[u8]> + OctetsRef<Range = &'a[u8]>
+    R: AsRef<[u8]> + OctetsRef//<Range = R>
 {
     fn parse(parser: &mut Parser<R>) -> Result<Self, ParseError> {
         let pos = parser.pos();
@@ -791,7 +860,7 @@ where
         }
 
         parser.seek(pos)?;
-        Ok(Self::for_slice(parser.parse_octets(ch.length() as usize)?))
+        Ok(Self::for_slice(*parser))
     }
 
     fn skip(parser: &mut Parser<R>) -> Result<(), ParseError> {
@@ -801,12 +870,17 @@ where
 
 
 /// Peer Up Notification.
-pub struct PeerUpNotification { octets: Bytes, }
+pub struct PeerUpNotification<Octets: AsRef<[u8]>> {
+    parser: Parser<Octets>,
+}
 
-impl PeerUpNotification {
-    fn for_slice(s: &[u8]) -> Self {
+impl<Octets> PeerUpNotification<Octets>
+where
+    Octets: AsRef<[u8]> + OctetsRef//<Range = Octets>
+{
+    fn for_slice(parser: Parser<Octets>) -> Self {
         Self {
-            octets: Bytes::copy_from_slice(s),
+            parser
         }
     }
 
@@ -852,21 +926,29 @@ impl PeerUpNotification {
     }
 
     /// Return the [BGP OPEN message](BgpOpen) sent to the peer.
-    pub fn bgp_open_sent(&self) -> BgpOpen {
+    pub fn bgp_open_sent(&self) -> BgpOpen<Octets> {
         let mut parser = Parser::from_ref(
             &self.as_ref()[COFF+20..],
             SessionConfig::default(), // XXX get rid of the sessionconfig here
         );
+        //let mut parser = Parser::from_ref(
+        //    self.parser.range_from(COFF+20),
+        //    SessionConfig::default(),
+        //);
         BgpOpen::parse(&mut parser).unwrap()
     }
 
     /// Return the [BGP OPEN message](BgpOpen) received from the peer.
-    pub fn bgp_open_rcvd(&self) -> BgpOpen {
+    pub fn bgp_open_rcvd(&self) -> BgpOpen<Octets> {
         let mut pos: usize = 20;
         pos += self.bgp_open_sent().length() as usize;
+        //let mut parser = Parser::from_ref(
+        //    &self.as_ref()[COFF+pos..],
+        //    SessionConfig::default(), // XXX get rid of the sessionconfig here
+        //);
         let mut parser = Parser::from_ref(
-            &self.as_ref()[COFF+pos..],
-            SessionConfig::default(), // XXX get rid of the sessionconfig here
+            self.octets.range_from(COFF+pos),
+            SessionConfig::default(),
         );
         BgpOpen::parse(&mut parser).unwrap()
     }
@@ -877,11 +959,15 @@ impl PeerUpNotification {
     /// `bgp_open_rcvd` individually.
     #[allow(clippy::type_complexity)]
     pub fn bgp_open_sent_rcvd(&self)
-        -> (BgpOpen, BgpOpen)
+        -> (BgpOpen<Octets>, BgpOpen<Octets>)
     {
+        //let mut parser = Parser::from_ref(
+        //    &self.as_ref()[COFF+20..],
+        //    SessionConfig::default(), // XXX get rid of the sessionconfig here
+        //);
         let mut parser = Parser::from_ref(
-            &self.as_ref()[COFF+20..],
-            SessionConfig::default(), // XXX get rid of the sessionconfig here
+            self.octets.range_from(COFF+20),
+            SessionConfig::default(),
         );
         let sent = BgpOpen::parse(&mut parser).unwrap();
         let rcvd = BgpOpen::parse(&mut parser).unwrap();
@@ -930,9 +1016,9 @@ impl PeerUpNotification {
 
 }
 
-impl<'a, R> Parse<R> for PeerUpNotification
+impl<R> Parse<R> for PeerUpNotification<R>
 where
-    R: 'a + AsRef<[u8]> + OctetsRef<Range = &'a[u8]>
+    R: AsRef<[u8]> + OctetsRef//<Range = R>
 {
     fn parse(parser: &mut Parser<R>) -> Result<Self, ParseError> {
         let pos = parser.pos();
@@ -966,12 +1052,14 @@ where
 
 
 /// Initiation Message.
-pub struct InitiationMessage { octets: Bytes, }
+pub struct InitiationMessage<Octets: AsRef<[u8]>> {
+    octets: Octets,
+}
 
-impl InitiationMessage {
-    fn for_slice(s: &[u8]) -> Self {
+impl<Octets: AsRef<[u8]>> InitiationMessage<Octets> {
+    fn for_slice(s: Octets) -> Self {
         Self {
-            octets: Bytes::copy_from_slice(s),
+            octets: s
         }
     }
 
@@ -989,9 +1077,9 @@ impl InitiationMessage {
     }
 }
 
-impl<'a, R> Parse<R> for InitiationMessage
+impl<R> Parse<R> for InitiationMessage<R>
 where
-    R: 'a + AsRef<[u8]> + OctetsRef<Range = &'a[u8]>
+    R: AsRef<[u8]> + OctetsRef//<Range = R>
 {
     fn parse(parser: &mut Parser<R>) -> Result<Self, ParseError> {
         let pos = parser.pos();
@@ -1013,12 +1101,14 @@ where
 
 
 /// Termination message.
-pub struct TerminationMessage { octets: Bytes, }
+pub struct TerminationMessage<Octets: AsRef<[u8]>> {
+    octets: Octets,
+}
 
-impl TerminationMessage {
-    fn for_slice(s: &[u8]) -> Self {
+impl<Octets: AsRef<[u8]>> TerminationMessage<Octets> {
+    fn for_slice(s: Octets) -> Self {
         Self {
-            octets: Bytes::copy_from_slice(s),
+            octets: s
         }
     }
 
@@ -1038,9 +1128,9 @@ impl TerminationMessage {
     }
 }
 
-impl<'a, R> Parse<R> for TerminationMessage
+impl<R> Parse<R> for TerminationMessage<R>
 where
-    R: 'a + AsRef<[u8]> + OctetsRef<Range = &'a[u8]>
+    R: AsRef<[u8]> + OctetsRef//<Range = R>
 {
     fn parse(parser: &mut Parser<R>) -> Result<Self, ParseError> {
         let pos = parser.pos();
@@ -1063,9 +1153,11 @@ where
 /// RouteMirroring.
 ///
 /// NB: Not well tested/supported at this moment!  
-pub struct RouteMirroring { octets: Bytes, }
+pub struct RouteMirroring<Octets: AsRef<[u8]>> {
+    octets: Octets,
+}
 
-impl RouteMirroring {
+impl<Octets: AsRef<[u8]>> RouteMirroring<Octets> {
     /// Return the [`CommonHeader`] for this message.
     pub fn common_header(&self) -> CommonHeader {
         *CommonHeader::for_message_slice(self.as_ref())
@@ -1079,7 +1171,7 @@ impl RouteMirroring {
     }
 }
 
-impl<R> Parse<R> for RouteMirroring
+impl<R> Parse<R> for RouteMirroring<R>
 where
     R: AsRef<[u8]>
 {
@@ -1465,30 +1557,33 @@ impl Display for TerminationInformation {
 //--- Route Mirroring --------------------------------------------------------
 
 /// Types of Route Mirroring TLVs.
-pub enum RouteMirroringType<'a> {
-    BgpMessage(Result<BgpMsg, ParseError>),         // type 0
+pub enum RouteMirroringType<Octets: AsRef<[u8]> + OctetsRef> {
+    BgpMessage(Result<BgpMsg<Octets>, ParseError>),         // type 0
     InfoErrorPdu,       // type 1 code 0
     InfoMessagesLost,   // type 1 code 1
-    Undefined(u16, &'a [u8]),     // carries the type
+    Undefined(u16, Octets),     // carries the type
 }
 
 /// Iterator over Route Mirroring TLVs.
-pub struct RouteMirroringTlvIter<'a> {
-    octets: &'a [u8],
+pub struct RouteMirroringTlvIter<Octets> {
+    octets: Octets,
     pos: usize,
 }
-impl<'a> RouteMirroringTlvIter<'a> {
-    fn get_item(&mut self) -> RouteMirroringType<'a> {
+impl<Octets> RouteMirroringTlvIter<Octets>
+where
+    Octets: AsRef<[u8]> + OctetsRef//<Range = Octets>
+{
+    fn get_item(&mut self) -> RouteMirroringType<Octets> {
         let typ = u16::from_be_bytes(
-            self.octets[self.pos..self.pos+2].try_into().unwrap()
+            self.octets.as_ref()[self.pos..self.pos+2].try_into().unwrap()
         );
         let len = u16::from_be_bytes(
-            self.octets[self.pos+2..self.pos+4].try_into().unwrap()
+            self.octets.as_ref()[self.pos+2..self.pos+4].try_into().unwrap()
         );
         if typ == 0 {
             let res = RouteMirroringType::BgpMessage(
-                BgpMsg::from_octets(
-                    &self.octets[self.pos+5..self.pos+5+len as usize]
+                BgpMsg::<Octets>::from_octets(
+                    self.octets.range(self.pos+5,self.pos+5+len as usize)
                 )
             );
             self.pos += 4 + len as usize;
@@ -1500,7 +1595,7 @@ impl<'a> RouteMirroringTlvIter<'a> {
         assert!(typ == 1);
         assert!(len == 2);
         let val = u16::from_be_bytes(
-            self.octets[self.pos+4..self.pos+4+len as usize]
+            self.octets.as_ref()[self.pos+4..self.pos+4+len as usize]
             .try_into().unwrap()
         );
         self.pos += len as usize;
@@ -1509,16 +1604,19 @@ impl<'a> RouteMirroringTlvIter<'a> {
             0 => RouteMirroringType::InfoErrorPdu,
             1 => RouteMirroringType::InfoMessagesLost,
             u => RouteMirroringType::Undefined(
-                u, &self.octets[self.pos+4..self.pos+4+len as usize]
+                u, self.octets.range(self.pos+4,self.pos+4+len as usize)
             )
         }
 
     }
 }
-impl<'a> Iterator for RouteMirroringTlvIter<'a> {
-    type Item = RouteMirroringType<'a>;
-    fn next(&mut self) -> Option<RouteMirroringType<'a>> {
-        if self.pos == self.octets.len() {
+impl<Octets> Iterator for RouteMirroringTlvIter<Octets>
+where
+    Octets: AsRef<[u8]> + OctetsRef//<Range = Octets>
+{
+    type Item = RouteMirroringType<Octets>;
+    fn next(&mut self) -> Option<RouteMirroringType<Octets>> {
+        if self.pos == self.octets.as_ref().len() {
             return None
         }
         Some(self.get_item())
@@ -1529,11 +1627,11 @@ impl<'a> Iterator for RouteMirroringTlvIter<'a> {
 //--- From / Into ------------------------------------------------------------
 
 
-impl TryFrom<Message> for RouteMonitoring
+impl<Octets: AsRef<[u8]> + OctetsRef> TryFrom<Message<Octets>> for RouteMonitoring<Octets>
 {
     type Error = MessageError;
-    fn try_from(msg: Message)
-        -> Result<RouteMonitoring, Self::Error>
+    fn try_from(msg: Message<Octets>)
+        -> Result<RouteMonitoring<Octets>, Self::Error>
     {
         match msg {
             Message::RouteMonitoring(m) => Ok(m),
@@ -1542,11 +1640,11 @@ impl TryFrom<Message> for RouteMonitoring
     }
 }
 
-impl TryFrom<Message> for StatisticsReport
+impl<Octets: AsRef<[u8]> + OctetsRef> TryFrom<Message<Octets>> for StatisticsReport<Octets>
 {
     type Error = MessageError;
-    fn try_from(msg: Message)
-        -> Result<StatisticsReport, Self::Error>
+    fn try_from(msg: Message<Octets>)
+        -> Result<StatisticsReport<Octets>, Self::Error>
     {
         match msg {
             Message::StatisticsReport(m) => Ok(m),
@@ -1555,11 +1653,11 @@ impl TryFrom<Message> for StatisticsReport
     }
 }
 
-impl TryFrom<Message> for PeerDownNotification
+impl<Octets: AsRef<[u8]> + OctetsRef> TryFrom<Message<Octets>> for PeerDownNotification<Octets>
 {
     type Error = MessageError;
-    fn try_from(msg: Message)
-        -> Result<PeerDownNotification, Self::Error>
+    fn try_from(msg: Message<Octets>)
+        -> Result<PeerDownNotification<Octets>, Self::Error>
     {
         match msg {
             Message::PeerDownNotification(m) => Ok(m),
@@ -1568,11 +1666,11 @@ impl TryFrom<Message> for PeerDownNotification
     }
 }
 
-impl TryFrom<Message> for PeerUpNotification
+impl<Octets: AsRef<[u8]> + OctetsRef> TryFrom<Message<Octets>> for PeerUpNotification<Octets>
 {
     type Error = MessageError;
-    fn try_from(msg: Message)
-        -> Result<PeerUpNotification, Self::Error>
+    fn try_from(msg: Message<Octets>)
+        -> Result<PeerUpNotification<Octets>, Self::Error>
     {
         match msg {
             Message::PeerUpNotification(m) => Ok(m),
@@ -1581,11 +1679,11 @@ impl TryFrom<Message> for PeerUpNotification
     }
 }
 
-impl TryFrom<Message> for InitiationMessage
+impl<Octets: AsRef<[u8]> + OctetsRef> TryFrom<Message<Octets>> for InitiationMessage<Octets>
 {
     type Error = MessageError;
-    fn try_from(msg: Message)
-        -> Result<InitiationMessage, Self::Error>
+    fn try_from(msg: Message<Octets>)
+        -> Result<InitiationMessage<Octets>, Self::Error>
     {
         match msg {
             Message::InitiationMessage(m) => Ok(m),
@@ -1594,11 +1692,11 @@ impl TryFrom<Message> for InitiationMessage
     }
 }
 
-impl TryFrom<Message> for TerminationMessage
+impl<Octets: AsRef<[u8]> + OctetsRef> TryFrom<Message<Octets>> for TerminationMessage<Octets>
 {
     type Error = MessageError;
-    fn try_from(msg: Message)
-        -> Result<TerminationMessage, Self::Error>
+    fn try_from(msg: Message<Octets>)
+        -> Result<TerminationMessage<Octets>, Self::Error>
     {
         match msg {
             Message::TerminationMessage(m) => Ok(m),
@@ -1607,11 +1705,11 @@ impl TryFrom<Message> for TerminationMessage
     }
 }
 
-impl TryFrom<Message> for RouteMirroring
+impl<Octets: AsRef<[u8]> + OctetsRef> TryFrom<Message<Octets>> for RouteMirroring<Octets>
 {
     type Error = MessageError;
-    fn try_from(msg: Message)
-        -> Result<RouteMirroring, Self::Error>
+    fn try_from(msg: Message<Octets>)
+        -> Result<RouteMirroring<Octets>, Self::Error>
     {
         match msg {
             Message::RouteMirroring(m) => Ok(m),
@@ -1699,12 +1797,13 @@ mod tests {
     //--- Messages -----------------------------------------------------------
     
     // Helper to quickly parse bufs into specific BMP messages.
-    fn parse_msg<T>(buf: &[u8]) -> T
+    fn parse_msg<T, R>(buf: R) -> T
     where
-        T: TryFrom<Message>,
-        <T as TryFrom<Message>>::Error: Debug
+        T: TryFrom<Message<R>>,
+        R: AsRef<[u8]> + OctetsRef,
+        <T as TryFrom<Message<R>>>::Error: Debug
     {
-        Message::from_octets(&buf).unwrap().try_into().unwrap()
+        Message::from_octets(buf).unwrap().try_into().unwrap()
     }
 
     #[test]
@@ -1726,7 +1825,7 @@ mod tests {
             0xff, 0x00, 0x65, 0x80, 0x04, 0x04, 0x00, 0x00,
             0x00, 0x01, 0x20, 0x0a, 0x0a, 0x0a, 0x02
         ]; 
-        let bmp: RouteMonitoring = parse_msg(&buf);
+        let bmp: RouteMonitoring<_> = parse_msg(&buf);
         assert_eq!(
             bmp.common_header().msg_type(),
             MessageType::RouteMonitoring
@@ -1807,7 +1906,7 @@ mod tests {
             0x02, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02,
             0x21, 0x14
         ];
-        let bmp: StatisticsReport = parse_msg(&buf);
+        let bmp: StatisticsReport<_> = parse_msg(&buf);
         assert_eq!(bmp.stats_count(), 13);
         assert_eq!(bmp.stats().count(), 13);
         use Stat::*;
@@ -1846,7 +1945,7 @@ mod tests {
             0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
             0xff, 0x00, 0x15, 0x03, 0x06, 0x02
         ];
-        let bmp: PeerDownNotification = parse_msg(&buf);
+        let bmp: PeerDownNotification<_> = parse_msg(&buf);
         assert_eq!(bmp.reason(), PeerDownReason::RemoteNotification);
         assert!(bmp.notification().is_some());
         assert_eq!(bmp.fsm(), None);
@@ -1870,7 +1969,7 @@ mod tests {
             0x62, 0x2f, 0x06, 0x40, 0x00, 0x08, 0x6c, 0xb2,
             0x01
         ];
-        let bmp: PeerDownNotification = parse_msg(&buf);
+        let bmp: PeerDownNotification<_> = parse_msg(&buf);
         assert_eq!(bmp.reason(), PeerDownReason::LocalNotification);
         assert!(bmp.notification().is_none());
     }
@@ -1913,7 +2012,7 @@ mod tests {
 			0x00, 0x78, 0x02, 0x06, 0x41, 0x04, 0x00, 0x00,
 			0xfb, 0xf0];
 
-        let bmp: PeerUpNotification = parse_msg(&buf);
+        let bmp: PeerUpNotification<_> = parse_msg(&buf);
 
         assert_eq!(bmp.common_header().version(), 3);
         assert_eq!(bmp.common_header().length(), 186);
@@ -1989,7 +2088,7 @@ mod tests {
 			0x20, 0x49, 0x6e, 0x63, 0x2e, 0x00, 0x02, 0x00,
 			0x03, 0x78, 0x72, 0x33
 		];
-        let init: InitiationMessage = parse_msg(&buf);
+        let init: InitiationMessage<_> = parse_msg(&buf);
         assert_eq!(init.information_tlvs().count(), 2);
         let mut tlvs = init.information_tlvs();
         let tlv1 = tlvs.next().unwrap();
@@ -2016,7 +2115,7 @@ mod tests {
             0x03, 0x00, 0x00, 0x00, 0x0C, 0x05, 0x00, 0x01, 0x00,
             0x02, 0x00, 0x03,
         ];
-        let bmp: TerminationMessage = parse_msg(&buf);
+        let bmp: TerminationMessage<_> = parse_msg(&buf);
         assert_eq!(bmp.information().count(), 1);
         assert_eq!(
             bmp.information().next().unwrap(), 

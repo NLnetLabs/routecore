@@ -139,12 +139,14 @@ where
     Ok(prefix)
 }
 
-impl<R> Parse<R> for Component<R>
+impl<Octets> Component<Octets>
 where 
-    R: AsRef<[u8]> + OctetsRef<Range = R>
+    Octets: AsRef<[u8]>
 {
-    fn parse(parser: &mut Parser<R>) -> Result<Self, ParseError> {
-
+    pub(crate) fn parse<Ref>(parser: &mut Parser<Ref>) -> Result<Self, ParseError>
+    where
+        Ref: OctetsRef<Range = Octets>
+    {
         let typ = parser.parse_u8()?;
         let res = match typ {
             1 => {
@@ -294,9 +296,9 @@ where
         Ok(res)
     }
 
-    fn skip(parser: &mut Parser<R>) -> Result<(), ParseError> {
-        Self::parse(parser).map(|_| ())
-    }
+    //fn skip(parser: &mut Parser<R>) -> Result<(), ParseError> {
+    //    Self::parse(parser).map(|_| ())
+    //}
 }
 
 
