@@ -5,6 +5,8 @@ use core::{fmt};
 use crate::bgp::message::SessionConfig;
 use std::net::{Ipv6Addr, Ipv4Addr};
 
+use bytes::Bytes;
+
 #[derive(Clone, Copy, Debug)]
 pub struct Parser<Ref> {
     /// The underlying octets reference.
@@ -124,6 +126,15 @@ impl<Ref: AsRef<[u8]>> Parser<Ref> {
         self.advance(buf.len())?;
         buf.copy_from_slice(&self.octets.as_ref()[pos..self.pos]);
         Ok(())
+    }
+
+    pub fn parse_parser(&mut self, len: usize) -> Result<Self, ParseError>
+        where Ref: Clone {
+            self.check_len(len)?;
+            let mut res = self.clone();
+            res.len = res.pos + len;
+            self.pos += len;
+            Ok(res)
     }
 
     /// Takes and returns the next `len` octets.
@@ -334,6 +345,15 @@ impl<'a> OctetsRef for &'a Vec<u8> {
         &self[start..end]
     }
 }
+
+impl<'a> OctetsRef for &'a Bytes {
+    type Range = Bytes;
+
+    fn range(self, start: usize, end: usize) -> Self::Range {
+        self.slice(start..end)
+    }
+}
+
 
 //------------ ShortBuf ------------------------------------------------------
 
