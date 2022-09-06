@@ -105,7 +105,7 @@ pub struct NotificationMessage<Octets> {
     octets: Octets
 }
 
-impl<Octets: AsRef<[u8]>> Message<Octets>
+impl<Octets: AsRef<[u8]>> AsRef<[u8]> for Message<Octets>
 {
     fn as_ref(&self) -> &[u8] {
         match self {
@@ -114,7 +114,10 @@ impl<Octets: AsRef<[u8]>> Message<Octets>
             Message::Notification(m) => m.octets.as_ref(),
         }
     }
+}
 
+impl<Octets: AsRef<[u8]>> Message<Octets>
+{
     fn octets(&self) -> &Octets {
         match self {
             Message::Open(m) => &m.octets,
@@ -130,9 +133,6 @@ where
 {
     fn header(&self) -> Header<<&Octets as OctetsRef>::Range>
     {
-        //let mut parser = Parser::from_ref(self.octets(), SessionConfig::default());
-        //Header::for_slice(parser.parse_octets(19).unwrap())
-        //Header::parse(&mut parser).expect("parsed before")
         Header::for_slice(self.octets().range_to(19))
     }
 
@@ -153,10 +153,8 @@ impl<Octets: AsRef<[u8]>> OpenMessage<Octets>
 where
     for <'a> &'a Octets: OctetsRef
 {
-    fn header(&self) -> Header<<&Octets as OctetsRef>::Range>
+    pub fn header(&self) -> Header<<&Octets as OctetsRef>::Range>
     {
-        //let parser = Parser::from_ref(&self.octets, SessionConfig::default());
-        //Header { 0: parser.parse_octets(19).unwrap() }
         Header::for_slice(self.octets.range_to(19))
     }
     
@@ -164,11 +162,6 @@ where
 	pub fn length(&self) -> u16 {
         self.header().length()
 	}
-
-    ///// Returns a clone of the inner `Bytes`.
-    //pub fn bytes(&self) -> Octets {
-    //    self.octets//.clone()
-    //}
 }
 
 impl<Octets: AsRef<[u8]>> AsRef<[u8]> for OpenMessage<Octets> {
@@ -178,7 +171,7 @@ impl<Octets: AsRef<[u8]>> AsRef<[u8]> for OpenMessage<Octets> {
 }
 
 impl<Octets: AsRef<[u8]>> UpdateMessage<Octets> {
-    fn header(&self) -> Header<&Octets> {
+    pub fn header(&self) -> Header<&Octets> {
         Header::for_slice(&self.octets)
     }
     /// Returns the length in bytes of the entire BGP message.
@@ -197,10 +190,8 @@ impl<Octets: AsRef<[u8]>> NotificationMessage<Octets>
 where
     for <'a> &'a Octets: OctetsRef
 {
-    fn header(&self) -> Header<<&Octets as OctetsRef>::Range>
+    pub fn header(&self) -> Header<<&Octets as OctetsRef>::Range>
     {
-        //let parser = Parser::from_ref(&self.octets, SessionConfig::default());
-        //Header { 0: parser.parse_octets(19).unwrap() }
         Header::for_slice(self.octets.range_to(19))
     }
 
@@ -247,20 +238,14 @@ impl<Octets: AsRef<[u8]>> TryFrom<Message<Octets>> for NotificationMessage<Octet
 }
 
 
-//impl<Octets: AsRef<[u8]>> Message<Octets>
 impl<Octets: AsRef<[u8]>> Message<Octets>
 where
     for<'b> &'b Octets: OctetsRef,
-    //for<'b> &'b Octets: OctetsRef<Range = Octets>,
-   
-    //for<'b> &'b <&'b Octets as OctetsRef>::Range: OctetsRef,
-    //for<'a> &'a<&'a Octets as OctetsRef>::Range: OctetsRef<Range = <&'a Octets as OctetsRef>::Range>
 {
     pub fn from_octets<Source: AsRef<[u8]>>(octets: Source)
         -> Result<Message<Octets>, ParseError>
     where
         for <'b> &'b Source: OctetsRef<Range = Octets>,
-        //for <'a> <&'a Octets as OctetsRef>::Range: OctetsRef,
     {
         Self::from_octets_with_sc(octets, SessionConfig::default())
     }
@@ -271,7 +256,6 @@ where
         -> Result<Message<Octets>, ParseError>
     where
         for <'b> &'b Source: OctetsRef<Range = Octets>,
-        //for <'a> <&'a Octets as OctetsRef>::Range: OctetsRef,
     {
         let mut parser = Parser::from_ref(&octets, config);
         //let mut parser = Parser::from_ref(octets.as_ref(), config);
@@ -285,36 +269,6 @@ where
         };
         Ok(res)
     }
-
-    //pub fn into_open(self) -> OpenMessage<Octets> {
-    //    
-    //}
-
-    /*
-    fn from_ref<Ref: OctetsRef>(octets: Ref, config: SessionConfig)
-        //-> Result<Message<<&'a Octets as OctetsRef>::Range>, ParseError>
-        -> Result<Message<Octets>, ParseError>
-    where
-        Ref: OctetsRef<Range = Octets>,
-        for<'b> &'b Octets: OctetsRef,
-        //for <'b> <&'b Octets as OctetsRef>::Range: OctetsRef,
-    {
-        let mut parser: Parser<Ref> = Parser::from_ref(octets, config);
-        let hdr = Header::parse(&mut parser)?;
-        parser.seek(0)?;
-        let res = match hdr.msg_type() {
-            MsgType::Open => Message::Open(OpenMessage::parse(&mut parser)?),
-            MsgType::Update => Message::Update(UpdateMessage::parse(&mut parser)?),
-            //MsgType::Notification => Message::Notification(NotificationMessage::parse(&mut parser)?),
-            _ => panic!("not implemented yet")
-        };
-        Ok(res)
-    }
-
-*/
-
-
-
 }
 
 //
@@ -339,16 +293,12 @@ const COFF: usize = 19; // XXX replace this with .skip()'s?
         
 /// BGP Message header.
 #[derive(Clone, Copy, Default)]
-//pub struct Header<'a> {
-//    slice: &'a[u8],
-//}
 pub struct Header<Octets>(Octets);
 
-impl<Octets: AsRef<[u8]>> Header<Octets>
-{
+impl<Octets: AsRef<[u8]>> Header<Octets> {
 
     pub fn for_slice(s: Octets) -> Self {
-        Header { 0: s}
+        Header(s)
     }
 
 	pub fn length(&self) -> u16 {
@@ -367,8 +317,7 @@ impl<Octets: AsRef<[u8]>> Header<Octets>
     }
 }
 
-impl<Octets: AsRef<[u8]>> Header<Octets>
-{
+impl<Octets: AsRef<[u8]>> Header<Octets> {
     fn parse<R>(parser: &mut Parser<R>) -> Result<Self, ParseError>
     where
         R: OctetsRef<Range = Octets>
@@ -378,16 +327,11 @@ impl<Octets: AsRef<[u8]>> Header<Octets>
         let _len = parser.parse_u16()?;
         let _typ = parser.parse_u8()?;
         parser.seek(pos)?;
-        //let res: &[u8] = parser.parse_octets(19)?;
         let res = parser.parse_octets(19)?;
         Ok(
-            //Header::for_slice(res.as_ref())
-            Header{ 0: res }
+            Header(res)
         )
     }
-    //fn skip(parser: &mut Parser<R>) -> Result<(), ParseError> {
-    //    Self::parse(parser).map(|_| ())
-    //}
 }
 
 
@@ -439,21 +383,6 @@ where
     Octets: AsRef<[u8]>,
     for <'a> &'a Octets: OctetsRef<Range = Octets>
 {
-    //fn for_slice(s: Octets) -> Self {
-    //    Self {
-    //        octets: s,
-    //        //add_path: None,
-    //    }
-    //}
-    //fn for_slice<T>(s: T) -> Self
-    //where
-    //    T: OctetsRef
-    //{
-    //    Self {
-    //        octets: s,
-    //        //add_path: None,
-    //    }
-    //}
 
     /// Returns the protocol version number, which should be 4.
     pub fn version(&self) -> u8 {
@@ -496,17 +425,12 @@ where
     }
 
     /// Returns an iterator over the Optional Parameters.
-	pub fn parameters<'a>(&'a self) -> ParameterIter<<&'a Octets as OctetsRef>::Range>
+	pub fn parameters(&self) -> ParameterIter<<&'_ Octets as OctetsRef>::Range>
     {
         let mut parser = Parser::from_ref(&self.octets, SessionConfig::default());
         parser.advance(COFF+10).unwrap();
 
         ParameterIter::new(
-            //&self.octets.as_ref()[
-            //    COFF+10..COFF+10+self.opt_parm_len() as usize
-            //]
-            //self.octets.range( COFF+10,COFF+10+self.opt_parm_len() as usize)
-            //self.octets.range( COFF+10,COFF+10+self.opt_parm_len() as usize)
             parser.parse_octets(self.opt_parm_len() as usize).unwrap()
         )
 	}
@@ -571,15 +495,11 @@ where
 
 }
 
-impl<Octets: AsRef<[u8]>> OpenMessage<Octets>
-{
+impl<Octets: AsRef<[u8]>> OpenMessage<Octets> {
     fn parse<R>(parser: &mut Parser<R>) -> Result<Self, ParseError>
     where
         R: OctetsRef<Range = Octets>,
         for <'a> &'a Octets: OctetsRef,
-        //<R as OctetsRef>::Range: OctetsRef<Range = Octets>
-        //for <'a> &'a <R as OctetsRef>::Range: OctetsRef,
-        //for<'a, 'b> &'a<&'b R as OctetsRef>::Range: OctetsRef<Range = <&'a Octets as OctetsRef>::Range>
     {
         // parse header
         let pos = parser.pos();
@@ -610,21 +530,13 @@ impl<Octets: AsRef<[u8]>> OpenMessage<Octets>
         }
         parser.seek(pos)?;
         Ok(
-            //Self::for_slice(parser.parse_octets(hdr.length().into())?)
             Self { octets: parser.parse_octets(hdr.length().into())? }
         )
 
     }
-
-    //fn skip(parser: &mut Parser<Octets>) -> Result<(), ParseError> {
-    //    Self::parse(parser).map(|_| ())
-    //}
 }
 
-impl<Octets> Parameter<Octets> 
-where
-    Octets: AsRef<[u8]>
-{
+impl<Octets: AsRef<[u8]>> Parameter<Octets> {
     fn parse<Ref>(parser: &mut Parser<Ref>) -> Result<Self, ParseError>
     where
         Ref: OctetsRef<Range = Octets>
@@ -650,9 +562,6 @@ where
             )
         )
     }
-    //fn skip(parser: &mut Parser<Octets>) -> Result<(), ParseError> {
-    //    Self::parse(parser).map(|_| ())
-    //}
 }
 
 impl<Octets> Capability<Octets> 
@@ -821,9 +730,6 @@ where
             )
         )
     }
-    //fn skip(parser: &mut Parser<Octets>) -> Result<(), ParseError> {
-    //    Self::parse(parser).map(|_| ())
-    //}
 }
 
 
@@ -848,10 +754,7 @@ pub struct Capability<Octets> {
     octets: Octets,
 }
 
-impl<Octets> Capability<Octets>
-where
-    Octets: AsRef<[u8]>
-{
+impl<Octets: AsRef<[u8]>> Capability<Octets> {
     pub fn for_slice(octets: Octets) -> Capability<Octets> {
         Capability {
             octets
@@ -878,12 +781,8 @@ pub struct CapabilityIter<Octets> {
 	pos: usize
 }
 
-impl<Octets> CapabilityIter<Octets>
-where
-    Octets: AsRef<[u8]>
-{
-    pub fn new(slice: Octets) -> CapabilityIter<Octets>
-    {
+impl<Octets: AsRef<[u8]>> CapabilityIter<Octets> {
+    pub fn new(slice: Octets) -> CapabilityIter<Octets> {
         CapabilityIter {
             octets: slice,
             pos: 0,
@@ -968,8 +867,7 @@ pub struct Parameter<Octets> {
     octets: Octets,
 }
 
-impl<Octets: AsRef<[u8]>> Parameter<Octets>
-{
+impl<Octets: AsRef<[u8]>> Parameter<Octets> {
     pub fn typ(&self) -> OptionalParameterType {
         self.octets.as_ref()[0].into()
     }
@@ -979,8 +877,7 @@ impl<Octets: AsRef<[u8]>> Parameter<Octets>
     }
 }
 
-impl<Octets: AsRef<[u8]>> Parameter<Octets>
-{
+impl<Octets: AsRef<[u8]>> Parameter<Octets> {
     pub fn for_slice(slice: Octets) -> Self {
         Parameter {
             octets: slice
@@ -1003,10 +900,7 @@ pub struct ParameterIter<Octets> {
 	pos: usize
 }
 
-impl<Octets> ParameterIter<Octets>
-where
-    Octets: AsRef<[u8]>
-{
+impl<Octets: AsRef<[u8]>> ParameterIter<Octets> {
     pub fn new(slice: Octets) -> ParameterIter<Octets>
     {
         ParameterIter {
@@ -1089,8 +983,7 @@ where
 //  |   Network Layer Reachability Information (variable) |
 //  +-----------------------------------------------------+
 
-impl<Octets: AsRef<[u8]>> UpdateMessage<Octets>
-{
+impl<Octets: AsRef<[u8]>> UpdateMessage<Octets> {
     fn for_slice(s: Octets, four_octet_asn: FourOctetAsn, add_path: AddPath) -> Self {
         Self {
             octets: s,
@@ -1099,15 +992,8 @@ impl<Octets: AsRef<[u8]>> UpdateMessage<Octets>
         }
     }
 }
-impl<Octets: AsRef<[u8]>> UpdateMessage<Octets>
-{
-    //fn for_slice(s: Octets, four_octet_asn: FourOctetAsn, add_path: AddPath) -> Self {
-    //    Self {
-    //        octets: s,
-    //        four_octet_asn,
-    //        add_path,
-    //    }
-    //}
+
+impl<Octets: AsRef<[u8]>> UpdateMessage<Octets> {
     /// Print the Message in a `text2pcap` compatible way.
     pub fn print_pcap(&self) {
         print!("000000 ");
@@ -1124,6 +1010,7 @@ impl<Octets: AsRef<[u8]>> UpdateMessage<Octets>
         ])
 	}
 }
+
 impl<'s, Octets: 's + AsRef<[u8]>> UpdateMessage<Octets>
 where
     &'s Octets: OctetsRef,
@@ -1132,7 +1019,6 @@ where
 {
     pub fn withdrawals(&'s self)
         -> Withdrawals<<&'s Octets as OctetsRef>::Range>
-        //-> Withdrawals<<&<&'s Octets as OctetsRef>::Range as OctetsRef>::Range>
     {
         let mut sc = SessionConfig::default();
         if self.add_path == AddPath::Enabled  {
@@ -1147,30 +1033,15 @@ where
                 &v,
                 sc,
             );
-            //WithdrawalsIterMp::parse(&mut parser).expect("parsed before")
-            //Withdrawals {
-            //    octets: pa.value(),
-
-            //}
-            let res = Withdrawals::parse(&mut parser).expect("parsed before");
-            res
+            Withdrawals::parse(&mut parser).expect("parsed before")
 
         } else {
             let len = self.withdrawn_routes_len() as usize;
             let r = (self).octets.range(COFF+2,COFF+2+len);
             let mut parser = Parser::from_ref(
                 &r,
-                //&self.octets.range(COFF+2,COFF+2+len),
                 sc,
             );
-            //let r = self.octets.range(COFF+2, COFF+2+len);
-            //WithdrawalsIterMp::new(parser, AFI::Ipv4, SAFI::Unicast)
-            //WithdrawalsIterMp::new(*r, AFI::Ipv4, SAFI::Unicast)
-            //Withdrawals {
-            //    octets: r,
-            //    afi: AFI::Ipv4,
-            //    safi: SAFI::Unicast,
-            //}
             Withdrawals::parse_conventional(&mut parser).expect("parsed before")
         }
     }
@@ -1207,13 +1078,6 @@ where
             octets: self.octets.range(COFF+2+wrl+2, COFF+2+wrl+2+tpal),
             config: parser.config()
         }
-
-        //PathAttributes::parse(&mut parser).expect("parsed before")
-        // Or for debugging:
-        //PathAttributes::parse(&mut parser).map_err(|e| {
-        //    self.print_pcap();
-        //    e
-        //}).unwrap()
     }
 
     /// Iterator over the reachable NLRIs.
@@ -1223,7 +1087,6 @@ where
     /// the message.
     pub fn nlris(&'s self)
         -> Nlris<<&'s Octets as OctetsRef>::Range>
-        //-> Nlris<<&<&'s Octets as OctetsRef>::Range as OctetsRef>::Range>
     {
         let mut sc = SessionConfig::default();
         if self.add_path == AddPath::Enabled {
@@ -1241,12 +1104,9 @@ where
             let tpal = self.total_path_attribute_len() as usize;
             let r = self.octets.range_from(COFF+2+wrl+2+tpal);
             let mut parser = Parser::from_ref(
-                //&self.octets.range_from(COFF+2+wrl+2+tpal),
-                //&self.octets,
                 &r,
                 sc,
             );
-            //parser.advance(COFF+2+wrl+2+tpal).unwrap();
             Nlris::parse_conventional(&mut parser).expect("parsed before")
         }
     }
@@ -1630,13 +1490,7 @@ impl<Octets: AsRef<[u8]>> UpdateMessage<Octets> {
     where
         R: OctetsRef<Range = Octets>,
         for<'a> &'a Octets: OctetsRef,
-        //for <'a> <&'a Octets as OctetsRef>::Range: OctetsRef,
-        //
-        //for <'a> &'a <R as OctetsRef>::Range: OctetsRef,
-        //for<'a> &'a <R as OctetsRef>::Range: OctetsRef<Range = Octets>,
-        //for<'a> &'a<&'a Octets as OctetsRef>::Range: OctetsRef<Range = <&'a Octets as OctetsRef>::Range>
     {
-        println!("UpdateMessage parse config: {:?}", parser.config());
         // parse header
         let pos = parser.pos();
         let hdr = Header::parse(parser)?;
@@ -1652,10 +1506,10 @@ impl<Octets: AsRef<[u8]>> UpdateMessage<Octets> {
         if total_path_attributes_len > 0 {
             let mut pas_parser = parser.parse_parser(total_path_attributes_len.into())?;
 
-            println!("UpdateMessage if: {:?}", pas_parser.config());
-            while pas_parser.remaining() > 0 {
-                PathAttribute::parse(&mut pas_parser)?;
-            }
+            //while pas_parser.remaining() > 0 {
+            //    PathAttribute::parse(&mut pas_parser)?;
+            //}
+            PathAttributes::parse(&mut pas_parser)?;
         }
 
         // conventional NLRI, if any
@@ -1680,10 +1534,6 @@ impl<Octets: AsRef<[u8]>> UpdateMessage<Octets> {
         )
 
     }
-
-    //fn skip(parser: &mut Parser<Octets>) -> Result<(), ParseError> {
-    //    Self::parse(parser).map(|_| ())
-    //}
 }
 
 /*
@@ -1793,17 +1643,10 @@ pub struct PathAttributes<Octets> {
 }
 
 impl<Octets: AsRef<[u8]>> PathAttributes<Octets> {
-    //fn for_ref(&self) -> PathAttributes<&Octets> {
-    //    PathAttributes { octets: &self.octets }
-    //}
     pub fn iter<'s>(&'s self) -> PathAttributesIter<&Octets>
         where &'s Octets: OctetsRef
     {
-        //PathAttributesIter::new(self.for_ref())
-        println!("pre iter::new");
-        let res = PathAttributesIter::new(&self.octets, self.config);
-        println!("post iter::new");
-        res
+        PathAttributesIter::new(&self.octets, self.config)
     }
 }
 
@@ -1811,6 +1654,7 @@ impl<Octets: AsRef<[u8]>> PathAttributes<Octets> {
 pub struct PathAttributesIter<Ref> {
     parser: Parser<Ref>,
 }
+
 impl<Ref: OctetsRef> PathAttributesIter<Ref>{
     fn new(path_attributes: Ref, config: SessionConfig) -> Self {
         PathAttributesIter { 
@@ -1822,31 +1666,21 @@ impl<Ref: OctetsRef> PathAttributesIter<Ref>{
     }
 }
 
+// XXX keep this?
 impl<Octets: AsRef<[u8]>> PathAttributes<Octets> 
 {
-    fn parse<'s, R>(parser: &mut Parser<R>)
+    fn parse<R>(parser: &mut Parser<R>)
         -> Result<Self, ParseError>
-        //-> Result<PathAttributes<&R::Range>, ParseError>
     where
-        Octets: 's,
         R: OctetsRef<Range = Octets>,
-        for<'a> &'a Octets: OctetsRef,
-        for<'a> &'a<&'a Octets as OctetsRef>::Range: OctetsRef,
-        //for<'a> &'a<&'s Octets as OctetsRef>::Range: OctetsRef<Range = <&'a Octets as OctetsRef>::Range>
-        //Ref: OctetsRef,
-        //<Ref as OctetsRef>::Range: OctetsRef,
     {
-
-        println!("pas parser, pre while");
         let pos = parser.pos();
         while parser.remaining() > 0 {
             let _pa = PathAttribute::parse(parser)?;
         }
-        println!("pas parser, post while");
         let end = parser.pos();
         parser.seek(pos)?;
 
-        //let res = Parser::from_ref(&parser.parse_octets(end - pos).unwrap(), parser.config());
         Ok(
             PathAttributes {
                 octets: parser.parse_octets(end - pos).unwrap(),
@@ -1854,10 +1688,6 @@ impl<Octets: AsRef<[u8]>> PathAttributes<Octets>
             }
         )
     }
-
-    //fn skip(parser: &mut Parser<Octets>) -> Result<(), ParseError> {
-    //    Self::parse(parser).map(|_| ())
-    //}
 }
 
 /// BGP Path Attribute, carried in BGP UPDATE messages.
@@ -1866,16 +1696,13 @@ pub struct PathAttribute<Octets> {
     octets: Octets,
 }
 
-impl<Octets: AsRef<[u8]>> PathAttribute<Octets>
-{
-
+impl<Octets: AsRef<[u8]>> PathAttribute<Octets> {
     pub fn for_slice(octets: Octets) -> Self {
         PathAttribute { octets }
     }
 }
 
-impl<Octets: AsRef<[u8]>> PathAttribute<Octets>
-{
+impl<Octets: AsRef<[u8]>> PathAttribute<Octets> {
     pub fn flags(&self) -> u8 {
         self.octets.as_ref()[0]
     }
@@ -1914,16 +1741,7 @@ impl<Octets: AsRef<[u8]>> PathAttribute<Octets>
     }
 }
 
-impl<Octets: AsRef<[u8]>> PathAttribute<Octets>
-{
-    //pub fn value<'s>(&'s self) -> &'s<&'s Octets as OctetsRef>::Range
-    //where
-    //    &'s Octets: OctetsRef
-    //{
-    //    let start = self.hdr_len();
-    //    let end = start + self.length() as usize;
-    //    &self.octets.range(start,end)
-    //}
+impl<Octets: AsRef<[u8]>> PathAttribute<Octets> {
     pub fn value<'s>(&'s self) -> <&'s Octets as OctetsRef>::Range
     where
         &'s Octets: OctetsRef
@@ -1934,20 +1752,13 @@ impl<Octets: AsRef<[u8]>> PathAttribute<Octets>
     }
 }
 
-impl<Octets: AsRef<[u8]>> PathAttribute<Octets>
-{
+impl<Octets: AsRef<[u8]>> PathAttribute<Octets> {
     fn parse<'s, R>(parser: &mut Parser<R>)
-        //->  Result<Self, ParseError>
         ->  Result<PathAttribute<Octets>, ParseError>
     where
         R: OctetsRef<Range = Octets>,
         Octets: 's, 
-        //for <'a> &'a Octets: OctetsRef,
-        //for <'a> &'a<&'a Octets as OctetsRef>::Range: OctetsRef,
-        //for <'a, 'b> &'b<&'a Octets as OctetsRef>::Range: OctetsRef,
-        //for<'a> &'a<&'a Octets as OctetsRef>::Range: OctetsRef<Range = <&'a Octets as OctetsRef>::Range>
     {
-        println!("pa parse");
         let pos = parser.pos();
         let flags = parser.parse_u8()?;
         let typecode = parser.parse_u8()?;
@@ -1960,7 +1771,6 @@ impl<Octets: AsRef<[u8]>> PathAttribute<Octets>
             false => parser.parse_u8()? as usize, 
         };
 
-        println!("match on typecode {}", typecode);
 
         //parser.seek(pos)?;
         // now, parse the specific type of path attribute
@@ -1976,7 +1786,6 @@ impl<Octets: AsRef<[u8]>> PathAttribute<Octets>
             PathAttributeType::AsPath => {
                 let pa = parser.parse_octets(len)?;
                 let mut p = Parser::from_ref(pa, parser.config());
-                println!("pa AsPath: {:?}", p.config());
                 while p.remaining() > 0 {
                     let _stype = p.parse_u8()?;
                     // segment length describes the number of ASNs
@@ -2042,20 +1851,11 @@ impl<Octets: AsRef<[u8]>> PathAttribute<Octets>
                 }
             },
             PathAttributeType::MpReachNlri => {
-                let mut pa_parser = parser.parse_parser(len.into())?;
-                //let mut p = Parser::from_ref(&pa, parser.config());
-                ////NlriIterMp::parse(&mut p)?;
-                ////NlriIterMp::parse(parser)?;
-                //Nlris::parse(&mut p)?;
+                let mut pa_parser = parser.parse_parser(len)?;
                 Nlris::parse(&mut pa_parser)?;
             },
             PathAttributeType::MpUnreachNlri => {
-                //let pa = parser.parse_octets(len)?;
-                //let mut p = Parser::from_ref(&pa, parser.config());
-                //Withdrawals::parse(&mut p)?;
-                ////WithdrawalsIterMp::parse(parser)?;
-
-                let mut pa_parser = parser.parse_parser(len.into())?;
+                let mut pa_parser = parser.parse_parser(len)?;
                 Withdrawals::parse(&mut pa_parser)?;
             },
             PathAttributeType::ExtendedCommunities => {
@@ -2065,21 +1865,8 @@ impl<Octets: AsRef<[u8]>> PathAttribute<Octets>
                 }
             },
             PathAttributeType::As4Path => {
-                //let pa = parser.parse_octets(len)?;
-                //let mut p = Parser::from_ref(pa, parser.config());
-                //while p.remaining() > 0 {
-                //    let _stype = p.parse_u8()?;
-                //    // segment length describes the number of ASNs
-                //    let slen = p.parse_u8()?;
-                //    for _ in 0..slen {
-                //         p.parse_u32()?;
-                //    }
-                //}
-                println!("as4path pa len {}", len);
                 let mut pa_parser = parser.parse_parser(len)?;
-                println!("pa_parser.config {:?}", pa_parser.config());
                 pa_parser.config_mut().enable_four_octet_asn();
-                println!("pa_parser.config {:?}", pa_parser.config());
                 while pa_parser.remaining() > 0 {
                     let _stype = pa_parser.parse_u8()?;
                     // segment length describes the number of ASNs
@@ -2088,7 +1875,6 @@ impl<Octets: AsRef<[u8]>> PathAttribute<Octets>
                          pa_parser.parse_u32()?;
                     }
                 }
-                println!("end of as4path parse");
             }
             PathAttributeType::As4Aggregator => {
                 //let pa = parser.parse_octets(len)?;
@@ -2118,19 +1904,13 @@ impl<Octets: AsRef<[u8]>> PathAttribute<Octets>
                     LargeCommunity::parse(parser)?;
                 }
             },
-            //XXX tmp
             PathAttributeType::AttrSet => {
-                todo!()
-            //    let _origin_as = parser.parse_u32()?;
-            //    // The remainder of this PA is a list of ... Path Attributes.
-            //    // We simply take all but the first four octets (origin AS)
-            //    // and parse it.
-            //    let mut p = Parser::from_ref(
-            //        parser.parse_octets(len - 4)?,
-            //        parser.config()
-            //        );
-            //    PathAttributes::parse(&mut p)?;
-            //    //PathAttributesIter::parse(parser)?;
+                let _origin_as = parser.parse_u32()?;
+                let mut set_parser = parser.parse_parser(len - 4)?;
+                //while set_parser.remaining() > 0 {
+                //    PathAttribute::parse(&mut set_parser)?;
+                //}
+                PathAttributes::parse(&mut set_parser)?;
             },
             PathAttributeType::Reserved => {
                 warn!("Path Attribute type 0 'Reserved' observed");
@@ -2151,24 +1931,14 @@ impl<Octets: AsRef<[u8]>> PathAttribute<Octets>
         parser.seek(pos)?;
         let res = parser.parse_octets(headerlen+len)?;
 
-        //Ok(PathAttribute::for_slice(res))
-        Ok (
-            PathAttribute { octets: res }
-        )
+        Ok(PathAttribute { octets: res })
     }
-
-    //fn skip(parser: &mut Parser<Octets>) ->  Result<(), ParseError> {
-    //    Self::parse(parser).map(|_| ())
-    //}
 }
 
 
 impl<Ref: OctetsRef> Iterator for PathAttributesIter<Ref>
 where
     for <'a> &'a<Ref as OctetsRef>::Range: OctetsRef,
-    //for <'a> &'a Ref::Range: OctetsRef,
-    //for <'a> &'a <Ref as OctetsRef>::Range: OctetsRef,
-    //for <'a, 'b> &'b<&'a Ref as OctetsRef>::Range: OctetsRef,
     for<'a> &'a<Ref as OctetsRef>::Range: OctetsRef<Range = <Ref as OctetsRef>::Range>
 {
     type Item = PathAttribute<Ref::Range>;
@@ -2266,10 +2036,7 @@ impl<Octets: AsRef<[u8]>> Labels<Octets> {
     }
 }
 
-impl<Octets> Labels<Octets>
-where
-    Octets: AsRef<[u8]>,
-{
+impl<Octets: AsRef<[u8]>> Labels<Octets> {
     // There are two cases for Labels:
     // - in an announcement, it describes one or more MPLS labels
     // - in a withdrawal, it's a compatibility value without meaning
@@ -2307,10 +2074,6 @@ where
             Labels { octets: res }
         )
     }
-
-    //fn skip(parser: &mut Parser<Octets>) -> Result<(), ParseError> {
-    //    Self::parse(parser).map(|_| ())
-    //}
 }
 
 /// Route Distinguisher (RD) as defined in RFC4364.
@@ -2585,10 +2348,7 @@ impl<R: AsRef<[u8]>> Parse<R> for BasicNlri {
     }
 }
 
-impl<Octets> MplsVpnNlri<Octets>
-where
-    Octets: AsRef<[u8]>
-{
+impl<Octets: AsRef<[u8]>> MplsVpnNlri<Octets> {
     fn parse<Ref>(parser: &mut Parser<Ref>) -> Result<Self, ParseError>
     where
         Ref: OctetsRef<Range = Octets>
@@ -2625,16 +2385,9 @@ where
             }
         )
     }
-
-    //fn skip(parser: &mut Parser<R>) -> Result<(), ParseError> {
-    //    Self::parse(parser).map(|_| ())
-    //}
 }
 
-impl<Octets> MplsNlri<Octets>
-where
-    Octets: AsRef<[u8]>
-{
+impl<Octets: AsRef<[u8]>> MplsNlri<Octets> {
     fn parse<Ref>(parser: &mut Parser<Ref>) -> Result<Self, ParseError>
     where
         Ref: OctetsRef<Range = Octets>
@@ -2666,10 +2419,6 @@ where
             }
         )
     }
-
-    //fn skip(parser: &mut Parser<Octets>) -> Result<(), ParseError> {
-    //    Self::parse(parser).map(|_| ())
-    //}
 }
 
 impl VplsNlri {
@@ -2695,16 +2444,9 @@ impl VplsNlri {
             }
         )
     }
-
-    //fn skip(parser: &mut Parser<R>) -> Result<(), ParseError> {
-    //    Self::parse(parser).map(|_| ())
-    //}
 }
 
-impl<Octets> FlowSpecNlri<Octets>
-where
-    Octets: AsRef<[u8]>
-{
+impl<Octets: AsRef<[u8]>> FlowSpecNlri<Octets> {
     fn parse<Ref>(parser: &mut Parser<Ref>) -> Result<Self, ParseError>
     where
         Ref: OctetsRef<Range = Octets>
@@ -2732,16 +2474,9 @@ where
             }
         )
     }
-
-    //fn skip(parser: &mut Parser<R>) -> Result<(), ParseError> {
-    //    Self::parse(parser).map(|_| ())
-    //}
 }
 
-impl<Octets> RouteTargetNlri<Octets>
-where
-    Octets: AsRef<[u8]>
-{
+impl<Octets: AsRef<[u8]>> RouteTargetNlri<Octets> {
     fn parse<Ref>(parser: &mut Parser<Ref>) -> Result<Self, ParseError>
     where
         Ref: OctetsRef<Range = Octets>
@@ -2756,13 +2491,7 @@ where
             }
         )
     }
-    //fn skip(parser: &mut Parser<R>) -> Result<(), ParseError> {
-    //    Self::parse(parser).map(|_| ())
-    //}
 }
-
-//-----
-
 
 pub struct Nlris<Octets> {
     octets: Octets,
@@ -2793,37 +2522,19 @@ pub struct NlriIterMp<Ref> {
     safi: SAFI,
 }
 
-impl<Ref: OctetsRef> NlriIterMp<Ref>
-{
+impl<Ref: OctetsRef> NlriIterMp<Ref> {
     pub fn new(octets: Ref, afi: AFI, safi: SAFI) -> Self
     {
-        /*
-        let parser = Parser::from_ref(octets, SessionConfig::default());
-        let pos = parser.pos();
-        let afi: AFI = parser.parse_u16().expect("parsed before").into();
-        let safi: SAFI = parser.parse_u8().expect("parsed before").into();
-
-        parser.config_mut().set_afi(afi);
-        parser.config_mut().set_safi(safi);
-
-        NextHop::skip(&mut parser).expect("parsed before");
-        parser.advance(1).expect("parsed before"); // 1 reserved byte
-        
-        let end = parser.pos();
-        parser.seek(pos).unwrap();
-        //let res = Parser::from_ref(parser.parse_octets(end - pos).unwrap(), parser.config());
-        */
         let mut sc = SessionConfig::default();
         sc.set_afi(afi);
         sc.set_safi(safi);
 
         let parser = Parser::from_ref(octets, sc);
-        let res = Self {
-            parser,//: res,
+        Self {
+            parser,
             afi,
             safi,
-        };
-        res
+        }
     }
 
     pub fn new_conventional(octets: Ref) -> Self {
@@ -2835,10 +2546,7 @@ impl<Ref: OctetsRef> NlriIterMp<Ref>
         }
     }
 
-    fn get_nlri(&mut self) -> Nlri<Ref::Range>
-        //where
-        //    for <'a> &'a Ref: OctetsRef<Range = R>
-    {
+    fn get_nlri(&mut self) -> Nlri<Ref::Range> {
         match (self.afi, self.safi) {
             (_, SAFI::MplsVpnUnicast) => {
                 Nlri::MplsVpn(MplsVpnNlri::parse(&mut self.parser).expect("parsed before"))
@@ -2932,7 +2640,6 @@ impl<Octets: AsRef<[u8]>> Nlris<Octets> {
         conf.set_afi(afi);
         conf.set_safi(safi);
 
-        //let res = Parser::from_ref(parser.parse_octets(len)?, conf);
         Ok(
             //NlriIterMp::new(res)
             Nlris {
@@ -2943,18 +2650,10 @@ impl<Octets: AsRef<[u8]>> Nlris<Octets> {
 
         )
     }
-
-//    fn skip(parser: &mut Parser<R>) -> Result<(), ParseError> {
-//        Self::parse(parser)?;
-//        Ok(())
-//    }
 }
 
 
-impl<Ref> Iterator for NlriIterMp<Ref>
-where
-    Ref: OctetsRef
-{
+impl<Ref: OctetsRef> Iterator for NlriIterMp<Ref> {
     type Item = Nlri<Ref::Range>;
     fn next(&mut self) -> Option<Self::Item> {
         if self.parser.remaining() == 0 {
@@ -2988,10 +2687,7 @@ pub struct WithdrawalsIterMp<Ref> {
     safi: SAFI,
 }
 
-impl<Ref> WithdrawalsIterMp<Ref>
-where
-    Ref: OctetsRef
-{
+impl<Ref: OctetsRef> WithdrawalsIterMp<Ref> {
     pub fn new(octets: Ref, afi: AFI, safi: SAFI) -> Self {
         let mut parser = Parser::from_ref(octets, SessionConfig::default());
         parser.config_mut().set_afi(afi);
@@ -3003,8 +2699,7 @@ where
         }
     }
 
-    fn get_nlri(&mut self) -> Nlri<Ref::Range>
-    {
+    fn get_nlri(&mut self) -> Nlri<Ref::Range> {
         match (self.afi, self.safi) {
             (_, SAFI::MplsVpnUnicast) => {
                 Nlri::MplsVpn(MplsVpnNlri::parse(&mut self.parser).expect("parsed before"))
@@ -3020,8 +2715,7 @@ where
     }
 }
 
-impl<Octets: AsRef<[u8]>> Withdrawals<Octets>
-{
+impl<Octets: AsRef<[u8]>> Withdrawals<Octets> {
     fn parse_conventional<R>(parser: &mut Parser<R>) -> Result<Self, ParseError>
         where
             R: OctetsRef<Range = Octets>
@@ -3049,9 +2743,6 @@ impl<Octets: AsRef<[u8]>> Withdrawals<Octets>
         // Length is given in the Path Attribute length field.
         // AFI, SAFI, are also in this Path Attribute.
 
-        
-        //let mut res = *parser;
-
         let afi: AFI = parser.parse_u16()?.into();
         let safi: SAFI = parser.parse_u8()?.into();
         let pos = parser.pos();
@@ -3066,14 +2757,8 @@ impl<Octets: AsRef<[u8]>> Withdrawals<Octets>
             }
         }
 
-        //res.advance(3)?; // jump over the AFI/SAFI
         let len = parser.pos() - pos;
         parser.seek(pos)?;
-        //let mut conf = parser.config();
-        //conf.set_afi(afi);
-        //conf.set_safi(safi);
-
-        //let res = Parser::from_ref(parser.parse_octets(len)?, conf);
         Ok(
             Withdrawals {
                 octets: parser.parse_octets(len)?,
@@ -3082,17 +2767,9 @@ impl<Octets: AsRef<[u8]>> Withdrawals<Octets>
             }
         )
     }
-
-    //fn skip(parser: &mut Parser<R>) -> Result<(), ParseError> {
-    //    Self::parse(parser)?;
-    //    Ok(())
-    //}
 }
 
-impl<Ref: OctetsRef> Iterator for WithdrawalsIterMp<Ref>
-where
-    //Ref: OctetsRef<Range = R>
-{
+impl<Ref: OctetsRef> Iterator for WithdrawalsIterMp<Ref> {
     type Item = Nlri<Ref::Range>;
     fn next(&mut self) -> Option<Self::Item> {
         if self.parser.remaining() == 0 {
@@ -3532,7 +3209,6 @@ impl<Octets: AsRef<[u8]>> NotificationMessage<Octets> {
     fn for_slice(s: Octets) -> Self {
         Self {
             octets: s
-            //add_path: None,
         }
     }
     
@@ -3552,10 +3228,7 @@ impl<Octets: AsRef<[u8]>> NotificationMessage<Octets> {
         }
     }
 }
-impl<Octets> NotificationMessage<Octets>
-where
-    Octets: AsRef<[u8]>
-{
+impl<Octets: AsRef<[u8]>> NotificationMessage<Octets> {
     fn parse<Ref>(parser: &mut Parser<Ref>) -> Result<Self, ParseError>
     where
         Ref: OctetsRef<Range = Octets>
@@ -3579,10 +3252,6 @@ where
         )
 
     }
-
-    //fn skip(parser: &mut Parser<R>) -> Result<(), ParseError> {
-    //    Self::parse(parser).map(|_| ())
-    //}
 }
 
 //--- Types that perhaps should go into routecore ----------------------------
@@ -4146,11 +3815,8 @@ mod tests {
             assert_eq!(update.withdrawn_routes_len(), 0);
             assert_eq!(update.total_path_attribute_len(), 113);
 
-            println!("A");
             let nlris = update.nlris();
-            println!("B");
             let nlri_iter = nlris.iter();
-            println!("C");
             assert_eq!(nlri_iter.count(), 5);
             //assert_eq!(update.nlris().iter().count(), 5);
 
@@ -4327,7 +3993,6 @@ mod tests {
                 .unwrap().try_into().unwrap();
 
             update.path_attributes().iter();//.count();
-            println!("X");
             if let Some(aspath) = update.path_attributes().iter().find(|pa|
                 pa.type_code() == PathAttributeType::AsPath
             ){
