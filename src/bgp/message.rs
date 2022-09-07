@@ -1468,11 +1468,10 @@ where
 }
 
 struct Marker;
-impl<R> Parse<R> for Marker 
-where
-    R: AsRef<[u8]>
-{
-    fn parse(parser: &mut Parser<R>) -> Result<Self, ParseError> {
+impl Marker {
+    fn parse<R: AsRef<[u8]>>(parser: &mut Parser<R>)
+        -> Result<Self, ParseError>
+    {
         for _ in 0..4 {
            if parser.parse_u32()? != 0xffffffff {
                return Err(ParseError::form_error("invalid BGP marker"))
@@ -1480,8 +1479,9 @@ where
         }
        Ok(Marker{})
     }
-    fn skip(parser: &mut Parser<R>) -> Result<(), ParseError> {
-        Self::parse(parser).map(|_| ())
+    fn skip<R: AsRef<[u8]>>(parser: &mut Parser<R>)
+        -> Result<(), ParseError> {
+        parser.advance(16)
     }
 }
 
@@ -1955,11 +1955,11 @@ where
 
 //--- NextHop in MP_REACH_NLRI -----------------------------------------------
 
-impl<R> Parse<R> for NextHop 
-where
-    R: AsRef<[u8]>
+impl NextHop 
 {
-    fn parse(parser: &mut Parser<R>) -> Result<Self, ParseError> {
+    fn parse<R: AsRef<[u8]>>(parser: &mut Parser<R>)
+        -> Result<Self, ParseError>
+    {
         // suppose we have afi(/safi) in parser.config
         let len = parser.parse_u8()?;
         let res = match (len, parser.config().afi(), parser.config().safi()) {
@@ -2001,7 +2001,9 @@ where
         Ok(res)
     }
 
-    fn skip(parser: &mut Parser<R>) -> Result<(), ParseError> {
+    fn skip<R: AsRef<[u8]>>(parser: &mut Parser<R>)
+        -> Result<(), ParseError>
+    {
         Self::parse(parser).map(|_| ())
     }
 }
@@ -2015,12 +2017,11 @@ where
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub struct PathId(u32);
 
-impl<R: AsRef<[u8]>> Parse<R> for PathId {
-    fn parse(parser: &mut Parser<R>) -> Result<Self, ParseError>  {
+impl PathId {
+    fn parse<R: AsRef<[u8]>>(parser: &mut Parser<R>)
+        -> Result<Self, ParseError> 
+    {
         Ok(PathId(parser.parse_u32()?))
-    }
-    fn skip(parser: &mut Parser<R>) -> Result<(), ParseError> {
-        Self::parse(parser).map(|_| ())
     }
 }
 
@@ -2084,20 +2085,16 @@ pub struct RouteDistinguisher {
     bytes: [u8; 8]
 }
 
-impl<R> Parse<R> for RouteDistinguisher
-where R: AsRef<[u8]>
-{
-    fn parse(parser: &mut Parser<R>) -> Result<Self, ParseError> {
+impl RouteDistinguisher {
+    fn parse<R: AsRef<[u8]>>(parser: &mut Parser<R>)
+        -> Result<Self, ParseError>
+    {
         let mut b = [0u8; 8];
         b[..8].copy_from_slice(parser.peek(8)?);
         parser.advance(8)?;
         Ok(
             RouteDistinguisher{ bytes: b }
         )
-    }
-
-    fn skip(parser: &mut Parser<R>) -> Result<(), ParseError> {
-        Self::parse(parser).map(|_| ())
     }
 }
 
@@ -2326,8 +2323,10 @@ where
     Ok(prefix)
 }
 
-impl<R: AsRef<[u8]>> Parse<R> for BasicNlri {
-    fn parse(parser: &mut Parser<R>) -> Result<Self, ParseError> {
+impl BasicNlri {
+    fn parse<R: AsRef<[u8]>>(parser: &mut Parser<R>)
+        -> Result<Self, ParseError>
+    {
         let path_id = match parser.config().add_path {
             AddPath::Enabled => Some(PathId::parse(parser)?),
             _ => None
@@ -2341,10 +2340,6 @@ impl<R: AsRef<[u8]>> Parse<R> for BasicNlri {
                 path_id,
             }
         )
-    }
-
-    fn skip(parser: &mut Parser<R>) -> Result<(), ParseError> {
-        Self::parse(parser).map(|_| ())
     }
 }
 
@@ -2845,20 +2840,14 @@ impl Display for NormalCommunity {
     }
 }
 
-impl<R> Parse<R> for NormalCommunity
-where
-    R: AsRef<[u8]>
-{
-    fn parse(parser: &mut Parser<R>) -> Result<Self, ParseError> {
+impl NormalCommunity {
+    fn parse<R: AsRef<[u8]>>(parser: &mut Parser<R>)
+        -> Result<Self, ParseError>
+    {
         let mut buf = [0u8; 4];
         parser.parse_buf(&mut buf)?;
         Ok( Self(buf) )
     }
-
-    fn skip(parser: &mut Parser<R>) -> Result<(), ParseError> {
-        Self::parse(parser).map(|_| ())
-    }
-
 }
 
 impl ExtendedCommunity {
@@ -2916,20 +2905,14 @@ impl Display for ExtendedCommunity {
     }
 }
 
-impl<R> Parse<R> for ExtendedCommunity
-where
-    R: AsRef<[u8]>
-{
-    fn parse(parser: &mut Parser<R>) -> Result<Self, ParseError> {
+impl ExtendedCommunity {
+    fn parse<R: AsRef<[u8]>>(parser: &mut Parser<R>)
+        -> Result<Self, ParseError>
+    {
         let mut buf = [0u8; 8];
         parser.parse_buf(&mut buf)?;
         Ok( Self(buf) )
     }
-
-    fn skip(parser: &mut Parser<R>) -> Result<(), ParseError> {
-        Self::parse(parser).map(|_| ())
-    }
-
 }
 
 impl LargeCommunity {
@@ -2946,20 +2929,14 @@ impl LargeCommunity {
     }
 }
 
-impl<R> Parse<R> for LargeCommunity
-where
-    R: AsRef<[u8]>
-{
-    fn parse(parser: &mut Parser<R>) -> Result<Self, ParseError> {
+impl LargeCommunity {
+    fn parse<R: AsRef<[u8]>>(parser: &mut Parser<R>)
+        -> Result<Self, ParseError>
+    {
         let mut buf = [0u8; 12];
         parser.parse_buf(&mut buf)?;
         Ok( Self(buf) )
     }
-
-    fn skip(parser: &mut Parser<R>) -> Result<(), ParseError> {
-        Self::parse(parser).map(|_| ())
-    }
-
 }
 
 impl Display for LargeCommunity {
@@ -3162,11 +3139,10 @@ impl Aggregator {
     }
 }
 
-impl<R> Parse<R> for Aggregator 
-where
-    R: AsRef<[u8]>
-{
-    fn parse(parser: &mut Parser<R>) -> Result<Self, ParseError> {
+impl Aggregator {
+    fn parse<R: AsRef<[u8]>>(parser: &mut Parser<R>)
+        -> Result<Self, ParseError>
+    {
         let len = parser.remaining();
         match (len, parser.config().four_octet_asn) {
             (8, FourOctetAsn::Enabled) => {
@@ -3193,10 +3169,6 @@ where
         }
 
     }
-    fn skip(parser: &mut Parser<R>) -> Result<(), ParseError> {
-        Self::parse(parser).map(|_| ())
-    }
-
 }
 
 
@@ -3646,10 +3618,10 @@ mod tests {
         //   X multiple conventional
         //   x bgp-mp
         // - communities
-        //   - normal
-        //   - extended
-        //   - large
-        //   - chained iter
+        //   x normal
+        //   x extended
+        //   x large
+        //   x chained iter
         // - MP NLRI types:
         //   announcements:
         //   - v4 mpls unicast
