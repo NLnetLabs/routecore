@@ -264,7 +264,7 @@ where
         let res = match hdr.msg_type() {
             MsgType::Open => Message::Open(OpenMessage::parse(&mut parser)?),
             MsgType::Update => Message::Update(UpdateMessage::parse(&mut parser)?),
-            //MsgType::Notification => Message::Notification(NotificationMessage::parse(&mut parser)?),
+            MsgType::Notification => Message::Notification(NotificationMessage::parse(&mut parser)?),
             _ => panic!("not implemented yet")
         };
         Ok(res)
@@ -2497,6 +2497,7 @@ pub struct Nlris<Octets> {
     octets: Octets,
     afi: AFI,
     safi: SAFI,
+    add_path: AddPath
 }
 
 impl<Octets: AsRef<[u8]>> Nlris<Octets> {
@@ -2508,6 +2509,7 @@ impl<Octets: AsRef<[u8]>> Nlris<Octets> {
             &self.octets,
             self.afi,
             self.safi,
+            self.add_path,
         )
     }
 }
@@ -2520,29 +2522,33 @@ pub struct NlriIterMp<Ref> {
     parser: Parser<Ref>,
     afi: AFI,
     safi: SAFI,
+    add_path: AddPath
 }
 
 impl<Ref: OctetsRef> NlriIterMp<Ref> {
-    pub fn new(octets: Ref, afi: AFI, safi: SAFI) -> Self
+    pub fn new(octets: Ref, afi: AFI, safi: SAFI, add_path: AddPath) -> Self
     {
         let mut sc = SessionConfig::default();
         sc.set_afi(afi);
         sc.set_safi(safi);
+        sc.set_addpath(add_path);
 
         let parser = Parser::from_ref(octets, sc);
         Self {
             parser,
             afi,
             safi,
+            add_path
         }
     }
 
-    pub fn new_conventional(octets: Ref) -> Self {
+    pub fn new_conventional(octets: Ref, add_path: AddPath) -> Self {
         let parser = Parser::from_ref(octets, SessionConfig::default());
         Self {
             parser,
             afi: AFI::Ipv4,
-            safi: SAFI::Unicast
+            safi: SAFI::Unicast,
+            add_path
         }
     }
 
@@ -2587,6 +2593,7 @@ impl<Octets: AsRef<[u8]>> Nlris<Octets> {
                 octets: parser.parse_octets(len)?,
                 afi: AFI::Ipv4,
                 safi: SAFI::Unicast,
+                add_path: parser.config().add_path
             }
         )
     }
@@ -2641,11 +2648,11 @@ impl<Octets: AsRef<[u8]>> Nlris<Octets> {
         conf.set_safi(safi);
 
         Ok(
-            //NlriIterMp::new(res)
             Nlris {
                 octets: parser.parse_octets(len)?,
                 afi,
-                safi
+                safi,
+                add_path: parser.config().add_path
             }
 
         )
@@ -3810,7 +3817,6 @@ mod tests {
             ];
             //let update: UpdateMessage<_> = parse_msg(&buf);
             let update: UpdateMessage<_> = Message::from_octets(&buf).unwrap().try_into().unwrap();
-            print_pcap(&buf);
 
             assert_eq!(update.withdrawn_routes_len(), 0);
             assert_eq!(update.total_path_attribute_len(), 113);
@@ -3987,7 +3993,6 @@ mod tests {
                 0x00, 0x0a, 0x16, 0x0a, 0x01, 0x04
             ];
             
-            print_pcap(&buf);
             let mut sc = SessionConfig::new(); sc.disable_four_octet_asn();
             let update: UpdateMessage<_> = Message::from_octets_with_sc(&buf, sc)
                 .unwrap().try_into().unwrap();
@@ -4017,12 +4022,175 @@ mod tests {
 
         }
 
+        //--- Communities ----------------------------------------------------
+        
+        #[test]
+        fn pa_communities() {
+            // BGP UPDATE with 9 path attributes for 1 NLRI with Path Id,
+            // includes both normal communities and extended communities.
+            let buf = vec![
+                0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                0x00, 0x82, 0x02, 0x00, 0x00, 0x00, 0x62, 0x40,
+                0x01, 0x01, 0x00, 0x40, 0x02, 0x16, 0x02, 0x05,
+                0x00, 0x00, 0x00, 0x65, 0x00, 0x00, 0x01, 0x2d,
+                0x00, 0x00, 0x01, 0x2c, 0x00, 0x00, 0x02, 0x58,
+                0x00, 0x00, 0x02, 0xbc, 0x40, 0x03, 0x04, 0x0a,
+                0x01, 0x03, 0x01, 0x80, 0x04, 0x04, 0x00, 0x00,
+                0x00, 0x00, 0x40, 0x05, 0x04, 0x00, 0x00, 0x00,
+                0x64, 0xc0, 0x08, 0x0c, 0x00, 0x2a, 0x02, 0x06,
+                0xff, 0xff, 0xff, 0x01, 0xff, 0xff, 0xff, 0x03,
+                0xc0, 0x10, 0x10, 0x00, 0x06, 0x00, 0x00, 0x44,
+                0x9c, 0x40, 0x00, 0x40, 0x04, 0x00, 0x00, 0x44,
+                0x9c, 0x40, 0x00, 0x80, 0x0a, 0x04, 0x0a, 0x00,
+                0x00, 0x04, 0x80, 0x09, 0x04, 0x0a, 0x00, 0x00,
+                0x03, 0x00, 0x00, 0x00, 0x01, 0x19, 0xc6, 0x33,
+                0x64, 0x00
+            ];
+            let config = SessionConfig {
+                add_path: AddPath::Enabled,
+                ..Default::default()
+            };
+            let upd: UpdateMessage<_> = Message::from_octets_with_sc(&buf, config)
+                .unwrap().try_into().unwrap();
+
+            assert_eq!(
+                upd.nlris().iter().next().unwrap().prefix(),
+                Some(Prefix::from_str("198.51.100.0/25").unwrap())
+            );
+
+            assert!(upd.communities().is_some());
+            assert!(upd.communities().unwrap().eq([
+                    Community::Normal(NormalCommunity::new(42.into(), CommunityTag(518))),
+                    Community::NoExport,
+                    Community::NoExportSubconfed
+            ]));
+
+            assert!(upd.ext_communities().is_some());
+            let mut ext_comms = upd.ext_communities().unwrap();
+            let ext_comm1 = ext_comms.next().unwrap();
+            assert!(ext_comm1.is_transitive());
+            assert!(matches!(ext_comm1.iana_policy(), IanaPolicy::FCFS));
+            assert_eq!(ext_comm1.subtyp(), 0x06);
+            assert_eq!(ext_comm1.val_extended(),
+                [0x00, 0x00, 0x44, 0x9c, 0x40, 0x00]
+            );
+
+            let ext_comm2 = ext_comms.next().unwrap();
+            assert!(!ext_comm2.is_transitive());
+            assert_eq!(ext_comm2.subtyp(), 0x04);
+            assert_eq!(ext_comm2.val_extended(),
+                [0x00, 0x00, 0x44, 0x9c, 0x40, 0x00]
+            );
+
+            assert!(ext_comms.next().is_none());
+
+        }
+
+        #[test]
+        fn large_communities() {
+            // BGP UPDATE with several path attributes, including Large
+            // Communities with three communities: 65536:1:1, 65536:1:2, 65536:1:3
+            let buf = vec![
+                0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                0x00, 0x57, 0x02, 0x00, 0x00, 0x00, 0x3b, 0x40,
+                0x01, 0x01, 0x00, 0x40, 0x02, 0x06, 0x02, 0x01,
+                0x00, 0x01, 0x00, 0x00, 0x40, 0x03, 0x04, 0xc0,
+                0x00, 0x02, 0x02, 0xc0, 0x20, 0x24, 0x00, 0x01,
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00,
+                0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00,
+                0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x01,
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00,
+                0x00, 0x03, 0x20, 0xcb, 0x00, 0x71, 0x0d
+            ];
+            let upd: UpdateMessage<_> = Message::from_octets(&buf)
+                .unwrap().try_into().unwrap();
+
+            let mut lcs = upd.large_communities().unwrap();
+            let lc1 = lcs.next().unwrap();
+            assert_eq!(lc1.global(), 65536);
+            assert_eq!(lc1.local1(), 1);
+            assert_eq!(lc1.local2(), 1);
+
+            let lc2 = lcs.next().unwrap();
+            assert_eq!(lc2.global(), 65536);
+            assert_eq!(lc2.local1(), 1);
+            assert_eq!(lc2.local2(), 2);
+
+            let lc3 = lcs.next().unwrap();
+            assert_eq!(lc3.global(), 65536);
+            assert_eq!(lc3.local1(), 1);
+            assert_eq!(lc3.local2(), 3);
+
+            assert_eq!(format!("{}", lc3), "65536:1:3");
+
+            assert!(lcs.next().is_none());
+
+        }
+
+        #[test]
+        fn chained_community_iters() {
+            let buf = vec![
+                0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                0x00, 0x82, 0x02, 0x00, 0x00, 0x00, 0x62, 0x40,
+                0x01, 0x01, 0x00, 0x40, 0x02, 0x16, 0x02, 0x05,
+                0x00, 0x00, 0x00, 0x65, 0x00, 0x00, 0x01, 0x2d,
+                0x00, 0x00, 0x01, 0x2c, 0x00, 0x00, 0x02, 0x58,
+                0x00, 0x00, 0x02, 0xbc, 0x40, 0x03, 0x04, 0x0a,
+                0x01, 0x03, 0x01, 0x80, 0x04, 0x04, 0x00, 0x00,
+                0x00, 0x00, 0x40, 0x05, 0x04, 0x00, 0x00, 0x00,
+                0x64, 0xc0, 0x08, 0x0c, 0x00, 0x2a, 0x02, 0x06,
+                0xff, 0xff, 0xff, 0x01, 0xff, 0xff, 0xff, 0x03,
+                0xc0, 0x10, 0x10, 0x00, 0x06, 0x00, 0x00, 0x44,
+                0x9c, 0x40, 0x00, 0x40, 0x04, 0x00, 0x00, 0x44,
+                0x9c, 0x40, 0x00, 0x80, 0x0a, 0x04, 0x0a, 0x00,
+                0x00, 0x04, 0x80, 0x09, 0x04, 0x0a, 0x00, 0x00,
+                0x03, 0x00, 0x00, 0x00, 0x01, 0x19, 0xc6, 0x33,
+                0x64, 0x00
+            ];
+            let mut config = SessionConfig::new();
+            config.enable_addpath();
+            let upd: UpdateMessage<_> = Message::from_octets_with_sc(&buf, config)
+                .unwrap().try_into().unwrap();
+
+            for c in upd.all_communities().unwrap() {
+                println!("{}", c);
+            }
+            assert!(upd.all_communities().unwrap().eq(&[
+                    Community::Normal(NormalCommunity::new(Asn::from(42), CommunityTag(518))),
+                    Community::NoExport,
+                    Community::NoExportSubconfed,
+                    [0x00, 0x06, 0x00, 0x00, 0x44, 0x9c, 0x40, 0x00].into(),
+                    [0x40, 0x04, 0x00, 0x00, 0x44, 0x9c, 0x40, 0x00].into(),
+            ]))
+
+        }
+
     }
 
 
     //--- BGP NOTIFICATION related tests -------------------------------------
     mod notification {
-        //TODO
+        use super::*;
+
+        #[test]
+        fn notification() {
+            let buf = vec![
+                0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                0x00, 0x15, 0x03, 0x06, 0x04
+            ];
+            let notification: NotificationMessage<_> =
+                Message::from_octets(&buf).unwrap().try_into().unwrap();
+            assert_eq!(notification.length(), 21);
+
+            assert_eq!(notification.code(), 6);
+            assert_eq!(notification.subcode(), 4);
+            assert_eq!(notification.data(), None);
+
+        }
     }
 
 
