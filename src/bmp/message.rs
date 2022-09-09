@@ -190,8 +190,8 @@ where
     for <'x> &'x Octets: OctetsRef,
 {
     /// Return the [`CommonHeader`] for this message.
-    pub fn common_header<'s>(&'s self)
-        -> CommonHeader<<&'s Octets as OctetsRef>::Range>
+    pub fn common_header(&self)
+        -> CommonHeader<<&Octets as OctetsRef>::Range>
     //where
     //    &'s Octets: OctetsRef
     {
@@ -568,14 +568,14 @@ where
     for <'a> &'a Octets: OctetsRef
 {
     /// Return the [`CommonHeader`] for this message.
-    pub fn common_header<'s>(&'s self)
-        -> CommonHeader<<&'s Octets as OctetsRef>::Range> {
+    pub fn common_header(&self)
+        -> CommonHeader<<&Octets as OctetsRef>::Range> {
         CommonHeader::for_slice(self.octets.range_to(6))
     }
 
     /// Return the [`PerPeerHeader`] for this message.
-    pub fn per_peer_header<'s>(&'s self)
-        -> PerPeerHeader<<&'s Octets as OctetsRef>::Range>
+    pub fn per_peer_header(&self)
+        -> PerPeerHeader<<&Octets as OctetsRef>::Range>
     {
         PerPeerHeader::for_slice(self.octets.range(6,6+42))
     }
@@ -713,14 +713,14 @@ where
     }
 
     /// Return the [`CommonHeader`] for this message.
-    pub fn common_header<'s>(&'s self)
-        -> CommonHeader<<&'s Octets as OctetsRef>::Range> {
+    pub fn common_header(&self)
+        -> CommonHeader<<&Octets as OctetsRef>::Range> {
         CommonHeader::for_slice(self.octets.range_to(6))
     }
 
     /// Return the [`PerPeerHeader`] for this message.
-    pub fn per_peer_header<'s>(&'s self)
-        -> PerPeerHeader<<&'s Octets as OctetsRef>::Range>
+    pub fn per_peer_header(&self)
+        -> PerPeerHeader<<&Octets as OctetsRef>::Range>
     {
         PerPeerHeader::for_slice(self.octets.range(6,6+42))
     }
@@ -841,14 +841,14 @@ where
     }
 
     /// Return the [`CommonHeader`] for this message.
-    pub fn common_header<'s>(&'s self)
-        -> CommonHeader<<&'s Octets as OctetsRef>::Range> {
+    pub fn common_header(&self)
+        -> CommonHeader<<&Octets as OctetsRef>::Range> {
         CommonHeader::for_slice(self.octets.range_to(6))
     }
 
     /// Return the [`PerPeerHeader`] for this message.
-    pub fn per_peer_header<'s>(&'s self)
-        -> PerPeerHeader<<&'s Octets as OctetsRef>::Range>
+    pub fn per_peer_header(&self)
+        -> PerPeerHeader<<&Octets as OctetsRef>::Range>
     {
         PerPeerHeader::for_slice(self.octets.range(6,6+42))
     }

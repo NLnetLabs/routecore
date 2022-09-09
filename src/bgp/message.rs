@@ -319,7 +319,7 @@ impl<Octets: AsRef<[u8]>> Header<Octets> {
         R: OctetsRef<Range = Octets>
     {
         let pos = parser.pos();
-        Marker::skip(parser)?;
+        Marker::parse(parser)?;
         let _len = parser.parse_u16()?;
         let _typ = parser.parse_u8()?;
         parser.seek(pos)?;
@@ -369,7 +369,7 @@ impl<Octets: AsRef<[u8]>> Header<Octets> {
 //  |                                                               |
 //  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 impl<Octets: AsRef<[u8]>> OpenMessage<Octets> {
-    fn for_slice(s: Octets) -> Self {
+    pub fn for_slice(s: Octets) -> Self {
         OpenMessage { octets: s }
     }
 }
@@ -1438,11 +1438,11 @@ impl Marker {
         }
        Ok(Marker{})
     }
-    fn skip<R: AsRef<[u8]>>(parser: &mut Parser<R>)
-        -> Result<(), ParseError> {
-        parser.advance(16)?;
-        Ok(())
-    }
+    //fn skip<R: AsRef<[u8]>>(parser: &mut Parser<R>)
+    //    -> Result<(), ParseError> {
+    //    parser.advance(16)?;
+    //    Ok(())
+    //}
 }
 
 impl<Octets: AsRef<[u8]>> UpdateMessage<Octets> {
