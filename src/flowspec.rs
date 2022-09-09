@@ -1,10 +1,12 @@
 //! FlowSpec v1 parsing.
 
 use crate::addr::Prefix;
-use crate::util::parser::{Parse, Parser, ParseError, OctetsRef};
 use crate::bgp::message::AFI;
-use std::net::IpAddr;
+use crate::util::parser::ParseError;
 use log::warn;
+use octseq::{OctetsRef, Parser};
+
+use std::net::IpAddr;
 
 fn op_to_len(op: u8) -> usize {
     match (op & 0b00110000) >> 4 {
@@ -53,8 +55,10 @@ pub enum Component<Octets> {
     Fragment(Octets),
 }
 
-impl<R: AsRef<[u8]>> Parse<R> for NumericOp {
-    fn parse(parser: &mut Parser<R>) -> Result<Self, ParseError> {
+impl NumericOp {
+    fn parse<R: AsRef<[u8]>>(parser: &mut Parser<R>)
+        -> Result<Self, ParseError>
+    {
         let op = parser.parse_u8()?;
         let value = match op_to_len(op) {
             1 => parser.parse_u8()? as u64,
@@ -64,15 +68,13 @@ impl<R: AsRef<[u8]>> Parse<R> for NumericOp {
             _ => panic!("illegal case"),
         };
         Ok(Self(op, value))
-    }
-
-    fn skip(parser: &mut Parser<R>) -> Result<(), ParseError> {
-        Self::parse(parser).map(|_| ())
     }
 }
 
-impl<R: AsRef<[u8]>> Parse<R> for BitmaskOp {
-    fn parse(parser: &mut Parser<R>) -> Result<Self, ParseError> {
+impl BitmaskOp {
+    fn parse<R: AsRef<[u8]>>(parser: &mut Parser<R>)
+        -> Result<Self, ParseError>
+    {
         let op = parser.parse_u8()?;
         let value = match op_to_len(op) {
             1 => parser.parse_u8()? as u64,
@@ -82,10 +84,6 @@ impl<R: AsRef<[u8]>> Parse<R> for BitmaskOp {
             _ => panic!("illegal case"),
         };
         Ok(Self(op, value))
-    }
-
-    fn skip(parser: &mut Parser<R>) -> Result<(), ParseError> {
-        Self::parse(parser).map(|_| ())
     }
 }
 
@@ -295,10 +293,6 @@ where
         //debug!("flowspec component res: {:?}", res);
         Ok(res)
     }
-
-    //fn skip(parser: &mut Parser<R>) -> Result<(), ParseError> {
-    //    Self::parse(parser).map(|_| ())
-    //}
 }
 
 

@@ -21,10 +21,13 @@ bytes = { version = "1.1.0", optional = true }
 chrono = { version = "0.4", optional = true }
 log = { version = "0.4.17", optional = true }
 
+#octseq = { git = "https://github.com/NLnetLabs/octseq", optional = true }
+octseq = { path = "../octseq", optional = true , features = ["bytes"] }
+
 [dev-dependencies]
 serde_test      = "1.0"
 
 [features]
 default = []
-bgp = ["bytes", "log"]
-bmp = ["bgp", "bytes", "chrono", "log"]
+bgp = ["bytes", "log", "octseq"]
+bmp = ["bgp", "bytes", "chrono", "log", "octseq"]

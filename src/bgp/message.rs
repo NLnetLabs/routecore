@@ -14,7 +14,8 @@ use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 use std::error::Error;
 
-use crate::util::parser::{Parse, Parser, ParseError, OctetsRef};
+use crate::util::parser::ParseError;
+use octseq::{OctetsRef, Parser};
 
 
 use crate::typeenum; // from util::macros
@@ -96,8 +97,7 @@ pub struct OpenMessage<Octets> {
 /// BGP UPDATE message, variant of the [`Message`] enum.
 pub struct UpdateMessage<Octets> {
     octets: Octets,
-    four_octet_asn: FourOctetAsn,
-    add_path: AddPath,
+    session_config: SessionConfig,
 }
 
 /// BGP NOTIFICATION message, variant of the [`Message`] enum.
@@ -242,28 +242,24 @@ impl<Octets: AsRef<[u8]>> Message<Octets>
 where
     for<'b> &'b Octets: OctetsRef,
 {
-    pub fn from_octets<Source: AsRef<[u8]>>(octets: Source)
+    pub fn from_octets<Source: AsRef<[u8]>>(octets: Source, config: Option<SessionConfig>)
         -> Result<Message<Octets>, ParseError>
     where
         for <'b> &'b Source: OctetsRef<Range = Octets>,
     {
-        Self::from_octets_with_sc(octets, SessionConfig::default())
-    }
-
-    // Pass config/state directly. Only useful for testing, or parsing of
-    // stand-alone, individual messages.
-    fn from_octets_with_sc<Source: AsRef<[u8]>>(octets: Source, config: SessionConfig)
-        -> Result<Message<Octets>, ParseError>
-    where
-        for <'b> &'b Source: OctetsRef<Range = Octets>,
-    {
-        let mut parser = Parser::from_ref(&octets, config);
-        //let mut parser = Parser::from_ref(octets.as_ref(), config);
+        let mut parser = Parser::from_ref(&octets);
         let hdr = Header::parse(&mut parser)?;
         parser.seek(0)?;
         let res = match hdr.msg_type() {
             MsgType::Open => Message::Open(OpenMessage::parse(&mut parser)?),
-            MsgType::Update => Message::Update(UpdateMessage::parse(&mut parser)?),
+            MsgType::Update => {
+                let config = if let Some(c) = config {
+                    c
+                } else {
+                    return Err(ParseError::StateRequired)
+                };
+                Message::Update(UpdateMessage::parse(&mut parser, config)?)
+            },
             MsgType::Notification => Message::Notification(NotificationMessage::parse(&mut parser)?),
             _ => panic!("not implemented yet")
         };
@@ -427,7 +423,7 @@ where
     /// Returns an iterator over the Optional Parameters.
 	pub fn parameters(&self) -> ParameterIter<<&'_ Octets as OctetsRef>::Range>
     {
-        let mut parser = Parser::from_ref(&self.octets, SessionConfig::default());
+        let mut parser = Parser::from_ref(&self.octets);
         parser.advance(COFF+10).unwrap();
 
         ParameterIter::new(
@@ -984,11 +980,10 @@ where
 //  +-----------------------------------------------------+
 
 impl<Octets: AsRef<[u8]>> UpdateMessage<Octets> {
-    fn for_slice(s: Octets, four_octet_asn: FourOctetAsn, add_path: AddPath) -> Self {
+    fn for_slice(s: Octets, config: SessionConfig) -> Self {
         Self {
             octets: s,
-            four_octet_asn,
-            add_path,
+            session_config: config
         }
     }
 }
@@ -1020,29 +1015,18 @@ where
     pub fn withdrawals(&'s self)
         -> Withdrawals<<&'s Octets as OctetsRef>::Range>
     {
-        let mut sc = SessionConfig::default();
-        if self.add_path == AddPath::Enabled  {
-            sc.enable_addpath();
-        }
         if let Some(pa) = self.path_attributes().iter().find(|pa|
             pa.type_code() == PathAttributeType::MpUnreachNlri
         ) {
             let v = pa.value();
-            let mut parser = Parser::from_ref(
-                //&pa.value(),
-                &v,
-                sc,
-            );
-            Withdrawals::parse(&mut parser).expect("parsed before")
+            let mut parser = Parser::from_ref(&v);
+            Withdrawals::parse(&mut parser, self.session_config).expect("parsed before")
 
         } else {
             let len = self.withdrawn_routes_len() as usize;
             let r = (self).octets.range(COFF+2,COFF+2+len);
-            let mut parser = Parser::from_ref(
-                &r,
-                sc,
-            );
-            Withdrawals::parse_conventional(&mut parser).expect("parsed before")
+            let mut parser = Parser::from_ref(&r);
+            Withdrawals::parse_conventional(&mut parser, self.session_config).expect("parsed before")
         }
     }
 
@@ -1060,23 +1044,15 @@ where
     pub fn path_attributes(&'s self)
         -> PathAttributes<<&'s Octets as OctetsRef>::Range>
     {
-        let mut sc = SessionConfig::default();
-        sc.set_four_octet_asn(self.four_octet_asn);
-        sc.set_addpath(self.add_path);
-
         let wrl = self.withdrawn_routes_len() as usize;
         let tpal = self.total_path_attribute_len() as usize;
         
-        let mut parser = Parser::from_ref(
-            //&self.octets.range(COFF+2+wrl+2, COFF+2+wrl+2+tpal),
-            &self.octets,
-            sc,
-        );
+        let mut parser = Parser::from_ref(&self.octets);
         parser.advance(COFF+2+wrl+2).unwrap();
 
         PathAttributes {
             octets: self.octets.range(COFF+2+wrl+2, COFF+2+wrl+2+tpal),
-            config: parser.config()
+            session_config: self.session_config
         }
     }
 
@@ -1088,26 +1064,18 @@ where
     pub fn nlris(&'s self)
         -> Nlris<<&'s Octets as OctetsRef>::Range>
     {
-        let mut sc = SessionConfig::default();
-        if self.add_path == AddPath::Enabled {
-            sc.enable_addpath();
-        }
         if let Some(pa) = self.path_attributes().iter().find(|pa|
             pa.type_code() == PathAttributeType::MpReachNlri
         ) {
             let v = pa.value();
-            let mut parser = Parser::from_ref(&v, sc);
-            Nlris::parse(&mut parser).expect("parsed before")
+            let mut parser = Parser::from_ref(&v);
+            Nlris::parse(&mut parser, self.session_config).expect("parsed before")
         } else {
-
             let wrl = self.withdrawn_routes_len() as usize;
             let tpal = self.total_path_attribute_len() as usize;
             let r = self.octets.range_from(COFF+2+wrl+2+tpal);
-            let mut parser = Parser::from_ref(
-                &r,
-                sc,
-            );
-            Nlris::parse_conventional(&mut parser).expect("parsed before")
+            let mut parser = Parser::from_ref(&r);
+            Nlris::parse_conventional(&mut parser, self.session_config).expect("parsed before")
         }
     }
 
@@ -1256,7 +1224,7 @@ where
             // Apparently, some BMP exporters do not set the legacy format
             // bit but do emit 2-byte ASNs. 
             let asn_size =
-                if self.four_octet_asn == FourOctetAsn::Disabled {
+                if self.session_config.four_octet_asn == FourOctetAsn::Disabled {
                     //let guess = Self::guess_as_octets(pa) as usize;
                     //if guess != 2 {
                     //    warn!("Had to guess ASN size is 4 !");
@@ -1325,17 +1293,11 @@ where
         if let Some(pa) = self.path_attributes().iter().find(|pa|
             pa.type_code() == PathAttributeType::MpReachNlri
         ) {
-            let mut parser = Parser::from_ref(
-                pa.value(),
-                SessionConfig::default()
-            );
+            let mut parser = Parser::from_ref(pa.value());
             let afi: AFI = parser.parse_u16().expect("parsed before").into();
             let safi: SAFI = parser.parse_u8().expect("parsed before").into();
 
-            parser.config_mut().set_afi(afi);
-            parser.config_mut().set_safi(safi);
-
-            return Some(NextHop::parse(&mut parser).expect("parsed before"));
+            return Some(NextHop::parse(&mut parser, afi, safi).expect("parsed before"));
         } 
 
         self.path_attributes().iter().find(|pa|
@@ -1398,11 +1360,8 @@ where
         self.path_attributes().iter().find(|pa|
             pa.type_code() == PathAttributeType::Aggregator
         ).map(|pa| {
-            let mut sc = SessionConfig::default();
-            sc.set_four_octet_asn(self.four_octet_asn);
-
-            let mut p = Parser::from_ref(pa.value(), sc);
-            Aggregator::parse(&mut p).expect("parsed before")
+            let mut p = Parser::from_ref(pa.value());
+            Aggregator::parse(&mut p, self.session_config).expect("parsed before")
         })
     }
 
@@ -1481,12 +1440,14 @@ impl Marker {
     }
     fn skip<R: AsRef<[u8]>>(parser: &mut Parser<R>)
         -> Result<(), ParseError> {
-        parser.advance(16)
+        parser.advance(16)?;
+        Ok(())
     }
 }
 
 impl<Octets: AsRef<[u8]>> UpdateMessage<Octets> {
-    pub fn parse<R>(parser: &mut Parser<R>) -> Result<Self, ParseError>
+    pub fn parse<R>(parser: &mut Parser<R>, config: SessionConfig)
+        -> Result<Self, ParseError>
     where
         R: OctetsRef<Range = Octets>,
         for<'a> &'a Octets: OctetsRef,
@@ -1499,7 +1460,8 @@ impl<Octets: AsRef<[u8]>> UpdateMessage<Octets> {
         if withdrawn_len > 0 {
             let mut wdraw_parser = parser.parse_parser(withdrawn_len.into())?;
             while wdraw_parser.remaining() > 0 {
-                BasicNlri::parse(&mut wdraw_parser)?;
+                // conventional withdrawals are always IPv4
+                BasicNlri::parse(&mut wdraw_parser, config, AFI::Ipv4)?;
             }
         }
         let total_path_attributes_len = parser.parse_u16()?;
@@ -1509,12 +1471,13 @@ impl<Octets: AsRef<[u8]>> UpdateMessage<Octets> {
             //while pas_parser.remaining() > 0 {
             //    PathAttribute::parse(&mut pas_parser)?;
             //}
-            PathAttributes::parse(&mut pas_parser)?;
+            PathAttributes::parse(&mut pas_parser, config)?;
         }
 
         // conventional NLRI, if any
         while parser.remaining() > 0 {
-            BasicNlri::parse(parser)?;
+            // conventional announcements are always IPv4
+            BasicNlri::parse(parser, config, AFI::Ipv4)?;
         }
 
         let end = parser.pos();
@@ -1528,8 +1491,7 @@ impl<Octets: AsRef<[u8]>> UpdateMessage<Octets> {
         Ok(
             Self::for_slice(
                 parser.parse_octets(hdr.length().into())?,
-                parser.config().four_octet_asn,
-                parser.config().add_path,
+                config
             )
         )
 
@@ -1639,29 +1601,28 @@ pub enum NextHop {
 // return a PathAttributesIter ?
 pub struct PathAttributes<Octets> {
     octets: Octets,
-    config: SessionConfig,
+    session_config: SessionConfig,
 }
 
 impl<Octets: AsRef<[u8]>> PathAttributes<Octets> {
     pub fn iter<'s>(&'s self) -> PathAttributesIter<&Octets>
         where &'s Octets: OctetsRef
     {
-        PathAttributesIter::new(&self.octets, self.config)
+        PathAttributesIter::new(&self.octets, self.session_config)
     }
 }
 
 /// Iterator over all [`PathAttribute`]s in a BGP UPDATE message.
 pub struct PathAttributesIter<Ref> {
     parser: Parser<Ref>,
+    session_config: SessionConfig,
 }
 
 impl<Ref: OctetsRef> PathAttributesIter<Ref>{
     fn new(path_attributes: Ref, config: SessionConfig) -> Self {
         PathAttributesIter { 
-            parser: Parser::from_ref(
-                        path_attributes,
-                        config,
-                    )
+            parser: Parser::from_ref(path_attributes),
+            session_config: config,
         }
     }
 }
@@ -1669,14 +1630,14 @@ impl<Ref: OctetsRef> PathAttributesIter<Ref>{
 // XXX keep this?
 impl<Octets: AsRef<[u8]>> PathAttributes<Octets> 
 {
-    fn parse<R>(parser: &mut Parser<R>)
+    fn parse<R>(parser: &mut Parser<R>, config: SessionConfig)
         -> Result<Self, ParseError>
     where
         R: OctetsRef<Range = Octets>,
     {
         let pos = parser.pos();
         while parser.remaining() > 0 {
-            let _pa = PathAttribute::parse(parser)?;
+            let _pa = PathAttribute::parse(parser, config)?;
         }
         let end = parser.pos();
         parser.seek(pos)?;
@@ -1684,7 +1645,7 @@ impl<Octets: AsRef<[u8]>> PathAttributes<Octets>
         Ok(
             PathAttributes {
                 octets: parser.parse_octets(end - pos).unwrap(),
-                config: parser.config()
+                session_config: config
             }
         )
     }
@@ -1753,7 +1714,7 @@ impl<Octets: AsRef<[u8]>> PathAttribute<Octets> {
 }
 
 impl<Octets: AsRef<[u8]>> PathAttribute<Octets> {
-    fn parse<'s, R>(parser: &mut Parser<R>)
+    fn parse<'s, R>(parser: &mut Parser<R>, config: SessionConfig)
         ->  Result<PathAttribute<Octets>, ParseError>
     where
         R: OctetsRef<Range = Octets>,
@@ -1785,16 +1746,16 @@ impl<Octets: AsRef<[u8]>> PathAttribute<Octets> {
             },
             PathAttributeType::AsPath => {
                 let pa = parser.parse_octets(len)?;
-                let mut p = Parser::from_ref(pa, parser.config());
+                let mut p = Parser::from_ref(pa);
                 while p.remaining() > 0 {
                     let _stype = p.parse_u8()?;
                     // segment length describes the number of ASNs
                     let slen = p.parse_u8()?;
                     for _ in 0..slen {
-                    match p.config().four_octet_asn {
-                        FourOctetAsn::Enabled => { p.parse_u32()?; }
-                        FourOctetAsn::Disabled => { p.parse_u16()?; }
-                    }
+                        match config.four_octet_asn {
+                            FourOctetAsn::Enabled => { p.parse_u32()?; }
+                            FourOctetAsn::Disabled => { p.parse_u16()?; }
+                        }
                     }
                 }
             },
@@ -1805,7 +1766,7 @@ impl<Octets: AsRef<[u8]>> PathAttribute<Octets> {
                         ParseError::form_error("expected len 4 for NEXT_HOP pa")
                     );
                 }
-                let _next_hop = Ipv4Addr::parse(parser)?;
+                let _next_hop = parser.parse_ipv4addr()?;
             }
             PathAttributeType::MultiExitDisc => {
                 if len != 4 {
@@ -1832,8 +1793,8 @@ impl<Octets: AsRef<[u8]>> PathAttribute<Octets> {
             },
             PathAttributeType::Aggregator => {
                 let pa = parser.parse_octets(len)?;
-                let mut p = Parser::from_ref(pa, parser.config());
-                Aggregator::parse(&mut p)?;
+                let mut p = Parser::from_ref(pa);
+                Aggregator::parse(&mut p, config)?;
             },
             PathAttributeType::Communities => {
                 let pos = parser.pos();
@@ -1852,11 +1813,11 @@ impl<Octets: AsRef<[u8]>> PathAttribute<Octets> {
             },
             PathAttributeType::MpReachNlri => {
                 let mut pa_parser = parser.parse_parser(len)?;
-                Nlris::parse(&mut pa_parser)?;
+                Nlris::parse(&mut pa_parser, config)?;
             },
             PathAttributeType::MpUnreachNlri => {
                 let mut pa_parser = parser.parse_parser(len)?;
-                Withdrawals::parse(&mut pa_parser)?;
+                Withdrawals::parse(&mut pa_parser, config)?;
             },
             PathAttributeType::ExtendedCommunities => {
                 let pos = parser.pos();
@@ -1866,7 +1827,6 @@ impl<Octets: AsRef<[u8]>> PathAttribute<Octets> {
             },
             PathAttributeType::As4Path => {
                 let mut pa_parser = parser.parse_parser(len)?;
-                pa_parser.config_mut().enable_four_octet_asn();
                 while pa_parser.remaining() > 0 {
                     let _stype = pa_parser.parse_u8()?;
                     // segment length describes the number of ASNs
@@ -1877,14 +1837,11 @@ impl<Octets: AsRef<[u8]>> PathAttribute<Octets> {
                 }
             }
             PathAttributeType::As4Aggregator => {
-                //let pa = parser.parse_octets(len)?;
-                //let mut p = Parser::from_ref(pa, parser.config());
-                //Aggregator::parse(&mut p)?;
                 let _asn = parser.parse_u32()?;
-                let _addr = Ipv4Addr::parse(parser)?;
+                let _addr = parser.parse_ipv4addr()?;
             }
             PathAttributeType::Connector => {
-                let _addr = Ipv4Addr::parse(parser);
+                let _addr = parser.parse_ipv4addr()?;
             },
             PathAttributeType::AsPathLimit => {
                 let _limit = parser.parse_u8()?;
@@ -1910,7 +1867,7 @@ impl<Octets: AsRef<[u8]>> PathAttribute<Octets> {
                 //while set_parser.remaining() > 0 {
                 //    PathAttribute::parse(&mut set_parser)?;
                 //}
-                PathAttributes::parse(&mut set_parser)?;
+                PathAttributes::parse(&mut set_parser, config)?;
             },
             PathAttributeType::Reserved => {
                 warn!("Path Attribute type 0 'Reserved' observed");
@@ -1948,7 +1905,7 @@ where
             return None
         }
         Some(
-            PathAttribute::parse(&mut self.parser).expect("parsed before")
+            PathAttribute::parse(&mut self.parser, self.session_config).expect("parsed before")
         )
     }
 }
@@ -1957,45 +1914,41 @@ where
 
 impl NextHop 
 {
-    fn parse<R: AsRef<[u8]>>(parser: &mut Parser<R>)
+    fn parse<R: AsRef<[u8]>>(parser: &mut Parser<R>, afi: AFI, safi: SAFI)
         -> Result<Self, ParseError>
     {
-        // suppose we have afi(/safi) in parser.config
         let len = parser.parse_u8()?;
-        let res = match (len, parser.config().afi(), parser.config().safi()) {
+        let res = match (len, afi, safi) {
             (16, AFI::Ipv6, SAFI::Unicast | SAFI::MplsUnicast) =>
-                NextHop::Ipv6(Ipv6Addr::parse(parser)?),
+                NextHop::Ipv6(parser.parse_ipv6addr()?),
             (32, AFI::Ipv6, SAFI::Unicast) =>
                 NextHop::Ipv6LL(
-                    Ipv6Addr::parse(parser)?,
-                    Ipv6Addr::parse(parser)?
+                    parser.parse_ipv6addr()?,
+                    parser.parse_ipv6addr()?
                 ),
             (24, AFI::Ipv6, SAFI::MplsVpnUnicast) =>
                 NextHop::Ipv6MplsVpnUnicast(
                     RouteDistinguisher::parse(parser)?,
-                    Ipv6Addr::parse(parser)?
+                    parser.parse_ipv6addr()?
                 ),
             (4, AFI::Ipv4, SAFI::Unicast | SAFI::MplsUnicast ) =>
-                NextHop::Ipv4(Ipv4Addr::parse(parser)?),
+                NextHop::Ipv4(parser.parse_ipv4addr()?),
             (12, AFI::Ipv4, SAFI::MplsVpnUnicast) =>
                 NextHop::Ipv4MplsVpnUnicast(
                     RouteDistinguisher::parse(parser)?,
-                    Ipv4Addr::parse(parser)?
+                    parser.parse_ipv4addr()?
                 ),
             // RouteTarget is always AFI/SAFI 1/132, so, IPv4,
             // but the Next Hop can be IPv6.
             (4, AFI::Ipv4, SAFI::RouteTarget) =>
-                NextHop::Ipv4(Ipv4Addr::parse(parser)?),
+                NextHop::Ipv4(parser.parse_ipv4addr()?),
             (16, AFI::Ipv4, SAFI::RouteTarget) =>
-                NextHop::Ipv6(Ipv6Addr::parse(parser)?),
+                NextHop::Ipv6(parser.parse_ipv6addr()?),
             (0, AFI::Ipv4, SAFI::FlowSpec) =>
                 NextHop::Empty,
             _ => {
                 parser.advance(len.into())?;
-                NextHop::Unimplemented(
-                    parser.config().afi(),
-                    parser.config().safi()
-                )
+                NextHop::Unimplemented( afi, safi)
             }
         };
         Ok(res)
@@ -2004,7 +1957,9 @@ impl NextHop
     fn skip<R: AsRef<[u8]>>(parser: &mut Parser<R>)
         -> Result<(), ParseError>
     {
-        Self::parse(parser).map(|_| ())
+        let len = parser.parse_u8()?;
+        parser.advance(len.into())?;
+        Ok(())
     }
 }
 
@@ -2281,13 +2236,13 @@ fn prefix_bits_to_bytes(bits: u8) -> usize {
     }
 }
 
-fn parse_prefix<R>(parser: &mut Parser<R>, prefix_bits: u8)
+fn parse_prefix<R>(parser: &mut Parser<R>, prefix_bits: u8, afi: AFI)
     -> Result<Prefix, ParseError>
 where
     R: AsRef<[u8]>
 {
     let prefix_bytes = prefix_bits_to_bytes(prefix_bits);
-    let prefix = match (parser.config().afi(), prefix_bytes) {
+    let prefix = match (afi, prefix_bytes) {
         (AFI::Ipv4, 0) => {
             Prefix::new_v4(0.into(), 0)?
         },
@@ -2324,15 +2279,15 @@ where
 }
 
 impl BasicNlri {
-    fn parse<R: AsRef<[u8]>>(parser: &mut Parser<R>)
+    fn parse<R: AsRef<[u8]>>(parser: &mut Parser<R>, config: SessionConfig, afi: AFI)
         -> Result<Self, ParseError>
     {
-        let path_id = match parser.config().add_path {
+        let path_id = match config.add_path {
             AddPath::Enabled => Some(PathId::parse(parser)?),
             _ => None
         };
         let prefix_bits = parser.parse_u8()?;
-        let prefix = parse_prefix(parser, prefix_bits)?;
+        let prefix = parse_prefix(parser, prefix_bits, afi)?;
         
         Ok(
             BasicNlri {
@@ -2344,11 +2299,11 @@ impl BasicNlri {
 }
 
 impl<Octets: AsRef<[u8]>> MplsVpnNlri<Octets> {
-    fn parse<Ref>(parser: &mut Parser<Ref>) -> Result<Self, ParseError>
+    fn parse<Ref>(parser: &mut Parser<Ref>, config: SessionConfig, afi: AFI) -> Result<Self, ParseError>
     where
         Ref: OctetsRef<Range = Octets>
     {
-        let path_id = match parser.config().add_path {
+        let path_id = match config.add_path {
             AddPath::Enabled => Some(PathId::parse(parser)?),
             _ => None
         };
@@ -2369,7 +2324,7 @@ impl<Octets: AsRef<[u8]>> MplsVpnNlri<Octets> {
         let rd = RouteDistinguisher::parse(parser)?;
         prefix_bits -= 8*std::mem::size_of::<RouteDistinguisher>() as u8;
 
-        let prefix = parse_prefix(parser, prefix_bits)?;
+        let prefix = parse_prefix(parser, prefix_bits, afi)?;
 
         let basic = BasicNlri { prefix, path_id };
         Ok(
@@ -2383,11 +2338,11 @@ impl<Octets: AsRef<[u8]>> MplsVpnNlri<Octets> {
 }
 
 impl<Octets: AsRef<[u8]>> MplsNlri<Octets> {
-    fn parse<Ref>(parser: &mut Parser<Ref>) -> Result<Self, ParseError>
+    fn parse<Ref>(parser: &mut Parser<Ref>, config: SessionConfig, afi: AFI) -> Result<Self, ParseError>
     where
         Ref: OctetsRef<Range = Octets>
     {
-        let path_id = match parser.config().add_path {
+        let path_id = match config.add_path {
             AddPath::Enabled => Some(PathId::parse(parser)?),
             _ => None
         };
@@ -2405,7 +2360,7 @@ impl<Octets: AsRef<[u8]>> MplsNlri<Octets> {
 
         prefix_bits -= 8 * labels.len() as u8;
 
-        let prefix = parse_prefix(parser, prefix_bits)?;
+        let prefix = parse_prefix(parser, prefix_bits, afi)?;
         let basic = BasicNlri { prefix, path_id };
         Ok(
             MplsNlri {
@@ -2490,9 +2445,9 @@ impl<Octets: AsRef<[u8]>> RouteTargetNlri<Octets> {
 
 pub struct Nlris<Octets> {
     octets: Octets,
+    session_config: SessionConfig,
     afi: AFI,
     safi: SAFI,
-    add_path: AddPath
 }
 
 impl<Octets: AsRef<[u8]>> Nlris<Octets> {
@@ -2502,9 +2457,9 @@ impl<Octets: AsRef<[u8]>> Nlris<Octets> {
     {
         NlriIterMp::new(
             &self.octets,
+            self.session_config,
             self.afi,
             self.safi,
-            self.add_path,
         )
     }
 }
@@ -2515,48 +2470,43 @@ impl<Octets: AsRef<[u8]>> Nlris<Octets> {
 /// BGP MultiProtocol (RFC4760) NLRIs.
 pub struct NlriIterMp<Ref> {
     parser: Parser<Ref>,
+    session_config: SessionConfig,
     afi: AFI,
     safi: SAFI,
-    add_path: AddPath
 }
 
 impl<Ref: OctetsRef> NlriIterMp<Ref> {
-    pub fn new(octets: Ref, afi: AFI, safi: SAFI, add_path: AddPath) -> Self
+    pub fn new(octets: Ref, config: SessionConfig, afi: AFI, safi: SAFI) -> Self
     {
-        let mut sc = SessionConfig::default();
-        sc.set_afi(afi);
-        sc.set_safi(safi);
-        sc.set_addpath(add_path);
-
-        let parser = Parser::from_ref(octets, sc);
+        let parser = Parser::from_ref(octets);
         Self {
             parser,
+            session_config: config,
             afi,
             safi,
-            add_path
         }
     }
 
-    pub fn new_conventional(octets: Ref, add_path: AddPath) -> Self {
-        let parser = Parser::from_ref(octets, SessionConfig::default());
+    pub fn new_conventional(octets: Ref, config: SessionConfig) -> Self {
+        let parser = Parser::from_ref(octets);
         Self {
             parser,
+            session_config: config,
             afi: AFI::Ipv4,
             safi: SAFI::Unicast,
-            add_path
         }
     }
 
     fn get_nlri(&mut self) -> Nlri<Ref::Range> {
         match (self.afi, self.safi) {
             (_, SAFI::MplsVpnUnicast) => {
-                Nlri::MplsVpn(MplsVpnNlri::parse(&mut self.parser).expect("parsed before"))
+                Nlri::MplsVpn(MplsVpnNlri::parse(&mut self.parser, self.session_config, self.afi).expect("parsed before"))
             },
             (_, SAFI::MplsUnicast) => {
-                Nlri::Mpls(MplsNlri::parse(&mut self.parser).expect("parsed before"))
+                Nlri::Mpls(MplsNlri::parse(&mut self.parser, self.session_config, self.afi).expect("parsed before"))
             },
             (_, SAFI::Unicast) => {
-                Nlri::Basic(BasicNlri::parse(&mut self.parser).expect("parsed before"))
+                Nlri::Basic(BasicNlri::parse(&mut self.parser, self.session_config, self.afi).expect("parsed before"))
             },
             (AFI::L2Vpn, SAFI::Vpls) => {
                 Nlri::Vpls(VplsNlri::parse(&mut self.parser).expect("parsed before"))
@@ -2573,53 +2523,47 @@ impl<Ref: OctetsRef> NlriIterMp<Ref> {
 }
 
 impl<Octets: AsRef<[u8]>> Nlris<Octets> {
-    fn parse_conventional<R>(parser: &mut Parser<R>) -> Result<Self, ParseError>
-        where
-            R: OctetsRef<Range = Octets>
+    fn parse_conventional<R>(parser: &mut Parser<R>, config: SessionConfig) -> Result<Self, ParseError>
+    where
+        R: OctetsRef<Range = Octets>
     {
         let pos = parser.pos();
         while parser.remaining() > 0 {
-            BasicNlri::parse(parser)?;
+            BasicNlri::parse(parser, config, AFI::Ipv4)?;
         }
         let len = parser.pos() - pos;
         parser.seek(pos)?;
         Ok(
             Nlris {
                 octets: parser.parse_octets(len)?,
+                session_config: config,
                 afi: AFI::Ipv4,
                 safi: SAFI::Unicast,
-                add_path: parser.config().add_path
             }
         )
     }
 
-    fn parse<R>(parser: &mut Parser<R>) -> Result<Self, ParseError>
-        where
-            R: OctetsRef<Range = Octets>
+    fn parse<R>(parser: &mut Parser<R>, config: SessionConfig) -> Result<Self, ParseError>
+    where
+        R: OctetsRef<Range = Octets>
     {
         // NLRIs from MP_REACH_NLRI.
         // Length is given in the Path Attribute length field.
         // AFI, SAFI, Nexthop are also in this Path Attribute.
 
-        
-        //let res = *parser; // XXX do we need this?
-
         let afi: AFI = parser.parse_u16()?.into();
         let safi: SAFI = parser.parse_u8()?.into();
-        parser.config_mut().set_afi(afi);
-        parser.config_mut().set_safi(safi);
 
         NextHop::skip(parser)?;
         parser.advance(1)?; // 1 reserved byte
-
 
         let pos = parser.pos();
 
         while parser.remaining() > 0 {
             match (afi, safi) {
-                (_, SAFI::MplsVpnUnicast) => { MplsVpnNlri::parse(parser)?;},
-                (_, SAFI::MplsUnicast) => { MplsNlri::parse(parser)?;},
-                (_, SAFI::Unicast) => { BasicNlri::parse(parser)?; }
+                (_, SAFI::MplsVpnUnicast) => { MplsVpnNlri::parse(parser, config, afi)?;},
+                (_, SAFI::MplsUnicast) => { MplsNlri::parse(parser, config, afi)?;},
+                (_, SAFI::Unicast) => { BasicNlri::parse(parser, config, afi)?; }
                 (AFI::L2Vpn, SAFI::Vpls) => { VplsNlri::parse(parser)?; }
                 (AFI::Ipv4, SAFI::FlowSpec) => {
                     FlowSpecNlri::parse(parser)?;
@@ -2638,16 +2582,12 @@ impl<Octets: AsRef<[u8]>> Nlris<Octets> {
 
         let len = parser.pos() - pos;
         parser.seek(pos)?;
-        let mut conf = parser.config();
-        conf.set_afi(afi);
-        conf.set_safi(safi);
-
         Ok(
             Nlris {
                 octets: parser.parse_octets(len)?,
+                session_config: config,
                 afi,
                 safi,
-                add_path: parser.config().add_path
             }
 
         )
@@ -2667,6 +2607,7 @@ impl<Ref: OctetsRef> Iterator for NlriIterMp<Ref> {
 
 pub struct Withdrawals<Octets> {
     octets: Octets,
+    session_config: SessionConfig,
     afi: AFI,
     safi: SAFI,
 }
@@ -2675,7 +2616,7 @@ impl<Octets: AsRef<[u8]>> Withdrawals<Octets> {
     pub fn iter<'s>(&'s self) -> WithdrawalsIterMp<&Octets>
         where &'s Octets: OctetsRef
     {
-        WithdrawalsIterMp::new(&self.octets, self.afi, self.safi)
+        WithdrawalsIterMp::new(&self.octets, self.session_config, self.afi, self.safi)
     }
 }
 
@@ -2685,17 +2626,17 @@ impl<Octets: AsRef<[u8]>> Withdrawals<Octets> {
 /// BGP MultiProtocol (RFC4760) withdrawn NLRIs.
 pub struct WithdrawalsIterMp<Ref> {
     parser: Parser<Ref>,
+    session_config: SessionConfig,
     afi: AFI,
     safi: SAFI,
 }
 
 impl<Ref: OctetsRef> WithdrawalsIterMp<Ref> {
-    pub fn new(octets: Ref, afi: AFI, safi: SAFI) -> Self {
-        let mut parser = Parser::from_ref(octets, SessionConfig::default());
-        parser.config_mut().set_afi(afi);
-        parser.config_mut().set_safi(safi);
+    pub fn new(octets: Ref, config: SessionConfig, afi: AFI, safi: SAFI) -> Self {
+        let parser = Parser::from_ref(octets);
         Self {
             parser,
+            session_config: config,
             afi,
             safi,
         }
@@ -2704,13 +2645,13 @@ impl<Ref: OctetsRef> WithdrawalsIterMp<Ref> {
     fn get_nlri(&mut self) -> Nlri<Ref::Range> {
         match (self.afi, self.safi) {
             (_, SAFI::MplsVpnUnicast) => {
-                Nlri::MplsVpn(MplsVpnNlri::parse(&mut self.parser).expect("parsed before"))
+                Nlri::MplsVpn(MplsVpnNlri::parse(&mut self.parser, self.session_config, self.afi).expect("parsed before"))
             },
             (_, SAFI::MplsUnicast) => {
-                Nlri::Mpls(MplsNlri::parse(&mut self.parser).expect("parsed before"))
+                Nlri::Mpls(MplsNlri::parse(&mut self.parser, self.session_config, self.afi).expect("parsed before"))
             },
             (_, SAFI::Unicast) => {
-                Nlri::Basic(BasicNlri::parse(&mut self.parser).expect("parsed before"))
+                Nlri::Basic(BasicNlri::parse(&mut self.parser, self.session_config, self.afi).expect("parsed before"))
             }
             (_, _) => panic!("should not come here")
         }
@@ -2718,26 +2659,28 @@ impl<Ref: OctetsRef> WithdrawalsIterMp<Ref> {
 }
 
 impl<Octets: AsRef<[u8]>> Withdrawals<Octets> {
-    fn parse_conventional<R>(parser: &mut Parser<R>) -> Result<Self, ParseError>
-        where
-            R: OctetsRef<Range = Octets>
+    fn parse_conventional<R>(parser: &mut Parser<R>, config: SessionConfig)
+        -> Result<Self, ParseError>
+    where
+        R: OctetsRef<Range = Octets>
     {
         let pos = parser.pos();
         while parser.remaining() > 0 {
-            BasicNlri::parse(parser)?;
+            BasicNlri::parse(parser, config, AFI::Ipv4)?;
         }
         let len = parser.pos() - pos;
         parser.seek(pos)?;
         Ok(
             Withdrawals {
                 octets: parser.parse_octets(len)?,
+                session_config: config,
                 afi: AFI::Ipv4,
                 safi: SAFI::Unicast,
             }
         )
     }
 
-    fn parse<R>(parser: &mut Parser<R>) -> Result<Self, ParseError>
+    fn parse<R>(parser: &mut Parser<R>,  config: SessionConfig) -> Result<Self, ParseError>
     where
         R: OctetsRef<Range = Octets>
     {
@@ -2748,13 +2691,12 @@ impl<Octets: AsRef<[u8]>> Withdrawals<Octets> {
         let afi: AFI = parser.parse_u16()?.into();
         let safi: SAFI = parser.parse_u8()?.into();
         let pos = parser.pos();
-        parser.config_mut().set_afi(afi);
 
         while parser.remaining() > 0 {
             match (afi, safi) {
-                (_, SAFI::MplsVpnUnicast) => { MplsVpnNlri::parse(parser)?;},
-                (_, SAFI::MplsUnicast) => { MplsNlri::parse(parser)?;},
-                (_, SAFI::Unicast) => { BasicNlri::parse(parser)?; }
+                (_, SAFI::MplsVpnUnicast) => { MplsVpnNlri::parse(parser, config, afi)?;},
+                (_, SAFI::MplsUnicast) => { MplsNlri::parse(parser, config, afi)?;},
+                (_, SAFI::Unicast) => { BasicNlri::parse(parser, config, afi)?; }
                 (_, _) => { /* return Err(FormError("unimplemented")) */ }
             }
         }
@@ -2764,6 +2706,7 @@ impl<Octets: AsRef<[u8]>> Withdrawals<Octets> {
         Ok(
             Withdrawals {
                 octets: parser.parse_octets(len)?,
+                session_config: config,
                 afi,
                 safi,
             }
@@ -3140,20 +3083,19 @@ impl Aggregator {
 }
 
 impl Aggregator {
-    fn parse<R: AsRef<[u8]>>(parser: &mut Parser<R>)
+    fn parse<R: AsRef<[u8]>>(parser: &mut Parser<R>, config: SessionConfig)
         -> Result<Self, ParseError>
     {
-        let len = parser.remaining();
-        match (len, parser.config().four_octet_asn) {
+        let len = parser.remaining(); // XXX is this always correct?
+        match (len, config.four_octet_asn) {
             (8, FourOctetAsn::Enabled) => {
                 let asn = Asn::from_u32(parser.parse_u32()?);
-                let addr = Ipv4Addr::parse(parser)?;
+                let addr = parser.parse_ipv4addr()?;
                 Ok(Self::new(asn, addr))
-
             },
             (6, FourOctetAsn::Disabled) => {
                 let asn = Asn::from_u32(parser.parse_u16()?.into());
-                let addr = Ipv4Addr::parse(parser)?;
+                let addr = parser.parse_ipv4addr()?;
                 Ok(Self::new(asn, addr))
             },
             (_, FourOctetAsn::Enabled) => {
@@ -3302,28 +3244,40 @@ pub struct LocalPref(u32);
 pub struct SessionConfig {
     pub four_octet_asn: FourOctetAsn,
     pub add_path: AddPath,
-
-    pub afi: AFI, // tmp
-    pub safi: SAFI, // tmp
 }
 
-impl Default for SessionConfig {
-    /// The defaults for SessionConfig are Four Octet capable, no AddPath.
-    /// This should be a reasonable guess for when no other knowledge about
-    /// the session is available, and e.g. a single UPDATE is parsed.
-    fn default() -> Self {
-        SessionConfig {
+impl SessionConfig {
+    pub fn new(four_octet_asn: FourOctetAsn, add_path: AddPath) -> Self {
+        Self { four_octet_asn, add_path }
+    }
+
+    pub fn modern() -> Self {
+        Self {
             four_octet_asn: FourOctetAsn::Enabled,
             add_path: AddPath::Disabled,
-            afi: AFI::Ipv4,
-            safi: SAFI::Unicast,
         }
     }
-}
-impl SessionConfig {
-    pub fn new() -> Self {
-        Self::default()
+    pub fn legacy() -> Self {
+        Self {
+            four_octet_asn: FourOctetAsn::Disabled,
+            add_path: AddPath::Disabled,
+        }
     }
+
+    pub fn modern_addpath() -> Self {
+        Self {
+            four_octet_asn: FourOctetAsn::Enabled,
+            add_path: AddPath::Enabled,
+        }
+    }
+
+    pub fn legacy_addpath() -> Self {
+        Self {
+            four_octet_asn: FourOctetAsn::Disabled,
+            add_path: AddPath::Enabled,
+        }
+    }
+
     pub fn enable_four_octet_asn(&mut self) {
         self.four_octet_asn = FourOctetAsn::Enabled
     }
@@ -3346,22 +3300,6 @@ impl SessionConfig {
 
     pub fn set_addpath(&mut self, v: AddPath) {
         self.add_path = v;
-    }
-
-    pub fn afi(&self) -> AFI {
-        self.afi
-    }
-
-    pub fn set_afi(&mut self, afi: AFI) {
-        self.afi = afi;
-    }
-
-    pub fn safi(&self) -> SAFI {
-        self.safi
-    }
-
-    pub fn set_safi(&mut self, safi: SAFI) {
-        self.safi = safi;
     }
 }
 
@@ -3440,17 +3378,8 @@ mod tests {
             let bb = Bytes::from(buf.clone());
 
             //let open: OpenMessage<_> = parse_open(&buf);
-            let open: OpenMessage<_> = Message::from_octets(&buf).unwrap().try_into().unwrap();
-            let open: OpenMessage<_> = Message::from_octets(&bb).unwrap().try_into().unwrap();
-
-            // using a Parser and OpenMessage::parse
-            //let mut parser: Parser<&Bytes> = Parser::from_ref(&bb, SessionConfig::default());
-            //let open = OpenMessage::parse(&mut parser).unwrap();
-
-            // using Message::from_ref
-            //let open: OpenMessage<_> = Message::from_ref(&bb, SessionConfig::default()).unwrap().try_into().unwrap();
-
-            
+            //let open: OpenMessage<_> = Message::from_octets(&buf, None).unwrap().try_into().unwrap();
+            let open: OpenMessage<_> = Message::from_octets(&bb, None).unwrap().try_into().unwrap();
 
             assert_eq!(open.length(), 29);
             assert_eq!(open.version(), 4);
@@ -3476,7 +3405,7 @@ mod tests {
             ];
 
             //let open: OpenMessage<_> = parse_msg(&buf);
-            let open: OpenMessage<_> = Message::from_octets(&buf).unwrap().try_into().unwrap();
+            let open: OpenMessage<_> = Message::from_octets(&buf, None).unwrap().try_into().unwrap();
 
             assert_eq!(open.capabilities().count(), 5);
             let mut iter = open.capabilities();
@@ -3517,7 +3446,7 @@ mod tests {
             ];
 
             //let open: OpenMessage<_> = parse_msg(&buf);
-            let open: OpenMessage<_> = Message::from_octets(&buf).unwrap().try_into().unwrap();
+            let open: OpenMessage<_> = Message::from_octets(&buf, None).unwrap().try_into().unwrap();
 
             assert_eq!(open.capabilities().count(), 8);
             let types = [
@@ -3567,7 +3496,7 @@ mod tests {
                     ];
 
             //let open: OpenMessage<_> = parse_msg(&buf);
-            let open: OpenMessage<_> = Message::from_octets(&buf).unwrap().try_into().unwrap();
+            let open: OpenMessage<_> = Message::from_octets(&buf, None).unwrap().try_into().unwrap();
 
             assert_eq!(open.multiprotocol_ids().count(), 15);
             let protocols = [
@@ -3651,7 +3580,7 @@ mod tests {
                 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
                 0x00, 0x88, 0x02, 
             ];
-            assert!(Message::from_octets(&buf).is_err());
+            assert!(Message::from_octets(&buf, None).is_err());
         }
 
         #[test]
@@ -3667,7 +3596,10 @@ mod tests {
             ];
 
             //let update: UpdateMessage<_> = parse_msg(&buf);
-            let update: UpdateMessage<_> = Message::from_octets(&buf).unwrap().try_into().unwrap();
+            let update: UpdateMessage<_> = Message::from_octets(
+                &buf,
+                Some(SessionConfig::modern())
+            ).unwrap().try_into().unwrap();
 
             assert_eq!(update.length(), 55);
             assert_eq!(update.total_path_attribute_len(), 27);
@@ -3750,7 +3682,10 @@ mod tests {
             ];
 
             //let update: UpdateMessage<_> = parse_msg(&buf);
-            let update: UpdateMessage<_> = Message::from_octets(&buf).unwrap().try_into().unwrap();
+            let update: UpdateMessage<_> = Message::from_octets(
+                &buf,
+                Some(SessionConfig::modern())
+            ).unwrap().try_into().unwrap();
 
             assert_eq!(update.total_path_attribute_len(), 27);
             assert_eq!(update.nlris().iter().count(), 2);
@@ -3788,7 +3723,10 @@ mod tests {
                 0xc8, 0x80, 0x04, 0x04, 0x00, 0x00, 0x00, 0x00
             ];
             //let update: UpdateMessage<_> = parse_msg(&buf);
-            let update: UpdateMessage<_> = Message::from_octets(&buf).unwrap().try_into().unwrap();
+            let update: UpdateMessage<_> = Message::from_octets(
+                &buf,
+                Some(SessionConfig::modern())
+            ).unwrap().try_into().unwrap();
 
             assert_eq!(update.withdrawn_routes_len(), 0);
             assert_eq!(update.total_path_attribute_len(), 113);
@@ -3831,7 +3769,10 @@ mod tests {
                 0x00, 0x00, 0x00
             ];
             //let update: UpdateMessage<_> = parse_msg(&buf);
-            let update: UpdateMessage<_> = Message::from_octets(&buf).unwrap().try_into().unwrap();
+            let update: UpdateMessage<_> = Message::from_octets(
+                &buf,
+                Some(SessionConfig::modern())
+            ).unwrap().try_into().unwrap();
 
             assert_eq!(update.withdrawals().iter().count(), 12);
 
@@ -3873,7 +3814,10 @@ mod tests {
                 0x03
             ];
             //let update: UpdateMessage<_> = parse_msg(&buf);
-            let update: UpdateMessage<_> = Message::from_octets(&buf).unwrap().try_into().unwrap();
+            let update: UpdateMessage<_> = Message::from_octets(
+                &buf,
+                Some(SessionConfig::modern())
+            ).unwrap().try_into().unwrap();
 
             assert_eq!(update.withdrawals().iter().count(), 4);
             
@@ -3912,7 +3856,10 @@ mod tests {
                 0x33, 0x64, 0x80, 0x1a, 0xc6, 0x33, 0x64, 0xc0
             ];
             //let update: UpdateMessage<_> = parse_msg(&buf);
-            let update: UpdateMessage<_> = Message::from_octets(&buf).unwrap().try_into().unwrap();
+            let update: UpdateMessage<_> = Message::from_octets(
+                &buf,
+                Some(SessionConfig::modern())
+            ).unwrap().try_into().unwrap();
             assert_eq!(update.multi_exit_desc(), Some(MultiExitDisc(0)));
             assert_eq!(update.local_pref(), Some(LocalPref(100)));
         }
@@ -3932,7 +3879,10 @@ mod tests {
                 0x18, 0xc6, 0x33, 0x64
             ];
             //let update: UpdateMessage<_> = parse_msg(&buf);
-            let update: UpdateMessage<_> = Message::from_octets(&buf).unwrap().try_into().unwrap();
+            let update: UpdateMessage<_> = Message::from_octets(
+                &buf,
+                Some(SessionConfig::modern())
+            ).unwrap().try_into().unwrap();
             let aggr = update.aggregator().unwrap();
 
             assert!(update.is_atomic_aggregate());
@@ -3965,8 +3915,8 @@ mod tests {
                 0x00, 0x0a, 0x16, 0x0a, 0x01, 0x04
             ];
             
-            let mut sc = SessionConfig::new(); sc.disable_four_octet_asn();
-            let update: UpdateMessage<_> = Message::from_octets_with_sc(&buf, sc)
+            let sc = SessionConfig::legacy();
+            let update: UpdateMessage<_> = Message::from_octets(&buf, Some(sc))
                 .unwrap().try_into().unwrap();
 
             update.path_attributes().iter();//.count();
@@ -4019,11 +3969,8 @@ mod tests {
                 0x03, 0x00, 0x00, 0x00, 0x01, 0x19, 0xc6, 0x33,
                 0x64, 0x00
             ];
-            let config = SessionConfig {
-                add_path: AddPath::Enabled,
-                ..Default::default()
-            };
-            let upd: UpdateMessage<_> = Message::from_octets_with_sc(&buf, config)
+            let sc = SessionConfig::modern_addpath();
+            let upd: UpdateMessage<_> = Message::from_octets(&buf, Some(sc))
                 .unwrap().try_into().unwrap();
 
             assert_eq!(
@@ -4076,10 +4023,12 @@ mod tests {
                 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00,
                 0x00, 0x03, 0x20, 0xcb, 0x00, 0x71, 0x0d
             ];
-            let upd: UpdateMessage<_> = Message::from_octets(&buf)
-                .unwrap().try_into().unwrap();
+            let update: UpdateMessage<_> = Message::from_octets(
+                &buf,
+                Some(SessionConfig::modern())
+            ).unwrap().try_into().unwrap();
 
-            let mut lcs = upd.large_communities().unwrap();
+            let mut lcs = update.large_communities().unwrap();
             let lc1 = lcs.next().unwrap();
             assert_eq!(lc1.global(), 65536);
             assert_eq!(lc1.local1(), 1);
@@ -4122,9 +4071,8 @@ mod tests {
                 0x03, 0x00, 0x00, 0x00, 0x01, 0x19, 0xc6, 0x33,
                 0x64, 0x00
             ];
-            let mut config = SessionConfig::new();
-            config.enable_addpath();
-            let upd: UpdateMessage<_> = Message::from_octets_with_sc(&buf, config)
+            let sc = SessionConfig::modern_addpath();
+            let upd: UpdateMessage<_> = Message::from_octets(&buf, Some(sc))
                 .unwrap().try_into().unwrap();
 
             for c in upd.all_communities().unwrap() {
@@ -4155,7 +4103,7 @@ mod tests {
                 0x00, 0x15, 0x03, 0x06, 0x04
             ];
             let notification: NotificationMessage<_> =
-                Message::from_octets(&buf).unwrap().try_into().unwrap();
+                Message::from_octets(&buf, None).unwrap().try_into().unwrap();
             assert_eq!(notification.length(), 21);
 
             assert_eq!(notification.code(), 6);

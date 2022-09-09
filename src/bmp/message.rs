@@ -4,15 +4,18 @@
 //! providing access to its contents based on the underlying `bytes` buffer
 //! without allocating.
 
+use crate::asn::Asn;
 use crate::bgp::message::{Message as BgpMsg, OpenMessage as BgpOpen, UpdateMessage as BgpUpdate, NotificationMessage as BgpNotification};
 use crate::bgp::message::{AFI, SAFI, SessionConfig};
-use crate::util::parser::{Parser, Parse, ParseError, OctetsRef};
+use crate::util::parser::ParseError;
 use crate::typeenum; // from util::macros
 
 use bytes::Buf;
 use chrono::{DateTime, TimeZone, Utc};
 use log::warn;
-use crate::asn::Asn;
+use octseq::{OctetsRef, Parser};
+
+
 use std::error::Error;
 use std::fmt::{Debug, Display, Formatter, Result as FmtResult};
 use std::hash::Hash;
@@ -175,14 +178,10 @@ where
 
     pub fn from_octets<Source: AsRef<[u8]>>(octets: Source)
         -> Result<Message<Octets>, ParseError>
-        where
-            for <'a> &'a Source: OctetsRef<Range = Octets>,
-            //for <'a> &'a Octets: OctetsRef,//<Range = Octets>
-            //for<'a> &'a<&'a Octets as OctetsRef>::Range: OctetsRef<Range = <&'a Source as OctetsRef>::Range>
-
+    where
+        for <'a> &'a Source: OctetsRef<Range = Octets>,
     {
-        // TODO the SessionConfig does not make sense for BMP messages..
-        let mut parser = Parser::from_ref(&octets, SessionConfig::default());
+        let mut parser = Parser::from_ref(&octets);
         Self::parse(&mut parser)
     }
 }
@@ -588,16 +587,11 @@ where
     where
         for <'a> &'a Octets: OctetsRef<Range = Octets>
     {
-        //self.parser.advance(
-        //        std::mem::size_of::<CommonHeader>() +
-        //        std::mem::size_of::<PerPeerHeader>()
-        //);
         let mut parser = Parser::from_ref(
             &self.octets,//.range_from(6+42),
-            config
         );
         parser.advance(6+42).expect("parsed before");
-        BgpUpdate::parse(&mut parser)
+        BgpUpdate::parse(&mut parser, config)
     }
 }
 
@@ -763,8 +757,7 @@ where
             }
             Some({
                 let mut parser = Parser::from_ref(
-                    self.octets.range_from(COFF+1),
-                    SessionConfig::default(),
+                    self.octets.range_from(COFF+1)
                 );
                 BgpNotification::parse(&mut parser).expect("parsed before")
             })
@@ -896,13 +889,8 @@ where
         <&'s Octets as OctetsRef>::Range: OctetsRef<Range = Octets>
     {
         let mut parser = Parser::from_ref(
-            self.octets.range_from(COFF+20),
-            SessionConfig::default(), // XXX get rid of the sessionconfig here
+            self.octets.range_from(COFF+20)
         );
-        //let mut parser = Parser::from_ref(
-        //    self.parser.range_from(COFF+20),
-        //    SessionConfig::default(),
-        //);
         BgpOpen::parse(&mut parser).unwrap()
     }
 
@@ -915,8 +903,7 @@ where
         let mut pos: usize = 20;
         pos += self.bgp_open_sent().length() as usize;
         let mut parser = Parser::from_ref(
-            self.octets.range_from(COFF+pos),
-            SessionConfig::default(),
+            self.octets.range_from(COFF+pos)
         );
         BgpOpen::parse(&mut parser).unwrap()
     }
@@ -935,14 +922,14 @@ where
         <&'s Octets as OctetsRef>::Range: OctetsRef<Range = Octets>
     {
         let mut parser = Parser::from_ref(
-            self.octets.range_from(COFF+20),
-            SessionConfig::default(),
+            self.octets.range_from(COFF+20)
         );
         let sent = BgpOpen::parse(&mut parser).unwrap();
         let rcvd = BgpOpen::parse(&mut parser).unwrap();
 
         (sent, rcvd) 
     }
+
     /// Create a [`SessionConfig`] describing the parameters for the BGP
     /// session between the monitored router and the remote peer.
     ///
@@ -956,11 +943,11 @@ where
         <&'s Octets as OctetsRef>::Range: OctetsRef<Range = Octets>
     {
         let (sent, rcvd) = self.bgp_open_sent_rcvd();
-        let mut conf = SessionConfig::default();
+        let mut conf = SessionConfig::modern();
 
-        // The Default SessionConfig has four octet capability set to enabled,
-        // so we need to disable it if any of both of the peers do not support
-        // it.
+        // The 'modern' SessionConfig has four octet capability set to
+        // enabled, so we need to disable it if any of both of the peers do
+        // not support it.
         if !sent.four_octet_capable() || !rcvd.four_octet_capable() {
             conf.disable_four_octet_asn();
         }
@@ -977,12 +964,7 @@ where
     where
         for <'a> &'a Octets: OctetsRef<Range = Octets>,
     {
-        let mut parser = Parser::from_ref(
-            &self.octets,
-            SessionConfig::default(), // XXX get rid of the sessionconfig here
-        );
-        //CommonHeader::skip(&mut parser).expect("parsed before");
-        //PerPeerHeader::skip(&mut parser).expect("parsed before");
+        let mut parser = Parser::from_ref(&self.octets);
         parser.advance(6+42).expect("parsed before");
         BgpOpen::parse(&mut parser).expect("parsed before");
         BgpOpen::parse(&mut parser).expect("parsed before");
@@ -1005,7 +987,7 @@ where
         let ch = CommonHeader::parse(parser)?;
         let _pph = PerPeerHeader::parse(parser)?;
 
-        let _local_address = Ipv6Addr::parse(parser);
+        let _local_address = parser.parse_ipv6addr()?;
         let _local_port = parser.parse_u16()?;
         let _remote_port = parser.parse_u16()?;
 
@@ -1746,7 +1728,7 @@ mod tests {
     #[test]
     fn common_header_parse() {
         let buf = vec![0x03, 0x0, 0x0, 0x0, 0x6c, 0x04];
-        let mut parser = Parser::from_ref(&buf, SessionConfig::default());
+        let mut parser = Parser::from_ref(&buf);
 		let ch = CommonHeader::parse(&mut parser).unwrap();
         assert_eq!(ch.version(), 3);
         assert_eq!(ch.length(), 108);
@@ -1823,8 +1805,7 @@ mod tests {
         );
         assert_eq!(bmp.common_header().length(), 103);
 
-        let config = SessionConfig::default();
-
+        let config = SessionConfig::modern();
         let bgp_update = bmp.bgp_update(config).unwrap();
 
         //-- from here on, this actually tests the bgp parsing functionality
