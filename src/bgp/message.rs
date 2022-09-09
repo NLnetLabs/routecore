@@ -1128,47 +1128,6 @@ where
         )
     }
 
-    // Try to determine whether we are dealing with an AS_PATH comprised of
-    // two-octet ASNs. As some BMP/BGP implementations seem to be not too
-    // strict about these things, we have to make an educated guess.
-    //
-    // XXX we perhaps should not guess anything, just error out instead
-    /*
-    fn guess_as_octets(pa: &PathAttribute<Octets>) -> u8
-    where
-        for <'a> &'a Octets: OctetsRef,
-        for <'a> &'a <&'a Octets as OctetsRef>::Range: OctetsRef,
-    {
-        assert!(pa.type_code() == PathAttributeType::AsPath);
-        let res = 4;
-
-        let octets = &pa.value();
-        let mut pos = 0;
-        while pos < octets.as_ref().len() {
-            match SegmentType::try_from(octets.as_ref()[pos]) {
-                Ok(_) => { /* continue to assume 4 octet ASNs */ },
-                Err(_) => { return 2 }
-            }
-            let segmentlen = octets.as_ref()[pos+1] as usize;
-            if segmentlen * 4 > octets.as_ref().len(){
-                return 2;
-            }
-            // assume we are dealing with 4 octet stuff here
-            pos = pos + 2 + segmentlen * 4;
-        }
-
-        if pos > octets.as_ref().len() {
-            // Apparently we jumped over the end, so assuming 4 bytes was
-            // incorrect. 
-            return 2;
-        }
-
-        assert!(pos == octets.as_ref().len());
-
-        res
-    }
-*/
-
     pub fn as4path(&'s self) -> Option<AsPath<Vec<Asn>>> {
         self.path_attributes().iter().find(|pa|
             pa.type_code() == PathAttributeType::As4Path
@@ -1220,20 +1179,12 @@ where
             // understanding/reasoning.
             let as4path = self.as4path();
 
-
             // Apparently, some BMP exporters do not set the legacy format
             // bit but do emit 2-byte ASNs. 
-            let asn_size =
-                if self.session_config.four_octet_asn == FourOctetAsn::Disabled {
-                    //let guess = Self::guess_as_octets(pa) as usize;
-                    //if guess != 2 {
-                    //    warn!("Had to guess ASN size is 4 !");
-                    //}
-                    //guess
-                    2
-                } else {
-                    4
-                };
+            let asn_size = match self.session_config.four_octet_asn { 
+                FourOctetAsn::Enabled => 4,
+                FourOctetAsn::Disabled => 2,
+            };
 
             let octets = pa.value();
             let mut aspb = AsPathBuilder::new();
@@ -2752,7 +2703,8 @@ pub enum IanaPolicy {
 }
 
 impl NormalCommunity {
-    pub fn new(asn: Asn, tag: CommunityTag) -> NormalCommunity {
+    // TODO perhaps this should not accept Asn, but a u16.
+    fn new(asn: Asn, tag: CommunityTag) -> NormalCommunity {
         let mut buf = [0u8; 4];
         let asn16 = asn.into_u32() as u16;  
         buf[..2].copy_from_slice(&asn16.to_be_bytes());
@@ -2890,6 +2842,9 @@ impl Display for LargeCommunity {
 }
 
 /// Conventional and Extended/Large Communities variants.
+// XXX should the well-knowns actually be Normals?
+// maybe keep everything as [u8;4] and only check for well-knowns in the
+// Display impl?
 #[derive(Debug, Eq, PartialEq)]
 pub enum Community {
     Normal(NormalCommunity),
@@ -2944,6 +2899,8 @@ impl From<[u8; 4]> for Community {
     }
 }
 
+
+
 impl From<[u8; 8]> for Community {
     fn from(raw: [u8; 8]) -> Community {
         Community::Extended(ExtendedCommunity(raw))
@@ -2967,20 +2924,10 @@ impl<Octets: AsRef<[u8]>> CommunityIter<Octets> {
         }
     }
     fn get_community(&mut self) -> Community {
-        //let res = TryInto::<[u8; 4]>::try_into(
-        //    self.slice.as_ref()[self.pos .. self.pos + 4])
-        //    .expect("parsed before").into();
-
-        // XXX why can't we do the thing above?
-        let res = [
-            self.slice.as_ref()[self.pos],
-            self.slice.as_ref()[self.pos+1],
-            self.slice.as_ref()[self.pos+2],
-            self.slice.as_ref()[self.pos+3],
-        ].into();
-
+        let mut buf = [0u8; 4];
+        buf[..].copy_from_slice(&self.slice.as_ref()[self.pos..self.pos+4]);
         self.pos += 4;
-        res
+        buf.into()
     }
 }
 
