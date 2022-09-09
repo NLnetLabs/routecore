@@ -496,7 +496,7 @@ where
 }
 
 impl<Octets: AsRef<[u8]>> OpenMessage<Octets> {
-    fn parse<R>(parser: &mut Parser<R>) -> Result<Self, ParseError>
+    pub fn parse<R>(parser: &mut Parser<R>) -> Result<Self, ParseError>
     where
         R: OctetsRef<Range = Octets>,
         for <'a> &'a Octets: OctetsRef,
@@ -1486,7 +1486,7 @@ impl Marker {
 }
 
 impl<Octets: AsRef<[u8]>> UpdateMessage<Octets> {
-    fn parse<R>(parser: &mut Parser<R>) -> Result<Self, ParseError>
+    pub fn parse<R>(parser: &mut Parser<R>) -> Result<Self, ParseError>
     where
         R: OctetsRef<Range = Octets>,
         for<'a> &'a Octets: OctetsRef,
@@ -3208,7 +3208,7 @@ impl<Octets: AsRef<[u8]>> NotificationMessage<Octets> {
     }
 }
 impl<Octets: AsRef<[u8]>> NotificationMessage<Octets> {
-    fn parse<Ref>(parser: &mut Parser<Ref>) -> Result<Self, ParseError>
+    pub fn parse<Ref>(parser: &mut Parser<Ref>) -> Result<Self, ParseError>
     where
         Ref: OctetsRef<Range = Octets>
     {
