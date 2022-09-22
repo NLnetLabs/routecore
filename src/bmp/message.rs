@@ -987,7 +987,7 @@ where
         let ch = CommonHeader::parse(parser)?;
         let _pph = PerPeerHeader::parse(parser)?;
 
-        let _local_address = parser.parse_ipv6addr()?;
+        let _local_address = parser.advance(16)?;
         let _local_port = parser.parse_u16()?;
         let _remote_port = parser.parse_u16()?;
 

@@ -14,7 +14,7 @@ use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 use std::error::Error;
 
-use crate::util::parser::ParseError;
+use crate::util::parser::{parse_ipv4addr, parse_ipv6addr, ParseError};
 use octseq::{OctetsRef, Parser};
 
 
@@ -1769,7 +1769,7 @@ impl<Octets: AsRef<[u8]>> PathAttribute<Octets> {
                         ParseError::form_error("expected len 4 for NEXT_HOP pa")
                     );
                 }
-                let _next_hop = parser.parse_ipv4addr()?;
+                let _next_hop = parse_ipv4addr(parser)?;
             }
             PathAttributeType::MultiExitDisc => {
                 if len != 4 {
@@ -1841,10 +1841,10 @@ impl<Octets: AsRef<[u8]>> PathAttribute<Octets> {
             }
             PathAttributeType::As4Aggregator => {
                 let _asn = parser.parse_u32()?;
-                let _addr = parser.parse_ipv4addr()?;
+                let _addr = parse_ipv4addr(parser)?;
             }
             PathAttributeType::Connector => {
-                let _addr = parser.parse_ipv4addr()?;
+                let _addr = parse_ipv4addr(parser)?;
             },
             PathAttributeType::AsPathLimit => {
                 let _limit = parser.parse_u8()?;
@@ -1923,30 +1923,30 @@ impl NextHop
         let len = parser.parse_u8()?;
         let res = match (len, afi, safi) {
             (16, AFI::Ipv6, SAFI::Unicast | SAFI::MplsUnicast) =>
-                NextHop::Ipv6(parser.parse_ipv6addr()?),
+                NextHop::Ipv6(parse_ipv6addr(parser)?),
             (32, AFI::Ipv6, SAFI::Unicast) =>
                 NextHop::Ipv6LL(
-                    parser.parse_ipv6addr()?,
-                    parser.parse_ipv6addr()?
+                    parse_ipv6addr(parser)?,
+                    parse_ipv6addr(parser)?
                 ),
             (24, AFI::Ipv6, SAFI::MplsVpnUnicast) =>
                 NextHop::Ipv6MplsVpnUnicast(
                     RouteDistinguisher::parse(parser)?,
-                    parser.parse_ipv6addr()?
+                    parse_ipv6addr(parser)?
                 ),
             (4, AFI::Ipv4, SAFI::Unicast | SAFI::MplsUnicast ) =>
-                NextHop::Ipv4(parser.parse_ipv4addr()?),
+                NextHop::Ipv4(parse_ipv4addr(parser)?),
             (12, AFI::Ipv4, SAFI::MplsVpnUnicast) =>
                 NextHop::Ipv4MplsVpnUnicast(
                     RouteDistinguisher::parse(parser)?,
-                    parser.parse_ipv4addr()?
+                    parse_ipv4addr(parser)?
                 ),
             // RouteTarget is always AFI/SAFI 1/132, so, IPv4,
             // but the Next Hop can be IPv6.
             (4, AFI::Ipv4, SAFI::RouteTarget) =>
-                NextHop::Ipv4(parser.parse_ipv4addr()?),
+                NextHop::Ipv4(parse_ipv4addr(parser)?),
             (16, AFI::Ipv4, SAFI::RouteTarget) =>
-                NextHop::Ipv6(parser.parse_ipv6addr()?),
+                NextHop::Ipv6(parse_ipv6addr(parser)?),
             (0, AFI::Ipv4, SAFI::FlowSpec) =>
                 NextHop::Empty,
             _ => {
@@ -3089,12 +3089,12 @@ impl Aggregator {
         match (len, config.four_octet_asn) {
             (8, FourOctetAsn::Enabled) => {
                 let asn = Asn::from_u32(parser.parse_u32()?);
-                let addr = parser.parse_ipv4addr()?;
+                let addr = parse_ipv4addr(parser)?;
                 Ok(Self::new(asn, addr))
             },
             (6, FourOctetAsn::Disabled) => {
                 let asn = Asn::from_u32(parser.parse_u16()?.into());
-                let addr = parser.parse_ipv4addr()?;
+                let addr = parse_ipv4addr(parser)?;
                 Ok(Self::new(asn, addr))
             },
             (_, FourOctetAsn::Enabled) => {
