@@ -2704,6 +2704,7 @@ pub enum IanaPolicy {
 
 impl NormalCommunity {
     // TODO perhaps this should not accept Asn, but a u16.
+    #[allow(dead_code)]
     fn new(asn: Asn, tag: CommunityTag) -> NormalCommunity {
         let mut buf = [0u8; 4];
         let asn16 = asn.into_u32() as u16;  
@@ -3284,7 +3285,8 @@ mod tests {
     }
 
     // Helper to quickly parse bufs into specific BGP messages.
-    fn parse_msg<T, R: AsRef<[u8]>>(buf: R) -> T
+    #[allow(dead_code)]
+    fn parse_msg<T, R: AsRef<[u8]>>(_buf: R) -> T
     where
         //T: TryFrom<Message<R>>,
         //for <'a> &'a R: OctetsRef<Range = R>,
