@@ -2703,6 +2703,15 @@ pub enum IanaPolicy {
 }
 
 impl NormalCommunity {
+    // TODO perhaps this should not accept Asn, but a u16.
+    fn new(asn: Asn, tag: CommunityTag) -> NormalCommunity {
+        let mut buf = [0u8; 4];
+        let asn16 = asn.into_u32() as u16;  
+        buf[..2].copy_from_slice(&asn16.to_be_bytes());
+        buf[2..4].copy_from_slice(&tag.0.to_be_bytes());
+        Self(buf)
+    }
+
     pub fn asn(&self) -> Option<Asn> {
         Some(
             Asn::from_u32(
