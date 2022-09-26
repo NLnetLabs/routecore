@@ -30,3 +30,4 @@ serde_test      = "1.0"
 default = []
 bgp = ["bytes", "log", "octseq"]
 bmp = ["bgp", "bytes", "chrono", "log", "octseq"]
+std = []

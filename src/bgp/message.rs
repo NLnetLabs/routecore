@@ -3349,7 +3349,8 @@ mod tests {
     }
 
     // Helper to quickly parse bufs into specific BGP messages.
-    fn parse_msg<T, R: AsRef<[u8]>>(buf: R) -> T
+    #[allow(dead_code)]
+    fn parse_msg<T, R: AsRef<[u8]>>(_buf: R) -> T
     where
         //T: TryFrom<Message<R>>,
         //for <'a> &'a R: OctetsRef<Range = R>,
