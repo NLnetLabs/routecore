@@ -3388,7 +3388,7 @@ mod tests {
                 0xc0, 0x00, 0x02, 0x01, 0x00
             ];
 
-            let bb = Bytes::from(buf.clone());
+            let bb = Bytes::from(buf);
 
             //let open: OpenMessage<_> = parse_open(&buf);
             //let open: OpenMessage<_> = Message::from_octets(&buf, None).unwrap().try_into().unwrap();

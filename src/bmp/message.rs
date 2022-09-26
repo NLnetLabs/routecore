@@ -129,9 +129,7 @@ where
 {
     pub fn from_octets(octets: Octets) -> Result<Self, ParseError> {
         let mut parser = Parser::from_ref(&octets);
-        //let pos = parser.pos();
         let ch = CommonHeader::parse(&mut parser)?;
-        parser.seek(0)?;
         match ch.msg_type() {
             MessageType::RouteMonitoring =>
                 Ok(Message::RouteMonitoring(RouteMonitoring::from_octets(octets)?)),
@@ -148,44 +146,9 @@ where
             MessageType::RouteMirroring =>
                 Ok(Message::RouteMirroring(RouteMirroring::from_octets(octets)?)),
             MessageType::Unimplemented(_) => {
-                return Err(ParseError::form_error(
-                        "Unimplemented BMP message type"
-                        ));
+                Err(ParseError::form_error("Unimplemented BMP message type"))
             }
         }
-    }
-
-    fn parse<R>(parser: &mut Parser<R>) -> Result<Self, ParseError>
-    where
-        R: OctetsRef<Range = Octets>,
-        for<'a> &'a Octets: OctetsRef
-    {
-        let pos = parser.pos();
-        let ch = CommonHeader::parse(parser)?;
-        parser.seek(pos)?;
-        let res = 
-            match ch.msg_type() {
-                MessageType::RouteMonitoring =>
-                    Message::RouteMonitoring(RouteMonitoring::parse(parser)?),
-                MessageType::StatisticsReport =>
-                    Message::StatisticsReport(StatisticsReport::parse(parser)?),
-                MessageType::PeerDownNotification =>
-                    Message::PeerDownNotification(PeerDownNotification::parse(parser)?),
-                MessageType::PeerUpNotification =>
-                    Message::PeerUpNotification(PeerUpNotification::parse(parser)?),
-                MessageType::InitiationMessage =>
-                    Message::InitiationMessage(InitiationMessage::parse(parser)?),
-                MessageType::TerminationMessage =>
-                    Message::TerminationMessage(TerminationMessage::parse(parser)?),
-                MessageType::RouteMirroring =>
-                    Message::RouteMirroring(RouteMirroring::parse(parser)?),
-                MessageType::Unimplemented(_) => {
-                    return Err(ParseError::form_error(
-                            "Unimplemented BMP message type"
-                    ));
-                }
-            };
-        Ok(res)
     }
 }
 
@@ -317,6 +280,21 @@ impl<Octets: AsRef<[u8]>> CommonHeader<Octets> {
         CommonHeader { octets: s }
     }
 
+    fn check<Ref: OctetsRef>(parser: &mut Parser<Ref>)
+        -> Result<(), ParseError>
+    {
+        let version = parser.parse_u8()?;
+        if version != 3 {
+            return Err(ParseError::form_error("BMP version != 3"));
+        }
+        parser.advance(4)?; // u32 message length
+        let typ = parser.parse_u8()?;
+        if typ > 6 {
+            return Err(ParseError::form_error("BMP message type unknown"));
+        }
+        Ok(())
+    }
+
     /// Returns the BMP version of the message.
 	pub fn version(self) -> u8 {
 		self.octets.as_ref()[0]
@@ -386,6 +364,17 @@ impl<Octets: AsRef<[u8]>> PerPeerHeader<Octets> {
 
     pub fn for_slice(s: Octets) -> Self {
         PerPeerHeader { octets: s }
+    }
+
+    pub fn check<Ref: OctetsRef>(parser: &mut Parser<Ref>)
+        -> Result<(), ParseError>
+    {
+        let peer_type = parser.parse_u8()?;
+        if peer_type > 2 {
+            return Err(ParseError::form_error("Unknown peer type in PPH"));
+        }
+        parser.advance(41)?;
+        Ok(())
     }
 }
 
@@ -494,21 +483,7 @@ impl<Octets: AsRef<[u8]>> PerPeerHeader<Octets> {
     }
 }
 
-impl<Octets: AsRef<[u8]>> PerPeerHeader<Octets> {
-    fn parse<R>(parser: &mut Parser<R>) -> Result<Self, ParseError>
-        where
-            R: OctetsRef<Range = Octets>
-    {
-        Ok(
-            PerPeerHeader::for_slice(parser.parse_octets(42)?)
-        )
-    }
-}
-
-impl<Octets: AsRef<[u8]>> Display for PerPeerHeader<Octets>
-//where
-//    for <'a> &'a Octets: OctetsRef
-{
+impl<Octets: AsRef<[u8]>> Display for PerPeerHeader<Octets> {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         write!(f, "{}/{}/{:02X?}", self.address(), self.asn(), self.bgp_id())
     }
@@ -562,10 +537,26 @@ pub struct RouteMonitoring<Octets: AsRef<[u8]>>
     octets: Octets
 }
 
-impl<Octets: AsRef<[u8]>> RouteMonitoring<Octets> {
+impl<Octets: AsRef<[u8]>> RouteMonitoring<Octets> 
+where
+    for <'a> &'a Octets: OctetsRef
+{
     pub fn from_octets(octets: Octets) -> Result<Self, ParseError> {
-        // TODO call Self::check()
+        Self::check(&octets)?;
         Ok(RouteMonitoring { octets })
+    }
+
+    pub fn check(octets: &Octets) -> Result<(), ParseError>
+    {
+        let mut parser = Parser::from_ref(octets);
+        CommonHeader::<Octets>::check(&mut parser)?;
+        PerPeerHeader::<Octets>::check(&mut parser)?;
+        //  If we check/parse the encapsulated BGP UPDATE here, and it fails,
+        //  this entire BMP RouteMonitoring message is lost.
+        //  Instead, if we skip the parsing here, and do the parsing in
+        //  RouteMonitoring::bgp_update(), we can retry parsing
+        //  if we want to.
+        Ok(())
     }
 }
 
@@ -601,43 +592,12 @@ where
     }
 }
 
-impl<Octets: AsRef<[u8]>> RouteMonitoring<Octets>
-where
-{
-    fn parse<R>(parser: &mut Parser<R>)
-        -> Result<RouteMonitoring<Octets>, ParseError>
-    where
-        R: OctetsRef<Range = Octets>
-    {
-        let pos = parser.pos();
-        let ch = CommonHeader::parse(parser)?;
-        let _pph = PerPeerHeader::parse(parser)?;
-        //  If we parse the encapsulated BGP UPDATE here, and it fails, this
-        //  entire BMP RouteMonitoring message is lost.
-        //  Instead, if we skip the parsing here, and do the parsing in
-        //  RouteMonitoring::bgp_update(), we can retry parsing
-        //  if we want to.
-        //let _bgp_update = BgpUpdate::parse(parser)?;
-        parser.seek(pos)?;
-        Ok(Self {
-            octets: parser.parse_octets(ch.length() as usize)?
-        })
-    }
-}
-
 /// Statistics Report message.
 pub struct StatisticsReport<Octets> {
     octets: Octets,
 }
 
 impl<Octets: AsRef<[u8]>> StatisticsReport<Octets> {
-    // XXX the name for_slice does not make sense anymore
-    fn for_slice(s: Octets) -> Self {
-        Self {
-            octets: s,
-        }
-    }
-
     /// Return the [`CommonHeader`] for this message.
     pub fn common_header<'s>(&'s self)
         -> CommonHeader<<&'s Octets as OctetsRef>::Range>
@@ -672,29 +632,25 @@ impl<Octets: AsRef<[u8]>> StatisticsReport<Octets> {
 
 impl<Octets: AsRef<[u8]>> StatisticsReport<Octets>
 where
+    for <'a> &'a Octets: OctetsRef
 {
     pub fn from_octets(octets: Octets) -> Result<Self, ParseError> {
-        // TODO call Self::check()
+        Self::check(&octets)?;
         Ok(Self { octets })
     }
 
-    fn parse<R>(parser: &mut Parser<R>) -> Result<Self, ParseError>
-    where
-        R: OctetsRef<Range = Octets>
-    {
-        let pos = parser.pos();
-        let ch = CommonHeader::parse(parser)?;
-        let _pph = PerPeerHeader::parse(parser)?;
+    pub fn check(octets: &Octets) -> Result<(), ParseError> {
+        let mut parser = Parser::from_ref(octets);
+        CommonHeader::<Octets>::check(&mut parser)?;
+        PerPeerHeader::<Octets>::check(&mut parser)?;
 
         let count = parser.parse_u32()?;
         for _ in 0..count {
-            let _type = parser.parse_u16()?;
+            parser.advance(2)?; // u16
             let len = parser.parse_u16()?;
             parser.advance(len.into())?;
         }
-
-        parser.seek(pos)?;
-        Ok(Self::for_slice(parser.parse_octets(ch.length() as usize)?))
+        Ok(())
     }
 }
 
@@ -717,12 +673,6 @@ impl<Octets: AsRef<[u8]>> PeerDownNotification<Octets>
 where
     for <'a> &'a Octets: OctetsRef
 {
-    fn for_slice(s: Octets) -> Self {
-        Self {
-            octets: s 
-        }
-    }
-
     /// Return the [`CommonHeader`] for this message.
     pub fn common_header(&self)
         -> CommonHeader<<&Octets as OctetsRef>::Range> {
@@ -752,8 +702,8 @@ where
     /// Return the optional encapsulated [BGP NOTIFICATION
     /// message](`crate::bgp::MessageNotification`), that should be present
     /// for the Local and Remote Notification PeerDownReasons.
-    pub fn notification<'s>(&'s self)
-        -> Option<BgpNotification<<&'s Octets as OctetsRef>::Range>>
+    pub fn notification(&self)
+        -> Option<BgpNotification<<&Octets as OctetsRef>::Range>>
     {
         if self.reason() == PeerDownReason::LocalNotification ||
            self.reason() == PeerDownReason::RemoteNotification
@@ -797,19 +747,17 @@ pub enum PeerDownReason {
 
 impl<Octets: AsRef<[u8]>> PeerDownNotification<Octets>
 where
+    for <'a> &'a Octets: OctetsRef
 {
     pub fn from_octets(octets: Octets) -> Result<Self, ParseError> {
-        // TODO call Self::check()
+        Self::check(&octets)?;
         Ok(Self { octets })
     }
-    fn parse<R>(parser: &mut Parser<R>) -> Result<Self, ParseError>
-    where
-        R: OctetsRef<Range = Octets>,
-        for <'a> &'a Octets: OctetsRef
-    {
-        let pos = parser.pos();
-        let ch = CommonHeader::parse(parser)?;
-        let _pph = PerPeerHeader::parse(parser)?;
+
+    pub fn check(octets: &Octets) -> Result<(), ParseError> {
+        let mut parser = Parser::from_ref(octets);
+        CommonHeader::<Octets>::check(&mut parser)?;
+        PerPeerHeader::<Octets>::check(&mut parser)?;
 
         let reason = parser.parse_u8()?;
         match reason {
@@ -819,17 +767,16 @@ where
                     "Missing BGP NOTIFICATION in PeerDownNotification"
                     );
                 } else {
-                    BgpNotification::parse(parser)?;
+                    BgpNotification::parse(&mut parser)?;
                 }
             }
-            2 => { parser.parse_u16()?; } // TODO BGP FSM state code
+            2 => { parser.advance(2)?; } // TODO check BGP FSM state code
             4 => { /* remote system closed without NOTIFICATION */ },
             5 => { /* Information stop for this peer */ },
             _ => { warn!("Unknown PeerDownNotification reason"); }
         }
 
-        parser.seek(pos)?;
-        Ok(Self::for_slice(parser.parse_octets(ch.length() as usize)?))
+        Ok(())
     }
 }
 
@@ -843,12 +790,6 @@ impl<Octets: AsRef<[u8]>> PeerUpNotification<Octets>
 where
     for<'a> &'a Octets: OctetsRef,
 {
-    fn for_slice(s: Octets) -> Self {
-        Self {
-            octets: s
-        }
-    }
-
     /// Return the [`CommonHeader`] for this message.
     pub fn common_header(&self)
         -> CommonHeader<<&Octets as OctetsRef>::Range> {
@@ -990,44 +931,37 @@ where
 
 }
 
-impl<Octets: AsRef<[u8]>> PeerUpNotification<Octets> {
+impl<Octets: AsRef<[u8]>> PeerUpNotification<Octets> 
+where
+    for <'a> &'a Octets: OctetsRef
+{
     pub fn from_octets(octets: Octets) -> Result<Self, ParseError> {
-        // TODO call Self::check()
+        Self::check(&octets)?;
         Ok(PeerUpNotification { octets })
     }
-}
 
-impl<Octets: AsRef<[u8]>> PeerUpNotification<Octets>
-where
-{
-    fn parse<R>(parser: &mut Parser<R>) -> Result<Self, ParseError>
-    where
-        R: OctetsRef<Range = Octets>,
-    {
-        let pos = parser.pos();
-        let ch = CommonHeader::parse(parser)?;
-        let _pph = PerPeerHeader::parse(parser)?;
+    pub fn check(octets: &Octets) -> Result<(), ParseError> {
+        let mut parser = Parser::from_ref(octets);
+        CommonHeader::<Octets>::check(&mut parser)?;
+        PerPeerHeader::<Octets>::check(&mut parser)?;
 
-        let _local_address = parser.advance(16)?;
-        let _local_port = parser.parse_u16()?;
-        let _remote_port = parser.parse_u16()?;
-
-        // XXX make this similar to the embedded UPDATE in a RouteMonitoring?
-        // Thus, not actually parse it here (with a posibility of failing).
-        let _bgp_open_sent = BgpOpen::parse(parser)?; 
-        let _bgp_open_rcvd = BgpOpen::parse(parser)?; 
+        // local address, local port, remote port
+        parser.advance(16 + 2 + 2)?;
+        BgpOpen::parse(&mut parser)?; //TODO turn into check
+        BgpOpen::parse(&mut parser)?; //TODO turn into check
 
         // optional Information
-        if ch.length() as usize > parser.pos() - pos {
+        if parser.remaining() > 0 { 
             // Information TLVs of type 0 (String)
-            let _info_type = parser.parse_u16()?;
-            // XXX check for _info_type == 0 ?
+            let info_type = parser.parse_u16()?;
+            if info_type != 0 {
+                warn!("TLV in PeerUpNotification of type other than 0");
+            }
             let info_len = parser.parse_u16()?;
             parser.advance(info_len.into())?;
         }
 
-        parser.seek(pos)?;
-        Ok(Self { octets: parser.parse_octets(ch.length() as usize)? } )
+        Ok(())
     }
 }
 
@@ -1038,12 +972,6 @@ pub struct InitiationMessage<Octets: AsRef<[u8]>> {
 }
 
 impl<Octets: AsRef<[u8]>> InitiationMessage<Octets> {
-    fn for_slice(s: Octets) -> Self {
-        Self {
-            octets: s
-        }
-    }
-
     /// Return the [`CommonHeader`] for this message.
     pub fn common_header<'s>(&'s self)
         -> CommonHeader<<&'s Octets as OctetsRef>::Range>
@@ -1064,25 +992,22 @@ impl<Octets: AsRef<[u8]>> InitiationMessage<Octets> {
 
 impl<Octets: AsRef<[u8]>> InitiationMessage<Octets>
 where
+    for <'a> &'a Octets: OctetsRef
 {
     pub fn from_octets(octets: Octets) -> Result<Self, ParseError> {
-        // TODO call Self::check()
+        Self::check(&octets)?;
         Ok(Self { octets })
     }
-    fn parse<R>(parser: &mut Parser<R>) -> Result<Self, ParseError>
-    where
-        R: OctetsRef<Range = Octets>
-    {
-        let pos = parser.pos();
-        let ch = CommonHeader::parse(parser)?;
+    
+    pub fn check(octets: &Octets) -> Result<(), ParseError> {
+        let mut parser = Parser::from_ref(octets);
+        CommonHeader::<Octets>::check(&mut parser)?;
         while parser.remaining() > 0 {
-            let _info_type = parser.parse_u16()?;
+            parser.advance(2)?; // type u16
             let info_len = parser.parse_u16()?;
             parser.advance(info_len.into())?;
         }
-        parser.seek(pos)?;
-        Ok(Self::for_slice(parser.parse_octets(ch.length() as usize)?))
-
+        Ok(())
     }
 }
 
@@ -1093,12 +1018,6 @@ pub struct TerminationMessage<Octets: AsRef<[u8]>> {
 }
 
 impl<Octets: AsRef<[u8]>> TerminationMessage<Octets> {
-    fn for_slice(s: Octets) -> Self {
-        Self {
-            octets: s
-        }
-    }
-
     /// Return the [`CommonHeader`] for this message.
     pub fn common_header<'s>(&'s self)
         -> CommonHeader<<&'s Octets as OctetsRef>::Range>
@@ -1123,24 +1042,24 @@ impl<Octets: AsRef<[u8]>> TerminationMessage<Octets> {
 
 impl<Octets: AsRef<[u8]>> TerminationMessage<Octets>
 where
+    for <'a> &'a Octets: OctetsRef
 {
     pub fn from_octets(octets: Octets) -> Result<Self, ParseError> {
-        // TODO call Self::check()
+        Self::check(&octets)?;
         Ok(Self { octets })
     }
-    fn parse<R>(parser: &mut Parser<R>) -> Result<Self, ParseError>
-    where
-        R: OctetsRef<Range = Octets>
-    {
-        let pos = parser.pos();
-        let ch = CommonHeader::parse(parser)?;
+
+    pub fn check(octets: &Octets) -> Result<(), ParseError> {
+        let mut parser = Parser::from_ref(octets);
+        CommonHeader::<Octets>::check(&mut parser)?;
+
         while parser.remaining() > 0 {
-            let _info_type = parser.parse_u16()?;
+            parser.advance(2)?; // type u16
             let info_len = parser.parse_u16()?;
             parser.advance(info_len.into())?;
         }
-        parser.seek(pos)?;
-        Ok(Self::for_slice(parser.parse_octets(ch.length() as usize)?))
+
+        Ok(())
     }
 }
 
@@ -1174,21 +1093,22 @@ impl<Octets: AsRef<[u8]>> RouteMirroring<Octets> {
 
 impl<Octets: AsRef<[u8]>> RouteMirroring<Octets>
 where
+    for <'a> &'a Octets: OctetsRef
 {
     pub fn from_octets(octets: Octets) -> Result<Self, ParseError> {
-        // TODO call Self::check()
+        Self::check(&octets)?;
         Ok(Self { octets })
     }
-    fn parse<R>(_parser: &mut Parser<R>) -> Result<Self, ParseError> 
-    where
-        R: OctetsRef<Range = Octets>
-    {
-        Err(ParseError::form_error("not implemented yet"))
+
+    pub fn check(octets: &Octets) -> Result<(), ParseError> {
+        let mut parser = Parser::from_ref(octets);
+        CommonHeader::<Octets>::check(&mut parser)?;
+        PerPeerHeader::<Octets>::check(&mut parser)?;
+        // TODO try to check the encapsulated BGP message, the TLVs..
+        warn!("Route Mirroring message check not properly implemenented yet");
+        Ok(())
     }
 }
-
-
-
 
 
 //--- Information TLVs -------------------------------------------------------
@@ -1830,7 +1750,7 @@ mod tests {
             0x00, 0x01, 0x20, 0x0a, 0x0a, 0x0a, 0x02
         ]; 
 
-        let bb = Bytes::from(buf.clone());
+        let bb = Bytes::from(buf);
         let bmp: RouteMonitoring<_> = Message::from_octets(&bb).unwrap().try_into().unwrap();
         assert_eq!(
             bmp.common_header().msg_type(),
@@ -2019,8 +1939,8 @@ mod tests {
 			0x00, 0x78, 0x02, 0x06, 0x41, 0x04, 0x00, 0x00,
 			0xfb, 0xf0];
 
-        let bb = Bytes::from(buf.clone()); 
-        let bmp: PeerUpNotification<_> = Message::from_octets(&buf).unwrap().try_into().unwrap();
+        let bb = Bytes::from(buf);
+        //let bmp: PeerUpNotification<_> = Message::from_octets(&buf).unwrap().try_into().unwrap();
         let bmp: PeerUpNotification<_> = Message::from_octets(bb).unwrap().try_into().unwrap();
 
         assert_eq!(bmp.common_header().version(), 3);
