@@ -2937,10 +2937,10 @@ impl Display for Community {
             Community::Normal(nc) => Display::fmt(&nc, f),
             Community::Extended(e) => Display::fmt(&e, f),
             Community::Large(lc) => Display::fmt(&lc, f),
-            Community::NoExport => write!(f, "NoExport"),
-            Community::NoAdvertise => write!(f, "NoAdvertise"),
-            Community::NoExportSubconfed => write!(f, "NoExportSubconfed"),
-            Community::Blackhole => write!(f, "Blackhole"),
+            Community::NoExport => write!(f, "NO_EXPORT"),
+            Community::NoAdvertise => write!(f, "NO_ADVERTISE"),
+            Community::NoExportSubconfed => write!(f, "NO_EXPORT_SUBCONFED"),
+            Community::Blackhole => write!(f, "BLACKHOLE"),
         }
     }
 }
