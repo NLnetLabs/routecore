@@ -608,7 +608,8 @@ impl<Octets: AsRef<[u8]>> Parameter<Octets> {
         )
     }
 
-    fn check<Ref: OctetsRef>(parser: &mut Parser<Ref>) -> Result<(), ParseError>
+    fn check<Ref: OctetsRef>(parser: &mut Parser<Ref>)
+        -> Result<(), ParseError>
     {
         let typ = parser.parse_u8()?;
         let len = parser.parse_u8()? as usize;
