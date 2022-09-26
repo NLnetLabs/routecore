@@ -2465,6 +2465,14 @@ impl<Octets: AsRef<[u8]>> Nlris<Octets> {
             self.safi,
         )
     }
+
+    pub fn afi(&self) -> AFI {
+        self.afi
+    }
+
+    pub fn safi(&self) -> SAFI {
+        self.safi
+    }
 }
 
 /// Iterator over the reachable NLRIs.
