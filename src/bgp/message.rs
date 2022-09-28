@@ -79,13 +79,14 @@ impl From<PrefixError> for ParseError {
 ///  * `OpenMessage`
 ///  * `UpdateMessage`
 ///  * `NotificationMessage`
-///  * TODO: `MessageKeepAlive`
-///  * TODO: `MessageRouteRefresh`
+///  * `KeepAliveMessage`
+///  * TODO: `RouteRefreshMessage`
 ///
 pub enum Message<Octets> {
     Open(OpenMessage<Octets>),
     Update(UpdateMessage<Octets>),
     Notification(NotificationMessage<Octets>),
+    KeepAlive(KeepAliveMessage<Octets>),
 }
 
 /// BGP OPEN message, variant of the [`Message`] enum.
@@ -105,6 +106,10 @@ pub struct NotificationMessage<Octets> {
     octets: Octets
 }
 
+pub struct KeepAliveMessage<Octets> {
+    octets: Octets
+}
+
 impl<Octets: AsRef<[u8]>> AsRef<[u8]> for Message<Octets>
 {
     fn as_ref(&self) -> &[u8] {
@@ -112,6 +117,7 @@ impl<Octets: AsRef<[u8]>> AsRef<[u8]> for Message<Octets>
             Message::Open(m) => m.octets.as_ref(),
             Message::Update(m) => m.octets.as_ref(),
             Message::Notification(m) => m.octets.as_ref(),
+            Message::KeepAlive(m) => m.octets.as_ref(),
         }
     }
 }
@@ -123,6 +129,7 @@ impl<Octets: AsRef<[u8]>> Message<Octets>
             Message::Open(m) => &m.octets,
             Message::Update(m) => &m.octets,
             Message::Notification(m) => &m.octets,
+            Message::KeepAlive(m) => &m.octets,
         }
     }
 }
@@ -259,7 +266,8 @@ where
                 Ok(Message::Update(UpdateMessage::from_octets(octets, config)?))
             },
             MsgType::Notification => Ok(Message::Notification(NotificationMessage::from_octets(octets)?)),
-            _ => panic!("not implemented yet")
+            MsgType::KeepAlive => Ok(Message::KeepAlive(KeepAliveMessage::from_octets(octets)?)),
+            t => panic!("not implemented yet: {:?}", t)
         }
     }
 }
@@ -3186,6 +3194,27 @@ impl<Octets: AsRef<[u8]>> NotificationMessage<Octets> {
 
     }
 }
+
+impl<Octets: AsRef<[u8]>> KeepAliveMessage<Octets>
+where
+    for <'a> &'a Octets: OctetsRef
+{
+    pub fn from_octets(octets: Octets) -> Result<Self, ParseError> {
+        Self::check(&octets)?;
+        Ok(KeepAliveMessage { octets })
+    }
+
+    pub fn check(octets: &Octets) -> Result<(), ParseError>
+    {
+        let mut parser = Parser::from_ref(octets);
+        Header::<Octets>::check(&mut parser)?;
+        if parser.remaining() > 0 {
+            return Err(ParseError::form_error("KEEPALIVE of >19 bytes"));
+        }
+        Ok(())
+    }
+}
+
 
 //--- Types that perhaps should go into routecore ----------------------------
 
