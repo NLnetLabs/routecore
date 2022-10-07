@@ -6,7 +6,7 @@
 
 use crate::asn::Asn;
 use crate::bgp::message::{Message as BgpMsg, OpenMessage as BgpOpen, UpdateMessage as BgpUpdate, NotificationMessage as BgpNotification};
-use crate::bgp::message::{AFI, SAFI, SessionConfig};
+use crate::bgp::message::{AFI, SAFI, CapabilityType, SessionConfig};
 use crate::util::parser::ParseError;
 use crate::typeenum; // from util::macros
 
@@ -914,6 +914,36 @@ where
 
         conf
     }
+
+
+    pub fn supported_protocols(&self) -> Vec<(AFI, SAFI)>
+    where
+        for <'a, 'b> &'a <&'b Octets as OctetsRef>::Range: OctetsRef,
+    {
+        let mut v = Vec::new();
+        let mut res = Vec::new();
+        let (sent, rcvd) = self.bgp_open_sent_rcvd();
+        sent.capabilities()
+            .filter(|c| c.typ() == CapabilityType::MultiProtocol)
+            .for_each(|c| {
+                      let afi: AFI = u16::from_be_bytes([c.value()[0], c.value()[1]]).into();
+                      let safi: SAFI = c.value()[3].into();
+                      v.push((afi, safi));
+                  //println!("sent cap: {:?} == {}/{}", c.value(), afi, safi)
+            });
+        rcvd.capabilities()
+            .filter(|c| c.typ() == CapabilityType::MultiProtocol)
+            .for_each(|c| {
+                      let afi: AFI = u16::from_be_bytes([c.value()[0], c.value()[1]]).into();
+                      let safi: SAFI = c.value()[3].into();
+                      if v.contains(&(afi, safi)) {
+                          res.push((afi, safi));
+                      }
+                  //println!("rcvd cap: {:?} == {}/{}", c.value(), afi, safi)
+            });
+        res
+    }
+
 
     // XXX: 
     pub fn information_tlvs(&self) -> InformationTlvIter
@@ -1999,6 +2029,11 @@ mod tests {
         let sc = bmp.session_config();
         assert_eq!(sc.four_octet_asn, FourOctetAsn::Enabled);
         assert_eq!(sc.add_path, AddPath::Disabled);
+
+        assert_eq!(
+            bmp.supported_protocols(),
+            vec![(AFI::Ipv4, SAFI::Unicast)]
+        );
     }
 
     #[test]
