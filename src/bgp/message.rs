@@ -1150,18 +1150,17 @@ where
 
         // Based on MP_UNREACH_NLRI
         if self.total_path_attribute_len() > 0
-            &&
-                self.path_attributes().iter().all(|pa|
-                    pa.type_code() == PathAttributeType::MpUnreachNlri
-                    && pa.length() == 3 // only AFI/SAFI, no NLRI
-        ) {
-                    let pa = self.path_attributes().iter().next().unwrap();
-                    return Some((
-                            u16::from_be_bytes(
-                                [pa.value().as_ref()[0], pa.value().as_ref()[1]]
-                            ).into(),
-                            pa.value().as_ref()[2].into()
-                    ));
+            && self.path_attributes().iter().all(|pa|
+                pa.type_code() == PathAttributeType::MpUnreachNlri
+                && pa.length() == 3 // only AFI/SAFI, no NLRI
+            ) {
+                let pa = self.path_attributes().iter().next().unwrap();
+                return Some((
+                    u16::from_be_bytes(
+                            [pa.value().as_ref()[0], pa.value().as_ref()[1]]
+                    ).into(),
+                    pa.value().as_ref()[2].into()
+                ));
         }
 
         None
@@ -1505,7 +1504,6 @@ impl<Octets: AsRef<[u8]>> UpdateMessage<Octets> {
         -> Result<Self, ParseError>
     where
         R: OctetsRef<Range = Octets>,
-        //for<'a> &'a Octets: OctetsRef,
     {
         // parse header
         let pos = parser.pos();
@@ -1679,7 +1677,6 @@ impl<Ref: OctetsRef> PathAttributesIter<Ref>{
     }
 }
 
-// XXX keep this?
 impl<Octets: AsRef<[u8]>> PathAttributes<Octets> {
     fn check<R>(parser: &mut Parser<R>, config: SessionConfig)
         -> Result<(), ParseError>
@@ -1780,23 +1777,19 @@ impl<Octets: AsRef<[u8]>> PathAttribute<Octets> {
     fn check<R>(parser: &mut Parser<R>, config: SessionConfig)
         ->  Result<(), ParseError>
     where
-        R: OctetsRef//<Range = Octets>,
-        //Octets: 's, 
+        R: OctetsRef
     {
-        //let pos = parser.pos();
         let flags = parser.parse_u8()?;
         let typecode = parser.parse_u8()?;
-        //let mut headerlen = 3;
         let len = match flags & 0x10 == 0x10 {
             true => {
-                //headerlen += 1;
                 parser.parse_u16()? as usize
             },
             false => parser.parse_u8()? as usize, 
         };
 
 
-        // now, parse the specific type of path attribute
+        // now, check the specific type of path attribute
         match typecode.into() {
             PathAttributeType::Origin => {
                 if len != 1 {
@@ -1804,7 +1797,6 @@ impl<Octets: AsRef<[u8]>> PathAttribute<Octets> {
                         ParseError::form_error("expected len 1 for Origin pa")
                     );
                 }
-                //let _origin = parser.parse_u8()?;
                 parser.advance(1)?;
             },
             PathAttributeType::AsPath => {
@@ -1949,6 +1941,7 @@ impl<Octets: AsRef<[u8]>> PathAttribute<Octets> {
         
         Ok(())
     }
+
     fn parse<'s, R>(parser: &mut Parser<R>, config: SessionConfig)
         ->  Result<PathAttribute<Octets>, ParseError>
     where
@@ -2552,34 +2545,20 @@ fn check_prefix<R: AsRef<[u8]>>(
 ) -> Result<(), ParseError> {
     let prefix_bytes = prefix_bits_to_bytes(prefix_bits);
     match (afi, prefix_bytes) {
-        (AFI::Ipv4, 0) => {
-            //Prefix::new_v4(0.into(), 0)?
-        },
+        (AFI::Ipv4, 0) => { },
         (AFI::Ipv4, _b @ 5..) => { 
-            return Err(ParseError::form_error("illegal byte size for IPv4 NLRI"))
+            return Err(
+                ParseError::form_error("illegal byte size for IPv4 NLRI")
+            )
         },
-        (AFI::Ipv4, _) => {
-            //let mut b = [0u8; 4];
-            //b[..prefix_bytes].copy_from_slice(parser.peek(prefix_bytes)?);
-            parser.advance(prefix_bytes)?;
-            //Prefix::new(IpAddr::from(b), prefix_bits).map_err(|_e| 
-            //        ParseError::form_error("prefix parsing failed")
-            //)?
-        }
-        (AFI::Ipv6, 0) => {
-            //Prefix::new_v6(0.into(), 0)?
-        },
+        (AFI::Ipv4, _) => { parser.advance(prefix_bytes)?; }
+        (AFI::Ipv6, 0) => { },
         (AFI::Ipv6, _b @ 17..) => { 
-            return Err(ParseError::form_error("illegal byte size for IPv6 NLRI"))
+            return Err(
+                ParseError::form_error("illegal byte size for IPv6 NLRI")
+            )
         },
-        (AFI::Ipv6, _) => {
-            //let mut b = [0u8; 16];
-            //b[..prefix_bytes].copy_from_slice(parser.peek(prefix_bytes)?);
-            parser.advance(prefix_bytes)?;
-            //Prefix::new(IpAddr::from(b), prefix_bits).map_err(|_e| 
-            //        ParseError::form_error("prefix parsing failed")
-            //)?
-        },
+        (AFI::Ipv6, _) => { parser.advance(prefix_bytes)?; },
         (_, _) => {
             panic!("unimplemented")
         }
@@ -2587,6 +2566,7 @@ fn check_prefix<R: AsRef<[u8]>>(
 
     Ok(())
 }
+
 fn parse_prefix<R>(parser: &mut Parser<R>, prefix_bits: u8, afi: AFI)
     -> Result<Prefix, ParseError>
 where
@@ -2670,7 +2650,7 @@ impl<Octets: AsRef<[u8]>> MplsVpnNlri<Octets> {
     fn check<R>(parser: &mut Parser<R>, config: SessionConfig, afi: AFI)
         -> Result<(), ParseError>
     where
-        R: OctetsRef//<Range = Octets>
+        R: OctetsRef
     {
         if config.add_path == AddPath::Enabled {
             parser.advance(4)?;
@@ -2739,7 +2719,7 @@ impl<Octets: AsRef<[u8]>> MplsNlri<Octets> {
     fn check<R>(parser: &mut Parser<R>, config: SessionConfig, afi: AFI)
         -> Result<(), ParseError>
     where
-        R: OctetsRef//<Range = Octets>
+        R: OctetsRef
     {
         if config.add_path == AddPath::Enabled {
             parser.advance(4)?;
@@ -2798,7 +2778,6 @@ impl VplsNlri {
     where
         R: OctetsRef
     {
-        //let _len = parser.parse_u16()?;
         parser.advance(2)?; // length, u16
         RouteDistinguisher::check(parser)?; 
         // ve id/block offset/block size, label base
@@ -2806,6 +2785,7 @@ impl VplsNlri {
         
         Ok(())
     }
+
     fn parse<Ref>(parser: &mut Parser<Ref>) -> Result<Self, ParseError>
     where
         Ref: OctetsRef
@@ -2833,7 +2813,7 @@ impl VplsNlri {
 impl<Octets: AsRef<[u8]>> FlowSpecNlri<Octets> {
     fn check<R>(parser: &mut Parser<R>) -> Result<(), ParseError>
     where
-        R: OctetsRef//<Range = Octets>
+        R: OctetsRef
     {
         let len1 = parser.parse_u8()?;
         let len: u16 = if len1 >= 0xf0 {
@@ -2883,7 +2863,7 @@ impl<Octets: AsRef<[u8]>> FlowSpecNlri<Octets> {
 impl<Octets: AsRef<[u8]>> RouteTargetNlri<Octets> {
     fn check<R>(parser: &mut Parser<R>) -> Result<(), ParseError>
     where
-        R: OctetsRef//<Range = Octets>
+        R: OctetsRef
     {
         let prefix_bits = parser.parse_u8()?;
         let prefix_bytes = prefix_bits_to_bytes(prefix_bits);
@@ -2891,6 +2871,7 @@ impl<Octets: AsRef<[u8]>> RouteTargetNlri<Octets> {
 
         Ok(())
     }
+
     fn parse<Ref>(parser: &mut Parser<Ref>) -> Result<Self, ParseError>
     where
         Ref: OctetsRef<Range = Octets>
@@ -3017,7 +2998,7 @@ impl<Octets: AsRef<[u8]>> Nlris<Octets> {
 
     fn check<R>(parser: &mut Parser<R>, config: SessionConfig) -> Result<(), ParseError>
         where
-            R: OctetsRef//<Range = Octets>
+            R: OctetsRef
     {
         let afi: AFI = parser.parse_u16()?.into();
         let safi: SAFI = parser.parse_u8()?.into();
@@ -3188,7 +3169,7 @@ impl<Octets: AsRef<[u8]>> Withdrawals<Octets> {
     fn check<R>(parser: &mut Parser<R>,  config: SessionConfig)
         -> Result<(), ParseError>
     where
-        R: OctetsRef//<Range = Octets>
+        R: OctetsRef
     {
         // NLRIs from MP_UNREACH_NLRI.
         // Length is given in the Path Attribute length field.
@@ -3721,6 +3702,8 @@ impl<Octets: AsRef<[u8]>> NotificationMessage<Octets> {
     pub fn from_octets(octets: Octets) -> Result<Self, ParseError> {
         Ok(NotificationMessage { octets })
     }
+
+    // TODO impl fn check()
 
     pub fn parse<Ref>(parser: &mut Parser<Ref>) -> Result<Self, ParseError>
     where
