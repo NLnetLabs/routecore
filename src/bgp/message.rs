@@ -1687,7 +1687,7 @@ impl<Octets: AsRef<[u8]>> PathAttributes<Octets> {
         R: OctetsRef<Range = Octets>,
     {
         while parser.remaining() > 0 {
-            let _pa = PathAttribute::<Octets>::check(parser, config)?;
+            PathAttribute::<Octets>::check(parser, config)?;
         }
 
         Ok(())
@@ -2690,7 +2690,7 @@ impl<Octets: AsRef<[u8]>> MplsVpnNlri<Octets> {
         prefix_bits -= 8 * labels.len() as u8;
 
         RouteDistinguisher::check(parser)?;
-        prefix_bits -= 8 * 8 as u8;
+        prefix_bits -= 8 * 8_u8;
 
         check_prefix(parser, prefix_bits, afi)?;
 
