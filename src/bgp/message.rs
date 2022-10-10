@@ -1651,6 +1651,7 @@ typeenum!(
     20 => Connector,
     21 => AsPathLimit,
     22 => PmsiTunnel,
+    25 => Ipv6ExtendedCommunities,
     32 => LargeCommunities,
     128 => AttrSet,
     255 => RsrvdDevelopment,
@@ -1933,6 +1934,12 @@ impl<Octets: AsRef<[u8]>> PathAttribute<Octets> {
                 let tunnel_id_len = len - 5;
                 parser.advance(tunnel_id_len)?;
             },
+            PathAttributeType::Ipv6ExtendedCommunities => {
+                let mut pp = parser.parse_parser(len)?;
+                while pp.remaining() > 0 {
+                    Ipv6ExtendedCommunity::check(&mut pp)?;
+                }
+            },
             PathAttributeType::LargeCommunities => {
                 let mut pp = parser.parse_parser(len)?;
                 while pp.remaining() > 0 {
@@ -2105,6 +2112,12 @@ impl<Octets: AsRef<[u8]>> PathAttribute<Octets> {
                 let _mpls_label_2 = parser.parse_u16()?;
                 let tunnel_id_len = len - 5;
                 parser.advance(tunnel_id_len)?;
+            },
+            PathAttributeType::Ipv6ExtendedCommunities => {
+                let mut pp = parser.parse_parser(len)?;
+                while pp.remaining() > 0 {
+                    Ipv6ExtendedCommunity::parse(&mut pp)?;
+                }
             },
             PathAttributeType::LargeCommunities => {
                 let pos = parser.pos();
@@ -3284,6 +3297,10 @@ pub struct CommunityTag(u16);
 #[derive(Debug, Eq, PartialEq)]
 pub struct ExtendedCommunity([u8; 8]);
 
+/// Extended Community as defined in RFC5701.
+#[derive(Debug, Eq, PartialEq)]
+pub struct Ipv6ExtendedCommunity([u8; 20]);
+
 /// Large Community as defined in RFC8092.
 #[derive(Debug, Eq, PartialEq)]
 pub struct LargeCommunity([u8; 12]);
@@ -3411,6 +3428,43 @@ impl ExtendedCommunity {
         -> Result<Self, ParseError>
     {
         let mut buf = [0u8; 8];
+        parser.parse_buf(&mut buf)?;
+        Ok( Self(buf) )
+    }
+}
+
+// XXX needs test data
+impl Ipv6ExtendedCommunity {
+    pub fn typ(&self) -> u8 {
+        self.0[0]
+    }
+    pub fn subtyp(&self) -> u8 {
+        self.0[1]
+    }
+    pub fn global_admin(&self) -> Ipv6Addr {
+        Ipv6Addr::from(
+            <&[u8] as TryInto<[u8; 16]>>::try_into(&self.0[2..18])
+            .expect("parsed before")
+        )
+    }
+    pub fn local_admin(&self) -> u16 {
+        u16::from_be_bytes([self.0[19], self.0[20]])
+
+    }
+}
+
+impl Ipv6ExtendedCommunity {
+    fn check<R: AsRef<[u8]>>(parser: &mut Parser<R>)
+        -> Result<(), ParseError>
+    {
+        parser.advance(20)?;
+        Ok(())
+    }
+
+    fn parse<R: AsRef<[u8]>>(parser: &mut Parser<R>)
+        -> Result<Self, ParseError>
+    {
+        let mut buf = [0u8; 20];
         parser.parse_buf(&mut buf)?;
         Ok( Self(buf) )
     }
