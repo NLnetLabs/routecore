@@ -106,6 +106,7 @@ pub struct NotificationMessage<Octets> {
     octets: Octets
 }
 
+/// BGP KeepAlive message, variant of the [`Message`] enum.
 pub struct KeepAliveMessage<Octets> {
     octets: Octets
 }
@@ -138,20 +139,17 @@ impl<Octets: AsRef<[u8]>> Message<Octets>
 where
     for <'a> &'a Octets: OctetsRef
 {
-    fn header(&self) -> Header<<&Octets as OctetsRef>::Range>
-    {
+    fn header(&self) -> Header<<&Octets as OctetsRef>::Range> {
         Header::for_slice(self.octets().range_to(19))
     }
 
     /// Returns the length in bytes of the entire BGP message.
-	pub fn length(&self) -> u16
-    {
+	pub fn length(&self) -> u16 {
         self.header().length()
 	}
 
     /// Returns the message type.
-    pub fn msg_type(&self) -> MsgType
-    {
+    pub fn msg_type(&self) -> MsgType {
         self.header().msg_type()
     }
 }
@@ -160,8 +158,8 @@ impl<Octets: AsRef<[u8]>> OpenMessage<Octets>
 where
     for <'a> &'a Octets: OctetsRef
 {
-    pub fn header(&self) -> Header<<&Octets as OctetsRef>::Range>
-    {
+    /// Returns the [`Header`] for this message.
+    pub fn header(&self) -> Header<<&Octets as OctetsRef>::Range> {
         Header::for_slice(self.octets.range_to(19))
     }
     
@@ -178,9 +176,11 @@ impl<Octets: AsRef<[u8]>> AsRef<[u8]> for OpenMessage<Octets> {
 }
 
 impl<Octets: AsRef<[u8]>> UpdateMessage<Octets> {
+    /// Returns the [`Header`] for this message.
     pub fn header(&self) -> Header<&Octets> {
         Header::for_slice(&self.octets)
     }
+
     /// Returns the length in bytes of the entire BGP message.
 	pub fn length(&self) -> u16 {
         self.header().length()
@@ -197,6 +197,7 @@ impl<Octets: AsRef<[u8]>> NotificationMessage<Octets>
 where
     for <'a> &'a Octets: OctetsRef
 {
+    /// Returns the [`Header`] for this message.
     pub fn header(&self) -> Header<<&Octets as OctetsRef>::Range>
     {
         Header::for_slice(self.octets.range_to(19))
@@ -214,8 +215,9 @@ impl<Octets: AsRef<[u8]>> AsRef<[u8]> for NotificationMessage<Octets> {
     }
 }
 
-impl<Octets: AsRef<[u8]>>TryFrom<Message<Octets>> for OpenMessage<Octets>  {
+impl<Octets: AsRef<[u8]>>TryFrom<Message<Octets>> for OpenMessage<Octets> {
     type Error = MessageError;
+
     fn try_from(msg: Message<Octets>) -> Result<Self, Self::Error> {
         match msg {
             Message::Open(u) => Ok(u),
@@ -226,6 +228,7 @@ impl<Octets: AsRef<[u8]>>TryFrom<Message<Octets>> for OpenMessage<Octets>  {
 
 impl<Octets: AsRef<[u8]>>TryFrom<Message<Octets>> for UpdateMessage<Octets> {
     type Error = MessageError;
+
     fn try_from(msg: Message<Octets>) -> Result<Self, Self::Error> {
         match msg {
             Message::Update(u) => Ok(u),
@@ -236,6 +239,7 @@ impl<Octets: AsRef<[u8]>>TryFrom<Message<Octets>> for UpdateMessage<Octets> {
 
 impl<Octets: AsRef<[u8]>> TryFrom<Message<Octets>> for NotificationMessage<Octets> {
     type Error = MessageError;
+
     fn try_from(msg: Message<Octets>) -> Result<Self, Self::Error> {
         match msg {
             Message::Notification(u) => Ok(u),
@@ -247,8 +251,9 @@ impl<Octets: AsRef<[u8]>> TryFrom<Message<Octets>> for NotificationMessage<Octet
 
 impl<Octets: AsRef<[u8]>> Message<Octets>
 where
-    for<'b> &'b Octets: OctetsRef,
+    for<'b> &'b Octets: OctetsRef
 {
+    /// Create a Message from an octets sequence.
     pub fn from_octets(octets: Octets, config: Option<SessionConfig>)
         -> Result<Message<Octets>, ParseError>
     {
@@ -256,17 +261,26 @@ where
         let hdr = Header::parse(&mut parser)?;
         parser.seek(0)?;
         match hdr.msg_type() {
-            MsgType::Open => Ok(Message::Open(OpenMessage::from_octets(octets)?)),
+            MsgType::Open =>
+                Ok(Message::Open(OpenMessage::from_octets(octets)?)),
             MsgType::Update => {
                 let config = if let Some(c) = config {
                     c
                 } else {
                     return Err(ParseError::StateRequired)
                 };
-                Ok(Message::Update(UpdateMessage::from_octets(octets, config)?))
+                Ok(Message::Update(
+                        UpdateMessage::from_octets(octets, config)?
+                ))
             },
-            MsgType::Notification => Ok(Message::Notification(NotificationMessage::from_octets(octets)?)),
-            MsgType::KeepAlive => Ok(Message::KeepAlive(KeepAliveMessage::from_octets(octets)?)),
+            MsgType::Notification =>
+                Ok(Message::Notification(
+                    NotificationMessage::from_octets(octets)?
+                )),
+            MsgType::KeepAlive =>
+                Ok(Message::KeepAlive(
+                        KeepAliveMessage::from_octets(octets)?
+                )),
             t => panic!("not implemented yet: {:?}", t)
         }
     }
@@ -298,14 +312,17 @@ pub struct Header<Octets>(Octets);
 
 impl<Octets: AsRef<[u8]>> Header<Octets> {
 
+    /// Create a Header from an Octets.
     pub fn for_slice(s: Octets) -> Self {
         Header(s)
     }
 
+    /// Returns the value of the length field in this header.
 	pub fn length(&self) -> u16 {
 		u16::from_be_bytes([self.0.as_ref()[16], self.0.as_ref()[17]])
 	}
 
+    /// Returns the value of the message type field in this header.
     pub fn msg_type(self) -> MsgType {
         match self.0.as_ref()[18] {
             1 => MsgType::Open,
@@ -423,7 +440,7 @@ impl<Octets: AsRef<[u8]>> OpenMessage<Octets> {
     }
 
     /// Returns the BGP Identifier in raw format.
-    pub fn identifier(&'_ self) -> &'_ [u8] {
+    pub fn identifier(&self) -> &[u8] {
         &self.octets.as_ref()[COFF+5..COFF+9]
     }
 
@@ -519,6 +536,7 @@ impl<Octets: AsRef<[u8]>> OpenMessage<Octets> {
 }
 
 impl<Octets: AsRef<[u8]>> OpenMessage<Octets> {
+    /// Create an OpenMessage from an octets sequence.
     pub fn from_octets(octets: Octets) -> Result<Self, ParseError>
     where
         for <'a> &'a Octets: OctetsRef
@@ -527,7 +545,7 @@ impl<Octets: AsRef<[u8]>> OpenMessage<Octets> {
         Ok( OpenMessage { octets } )
     }
 
-    pub fn check(octets: &Octets) -> Result<(), ParseError>
+    fn check(octets: &Octets) -> Result<(), ParseError>
     where
         for <'a> &'a Octets: OctetsRef
     {
@@ -834,10 +852,8 @@ pub struct Capability<Octets> {
 }
 
 impl<Octets: AsRef<[u8]>> Capability<Octets> {
-    pub fn for_slice(octets: Octets) -> Capability<Octets> {
-        Capability {
-            octets
-        }
+    fn for_slice(octets: Octets) -> Capability<Octets> {
+        Capability { octets }
     }
 
     /// Returns the [`CapabilityType`] of this capability.
@@ -938,26 +954,27 @@ impl<Ref> ParameterParser<Ref> {
         CapabilitiesIter { parser: self.parser }
     }
 
+    /// Returns the parameter type.
     pub fn typ(&self) -> OptionalParameterType {
         self.typ
     }
 }
 
 impl<Octets: AsRef<[u8]>> Parameter<Octets> {
+    /// Returns the parameter type.
     pub fn typ(&self) -> OptionalParameterType {
         self.octets.as_ref()[0].into()
     }
     
+    /// Returns the parameter length.
     pub fn length(&self) -> u8 {
         self.octets.as_ref()[1]
     }
 }
 
 impl<Octets: AsRef<[u8]>> Parameter<Octets> {
-    pub fn for_slice(slice: Octets) -> Self {
-        Parameter {
-            octets: slice
-        }
+    fn for_slice(slice: Octets) -> Self {
+        Parameter { octets: slice }
     }
 }
 
@@ -965,6 +982,7 @@ impl<Octets: AsRef<[u8]>> Parameter<Octets>
 where
     for <'a> &'a Octets: OctetsRef<Range = Octets>
 {
+    /// Returns the raw value of the parameter.
     pub fn value(&self) -> <&Octets as OctetsRef>::Range {
         self.octets.range_from(2)
     }
@@ -979,16 +997,12 @@ impl<Ref: OctetsRef> Iterator for ParametersParser<Ref> {
         }
         let typ: OptionalParameterType = self.parser.parse_u8().unwrap().into();
         let len = self.parser.parse_u8().unwrap();
-        Some(
-            ParameterParser {
+        Some(ParameterParser {
                 typ,
                 parser: self.parser.parse_parser(len as usize).unwrap()
-            }
-            )
-
+            })
     }
 }
-
 
 
 /// BGP UPDATE message.
@@ -1217,6 +1231,7 @@ where
         })
     }
 
+    /// Returns the AS_PATH path attribute.
     pub fn aspath(&'s self) -> Option<AsPath<Vec<Asn>>> {
         if let Some(as4path) = self.as4path() {
             // In all cases we know of, the AS4_PATH attribute contains
@@ -1298,6 +1313,8 @@ where
         })
     }
 
+    /// Returns the NEXT_HOP path attribute, or the equivalent from
+    /// MP_REACH_NLRI.
     pub fn next_hop(&'s self) -> Option<NextHop> {
         if let Some(pa) = self.path_attributes().iter().find(|pa|
             pa.type_code() == PathAttributeType::MpReachNlri
@@ -1357,6 +1374,7 @@ where
         )
     }
 
+    /// Returns the AGGREGATOR path attribute, if any.
     // this one originally carried a 2-octet ASN, but now also possibly a
     // 4-octet one (RFC 6793, Four Octet ASN support)
     // furthermore, it was designed to carry a IPv4 address, but that does not
@@ -1377,6 +1395,7 @@ where
 
     //--- Communities --------------------------------------------------------
 
+    /// Returns an iterator over Standard Communities (RFC1997), if any.
     pub fn communities(&'s self)
         -> Option<CommunityIter<<&'s Octets as OctetsRef>::Range>>
     {
@@ -1386,6 +1405,7 @@ where
         )
     }
 
+    /// Returns an iterator over Extended Communities (RFC4360), if any.
     pub fn ext_communities(&'s self)
         -> Option<ExtCommunityIter<<&'s Octets as OctetsRef>::Range>>
     {
@@ -1395,6 +1415,7 @@ where
         )
     }
 
+    /// Returns an iterator over Large Communities (RFC8092), if any.
     pub fn large_communities(&'s self)
         -> Option<LargeCommunityIter<<&'s Octets as OctetsRef>::Range>>
     {
@@ -1451,20 +1472,24 @@ impl Marker {
 }
 
 impl<Octets: AsRef<[u8]>> UpdateMessage<Octets> {
-    pub fn from_octets(octets: Octets, config: SessionConfig) -> Result<Self, ParseError>
+    /// Create an UpdateMessage from an octets sequence.
+    ///
+    /// As parsing of BGP UPDATE messages requires stateful information
+    /// signalled by the BGP OPEN messages, this function requires a
+    /// [`SessionConfig`].
+    pub fn from_octets(octets: Octets, config: SessionConfig)
+        -> Result<Self, ParseError>
     where
         for <'a> &'a Octets: OctetsRef
    {
         Self::check(&octets, config)?;
-        Ok(
-            UpdateMessage {
-                octets,
-                session_config: config
-            }
-          )
+        Ok(UpdateMessage {
+            octets,
+            session_config: config
+        })
     }
 
-    pub fn check(octets: &Octets, config: SessionConfig) -> Result<(), ParseError>
+    fn check(octets: &Octets, config: SessionConfig) -> Result<(), ParseError>
     where
         for <'a> &'a Octets: OctetsRef
     {
@@ -1520,10 +1545,6 @@ impl<Octets: AsRef<[u8]>> UpdateMessage<Octets> {
         let total_path_attributes_len = parser.parse_u16()?;
         if total_path_attributes_len > 0 {
             let mut pas_parser = parser.parse_parser(total_path_attributes_len.into())?;
-
-            //while pas_parser.remaining() > 0 {
-            //    PathAttribute::parse(&mut pas_parser)?;
-            //}
             PathAttributes::parse(&mut pas_parser, config)?;
         }
 
@@ -1656,7 +1677,8 @@ pub struct PathAttributes<Octets> {
 
 impl<Octets: AsRef<[u8]>> PathAttributes<Octets> {
     pub fn iter<'s>(&'s self) -> PathAttributesIter<&Octets>
-        where &'s Octets: OctetsRef
+    where
+        &'s Octets: OctetsRef
     {
         PathAttributesIter::new(&self.octets, self.session_config)
     }
@@ -1702,12 +1724,10 @@ impl<Octets: AsRef<[u8]>> PathAttributes<Octets> {
         let end = parser.pos();
         parser.seek(pos)?;
 
-        Ok(
-            PathAttributes {
-                octets: parser.parse_octets(end - pos).unwrap(),
-                session_config: config
-            }
-        )
+        Ok(PathAttributes {
+            octets: parser.parse_octets(end - pos).unwrap(),
+            session_config: config
+        })
     }
 }
 
@@ -1718,34 +1738,37 @@ pub struct PathAttribute<Octets> {
 }
 
 impl<Octets: AsRef<[u8]>> PathAttribute<Octets> {
-    pub fn for_slice(octets: Octets) -> Self {
-        PathAttribute { octets }
-    }
-}
-
-impl<Octets: AsRef<[u8]>> PathAttribute<Octets> {
+    /// Returns the flags as a raw byte.
     pub fn flags(&self) -> u8 {
         self.octets.as_ref()[0]
     }
 
+    /// Returns true if the optional flag is set.
     pub fn is_optional(&self) -> bool {
         self.flags() & 0x80 == 0x80
     }
 
+    /// Returns true if the transitive bit is set.
     pub fn is_transitive(&self) -> bool {
         self.flags() & 0x40 == 0x40
     }
+
+    /// Returns true if the partial flag is set.
     pub fn is_partial(&self) -> bool {
         self.flags() & 0x20 == 0x20
     }
+
+    /// Returns true if the extended length flag is set.
     pub fn is_extended_length(&self) -> bool {
         self.flags() & 0x10 == 0x10
     }
 
+    /// Returns the type of this path attribute.
     pub fn type_code(&self) -> PathAttributeType {
         self.octets.as_ref()[1].into()
     }
 
+    /// Returns the length of the value of this path attribute.
     pub fn length(&self) -> u16 {
         match self.is_extended_length() {
             true => u16::from_be_bytes(
@@ -1763,6 +1786,7 @@ impl<Octets: AsRef<[u8]>> PathAttribute<Octets> {
 }
 
 impl<Octets: AsRef<[u8]>> PathAttribute<Octets> {
+    /// Returns the raw value of this path attribute.
     pub fn value<'s>(&'s self) -> <&'s Octets as OctetsRef>::Range
     where
         &'s Octets: OctetsRef
@@ -1787,7 +1811,6 @@ impl<Octets: AsRef<[u8]>> PathAttribute<Octets> {
             },
             false => parser.parse_u8()? as usize, 
         };
-
 
         // now, check the specific type of path attribute
         match typecode.into() {
@@ -2133,15 +2156,15 @@ where
             return None
         }
         Some(
-            PathAttribute::parse(&mut self.parser, self.session_config).expect("parsed before")
+            PathAttribute::parse(&mut self.parser, self.session_config)
+            .expect("parsed before")
         )
     }
 }
 
 //--- NextHop in MP_REACH_NLRI -----------------------------------------------
 
-impl NextHop 
-{
+impl NextHop {
     fn check<R: AsRef<[u8]>>(parser: &mut Parser<R>, afi: AFI, safi: SAFI)
         -> Result<(), ParseError>
     {
@@ -2356,10 +2379,12 @@ impl RouteDistinguisher {
 }
 
 impl RouteDistinguisher {
+    /// Create a new RouteDistinguisher from a slice.
     pub fn new(bytes: &[u8]) -> Self {
         RouteDistinguisher { bytes: bytes.try_into().expect("parsed before") }
     }
 
+    /// Returns the type this RouteDistinguisher.
     pub fn typ(&self) -> RouteDistinguisherType {
         match self.bytes[0..2] {
             [0x00, 0x00] => RouteDistinguisherType::Type0,
@@ -2368,12 +2393,14 @@ impl RouteDistinguisher {
             _ => RouteDistinguisherType::UnknownType,
         }
     }
+
+    /// Returns the raw value of this RouteDistinguisher.
     pub fn value(&self) -> [u8; 6] {
         self.bytes[2..8].try_into().expect("parsed before")
     }
 }
 
-/// Route Distinguisher types.
+/// Route Distinguisher types as defined in RFC4364.
 #[derive(Eq, PartialEq, Debug)]
 pub enum RouteDistinguisherType {
     Type0,
@@ -2381,8 +2408,6 @@ pub enum RouteDistinguisherType {
     Type2,
     UnknownType,
 }
-
-//--- Refactoring NLRI iters using Parser ------------------------------------
 
 /// NLRI comprised of a [`Prefix`] and an optional [`PathId`].
 ///
@@ -2468,10 +2493,16 @@ impl<Octets> Nlri<Octets> {
         }
     }
 
+    /// Returns the [`Prefix`] for this NLRI, if any.
+    ///
+    /// Since the NLRI in Multiprotocol BGP can contain many different types
+    /// of information depending on the AFI/SAFI, there might be no prefix at
+    /// all.
     pub fn prefix(&self) -> Option<Prefix> {
         self.basic().map(|b| b.prefix)
     }
 
+    /// Returns the PathId for AddPath enabled prefixes.
     pub fn path_id(&self) -> Option<PathId> {
         if let Some(b) = self.basic() {
             b.path_id
@@ -2480,6 +2511,9 @@ impl<Octets> Nlri<Octets> {
         }
     }
 
+    /// Returns the MPLS [`Labels`], if any.
+    ///
+    /// Applicable to MPLS and MPLS-VPN NLRI.
     pub fn labels(&self) -> Option<&Labels<Octets>> {
         match &self {
             Nlri::Mpls(n) => Some(&n.labels),
@@ -2488,6 +2522,9 @@ impl<Octets> Nlri<Octets> {
         }
     }
 
+    /// Returns the RouteDistinguisher, if any.
+    ///
+    /// Applicable to MPLS VPN and VPLS NLRI.
     pub fn rd(&self) -> Option<RouteDistinguisher> {
         match self {
             Nlri::MplsVpn(n) => Some(n.rd),
@@ -2498,6 +2535,7 @@ impl<Octets> Nlri<Octets> {
 
     // VPLS specific methods
 
+    /// Returns the VPLS VE ID.
     pub fn ve_id(&self) -> Option<u16> {
         match self {
             Nlri::Vpls(n) => Some(n.ve_id),
@@ -2506,6 +2544,7 @@ impl<Octets> Nlri<Octets> {
 
     }
 
+    /// Returns the VPLS VE Block Offset.
     pub fn ve_block_offset(&self) -> Option<u16> {
         match self {
             Nlri::Vpls(n) => Some(n.ve_block_offset),
@@ -2513,6 +2552,7 @@ impl<Octets> Nlri<Octets> {
         }
     }
 
+    /// Returns the VPLS VE Block Size.
     pub fn ve_block_size(&self) -> Option<u16> {
         match self {
             Nlri::Vpls(n) => Some(n.ve_block_size),
@@ -2520,6 +2560,7 @@ impl<Octets> Nlri<Octets> {
         }
     }
 
+    /// Returns the VPLS Label Base.
     pub fn raw_label_base(&self) -> Option<u32> {
         match self {
             Nlri::Vpls(n) => Some(n.raw_label_base),
@@ -2610,13 +2651,11 @@ where
 }
 
 impl BasicNlri {
-
     fn check<R: AsRef<[u8]>>(
         parser: &mut Parser<R>,
         config: SessionConfig,
         afi: AFI
-    ) -> Result<(), ParseError>
-    {
+    ) -> Result<(), ParseError> {
         if config.add_path == AddPath::Enabled {
             PathId::check(parser)?
         }
@@ -2627,9 +2666,11 @@ impl BasicNlri {
         Ok(())
     }
 
-    fn parse<R: AsRef<[u8]>>(parser: &mut Parser<R>, config: SessionConfig, afi: AFI)
-        -> Result<Self, ParseError>
-    {
+    fn parse<R: AsRef<[u8]>>(
+        parser: &mut Parser<R>,
+        config: SessionConfig,
+        afi: AFI
+    ) -> Result<Self, ParseError> {
         let path_id = match config.add_path {
             AddPath::Enabled => Some(PathId::parse(parser)?),
             _ => None
@@ -2677,7 +2718,8 @@ impl<Octets: AsRef<[u8]>> MplsVpnNlri<Octets> {
         Ok(())
     }
 
-    fn parse<Ref>(parser: &mut Parser<Ref>, config: SessionConfig, afi: AFI) -> Result<Self, ParseError>
+    fn parse<Ref>(parser: &mut Parser<Ref>, config: SessionConfig, afi: AFI)
+        -> Result<Self, ParseError>
     where
         Ref: OctetsRef<Range = Octets>
     {
@@ -2704,14 +2746,8 @@ impl<Octets: AsRef<[u8]>> MplsVpnNlri<Octets> {
 
         let prefix = parse_prefix(parser, prefix_bits, afi)?;
 
-        let basic = BasicNlri { prefix, path_id };
-        Ok(
-            MplsVpnNlri {
-                basic,
-                labels, 
-                rd,
-            }
-        )
+        let basic = BasicNlri{ prefix, path_id };
+        Ok(MplsVpnNlri{ basic, labels, rd })
     }
 }
 
@@ -2888,6 +2924,7 @@ impl<Octets: AsRef<[u8]>> RouteTargetNlri<Octets> {
     }
 }
 
+/// Represents the announced NLRI in a BGP UPDATE message.
 pub struct Nlris<Octets> {
     octets: Octets,
     session_config: SessionConfig,
@@ -2908,10 +2945,12 @@ impl<Octets: AsRef<[u8]>> Nlris<Octets> {
         )
     }
 
+    /// Returns the AFI for these NLRI.
     pub fn afi(&self) -> AFI {
         self.afi
     }
 
+    /// Returns the SAFI for these NLRI.
     pub fn safi(&self) -> SAFI {
         self.safi
     }
@@ -2929,26 +2968,21 @@ pub struct NlriIterMp<Ref> {
 }
 
 impl<Ref: OctetsRef> NlriIterMp<Ref> {
-    pub fn new(octets: Ref, config: SessionConfig, afi: AFI, safi: SAFI) -> Self
-    {
+    fn new(octets: Ref, config: SessionConfig, afi: AFI, safi: SAFI) -> Self {
         let parser = Parser::from_ref(octets);
-        Self {
-            parser,
-            session_config: config,
-            afi,
-            safi,
-        }
+        Self { parser, session_config: config, afi, safi }
     }
 
-    pub fn new_conventional(octets: Ref, config: SessionConfig) -> Self {
-        let parser = Parser::from_ref(octets);
-        Self {
-            parser,
-            session_config: config,
-            afi: AFI::Ipv4,
-            safi: SAFI::Unicast,
-        }
-    }
+    // XXX obsolete now?
+    //fn new_conventional(octets: Ref, config: SessionConfig) -> Self {
+    //    let parser = Parser::from_ref(octets);
+    //    Self {
+    //        parser,
+    //        session_config: config,
+    //        afi: AFI::Ipv4,
+    //        safi: SAFI::Unicast,
+    //    }
+    //}
 
     fn get_nlri(&mut self) -> Nlri<Ref::Range> {
         match (self.afi, self.safi) {
