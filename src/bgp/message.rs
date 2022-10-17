@@ -1919,8 +1919,15 @@ impl<Octets: AsRef<[u8]>> PathAttribute<Octets> {
                 parser.advance(4 + 4)?;
             }
             PathAttributeType::Connector => {
-                // Ipv4Addr
-                parser.advance(4)?;
+                // Should be an Ipv4Addr according to
+                // https://www.rfc-editor.org/rfc/rfc6037.html#section-5.2.1
+                if len != 4 {
+                    warn!(
+                        "Connector PA, expected len == 4 but found {}",
+                        len
+                    );
+                }
+                parser.advance(len)?;
             },
             PathAttributeType::AsPathLimit => {
                 // u8 limit + Ipv4Addr
@@ -2099,7 +2106,12 @@ impl<Octets: AsRef<[u8]>> PathAttribute<Octets> {
                 let _addr = parse_ipv4addr(parser)?;
             }
             PathAttributeType::Connector => {
-                let _addr = parse_ipv4addr(parser)?;
+                //let _addr = parse_ipv4addr(parser)?;
+                // based on
+                // https://www.rfc-editor.org/rfc/rfc6037.html#section-5.2.1
+                // we expect an IPv4 address. We have seen contents of length
+                // 14 instead of 4 though, so let's be lenient for now.
+                parser.advance(len)?;
             },
             PathAttributeType::AsPathLimit => {
                 let _limit = parser.parse_u8()?;
@@ -2143,6 +2155,7 @@ impl<Octets: AsRef<[u8]>> PathAttribute<Octets> {
             },
             PathAttributeType::Unimplemented(_) => {
                 warn!("Unimplemented PA: {}", typecode);
+                parser.advance(len)?;
             },
             //_ => {
             //    panic!("unimplemented: {}", <PathAttributeType as From::<u8>>::from(typecode));
