@@ -33,6 +33,7 @@ mod prefix_record;
 mod route;
 
 pub mod message;
+pub mod communities;
 
 pub use self::meta::*;
 pub use self::prefix_record::*;

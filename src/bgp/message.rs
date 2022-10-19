@@ -17,6 +17,11 @@ use std::error::Error;
 use crate::util::parser::{parse_ipv4addr, parse_ipv6addr, ParseError};
 use octseq::{OctetsRef, Parser};
 
+use super::communities::{
+    Community, StandardCommunity,
+    ExtendedCommunity, Ipv6ExtendedCommunity, 
+    LargeCommunity
+};
 
 use crate::typeenum; // from util::macros
 
@@ -1877,7 +1882,7 @@ impl<Octets: AsRef<[u8]>> PathAttribute<Octets> {
             PathAttributeType::Communities => {
                 let mut pp = parser.parse_parser(len)?;
                 while pp.remaining() > 0 {
-                    NormalCommunity::check(&mut pp)?;
+                    StandardCommunity::check(&mut pp)?;
                 }
             },
             PathAttributeType::OriginatorId => {
@@ -2064,7 +2069,7 @@ impl<Octets: AsRef<[u8]>> PathAttribute<Octets> {
             PathAttributeType::Communities => {
                 let pos = parser.pos();
                 while parser.pos() < pos + len {
-                    NormalCommunity::parse(parser)?;
+                    StandardCommunity::parse(parser)?;
                 }
             },
             PathAttributeType::OriginatorId => {
@@ -3297,67 +3302,7 @@ impl<Ref: OctetsRef> Iterator for WithdrawalsIterMp<Ref> {
 //--- Communities ------------------------------------------------------------
 //
 
-
-/// Conventional, RFC1997 4-byte community.
-#[derive(Debug, Eq, PartialEq)]
-pub struct NormalCommunity([u8; 4]);
-
-/// Final two octets of a [`NormalCommunity`], i.e. the 'community number'.
-#[derive(Debug, Eq, PartialEq)]
-pub struct CommunityTag(u16);
-
-/// Extended Community as defined in RFC4360.
-#[derive(Debug, Eq, PartialEq)]
-pub struct ExtendedCommunity([u8; 8]);
-
-/// Extended Community as defined in RFC5701.
-#[derive(Debug, Eq, PartialEq)]
-pub struct Ipv6ExtendedCommunity([u8; 20]);
-
-/// Large Community as defined in RFC8092.
-#[derive(Debug, Eq, PartialEq)]
-pub struct LargeCommunity([u8; 12]);
-
-/// IANA Policy options for Extended Communities.
-pub enum IanaPolicy {
-    FCFS,
-    StandardsAction,
-}
-
-impl NormalCommunity {
-    // TODO perhaps this should not accept Asn, but a u16.
-    pub fn new(asn: Asn, tag: CommunityTag) -> NormalCommunity {
-        let mut buf = [0u8; 4];
-        let asn16 = asn.into_u32() as u16;  
-        buf[..2].copy_from_slice(&asn16.to_be_bytes());
-        buf[2..4].copy_from_slice(&tag.0.to_be_bytes());
-        Self(buf)
-    }
-
-    pub fn asn(&self) -> Option<Asn> {
-        Some(
-            Asn::from_u32(
-                u16::from_be_bytes([self.0[0], self.0[1]]).into()
-            )
-        )
-    }
-
-    pub fn tag(&self) -> CommunityTag {
-        CommunityTag(u16::from_be_bytes([self.0[2], self.0[3]]))
-    }
-}
-
-impl Display for NormalCommunity {
-    fn fmt(&self, f: &mut Formatter) -> FmtResult {
-        write!(
-            f,
-            "{}:{}",
-            self.asn().expect("always present in NormalCommunity").into_u32(),
-            self.tag().0)
-    }
-}
-
-impl NormalCommunity {
+impl StandardCommunity {
     fn check<R: AsRef<[u8]>>(parser: &mut Parser<R>)
         -> Result<(), ParseError>
     {
@@ -3370,62 +3315,7 @@ impl NormalCommunity {
     {
         let mut buf = [0u8; 4];
         parser.parse_buf(&mut buf)?;
-        Ok( Self(buf) )
-    }
-}
-
-impl ExtendedCommunity {
-    pub fn typ(&self) -> u8 {
-        self.0[0]
-    }
-    pub fn subtyp(&self) -> u8 {
-        self.0[1]
-    }
-    pub fn val_regular(&self) -> [u8; 7] {
-        self.0[1..8].try_into().expect("parsed before")
-    }
-    pub fn val_extended(&self) -> [u8; 6] {
-        self.0[2..8].try_into().expect("parsed before")
-    }
-    pub fn iana_policy(&self) -> IanaPolicy {
-        if self.typ() & 0x80 == 0x80 {
-            // IANA authority bit is 1
-            IanaPolicy::StandardsAction
-        } else {
-            // IANA authority bit is 0
-            IanaPolicy::FCFS
-        }
-    }
-    pub fn is_transitive(&self) -> bool {
-        // Transitive bit 0 means the community is transitive 
-        self.typ() & 0x40 == 0x00
-    }
-
-    /// Returns the `Asn` if this is a Two-Octet AS Specific Extended
-    /// Community, or None otherwise.
-    pub fn asn(&self) -> Option<Asn> {
-        if self.typ() == 0x00 || self.typ() == 0x40 {
-            Some(
-                Asn::from_u32(
-                    u16::from_be_bytes([
-                        self.0[2],
-                        self.0[3]
-                    ]).into()
-                )
-            )
-        } else {
-            None
-        }
-    }
-}
-
-impl Display for ExtendedCommunity {
-    fn fmt(&self, f: &mut Formatter) -> FmtResult {
-        let mut r = write!(f, "0x");
-        for i in 0..8 {
-            r = write!(f, "{:02X}", self.0[i]);
-        }
-        r
+        Ok( Self::from_raw(buf) )
     }
 }
 
@@ -3442,27 +3332,7 @@ impl ExtendedCommunity {
     {
         let mut buf = [0u8; 8];
         parser.parse_buf(&mut buf)?;
-        Ok( Self(buf) )
-    }
-}
-
-// XXX needs test data
-impl Ipv6ExtendedCommunity {
-    pub fn typ(&self) -> u8 {
-        self.0[0]
-    }
-    pub fn subtyp(&self) -> u8 {
-        self.0[1]
-    }
-    pub fn global_admin(&self) -> Ipv6Addr {
-        Ipv6Addr::from(
-            <&[u8] as TryInto<[u8; 16]>>::try_into(&self.0[2..18])
-            .expect("parsed before")
-        )
-    }
-    pub fn local_admin(&self) -> u16 {
-        u16::from_be_bytes([self.0[19], self.0[20]])
-
+        Ok( Self::from_raw(buf) )
     }
 }
 
@@ -3479,21 +3349,7 @@ impl Ipv6ExtendedCommunity {
     {
         let mut buf = [0u8; 20];
         parser.parse_buf(&mut buf)?;
-        Ok( Self(buf) )
-    }
-}
-
-impl LargeCommunity {
-    pub fn global(&self) -> u32 {
-        u32::from_be_bytes(self.0[0..4].try_into().expect("parsed before"))
-    }
-
-    pub fn local1(&self) -> u32 {
-        u32::from_be_bytes(self.0[4..8].try_into().expect("parsed before"))
-    }
-
-    pub fn local2(&self) -> u32 {
-        u32::from_be_bytes(self.0[8..12].try_into().expect("parsed before"))
+        Ok( Self::from_raw(buf) )
     }
 }
 
@@ -3509,82 +3365,10 @@ impl LargeCommunity {
     {
         let mut buf = [0u8; 12];
         parser.parse_buf(&mut buf)?;
-        Ok( Self(buf) )
+        Ok( Self::from_raw(buf) )
     }
 }
 
-impl Display for LargeCommunity {
-    fn fmt(&self, f: &mut Formatter) -> FmtResult {
-        write!(f, "{}:{}:{}", self.global(), self.local1(), self.local2())
-    }
-
-}
-
-/// Conventional and Extended/Large Communities variants.
-// XXX should the well-knowns actually be Normals?
-// maybe keep everything as [u8;4] and only check for well-knowns in the
-// Display impl?
-#[derive(Debug, Eq, PartialEq)]
-pub enum Community {
-    Normal(NormalCommunity),
-    NoExport,           // 0xFFFFFF01
-    NoAdvertise,        // 0xFFFFFF02
-    NoExportSubconfed,  // 0xFFFFFF03
-    Blackhole,          // 0xFFFF029A
-    Extended(ExtendedCommunity),
-    Large(LargeCommunity)
-}
-
-impl Community {
-    /// Returns the `Asn` for non well-known community tags, or None
-    /// otherwise. 
-    pub fn asn(&self) -> Option<Asn> {
-        use Community::*;
-        match self {
-            Normal(nc) => nc.asn(),
-            Extended(e) => e.asn(),
-            Large(lc) => Some(lc.global().into()),
-            _ => None,
-        }
-    }
-}
-
-impl Display for Community {
-    fn fmt(&self, f: &mut Formatter) -> FmtResult {
-        match self {
-            Community::Normal(nc) => Display::fmt(&nc, f),
-            Community::Extended(e) => Display::fmt(&e, f),
-            Community::Large(lc) => Display::fmt(&lc, f),
-            Community::NoExport => write!(f, "NO_EXPORT"),
-            Community::NoAdvertise => write!(f, "NO_ADVERTISE"),
-            Community::NoExportSubconfed => write!(f, "NO_EXPORT_SUBCONFED"),
-            Community::Blackhole => write!(f, "BLACKHOLE"),
-        }
-    }
-}
-
-
-impl From<[u8; 4]> for Community {
-    fn from(raw: [u8; 4]) -> Community {
-        match raw {
-            [0xff, 0xff, 0xff, 0x01] => Community::NoExport,
-            [0xff, 0xff, 0xff, 0x02] => Community::NoAdvertise,
-            [0xff, 0xff, 0xff, 0x03] => Community::NoExportSubconfed,
-            [0xff, 0xff, 0x02, 0x9A] => Community::Blackhole,
-            _ => {
-                Community::Normal(NormalCommunity(raw))
-            }
-        }
-    }
-}
-
-
-
-impl From<[u8; 8]> for Community {
-    fn from(raw: [u8; 8]) -> Community {
-        Community::Extended(ExtendedCommunity(raw))
-    }
-}
 
 /// Iterator for BGP UPDATE Communities.
 ///
@@ -3634,7 +3418,7 @@ impl<Octets: AsRef<[u8]>> ExtCommunityIter<Octets> {
         }
     }
     fn get_community(&mut self) -> ExtendedCommunity {
-        let res = ExtendedCommunity(
+        let res = ExtendedCommunity::from_raw(
             self.slice.as_ref()[self.pos..self.pos+8].try_into().expect("parsed before")
             );
         self.pos += 8;
@@ -3666,7 +3450,7 @@ impl<Octets: AsRef<[u8]>> LargeCommunityIter<Octets> {
         }
     }
     fn get_community(&mut self) -> LargeCommunity {
-        let res = LargeCommunity(
+        let res = LargeCommunity::from_raw(
             self.slice.as_ref()[self.pos..self.pos+12].try_into().expect("parsed before")
             );
         self.pos += 12;
@@ -4209,6 +3993,7 @@ mod tests {
 
         use super::*;
         use std::str::FromStr;
+        use crate::bgp::communities::*;
 
         //TODO:
         // X generic
@@ -4658,27 +4443,33 @@ mod tests {
 
             assert!(upd.communities().is_some());
             assert!(upd.communities().unwrap().eq([
-                    Community::Normal(NormalCommunity::new(42.into(), CommunityTag(518))),
-                    Community::NoExport,
-                    Community::NoExportSubconfed
+                    Community::Standard(StandardCommunity::new(42.into(), Tag::new(518))),
+                    WellKnown::NoExport.into(),
+                    WellKnown::NoExportSubconfed.into()
             ]));
 
             assert!(upd.ext_communities().is_some());
             let mut ext_comms = upd.ext_communities().unwrap();
             let ext_comm1 = ext_comms.next().unwrap();
             assert!(ext_comm1.is_transitive());
-            assert!(matches!(ext_comm1.iana_policy(), IanaPolicy::FCFS));
-            assert_eq!(ext_comm1.subtyp(), 0x06);
-            assert_eq!(ext_comm1.val_extended(),
-                [0x00, 0x00, 0x44, 0x9c, 0x40, 0x00]
+
+            assert_eq!(
+                ext_comm1.types(),
+                (ExtendedCommunityType::TransitiveTwoOctetSpecific,
+                 ExtendedCommunitySubType::OtherSubType(0x06))
             );
+
+            use crate::bgp::communities::Asn16;
+            assert_eq!(ext_comm1.as2(), Some(Asn16::from_u16(0)));
 
             let ext_comm2 = ext_comms.next().unwrap();
             assert!(!ext_comm2.is_transitive());
-            assert_eq!(ext_comm2.subtyp(), 0x04);
-            assert_eq!(ext_comm2.val_extended(),
-                [0x00, 0x00, 0x44, 0x9c, 0x40, 0x00]
+            assert_eq!(
+                ext_comm2.types(),
+                (ExtendedCommunityType::NonTransitiveTwoOctetSpecific,
+                 ExtendedCommunitySubType::OtherSubType(0x04))
             );
+            assert_eq!(ext_comm2.as2(), Some(Asn16::from_u16(0)));
 
             assert!(ext_comms.next().is_none());
 
@@ -4757,9 +4548,9 @@ mod tests {
                 println!("{}", c);
             }
             assert!(upd.all_communities().unwrap().eq(&[
-                    Community::Normal(NormalCommunity::new(Asn::from(42), CommunityTag(518))),
-                    Community::NoExport,
-                    Community::NoExportSubconfed,
+                    Community::Standard(StandardCommunity::new(42.into(), Tag::new(518))),
+                    WellKnown::NoExport.into(),
+                    WellKnown::NoExportSubconfed.into(),
                     [0x00, 0x06, 0x00, 0x00, 0x44, 0x9c, 0x40, 0x00].into(),
                     [0x40, 0x04, 0x00, 0x00, 0x44, 0x9c, 0x40, 0x00].into(),
             ]))
