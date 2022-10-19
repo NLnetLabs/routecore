@@ -11,8 +11,82 @@
 //! is limited to mostly the Route Target / Route Origin subtypes. Though
 //! all others can be constructed using raw bytes for input.
 //!
-//! Standard Communities can possibly be converted to/from WellKnown
-//! communities.
+//! # Basic usage
+//!
+//! The main enum [`Community`] comprises the supported variants. It can be
+//! created from raw byte arrays, where the specific variant is determined by
+//! the length of the array. Or, it can be parsed from strings, where it
+//! attempts to parse as a StandardCommunity first, then LargeCommunity,
+//! ExtendedCommunity, and finally Ipv6ExtendedCommunity.
+//!
+//! A few convenience methods are available on `Community` itself, most
+//! notably [`asn()`](`Community::asn()`) which returns the [`Asn`] in the
+//! Global Administrator part, if any.
+//! Other methods include `as_ref()` returning the underlying raw byte array
+//! and [`as_well_known()`](`Community::as_well_known()`).
+//!
+//! ```
+//! use routecore::asn::Asn;
+//! use routecore::bgp::communities::Community;
+//! use std::str::FromStr;
+//!
+//! let c = Community::from_str("AS1234:7890").unwrap();
+//! assert!(matches!(c, Community::Standard(_)));
+//! let lc = Community::from_str("123:456:789").unwrap();
+//! assert!(matches!(lc, Community::Large(_)));
+//!
+//! assert_eq!(c.asn(), Some(Asn::from_u32(1234)));
+//! assert_eq!(lc.asn(), Some(Asn::from_u32(123)));
+//!
+//! ```
+//!
+//! Or specific variants can be created explicitly:
+//!
+//! ```
+//! use routecore::bgp::communities::{Community, StandardCommunity, WellKnown};
+//! use std::str::FromStr;
+//!
+//! // Specific community variants can be created by parsing strings of
+//! // canonical notations, hexadecimal representations, or raw input:
+//! 
+//! let c1 = StandardCommunity::from_str("AS1234:7890").unwrap();
+//! assert_eq!(c1.raw(), [0x04, 0xD2, 0x1E, 0xD2]);
+//!
+//! let c2 = StandardCommunity::from_str("0x04D21ED2").unwrap();
+//! assert_eq!(c1, c2);
+//!
+//! let c3 = StandardCommunity::from_raw([0x04, 0xD2, 0x1E, 0xD2]);
+//! assert_eq!(c1, c3);
+//!
+//!
+//!
+//! ```
+//!
+//! # Well-known communities
+//!
+//! See [`WellKnown`] for a complete overview of supported parseable formats
+//! for every well-known community.
+//!
+//! ```
+//! # use routecore::bgp::communities::{Community, StandardCommunity, WellKnown};
+//! # use std::str::FromStr;
+//! #
+//! // Well-known communities are of the StandardCommunity variant.
+//! // These can be created from the WellKnown enum, or by parsing strings:
+//!
+//! let no_export1: StandardCommunity = WellKnown::NoExport.into();
+//! let no_export2 = StandardCommunity::from_str("NO_EXPORT").unwrap().into();
+//! assert_eq!(no_export1, no_export2);
+//!
+//! // The Display implementation for StandardCommunities in the well-known
+//! // range will output their canonical names:
+//!
+//! assert_eq!(no_export1.to_string(), "NO_EXPORT");
+//! assert_eq!(
+//!     WellKnown::from_str("NoAdvertise").unwrap().to_string(),
+//!     "NO_ADVERTISE"
+//! );
+//! ```
 
 use std::fmt::{Display, Error, Formatter};
 use std::str::FromStr;
@@ -122,6 +196,9 @@ impl FromStr for Community {
         }
         if let Ok(ec) = ExtendedCommunity::from_str(s) {
             return Ok(Community::Extended(ec))
+        }
+        if let Ok(ec6) = Ipv6ExtendedCommunity::from_str(s) {
+            return Ok(Community::Ipv6Extended(ec6))
         }
         Err("cant parse".into())
     }
@@ -367,9 +444,17 @@ impl FromStr for StandardCommunity {
         if let Some((a, t)) = s.split_once(':') {
             let asn = Asn16::from_str(a)?;
             let tagv = u16::from_str(t).map_err(|_e| "cant parse Tag")?;
-            return Ok(StandardCommunity::new(asn, Tag(tagv)));
+            Ok(StandardCommunity::new(asn, Tag(tagv)))
+        } else if let Some(hex) = s.strip_prefix("0x") {
+            if let Ok(hex) = u32::from_str_radix(hex, 16) {
+                Ok(StandardCommunity(hex.to_be_bytes()))
+            } else {
+                Err("invalid hex".into())
+            }
+
+        } else {
+            Err("failed FromStr for StandardCommunity".into())
         }
-        Err("failed FromStr for StandardCommunity".into())
     }
 }
 

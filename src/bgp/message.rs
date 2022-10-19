@@ -3372,7 +3372,7 @@ impl LargeCommunity {
 
 /// Iterator for BGP UPDATE Communities.
 ///
-/// Returns values of enum [`Community`], wrapping [`NormalCommunity`],
+/// Returns values of enum [`Community`], wrapping [`StandardCommunity`],
 /// [`ExtendedCommunity`], [`LargeCommunity`] and well-known communities.
 pub struct CommunityIter<Octets> {
     slice: Octets,
