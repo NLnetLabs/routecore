@@ -231,12 +231,17 @@ macro_rules! wellknown {
         #[derive(Debug, Eq, PartialEq)]
         /// Well-known communities as registered by IANA.
         ///
-        $(#[doc = concat!("`", stringify!($var), "` prints as \"", $pprim, "\", parses from \"",
-        stringify!($var), "\", \"", $pprim $(,"\", \"",$psec)*,"\" \n\n" )]
-        )+
+        /// | u32 | enum variant | prints as / parses from | alternative parses from |
+        /// | --- | ---          | ---                     | ---                     |
+        $(#[doc = concat!(
+           "|", stringify!($hex),
+           "|", stringify!($var),
+           "|", $pprim,
+           "|", $($psec,)*
+           "|")])+
+
         pub enum $name {
-            $(#[doc = concat!("`", stringify!($var), "` prints as \"", $pprim, "\", parses from \"",
-            stringify!($var), "\", \"", $pprim $(,"\", \"",$psec)*,"\"" )]
+            $(
             $var),+,
             Unrecognized(u32)
         }
@@ -282,7 +287,7 @@ macro_rules! wellknown {
                 }
             }
         }
-    }
+    };
 }
 
 // Calling the macro generates an enum `WellKnown` with variants based on the
