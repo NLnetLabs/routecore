@@ -931,8 +931,9 @@ impl Ipv6ExtendedCommunity {
         u16::from_be_bytes(self.0[18..20].try_into().unwrap())
     }
 
+    // alias for an2
     pub fn local_admin(&self) -> u16 {
-        u16::from_be_bytes([self.0[19], self.0[20]])
+        self.an2()
     }
 }
 
