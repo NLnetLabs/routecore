@@ -4444,8 +4444,8 @@ mod tests {
             assert!(upd.communities().is_some());
             assert!(upd.communities().unwrap().eq([
                     Community::Standard(StandardCommunity::new(42.into(), Tag::new(518))),
-                    WellKnown::NoExport.into(),
-                    WellKnown::NoExportSubconfed.into()
+                    Wellknown::NoExport.into(),
+                    Wellknown::NoExportSubconfed.into()
             ]));
 
             assert!(upd.ext_communities().is_some());
@@ -4549,8 +4549,8 @@ mod tests {
             }
             assert!(upd.all_communities().unwrap().eq(&[
                     Community::Standard(StandardCommunity::new(42.into(), Tag::new(518))),
-                    WellKnown::NoExport.into(),
-                    WellKnown::NoExportSubconfed.into(),
+                    Wellknown::NoExport.into(),
+                    Wellknown::NoExportSubconfed.into(),
                     [0x00, 0x06, 0x00, 0x00, 0x44, 0x9c, 0x40, 0x00].into(),
                     [0x40, 0x04, 0x00, 0x00, 0x44, 0x9c, 0x40, 0x00].into(),
             ]))

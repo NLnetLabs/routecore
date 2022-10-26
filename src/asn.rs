@@ -28,6 +28,11 @@ impl Asn {
     pub fn into_u32(self) -> u32 {
         self.0
     }
+
+    /// Converts an AS number into a network-order byte array.
+    pub fn to_raw(self) -> [u8; 4] {
+        self.0.to_be_bytes()
+    }
 }
 
 #[cfg(feature = "bcder")]

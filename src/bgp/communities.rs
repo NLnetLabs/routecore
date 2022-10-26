@@ -23,7 +23,7 @@
 //! notably [`asn()`](`Community::asn()`) which returns the [`Asn`] in the
 //! Global Administrator part, if any.
 //! Other methods include `as_ref()` returning the underlying raw byte array
-//! and [`as_well_known()`](`Community::as_well_known()`).
+//! and [`to_wellknown()`](`Community::to_wellknown()`).
 //!
 //! ```
 //! use routecore::asn::Asn;
@@ -43,14 +43,14 @@
 //! Or specific variants can be created explicitly:
 //!
 //! ```
-//! use routecore::bgp::communities::{Community, StandardCommunity, WellKnown};
+//! use routecore::bgp::communities::{Community, StandardCommunity, Wellknown};
 //! use std::str::FromStr;
 //!
 //! // Specific community variants can be created by parsing strings of
 //! // canonical notations, hexadecimal representations, or raw input:
 //! 
 //! let c1 = StandardCommunity::from_str("AS1234:7890").unwrap();
-//! assert_eq!(c1.raw(), [0x04, 0xD2, 0x1E, 0xD2]);
+//! assert_eq!(c1.to_raw(), [0x04, 0xD2, 0x1E, 0xD2]);
 //!
 //! let c2 = StandardCommunity::from_str("0x04D21ED2").unwrap();
 //! assert_eq!(c1, c2);
@@ -64,17 +64,17 @@
 //!
 //! # Well-known communities
 //!
-//! See [`WellKnown`] for a complete overview of supported parseable formats
+//! See [`Wellknown`] for a complete overview of supported parseable formats
 //! for every well-known community.
 //!
 //! ```
-//! # use routecore::bgp::communities::{Community, StandardCommunity, WellKnown};
+//! # use routecore::bgp::communities::{Community, StandardCommunity, Wellknown};
 //! # use std::str::FromStr;
 //! #
 //! // Well-known communities are of the StandardCommunity variant.
-//! // These can be created from the WellKnown enum, or by parsing strings:
+//! // These can be created from the Wellknown enum, or by parsing strings:
 //!
-//! let no_export1: StandardCommunity = WellKnown::NoExport.into();
+//! let no_export1: StandardCommunity = Wellknown::NoExport.into();
 //! let no_export2 = StandardCommunity::from_str("NO_EXPORT").unwrap().into();
 //! assert_eq!(no_export1, no_export2);
 //!
@@ -83,7 +83,7 @@
 //!
 //! assert_eq!(no_export1.to_string(), "NO_EXPORT");
 //! assert_eq!(
-//!     WellKnown::from_str("NoAdvertise").unwrap().to_string(),
+//!     Wellknown::from_str("NoAdvertise").unwrap().to_string(),
 //!     "NO_ADVERTISE"
 //! );
 //! ```
@@ -98,7 +98,7 @@ use crate::asn::Asn;
 //--- Community --------------------------------------------------------------
 
 /// Standard and Extended/Large Communities variants.
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd )]
 pub enum Community {
     Standard(StandardCommunity),
     Extended(ExtendedCommunity),
@@ -108,21 +108,20 @@ pub enum Community {
 }
 
 impl Community {
-    pub fn as_well_known(&self) -> Option<WellKnown> {
+    pub fn to_wellknown(self) -> Option<Wellknown> {
         match self {
-            Community::Standard(sc) => {
-                sc.as_well_known()
-            },
+            Community::Standard(sc) => sc.to_wellknown(),
             _ => None
         }
     }
 
-    pub fn asn(&self) -> Option<Asn> {
+    pub fn asn(self) -> Option<Asn> {
         use Community::*;
         match self {
             Standard(sc) => sc.asn(),
-            Extended(e) => e.as2().map(|a| a.into_asn32())
-                                    .or_else(|| e.as4()),
+            Extended(e) => {
+                e.as2().map(|a| a.into_asn32()).or_else(|| e.as4())
+            }
             Ipv6Extended(_) => None, 
             Large(lc) => Some(lc.global().into()),
         }
@@ -130,7 +129,7 @@ impl Community {
 }
 
 // AsRef
-//
+
 impl AsRef<[u8]> for Community {
     fn as_ref(&self) -> &[u8] {
         match self {
@@ -156,8 +155,8 @@ impl From<StandardCommunity> for Community {
     }
 }
 
-impl From<WellKnown> for Community {
-    fn from(wk: WellKnown) -> Self {
+impl From<Wellknown> for Community {
+    fn from(wk: Wellknown) -> Self {
         Community::Standard(wk.into())
     }
 }
@@ -185,7 +184,7 @@ impl From<LargeCommunity> for Community {
 // input contains a 32 bit AS, creating a Large Community leaves 6 bytes to be
 // guessed. Similarly, an Extended Community leaves 2 bytes to be guessed.
 impl FromStr for Community {
-    type Err = String;
+    type Err = ParseError;
     
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         if let Ok(sc) = StandardCommunity::from_str(s) {
@@ -200,7 +199,7 @@ impl FromStr for Community {
         if let Ok(ec6) = Ipv6ExtendedCommunity::from_str(s) {
             return Ok(Community::Ipv6Extended(ec6))
         }
-        Err("cant parse".into())
+        Err(ParseError("can't parse"))
     }
 }
 
@@ -216,7 +215,7 @@ impl Display for Community {
     }
 }
 
-//--- WellKnown --------------------------------------------------------------
+//--- Wellknown --------------------------------------------------------------
 
 macro_rules! wellknown {
     ($name:ident,
@@ -225,10 +224,7 @@ macro_rules! wellknown {
     )
     => {
 
-        // XXX maybe write doc in table form?
-        // | type | prints as | from_str from |
-        // $(| $var | $pprim    | $psec* |\n)*
-        #[derive(Debug, Eq, PartialEq)]
+        #[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd )]
         /// Well-known communities as registered by IANA.
         ///
         /// | u32 | enum variant | prints as / parses from | alternative parses from |
@@ -243,7 +239,7 @@ macro_rules! wellknown {
         pub enum $name {
             $(
             $var),+,
-            Unrecognized(u32)
+            Unrecognized(u16)
         }
         
         impl $name {
@@ -251,30 +247,51 @@ macro_rules! wellknown {
             pub fn to_u32(self) -> u32 {
                 match self {
                     $($name::$var => $hex,)+
-                    $name::Unrecognized(n) => n
+                    $name::Unrecognized(n) => (0xffff0000_u32 | n as u32)
                 }
             }
 
-            pub fn from_u32(n: u32) -> $name {
-                match n {
+            pub fn from_u16(n: u16) -> $name {
+                match (0xffff0000_u32 | n as u32) {
                     $($hex => $name::$var,)+
                     _ => $name::Unrecognized(n)
                 }
             }
 
-            pub fn into_stardard(self) -> StandardCommunity {
+            pub fn into_standard(self) -> StandardCommunity {
                 self.into()
+            }
+        }
+
+        impl From<u16> for $name {
+            fn from(n: u16) -> $name {
+                match (0xffff0000_u32 | n as u32) {
+                    $($hex => $name::$var,)+
+                    _ => $name::Unrecognized(n)
+                }
+            }
+        }
+        
+        impl TryFrom<u32> for $name {
+            type Error = ParseError;
+
+            fn try_from(n: u32) -> Result<Self, ParseError> {
+                if n & 0xffff0000 != 0xffff0000 {
+                    return Err(ParseError("not in Wellknown range"))
+                }
+                Ok(Self::from_u16(n as u16)) // XXX is this correct in all
+                                             // cases? does endianness come
+                                             // into play here?
             }
         }
         
         impl FromStr for $name {
-            type Err = String;
+            type Err = ParseError;
 
             fn from_str(s: &str) -> Result<Self, Self::Err> {
                 match s {
-                    //$($p | stringify!($n) => Ok($name::$n),)+
                     $($pprim $(|$psec)* | stringify!($var) => Ok($name::$var),)+
-                        _ => Err("cant parse".to_owned())
+                        _ => Err(ParseError("cant parse"))
                 }
             }
         }
@@ -290,14 +307,14 @@ macro_rules! wellknown {
     };
 }
 
-// Calling the macro generates an enum `WellKnown` with variants based on the
+// Calling the macro generates an enum `Wellknown` with variants based on the
 // name directly after the '=>'. FromStr is implemented to parse that name,
 // and all the variants given in the list until the ;
 // For the Display implementation, the first of that list is used.
-// E.g. WellKnown::AcceptOwnNexthop can be parsed from "AcceptOwnNexthop",
+// E.g. Wellknown::AcceptOwnNexthop can be parsed from "AcceptOwnNexthop",
 // "accept-own-nexthop", "ACCEPT_OWN_NEXTHOP", and will be printed as
 // "accept-own-nexthop".
-wellknown!(WellKnown,
+wellknown!(Wellknown,
     0xFFFF0000 => GracefulShutdown, "GRACEFUL_SHUTDOWN";
     0xFFFF0001 => AcceptOwn, "ACCEPT_OWN";
     0xFFFF0002 => RouteFilterTranslatedV4, "ROUTE_FILTER_TRANSLATED_v4";
@@ -322,38 +339,33 @@ wellknown!(WellKnown,
 //--- StandardCommunity ------------------------------------------------------
 
 /// Conventional, RFC1997 4-byte community.
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd )]
 pub struct StandardCommunity([u8; 4]);
 
 impl StandardCommunity {
     pub fn new(asn: Asn16, tag: Tag) -> StandardCommunity {
-        StandardCommunity(
-            [asn.0.to_be_bytes(), tag.0.to_be_bytes()]
-            .concat().try_into().unwrap()
-            )
+        let a = asn.to_raw();
+        let t = tag.to_raw();
+        StandardCommunity([a[0], a[1], t[0], t[1]])
     }
 
     pub fn from_raw(raw: [u8; 4]) -> Self {
         Self(raw)
     }
 
-    pub fn for_well_known(wk: WellKnown) -> StandardCommunity {
+    pub fn from_wellknown(wk: Wellknown) -> StandardCommunity {
         StandardCommunity::from_u32(wk.to_u32())
-    }
-
-    pub fn from(raw: [u8; 4]) -> StandardCommunity {
-        StandardCommunity(raw)
     }
 
     pub fn from_u32(raw: u32) -> StandardCommunity {
         StandardCommunity(raw.to_be_bytes())
     }
 
-    pub fn as_u32(&self) -> u32 {
+    pub fn to_u32(self) -> u32 {
         u32::from_be_bytes(self.0)
     }
 
-    pub fn raw(&self) -> [u8; 4] {
+    pub fn to_raw(self) -> [u8; 4] {
         self.0
     }
 
@@ -361,8 +373,9 @@ impl StandardCommunity {
     // At least some routeservers seem to use the reserved 0:xxx,
     // for those we'll simply return the Asn for 0.
 
-    pub fn asn(&self) -> Option<Asn> {
-        if !self.is_well_known() {
+    // XXX so should this return an Asn, or an Asn16?
+    pub fn asn(self) -> Option<Asn> {
+        if !self.is_wellknown() {
             Some(Asn::from_u32(
                     u16::from_be_bytes([self.0[0], self.0[1]]) as u32
                 ))
@@ -371,49 +384,35 @@ impl StandardCommunity {
         }
     }
 
-    pub fn tag(&self) -> Option<Tag>{
-        if !self.is_well_known() {
+    pub fn tag(self) -> Option<Tag>{
+        if !self.is_wellknown() {
             Some(Tag(u16::from_be_bytes([self.0[2], self.0[3]])))
         } else {
             None
         }
     }
 
-    pub fn is_private(&self) -> bool {
+    pub fn is_private(self) -> bool {
         !matches!(self.0, [0xff, 0xff, _, _] | [0x00, 0x00, _, _])
     }
 
 
-    pub fn is_well_known(&self) -> bool {
+    pub fn is_wellknown(self) -> bool {
         matches!(self.0, [0xff, 0xff, _, _])
     }
 
-    pub fn as_well_known(&self) -> Option<WellKnown> {
-        if self.is_well_known() {
-            Some(WellKnown::from_u32(self.as_u32()))
-        } else {
-            None
-        }
+    pub fn to_wellknown(self) -> Option<Wellknown> {
+        Wellknown::try_from(self.to_u32()).ok()
+        //if self.is_wellknown() {
+        //    Some(Wellknown::from_u32(self.to_u32()))
+        //} else {
+        //    None
+        //}
     }
 
-    pub fn is_reserved(&self) -> bool {
+    pub fn is_reserved(self) -> bool {
         matches!(self.0, [0x00, 0x00, _, _])
     }
-
-    pub fn typ(&self) -> StandardCommunityType {
-        match self.0 {
-            [0x00, 0x00, _, _] => StandardCommunityType::Reserved,
-            [0xff, 0xff, _, _] => StandardCommunityType::WellKnown,
-            _ => StandardCommunityType::Private
-        }
-    }
-}
-
-#[derive(Debug)]
-pub enum StandardCommunityType {
-    Reserved,
-    Private,
-    WellKnown,
 }
 
 // AsRef
@@ -432,18 +431,24 @@ impl From<[u8; 4]> for StandardCommunity {
     }
 }
 
-impl From<WellKnown> for StandardCommunity {
-    fn from(wk: WellKnown) -> Self {
+impl From<u32> for StandardCommunity {
+    fn from(n: u32) -> StandardCommunity {
+        StandardCommunity::from_u32(n)
+    }
+}
+
+impl From<Wellknown> for StandardCommunity {
+    fn from(wk: Wellknown) -> Self {
         StandardCommunity::from_u32(wk.to_u32())
     }
 }
 
 
 impl FromStr for StandardCommunity {
-    type Err = String;
+    type Err = ParseError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        if let Ok(wk) = WellKnown::from_str(s) {
+        if let Ok(wk) = Wellknown::from_str(s) {
             return Ok(wk.into());
         }
         if let Some((a, t)) = s.split_once(':') {
@@ -465,13 +470,13 @@ impl FromStr for StandardCommunity {
 
 // Display
 
-// We only distinguish between WellKnown or not.
+// We only distinguish between Wellknown or not.
 // The reserved 0x0000xxxx we print as AS0:xxxx, as it is used by route
 // servers and obscuring it by printing as pure hex or whatever does not help
 // anybody.
 impl Display for StandardCommunity {
     fn fmt(&self, f: &mut Formatter) -> Result<(), Error> {
-        if let Some(wk) = self.as_well_known() {
+        if let Some(wk) = self.to_wellknown() {
             write!(f, "{}", wk)
         } else { 
             write!(f, "{}:{}", &self.asn().unwrap(), &self.tag().unwrap())
@@ -482,7 +487,7 @@ impl Display for StandardCommunity {
 
 
 /// Final two octets of a [`StandardCommunity`], i.e. the 'community number'.
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd )]
 pub struct Tag(u16);
 
 impl Tag {
@@ -490,8 +495,12 @@ impl Tag {
         Self(t)
     }
 
-    pub fn value(&self) -> u16 {
+    pub fn value(self) -> u16 {
         self.0
+    }
+
+    pub fn to_raw(self) -> [u8; 2] {
+        self.0.to_be_bytes()
     }
 }
 
@@ -504,7 +513,7 @@ impl Display for Tag {
 //--- ExtendedCommunity ------------------------------------------------------
 
 /// Extended Community as defined in RFC4360.
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd )]
 pub struct ExtendedCommunity([u8; 8]);
 
 impl ExtendedCommunity {
@@ -513,18 +522,18 @@ impl ExtendedCommunity {
         Self(raw)
     }
 
-    pub fn raw(&self) -> [u8; 8] {
+    pub fn raw(self) -> [u8; 8] {
         self.0
     }
 
-    pub fn type_raw(&self) -> u8 {
+    pub fn type_raw(self) -> u8 {
         self.0[0]
     }
 
-    pub fn types(&self) -> (ExtendedCommunityType, ExtendedCommunitySubType) {
+    pub fn types(self) -> (ExtendedCommunityType, ExtendedCommunitySubType) {
         use ExtendedCommunityType::*;
         use ExtendedCommunitySubType::*;
-        match self.0[0..2] {
+        match self.0[0..2] { // XXX maybe a tuple is faster?
             // Transitive types
             [0x00, 0x02] => (TransitiveTwoOctetSpecific, RouteTarget),
             [0x00, 0x03] => (TransitiveTwoOctetSpecific, RouteOrigin),
@@ -558,102 +567,90 @@ impl ExtendedCommunity {
         }
     }
 
-    pub fn is_transitive(&self) -> bool {
+    pub fn is_transitive(self) -> bool {
         // Transitive bit 0 means the community is transitive
         self.type_raw() & 0x40 == 0x00
     }
 
     //--- route target constructors ------------------------------------------
     // Transitive two-octet AS specific
-    pub fn transitive_as2_route_target(global: u16, local: u32) -> Self {
-        let mut buf = [0u8; 8];
-        
-        buf[0] = 0x00;
-        buf[1] = 0x02;
-        buf[2..4].copy_from_slice(&global.to_be_bytes());
-        buf[4..8].copy_from_slice(&local.to_be_bytes());
-        
-        ExtendedCommunity(buf)
+    pub fn transitive_as2_route_target(global: Asn16, local: u32) -> Self {
+        let g = global.to_raw();
+        let l = local.to_be_bytes();
+        ExtendedCommunity([
+            0x00, 0x02,
+            g[0], g[1],
+            l[0], l[1], l[2], l[3]
+        ])
     }
 
     // Transitive four-octet AS specific
-    pub fn transitive_as4_route_target(global: u32, local: u16) -> Self {
-        let mut buf = [0u8; 8];
-        
-        buf[0] = 0x02;
-        buf[1] = 0x02;
-        buf[2..6].copy_from_slice(&global.to_be_bytes());
-        buf[6..8].copy_from_slice(&local.to_be_bytes());
-        
-        ExtendedCommunity(buf)
+    pub fn transitive_as4_route_target(global: Asn, local: u16) -> Self {
+        let g = global.to_raw();
+        let l = local.to_be_bytes();
+        ExtendedCommunity([
+            0x02, 0x02,
+            g[0], g[1], g[2], g[3],
+            l[0], l[1]
+        ])
     }
 
     //  Transitive ipv4-addr specific
     pub fn transitive_ip4_route_target(global: Ipv4Addr, local: u16) -> Self {
-        let mut buf = [0u8; 8];
-        
-        buf[0] = 0x01;
-        buf[1] = 0x02;
-        buf[2..6].copy_from_slice(&global.octets());
-        buf[6..8].copy_from_slice(&local.to_be_bytes());
-        
-        ExtendedCommunity(buf)
+        let g = global.octets();
+        let l = local.to_be_bytes();
+        ExtendedCommunity([
+            0x01, 0x02,
+            g[0], g[1], g[2], g[3],
+            l[0], l[1]
+        ])
     }
 
     // Non-Transitive Opaque 
-    pub fn non_transitive_opaque_route_target(value: &[u8]) -> Self {
-        let mut buf = [0u8; 8];
-
-        buf[0] = 0x43;
-        buf[1] = 0x02;
-        buf[2..8].copy_from_slice(value);
-
-        ExtendedCommunity(buf)
+    pub fn non_transitive_opaque_route_target(v: [u8; 6]) -> Self {
+        ExtendedCommunity([
+            0x43, 0x02,
+            v[0], v[1], v[2], v[3], v[4], v[5]
+        ])
     }
 
     //--- route origin constructors ------------------------------------------
-    // transitive two-octet AS specific
-    //      0x0002 : AS2 : AS4
-    pub fn transitive_as2_route_origin(global: u16, local: u32) -> Self {
-        let mut buf = [0u8; 8];
-        
-        buf[0] = 0x00;
-        buf[1] = 0x03;
-        buf[2..4].copy_from_slice(&global.to_be_bytes());
-        buf[4..8].copy_from_slice(&local.to_be_bytes());
-        
-        ExtendedCommunity(buf)
+
+    pub fn transitive_as2_route_origin(global: Asn16, local: u32) -> Self {
+        let g = global.to_raw();
+        let l = local.to_be_bytes();
+        ExtendedCommunity([
+            0x00, 0x03,
+            g[0], g[1],
+            l[0], l[1], l[2], l[3]
+        ])
     }
 
     // transitive four-octet AS specific
-    //      0x0202 : AS4 : AS2
-    pub fn transitive_as4_route_origin(global: u32, local: u16) -> Self {
-        let mut buf = [0u8; 8];
-        
-        buf[0] = 0x02;
-        buf[1] = 0x03;
-        buf[2..6].copy_from_slice(&global.to_be_bytes());
-        buf[6..8].copy_from_slice(&local.to_be_bytes());
-        
-        ExtendedCommunity(buf)
+    pub fn transitive_as4_route_origin(global: Asn, local: u16) -> Self {
+        let g = global.to_raw();
+        let l = local.to_be_bytes();
+        ExtendedCommunity([
+            0x02, 0x03,
+            g[0], g[1], g[2], g[3],
+            l[0], l[1]
+        ])
     }
 
     //  transitive ipv4-addr specific
-    //      0x0102 : 
     pub fn transitive_ip4_route_origin(global: Ipv4Addr, local: u16) -> Self {
-        let mut buf = [0u8; 8];
-        
-        buf[0] = 0x01;
-        buf[1] = 0x03;
-        buf[2..6].copy_from_slice(&global.octets());
-        buf[6..8].copy_from_slice(&local.to_be_bytes());
-        
-        ExtendedCommunity(buf)
+        let g = global.octets();
+        let l = local.to_be_bytes();
+        ExtendedCommunity([
+            0x01, 0x03,
+            g[0], g[1], g[2], g[3],
+            l[0], l[1]
+        ])
     }
 
     // getters for specific types
 
-    pub fn as2(&self) -> Option<Asn16> {
+    pub fn as2(self) -> Option<Asn16> {
         use ExtendedCommunityType::*;
         match self.types() {
             (TransitiveTwoOctetSpecific |
@@ -665,7 +662,7 @@ impl ExtendedCommunity {
         }
     }
 
-    pub fn as4(&self) -> Option<Asn> {
+    pub fn as4(self) -> Option<Asn> {
         use ExtendedCommunityType::*;
         match self.types() {
             (TransitiveFourOctetSpecific |
@@ -677,7 +674,7 @@ impl ExtendedCommunity {
         }
     }
 
-    pub fn ip4(&self) -> Option<Ipv4Addr> {
+    pub fn ip4(self) -> Option<Ipv4Addr> {
         use ExtendedCommunityType::*;
         match self.types() {
             (TransitiveIp4Specific |
@@ -694,7 +691,7 @@ impl ExtendedCommunity {
 
     // useable for types where the global administrator part is 4 of the 6
     // value bytes, i.e. ip4 and 4-octet specific types
-    pub fn an2(&self) -> Option<u16> {
+    pub fn an2(self) -> Option<u16> {
         use ExtendedCommunityType::*;
         match self.types() {
             (TransitiveIp4Specific |
@@ -710,7 +707,7 @@ impl ExtendedCommunity {
 
     // useable for types where the global administrator part is 2 of the 6
     // value bytes, i.e. 2-octet specific types
-    pub fn an4(&self) -> Option<u32> {
+    pub fn an4(self) -> Option<u32> {
         use ExtendedCommunityType::*;
         match self.types() {
             (TransitiveTwoOctetSpecific | NonTransitiveTwoOctetSpecific, _) =>
@@ -722,7 +719,7 @@ impl ExtendedCommunity {
     }
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd )]
 pub enum ExtendedCommunityType {
     TransitiveTwoOctetSpecific,
     TransitiveIp4Specific,
@@ -735,7 +732,8 @@ pub enum ExtendedCommunityType {
     OtherType(u8)
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd )]
+// TODO add 0x0b for TransitiveOpaque, Color (RFC 9012) ?
 pub enum ExtendedCommunitySubType {
     RouteTarget,
     RouteOrigin,
@@ -760,7 +758,7 @@ impl From<[u8; 8]> for Community {
 
 
 impl FromStr for ExtendedCommunity {
-    type Err = String;
+    type Err = ParseError;
     
     // 'canonical' representations include:
     // rt:AS:AN
@@ -774,18 +772,18 @@ impl FromStr for ExtendedCommunity {
             match tag {
                 "rt" => {
                     let (ga, an) = tail.split_once(':')
-                        .ok_or_else(||"expected :".to_owned())?;
+                        .ok_or("expected ':'")?;
                     // XXX do we want to force/allow an AS prefix here?
                     // e.g. rt:AS1234:789 ?
                     let ga = ga.strip_prefix("AS").unwrap_or(ga);
                     if let Ok(as2) = u16::from_str(ga) {
                         Ok(Self::transitive_as2_route_target(
-                            as2,
+                            as2.into(),
                             u32::from_str(an).map_err(|_| "illegal u32")?
                         ))
                     } else if let Ok(as4) = u32::from_str(ga) {
                         Ok(Self::transitive_as4_route_target(
-                            as4,
+                            as4.into(),
                             u16::from_str(an).map_err(|_| "illegal u16")?
                         ))
                     } else if let Ok(ip4) = Ipv4Addr::from_str(ga) {
@@ -799,18 +797,18 @@ impl FromStr for ExtendedCommunity {
                 },
             "ro" => {
                     let (ga, an) = tail.split_once(':')
-                        .ok_or_else(|| "expected :".to_owned())?;
+                        .ok_or("expected ':'")?;
                     // XXX do we want to force/allow an AS prefix here?
                     // e.g. rt:AS1234:789 ?
                     let ga = ga.strip_prefix("AS").unwrap_or(ga);
                     if let Ok(as2) = u16::from_str(ga) {
                         Ok(Self::transitive_as2_route_origin(
-                            as2,
+                            as2.into(),
                             u32::from_str(an).map_err(|_| "illegal u32")?
                         ))
                     } else if let Ok(as4) = u32::from_str(ga) {
                         Ok(Self::transitive_as4_route_origin(
-                            as4,
+                            as4.into(),
                             u16::from_str(an).map_err(|_| "illegal u16")?
                         ))
                     } else if let Ok(ip4) = Ipv4Addr::from_str(ga) {
@@ -822,7 +820,7 @@ impl FromStr for ExtendedCommunity {
                         Err("invalid rt:AS:AN".into())
                     }
                 },
-            u => { Err(format!("unknown tag {}", u)) }
+            _ => { Err(ParseError("unknown tag")) }
             }
         } else if let Some(hex) = s.strip_prefix("0x") {
             if let Ok(hex) = u64::from_str_radix(hex, 16) {
@@ -899,7 +897,7 @@ impl Display for ExtendedCommunity {
 //--- Ipv6ExtendedCommunity --------------------------------------------------
 
 /// IPv6 Extended Community as defined in RFC5701.
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd )]
 pub struct Ipv6ExtendedCommunity([u8; 20]);
 
 
@@ -908,31 +906,31 @@ impl Ipv6ExtendedCommunity {
         Self(raw)
     }
 
-    pub fn raw(&self) -> [u8; 20] {
+    pub fn raw(self) -> [u8; 20] {
         self.0
     }
 
-    pub fn type_raw(&self) -> u8 {
+    pub fn type_raw(self) -> u8 {
         self.0[0]
     }
 
-    pub fn is_transitive(&self) -> bool {
+    pub fn is_transitive(self) -> bool {
         // Transitive bit 0 means the community is transitive
         self.type_raw() & 0x40 == 0x00
     }
 
-    pub fn ip6(&self) -> Ipv6Addr {
+    pub fn ip6(self) -> Ipv6Addr {
         Ipv6Addr::from(
             <&[u8] as TryInto<[u8; 16]>>::try_into(&self.0[2..18])
             .expect("parsed before")
         )
     }
-    pub fn an2(&self) -> u16 {
+    pub fn an2(self) -> u16 {
         u16::from_be_bytes(self.0[18..20].try_into().unwrap())
     }
 
     // alias for an2
-    pub fn local_admin(&self) -> u16 {
+    pub fn local_admin(self) -> u16 {
         self.an2()
     }
 }
@@ -962,7 +960,7 @@ impl From<[u8; 20]> for Community {
 // - ro:ipv6:an2 case
 // TODO collect some testdata for this
 impl FromStr for Ipv6ExtendedCommunity {
-    type Err = String;
+    type Err = ParseError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         if let Some(hex) = s.strip_prefix("0x") {
@@ -1015,12 +1013,12 @@ impl Display for Ipv6ExtendedCommunity {
 //--- LargeCommunity ---------------------------------------------------------
 
 /// Large Community as defined in RFC8092.
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd )]
 pub struct LargeCommunity([u8; 12]);
 
 impl LargeCommunity {
 
-    pub fn asn(&self) -> Asn {
+    pub fn asn(self) -> Asn {
         Asn::from_u32(self.global())
     }
     
@@ -1028,19 +1026,19 @@ impl LargeCommunity {
         Self(raw)
     }
 
-    pub fn raw(&self) -> [u8; 12] {
+    pub fn raw(self) -> [u8; 12] {
         self.0
     }
 
-    pub fn global(&self) -> u32 {
+    pub fn global(self) -> u32 {
         u32::from_be_bytes(self.0[0..4].try_into().unwrap())
     }
 
-    pub fn local1(&self) -> u32 {
+    pub fn local1(self) -> u32 {
         u32::from_be_bytes(self.0[4..8].try_into().unwrap())
     }
 
-    pub fn local2(&self) -> u32 {
+    pub fn local2(self) -> u32 {
         u32::from_be_bytes(self.0[8..12].try_into().unwrap())
     }
 }
@@ -1063,7 +1061,7 @@ impl From<[u8; 12]> for Community {
 }
 
 impl FromStr for LargeCommunity {
-    type Err = String;
+    type Err = ParseError;
 
     // Canonical form is u32:u32:u32
     // but we allow AS12345:u32:u32 as well
@@ -1101,7 +1099,7 @@ impl Display for LargeCommunity {
 
 //--- Tmp should be in other place in routecore ------------------------------
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd )]
 pub struct Asn16(u16);
 
 impl Asn16 {
@@ -1110,6 +1108,9 @@ impl Asn16 {
     }
     pub fn into_asn32(self) -> Asn {
         Asn::from_u32(self.0 as u32)
+    }
+    pub fn to_raw(self) -> [u8; 2] {
+        self.0.to_be_bytes()
     }
 }
 
@@ -1126,7 +1127,7 @@ impl From<u16> for Asn16 {
 }
 
 impl FromStr for Asn16 {
-    type Err = String;
+    type Err = ParseError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         s.strip_prefix("AS").ok_or_else(|| "missing AS".into())
@@ -1136,6 +1137,23 @@ impl FromStr for Asn16 {
             .map(Asn16::from_u16)
     }
 }
+
+
+//--- Error ------------------------------------------------------------------
+
+#[derive(Debug)]
+pub struct ParseError(&'static str);
+impl From<&'static str> for ParseError {
+    fn from(s: &'static str) -> Self {
+        Self(s)
+    }
+}
+impl Display for ParseError {
+    fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
+        write!(f,"{}",self.0)
+    }
+}
+impl std::error::Error for ParseError {}
 
 
 //--- tests ------------------------------------------------------------------
@@ -1148,31 +1166,31 @@ mod tests {
     fn macro_based() {
         let sc = StandardCommunity::from_str("NO_EXPORT").unwrap();
         let sc2 = StandardCommunity::from_str("NoExport").unwrap();
-        assert!(sc.is_well_known());
+        assert!(sc.is_wellknown());
         assert!(!sc.is_private());
         assert_eq!(sc, sc2);
 
-        assert_eq!(sc.as_u32(), 0xFFFFFF01);
-        assert_eq!(sc.raw(), [0xFF, 0xFF, 0xFF, 0x01]);
+        assert_eq!(sc.to_u32(), 0xFFFFFF01);
+        assert_eq!(sc.to_raw(), [0xFF, 0xFF, 0xFF, 0x01]);
 
-        //let noexp = WellKnown::NoExport();
-        let noexp = StandardCommunity::for_well_known(WellKnown::NoExport);
-        assert!(noexp.is_well_known());
+        //let noexp = Wellknown::NoExport();
+        let noexp = StandardCommunity::from_wellknown(Wellknown::NoExport);
+        assert!(noexp.is_wellknown());
         assert_eq!(noexp, sc);
-        assert_eq!(noexp.as_u32(), 0xFFFFFF01);
-        assert_eq!(noexp.raw(), [0xFF, 0xFF, 0xFF, 0x01]);
+        assert_eq!(noexp.to_u32(), 0xFFFFFF01);
+        assert_eq!(noexp.to_raw(), [0xFF, 0xFF, 0xFF, 0x01]);
 
         let pr = StandardCommunity::new(Asn16(1234), Tag(5555));
-        assert!(!pr.is_well_known());
+        assert!(!pr.is_wellknown());
         assert!(pr.is_private());
         assert!(pr != noexp);
     }
 
     #[test]
     fn display() {
-        use WellKnown::*;
-        println!("{}", StandardCommunity::for_well_known(NoExport));
-        println!("{}", StandardCommunity::for_well_known(NoAdvertise));
+        use Wellknown::*;
+        println!("{}", StandardCommunity::from_wellknown(NoExport));
+        println!("{}", StandardCommunity::from_wellknown(NoAdvertise));
         println!("{}", StandardCommunity::from_u32(0xffff1234));
         println!("{}", StandardCommunity::new(Asn16(1234), Tag(5555)));
         println!("{}", StandardCommunity::from_str("AS1234:5678").unwrap());
@@ -1184,10 +1202,10 @@ mod tests {
 
     #[test]
     fn from_strs() {
-        use WellKnown::*;
+        use Wellknown::*;
         StandardCommunity::from_str("AS1234:5678").unwrap();
         assert_eq!(
-            StandardCommunity::for_well_known(NoExport),
+            StandardCommunity::from_wellknown(NoExport),
             StandardCommunity::from_str("NoExport").unwrap()
         );
 
@@ -1203,7 +1221,7 @@ mod tests {
     #[test]
     fn from_raw() {
         assert_eq!(
-            <WellKnown as Into<Community>>::into(WellKnown::NoExport),
+            <Wellknown as Into<Community>>::into(Wellknown::NoExport),
             [0xff_u8, 0xff, 0xff, 0x01].into()
         );
         assert_eq!(
@@ -1215,31 +1233,31 @@ mod tests {
     #[test]
     fn types() {
         let c = StandardCommunity::from_u32(0x00112233);
-        assert!(!c.is_well_known());
-        assert!(c.as_well_known().is_none());
+        assert!(!c.is_wellknown());
+        assert!(c.to_wellknown().is_none());
 
-        let c2: StandardCommunity = WellKnown::NoExport.into();
+        let c2: StandardCommunity = Wellknown::NoExport.into();
         println!("{}", c2);
-        assert!(c2 == WellKnown::NoExport.into());
+        assert!(c2 == Wellknown::NoExport.into());
         assert!(c2 == StandardCommunity::from_u32(0xFFFFFF01));
-        assert!(c2.as_well_known() == Some(WellKnown::NoExport));
+        assert!(c2.to_wellknown() == Some(Wellknown::NoExport));
 
-        let c3: Community = WellKnown::NoExport.into();
+        let c3: Community = Wellknown::NoExport.into();
         println!("{:?}", c3);
         assert!(matches!(c3, Community::Standard(_)));
-        assert!(c3 == Community::Standard(StandardCommunity::from_u32(0xffffff01)));
-        assert!(c3 == WellKnown::NoExport.into());
-        assert!(c3.as_well_known() == Some(WellKnown::NoExport));
+        assert!(c3 == Community::Standard(StandardCommunity::from_u32(0xFFFFFF01)));
+        assert!(c3 == Wellknown::NoExport.into());
+        assert!(c3.to_wellknown() == Some(Wellknown::NoExport));
 
         let u = StandardCommunity::from_u32(0xFFFF9999);
-        assert!(u.is_well_known());
-        assert!(u.as_well_known().is_some());
-        assert_eq!(u, WellKnown::Unrecognized(0xFFFF9999).into());
+        assert!(u.is_wellknown());
+        assert!(u.to_wellknown().is_some());
+        assert_eq!(u, Wellknown::Unrecognized(0x9999).into());
         println!("u: {}", u);
 
         let u = StandardCommunity::from_u32(0x00FF9999);
-        assert!(!u.is_well_known());
-        assert!(u.as_well_known().is_none());
+        assert!(!u.is_wellknown());
+        assert!(u.to_wellknown().is_none());
         println!("u: {}", u);
 
 
@@ -1273,7 +1291,7 @@ mod tests {
                 Community::Standard(_)
         ));
         assert!(match Community::from_str("NO_EXPORT").unwrap() {
-                Community::Standard(sc) => sc.is_well_known(),
+                Community::Standard(sc) => sc.is_wellknown(),
                 _ => false
         });
 
@@ -1281,7 +1299,7 @@ mod tests {
             if let Ok(Community::Standard(sc)) =
                 Community::from_str("NO_EXPORT")
             {
-                sc.is_well_known()
+                sc.is_wellknown()
             } else {
                 false
             }
@@ -1293,9 +1311,9 @@ mod tests {
     #[test]
     fn ext_comms() {
         use ExtendedCommunity as EC;
-        let ec1 = EC::transitive_as2_route_target(1234, 6789);
+        let ec1 = EC::transitive_as2_route_target(1234_u16.into(), 6789);
         println!("{}", ec1);
-        let ec2 = EC::transitive_as4_route_target(1234, 6789);
+        let ec2 = EC::transitive_as4_route_target(1234_u32.into(), 6789);
         println!("{}", ec2);
         let ec3 = EC::transitive_ip4_route_target(
             Ipv4Addr::from_str("127.0.0.1").unwrap(), 6789
@@ -1332,11 +1350,11 @@ mod tests {
 
         assert_eq!(
             EC::from_str("rt:AS1234:789").unwrap(),
-            EC::transitive_as2_route_target(1234, 789)
+            EC::transitive_as2_route_target(1234.into(), 789)
         );
         assert_eq!(
             EC::from_str("rt:AS66001:789").unwrap(),
-            EC::transitive_as4_route_target(66001, 789)
+            EC::transitive_as4_route_target(66001_u32.into(), 789)
         );
         assert_eq!(
             EC::from_str("rt:127.0.0.1:789").unwrap(),
@@ -1353,24 +1371,24 @@ mod tests {
         let sc = StandardCommunity::from_str("AS0:52005").unwrap();
         assert!(sc.is_reserved());
         assert!(!sc.is_private());
-        assert!(sc.as_well_known().is_none());
+        assert!(sc.to_wellknown().is_none());
         assert!(sc.asn() == Some(Asn::from_str("AS0").unwrap()));
     }
 
     #[test]
     fn wellknowns() {
-        use WellKnown::*;
-        assert_eq!(StandardCommunity::for_well_known(NoExport).asn(), None);
-        assert_eq!(StandardCommunity::for_well_known(NoExport).tag(), None);
+        use Wellknown::*;
+        assert_eq!(StandardCommunity::from_wellknown(NoExport).asn(), None);
+        assert_eq!(StandardCommunity::from_wellknown(NoExport).tag(), None);
     }
 
     #[test]
     fn asn() {
         use ExtendedCommunity as EC;
-        let c1: Community = EC::transitive_as2_route_target(1234, 789).into();
+        let c1: Community = EC::transitive_as2_route_target(1234_u16.into(), 789).into();
         assert_eq!(c1.asn(), Some(Asn::from_u32(1234)));
 
-        let c2: Community = EC::transitive_as4_route_target(66001, 78).into();
+        let c2: Community = EC::transitive_as4_route_target(66001_u32.into(), 78).into();
         assert_eq!(c2.asn(), Some(Asn::from_u32(66001)));
     }
 
@@ -1379,5 +1397,11 @@ mod tests {
         let s = "0x0102030405060708090a0b0c0d0e0f1011121314";
         let c = Ipv6ExtendedCommunity::from_str(s).unwrap();
         assert_eq!(s, c.to_string());
+    }
+
+    #[test]
+    fn wk_try_from() {
+        assert!(<Wellknown as TryFrom<u32>>::try_from(0xffff0001).is_ok());
+        assert!(<Wellknown as TryFrom<u32>>::try_from(0x0fff0001).is_err());
     }
 }
