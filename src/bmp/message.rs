@@ -354,9 +354,8 @@ impl<Octets: AsRef<[u8]>> CommonHeader<Octets> {
 //  |                  Timestamp (microseconds)                     |
 //  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 
-#[derive(Clone, Copy, Debug, Eq)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialOrd)]
 pub struct PerPeerHeader<Octets: AsRef<[u8]>> {
-    //inner: [u8; 42]
     octets: Octets
 }
 
