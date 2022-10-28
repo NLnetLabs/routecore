@@ -3169,6 +3169,16 @@ impl<Octets: AsRef<[u8]>> Withdrawals<Octets> {
     {
         WithdrawalsIterMp::new(&self.octets, self.session_config, self.afi, self.safi)
     }
+
+    /// Returns the AFI for these withdrawals.
+    pub fn afi(&self) -> AFI {
+        self.afi
+    }
+
+    /// Returns the SAFI for these withdrawals
+    pub fn safi(&self) -> SAFI {
+        self.safi
+    }
 }
 
 /// Iterator over the withdrawn NLRIs.
