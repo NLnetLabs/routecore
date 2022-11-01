@@ -1,15 +1,34 @@
-use log::{info, error, warn};
+use log::{info, warn};
+use std::time::Instant;
 
+
+// The SessionAttributes struct keeps track of all the
+// parameters/counters/values as described in RFC4271. Fields that we
+// introduce ourselves, e.g. the _tick fields to keep track of timers, carry
+// the comment 'routecore'.
+// Such fields, specific to the routecore implementation of the FSM, might
+// eventually render other fields in the struct obsolete. For the _tick
+// fields, that would be the corresponding _timer fields, most likely.
 #[derive(Clone, Copy, Debug)]
 pub struct SessionAttributes {
     // mandatory
     
     state: State, // nr 1, etc
+                  //
     connect_retry_counter: usize,
+
     connect_retry_timer: u16, //current value
     connect_retry_time: u16,  // initial value
+    connect_retry_last_tick: Option<Instant>, // routecore. If counter
+                                              // started, then this fields
+                                              // contains Some(last_tick).
+                                              // If now() - last_tick >
+                                              // retry_time, the timeout is
+                                              // exceeded.
+                              
     hold_timer: u16,         // current value
     hold_time: u16,          // initial value
+                             //
     keepalive_timer: u16,
     keepalive_time: u16, //nr 8
 
@@ -37,6 +56,16 @@ impl SessionAttributes {
     pub fn state(self) -> State {
         self.state
     }
+
+    fn connect_retry_tick(&mut self, t: Instant) {
+        self.connect_retry_last_tick = Some(t);
+    }
+    fn reset_connect_retry(&mut self) {
+        self.connect_retry_counter = 0;
+    }
+    fn stop_connect_retry(&mut self) {
+        self.connect_retry_last_tick = None;
+    }
 }
 
 impl Default for SessionAttributes {
@@ -46,6 +75,7 @@ impl Default for SessionAttributes {
             connect_retry_counter: 0,
             connect_retry_timer: 120,
             connect_retry_time: 120,
+            connect_retry_last_tick: None,
             hold_timer: 90,
             hold_time: 90,
             keepalive_timer: 30,
@@ -54,7 +84,7 @@ impl Default for SessionAttributes {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum State {
     Idle,
     Connect,
@@ -129,6 +159,7 @@ pub enum Event {
 
 
 //---
+#[derive(Copy, Clone)]
 pub struct BgpSession {
     session_attributes: SessionAttributes
 }
@@ -137,16 +168,63 @@ impl BgpSession {
     pub fn new() -> Self {
         Self {session_attributes: SessionAttributes::default() }
     }
-    fn session(&self) -> SessionAttributes {
+
+    fn session(self) -> SessionAttributes {
         self.session_attributes
     }
 
-    pub fn handle_event(&self, event: Event) {
+    fn session_mut(&mut self) -> &mut SessionAttributes {
+        &mut self.session_attributes
+    }
+
+    pub fn state(&self) -> State {
+        self.session_attributes.state
+    }
+
+    fn start_connect_retry_timer(&mut self) {
+       self.session_mut().connect_retry_tick(Instant::now());
+    }
+
+    fn stop_connect_retry_timer(&mut self) {
+       self.session_mut().stop_connect_retry();
+    }
+
+    // XXX perhaps this should also do the corresonding _tick()?
+    fn increase_connect_retry_counter(&mut self) {
+        self.session_mut().connect_retry_counter += 1;
+    }
+
+    fn reset_connect_retry_counter(&mut self) {
+        self.session_mut().connect_retry_counter = 0;
+    }
+
+    pub fn handle_event(&mut self, event: Event) {
         use State as S;
         use Event as E;
-        match (self.session().state(), event) {
+        match (self.state(), event) {
             //--- Idle -------------------------------------------------------
-            (S::Idle, E::ManualStart) => { todo!() }
+            (S::Idle, E::ManualStart) => {
+
+                //- initializes all BGP resources for the peer connection,
+                // 
+                
+                //- sets ConnectRetryCounter to zero,
+                self.session_mut().connect_retry_counter = 0;
+
+                //- starts the ConnectRetryTimer with the initial value,
+                self.start_connect_retry_timer();
+
+                //- initiates a TCP connection to the other BGP peer,
+                // TODO, but, perhaps focus on
+                // ManualStartWithPassiveTcpEstablishment first?
+
+                //- listens for a connection that may be initiated by the remote
+                //  BGP peer, and
+                // TODO tokio listen 
+                
+                //- changes its state to Connect.
+                self.session_mut().state = State::Connect; 
+            }
             (S::Idle, E::ManualStop) => {
                 info!("ignored ManualStop in Idle state")
             }
@@ -160,23 +238,118 @@ impl BgpSession {
             //(S::Idle, E::AutomaticStartWithDampPeerOscillations) => { }
             //(S::Idle, E::AutomaticStartWithDampPeerOscillationsAndPassiveTcpEstablishment) => { }
             //(S::Idle, E::IdleHoldTimerExpires) => { }
-            (S::Idle, e) => warn!("unexpected event {:?} in state Idle", e),
+            (S::Idle,
+                E::ConnectRetryTimerExpires |
+                E::HoldTimerExpires |
+                E::KeepaliveTimerExpires |
+                //E::TcpCrInvalid |
+                E::TcpCrAcked |
+                E::TcpConnectionConfirmed |
+                E::TcpConnectionFails |
+                E::BgpOpen |
+                //E::BgpOpenWithDelayOpenTimerRunning |
+                E::BgpHeaderErr |
+                E::BgpOpenMsgErr |
+                E::NotifMsgVerErr |
+                E::NotifMsg |
+                E::KeepAliveMsg |
+                E::UpdateMsg |
+                E::UpdateMsgErr
+             ) => warn!("(unexpected) non-event {:?} in state Idle", event),
 
             //--- Connect ----------------------------------------------------
             (S::Connect, E::ManualStart /* | events 3-7 */ ) => {
                 info!("ignored {:?} in state Connect", event)
             }
-            (S::Connect, E::ManualStop) => { todo!() }
-            (S::Connect, E::ConnectRetryTimerExpires) => { todo!() }
+            (S::Connect, E::ManualStop) => {
+                // - drops the TCP connection,
+                // TODO tokio
+                
+                // - releases all BGP resources,
+                // TODO (is there something we need to do here?)
+
+                // - sets ConnectRetryCounter to zero,
+                self.session_mut().reset_connect_retry();
+
+                // - stops the ConnectRetryTimer and sets ConnectRetryTimer to
+                //   zero
+                self.stop_connect_retry_timer();
+                
+                // - changes its state to Idle.
+                self.session_mut().state = State::Idle;
+            }
+            (S::Connect, E::ConnectRetryTimerExpires) => {
+                todo!();
+                //- drops the TCP connection,
+                //- restarts the ConnectRetryTimer,
+                //- stops the DelayOpenTimer and resets the timer to zero,
+                //- initiates a TCP connection to the other BGP peer,
+                //- continues to listen for a connection that may be initiated by
+                //  the remote BGP peer, and
+                //- stays in the Connect state.
+            }
             // optional events:
             //(S::Connect, E::DelayOpenTimerExpires) => {}
             //(S::Connect, E::TcpConnectionValid) => {}
             //(S::Connect, E::TcpCrInvalid) => {}
             
             (S::Connect, E::TcpCrAcked | E::TcpConnectionConfirmed) => {
-                todo!()
+                let delayopen_implemented = false;
+                //the local system checks the DelayOpen attribute prior to
+                //processing.  If the DelayOpen attribute is set to TRUE, the
+                //local system:
+                if delayopen_implemented { 
+                    todo!();
+                    //  - stops the ConnectRetryTimer (if running) and sets
+                    //  the ConnectRetryTimer to zero,
+                    //  - sets the DelayOpenTimer to the initial value, and
+                    //  - stays in the Connect state.
+                    
+                // If the DelayOpen attribute is set to FALSE, the local
+                // system:
+                } else {
+                    //  - stops the ConnectRetryTimer (if running) and sets
+                    //  the ConnectRetryTimer to zero,
+                        self.stop_connect_retry_timer();
+
+                    //  - completes BGP initialization
+                    //  TODO (do we need to do something here?)
+
+                    //  - sends an OPEN message to its peer,
+                    //  TODO implement msgbuilder in routecore::bgp::message
+                
+                    //  - set the HoldTimer to a large value (suggested: 4min)
+                    //  TODO
+
+                    //  - changes its state to OpenSent.
+                    self.session_mut().state = State::OpenSent;
+
+                }
+
             }
-            (S::Connect, E::TcpConnectionFails) => { todo!() }
+            (S::Connect, E::TcpConnectionFails) => {
+                let delayopen_implemented_and_running = false;
+                if delayopen_implemented_and_running {
+                    todo!();
+                    //- restarts the ConnectRetryTimer with the initial value,
+                    //- stops the DelayOpenTimer and resets its value to zero,
+                    //- continues to listen for a connection that may be
+                    //  initiated by the remote BGP peer, and
+                    //- changes its state to Active.
+                } else {
+                    //- stops the ConnectRetryTimer to zero,
+                    self.stop_connect_retry_timer();
+
+                    //- drops the TCP connection,
+                    // TODO tokio
+                    
+                    //- releases all BGP resources, and
+                    // TODO something?
+                    
+                    //- changes its state to Idle.
+                    self.session_mut().state = State::Idle;
+                }
+            }
             // optional:
             //(S::Connect, E::BgpOpenWithDelayOpenTimerRunning) => {}
             (S::Connect, E::BgpHeaderErr | E::BgpOpenMsgErr) => { todo!() }
@@ -192,30 +365,202 @@ impl BgpSession {
                 E::KeepAliveMsg |
                 E::UpdateMsg |
                 E::UpdateMsgErr
-                ) => { todo!() }
+            ) => {
+                //- if the ConnectRetryTimer is running, stops and resets the
+                //  ConnectRetryTimer (sets to zero),
+                self.stop_connect_retry_timer();
+
+                //- if the DelayOpenTimer is running, stops and resets the
+                //  DelayOpenTimer (sets to zero),
+                //  TODO
+
+                //- releases all BGP resources,
+                //  TODO anything?
+
+                //- drops the TCP connection,
+                //  TODO tokio
+
+                //- increments the ConnectRetryCounter by 1,
+                self.increase_connect_retry_counter();
+
+                //- performs peer oscillation damping if the DampPeerOscillations
+                //  attribute is set to True, and
+                //  TODO
+
+                //- changes its state to Idle.
+                self.session_mut().state = State::Idle;
+            }
 
 
             //--- Active -----------------------------------------------------
             (S::Active, E::ManualStart /* | events 3-7 */ ) => {
                 info!("ignored {:?} in state Active", event)
             }
-            (S::Active, E::ManualStop) => { todo!() }
-            (S::Active, E::ConnectRetryTimerExpires) => { todo!() }
+            (S::Active, E::ManualStop) => {
+
+                //- If the DelayOpenTimer is running and the
+                //  SendNOTIFICATIONwithoutOPEN session attribute is set, the
+                //  local system sends a NOTIFICATION with a Cease,
+                //  TODO once the optional DelayOpenTimer is implemented
+
+                //- releases all BGP resources including stopping the
+                //  DelayOpenTimer
+                //  TODO something?
+                
+                //- drops the TCP connection,
+                // TODO tokio
+
+                //- sets ConnectRetryCounter to zero,
+                self.reset_connect_retry_counter();
+
+                //- stops the ConnectRetryTimer and sets the ConnectRetryTimer
+                //  to zero
+                self.stop_connect_retry_timer();
+
+                //- changes its state to Idle.
+                self.session_mut().state = State::Idle;
+            }
+            (S::Active, E::ConnectRetryTimerExpires) => {
+
+                //- restarts the ConnectRetryTimer (with initial value),
+                self.start_connect_retry_timer();
+
+                //- initiates a TCP connection to the other BGP peer,
+                // TODO tokio
+
+                //- continues to listen for a TCP connection that may be
+                //  initiated by a remote BGP peer
+                //  TODO tokio?
+
+                //- changes its state to Connect.
+                self.session_mut().state = State::Connect;
+            }
             // optional:
             //(S::Active, E::DelayOpenTimerExpires) => { todo!() }
             //(S::Active, E::TcpConnectionValid) => { todo!() }
             //(S::Active, E::TcpCrInvalid) => { todo!() }
             (S::Active, E::TcpCrAcked | E::TcpConnectionConfirmed) => {
-                todo!()
+                let delayopen_implemented = false;
+
+                if delayopen_implemented {
+                    //If the DelayOpen attribute is set to TRUE, the local
+                    //system:
+                    todo!()
+                    //  - stops the ConnectRetryTimer and sets the
+                    //  ConnectRetryTimer to zero,
+                    //  - sets the DelayOpenTimer to the initial value
+                    //    (DelayOpenTime), and
+                    //  - stays in the Active state.
+                } else {
+                    //If the DelayOpen attribute is set to FALSE, the local
+                    //system:
+                    //  - sets the ConnectRetryTimer to zero,
+                    self.start_connect_retry_timer();
+
+                    //  - completes the BGP initialization,
+                    //  TODO something?
+
+                    //  - sends the OPEN message to its peer,
+                    //  TODO tokio
+
+                    //  - sets its HoldTimer to a large value (sugg: 4min), 
+                    //  TODO
+
+                    //  - changes its state to OpenSent.
+                    self.session_mut().state = State::OpenSent;
+                }
             }
-            (S::Active, E::TcpConnectionFails) => { todo!() }
+            (S::Active, E::TcpConnectionFails) => {
+                //- restarts the ConnectRetryTimer (with the initial value),
+                self.start_connect_retry_timer();
+
+                //- stops and clears the DelayOpenTimer (sets the value to
+                // zero),
+                // TODO once DelayOpenTimer is implemented
+
+                //- releases all BGP resource,
+                // TODO something?
+
+                //- increments the ConnectRetryCounter by 1,
+                self.increase_connect_retry_counter();
+
+                //- optionally performs peer oscillation damping if the
+                //  DampPeerOscillations attribute is set to TRUE, and
+                //  TODO once DampPeerOscillations is implemented
+
+                //- changes its state to Idle.
+                self.session_mut().state = State::Idle;
+            }
             // optional:
             //(S::Active, E::BgpOpenWithDelayOpenTimerRunning) => { todo!() }
 
-            (S::Active, E::BgpHeaderErr) => { todo!() }
-            (S::Active, E::BgpOpenMsgErr) => { todo!() }
+            (S::Active, E::BgpHeaderErr | E::BgpOpenMsgErr) => { 
+                //- (optionally) sends a NOTIFICATION message with the
+                //appropriate error code if the SendNOTIFICATIONwithoutOPEN
+                //attribute is set to TRUE,
+                // TODO
 
-            (S::Active, E::NotifMsgVerErr) => { todo!() }
+                //- sets the ConnectRetryTimer to zero,
+                self.start_connect_retry_timer();
+
+                //- releases all BGP resources,
+                // TODO something?
+
+                //- drops the TCP connection,
+                // TODO tokio
+
+                //- increments the ConnectRetryCounter by 1,
+                self.increase_connect_retry_counter();
+                
+                //- (optionally) performs peer oscillation damping if the
+                //  DampPeerOscillations attribute is set to TRUE, and
+                //  TODO once DampPeerOscillations is implemented
+
+                //- changes its state to Idle.
+                self.session_mut().state = State::Idle;
+            }
+
+            (S::Active, E::NotifMsgVerErr) => {
+                let delayopen_implemented_and_running = false;
+                if delayopen_implemented_and_running {
+                    // If the DelayOpenTimer is running, the local system:
+                    //- stops the ConnectRetryTimer (if running) and sets the
+                    //  ConnectRetryTimer to zero,
+                    self.stop_connect_retry_timer();
+
+                    //- stops and resets the DelayOpenTimer (sets to zero),
+                    // TODO once DelayOpenTimer is implemented
+                    
+                    //- releases all BGP resources,
+                    // TODO something?
+                    
+                    //- drops the TCP connection, and
+                    // TODO tokio
+                    
+                    //- changes its state to Idle.
+                    self.session_mut().state = State::Idle;
+                } else {
+                    //If the DelayOpenTimer is not running, the local system:
+                    //  - sets the ConnectRetryTimer to zero,
+                    self.start_connect_retry_timer();
+
+                    //  - releases all BGP resources,
+                    //  TODO something?
+
+                    //  - drops the TCP connection,
+                    //  TODO tokio
+
+                    //  - increments the ConnectRetryCounter by 1,
+                    self.increase_connect_retry_counter();
+
+                    //  - (optionally) performs peer oscillation damping if
+                    //  the DampPeerOscillations attribute is set to TRUE, and
+                    // TODO once DampPeerOscillations is implemented
+
+                    //  - changes its state to Idle.
+                    self.session_mut().state = State::Idle;
+                }
+            }
 
             (S::Active, 
                 //E::AutomaticStop |
@@ -228,7 +573,26 @@ impl BgpSession {
                 E::KeepAliveMsg |
                 E::UpdateMsg |
                 E::UpdateMsgErr
-                ) => { todo!() }
+                ) => {
+                    //- sets the ConnectRetryTimer to zero,
+                    self.start_connect_retry_timer();
+
+                    //- releases all BGP resources,
+                    // TODO something?
+
+                    //- drops the TCP connection,
+                    // TODO tokio
+
+                    //- increments the ConnectRetryCounter by one,
+                    self.increase_connect_retry_counter();
+
+                    //- (optionally) performs peer oscillation damping if the
+                    //  DampPeerOscillations attribute is set to TRUE, and
+                    //  TODO once DampPeerOscillations is implemented
+
+                    //- changes its state to Idle.
+                    self.session_mut().state = State::Idle;
+            }
 
 
             //--- OpenSent ---------------------------------------------------
@@ -236,27 +600,149 @@ impl BgpSession {
             (S::OpenSent, E::ManualStart /* | events 3-7 */ ) => {
                 info!("ignored {:?} in state OpenSent", event)
             }
-            (S::OpenSent, E::ManualStop) => { todo!() }
+            (S::OpenSent, E::ManualStop) => {
+                //- sends the NOTIFICATION with a Cease,
+                // TODO tokio
+
+                //- sets the ConnectRetryTimer to zero,
+                self.start_connect_retry_timer();
+
+                //- releases all BGP resources,
+                // TODO something?
+
+                //- drops the TCP connection,
+                // TODO tokio
+
+                //- sets the ConnectRetryCounter to zero, and
+                self.reset_connect_retry_counter();
+
+                //- changes its state to Idle.
+                self.session_mut().state = State::Idle;
+
+            }
             // optional: 
             //S::OpenSent, E::AutomaticStop) => { todo!() }
-            (S::OpenSent, E::HoldTimerExpires) => { todo!() }
+            (S::OpenSent, E::HoldTimerExpires) => {
+                //- sends a NOTIFICATION message with the error code Hold
+                //Timer Expired,
+                // TODO tokio
 
+                //- sets the ConnectRetryTimer to zero,
+                self.start_connect_retry_timer();
+
+                //- releases all BGP resources,
+                // TODO something?
+
+                //- drops the TCP connection,
+                // TODO tokio
+
+                //- increments the ConnectRetryCounter,
+                self.increase_connect_retry_counter();
+
+                //- (optionally) performs peer oscillation damping if the
+                //  DampPeerOscillations attribute is set to TRUE, and
+                // TODO once DampPeerOscillations is implemented
+
+                //- changes its state to Idle.
+                self.session_mut().state = State::Idle;
+            }
             (S::OpenSent,
              //E::TcpConnectionValid | // optional
-             E::TcpCrAcked | E::TcpConnectionConfirmed ) => { todo!() }
+             E::TcpCrAcked | E::TcpConnectionConfirmed ) => {
+                todo!()
+                  //If a TcpConnection_Valid (Event 14), Tcp_CR_Acked (Event
+                  //16), or a TcpConnectionConfirmed event (Event 17) is
+                  //received, a second TCP connection may be in progress.
+                  //This second TCP connection is tracked per Connection
+                  //Collision processing (Section 6.8) until an OPEN message
+                  //is received.
+            }
 
             // optional:
             //(S::OpenSent, E::TcpCrInvalid) => { 
             //    info!("ignored {:?} in state OpenSent", event)
             //}
 
-            (S::OpenSent, E::TcpConnectionFails) => { todo!() }
-            (S::OpenSent, E::BgpOpen) => { todo!() }
-            (S::OpenSent, E::BgpHeaderErr | E::BgpOpenMsgErr) => { todo!() }
+            (S::OpenSent, E::TcpConnectionFails) => {
+                //- closes the BGP connection,
+                // TODO tokio
+
+                //- restarts the ConnectRetryTimer,
+                self.start_connect_retry_timer();
+
+                //- continues to listen for a connection that may be initiated
+                //  by the remote BGP peer, and
+                //  TODO tokio
+
+                //- changes its state to Active.
+                self.session_mut().state = State::Active;
+            }
+            (S::OpenSent, E::BgpOpen) => {
+                //- resets the DelayOpenTimer to zero,
+                // TODO once DelayOpenTimer is implemented
+
+                //- sets the BGP ConnectRetryTimer to zero,
+                self.start_connect_retry_timer();
+
+                //- sends a KEEPALIVE message, and
+                // TODO tokio
+
+                //- sets a KeepaliveTimer:
+                // If the negotiated hold time value is zero, then the
+                // HoldTimer and KeepaliveTimer are not started.  If the value
+                // of the Autonomous System field is the same as the local
+                // Autonomous System number, then the connection is an
+                // "internal" connection; otherwise, it is an "external"
+                // connection.  (This will impact UPDATE processing as
+                // described below.)
+                // TODO
+
+                //- sets the HoldTimer according to the negotiated value (see
+                //  Section 4.2),
+                //  TODO
+
+                //- changes its state to OpenConfirm.
+                self.session_mut().state = State::OpenConfirm;
+            }
+            (S::OpenSent, E::BgpHeaderErr | E::BgpOpenMsgErr) => {
+                //- sends a NOTIFICATION message with the appropriate error
+                //code,
+                // TODO tokio
+
+                //- sets the ConnectRetryTimer to zero,
+                self.start_connect_retry_timer();
+
+                //- releases all BGP resources,
+                // TODO something?
+
+                //- drops the TCP connection,
+                // TODO tokio
+
+                //- increments the ConnectRetryCounter by 1,
+                self.increase_connect_retry_counter();
+
+                //- (optionally) performs peer oscillation damping if the
+                //  DampPeerOscillations attribute is TRUE, and
+                //  TODO once DampPeerOscillations is implemented
+
+                //- changes its state to Idle.
+                self.session_mut().state = State::Idle;
+            }
             // optional:
             //(S::OpenSent, E::OpenCollisionDump) => { todo!() }
-            (S::OpenSent, E::NotifMsgVerErr) => { todo!() }
+            (S::OpenSent, E::NotifMsgVerErr) => {
+                //- sets the ConnectRetryTimer to zero,
+                self.start_connect_retry_timer();
 
+                //- releases all BGP resources,
+                // TODO something?
+
+                //- drops the TCP connection, and
+                // TODO tokio
+
+                //- changes its state to Idle.
+                self.session_mut().state = State::Idle;
+            }
             (S::OpenSent, 
                 E::ConnectRetryTimerExpires |
                 E::KeepaliveTimerExpires |
@@ -267,7 +753,30 @@ impl BgpSession {
                 E::KeepAliveMsg |
                 E::UpdateMsg |
                 E::UpdateMsgErr
-            ) => { todo!() }
+            ) => {
+                //- sends the NOTIFICATION with the Error Code Finite State
+                //Machine Error,
+                // TODO tokio
+
+                //- sets the ConnectRetryTimer to zero,
+                self.start_connect_retry_timer();
+
+                //- releases all BGP resources,
+                //TODO something?
+
+                //- drops the TCP connection,
+                // TODO tokio?
+
+                //- increments the ConnectRetryCounter by 1,
+                self.increase_connect_retry_counter();
+
+                //- (optionally) performs peer oscillation damping if the
+                //DampPeerOscillations attribute is set to TRUE, and
+                // TODO once DampPeerOscillations is implemented
+
+                //- changes its state to Idle.
+                self.session_mut().state = State::Idle;
+            }
 
             
             //--- OpenConfirm ------------------------------------------------
@@ -276,32 +785,169 @@ impl BgpSession {
             (S::OpenConfirm, E::ManualStart /* | events 3-7 */ ) => {
                 info!("ignored {:?} in state OpenConfirm", event)
             }
+            (S::OpenConfirm, E::ManualStop) => {
+                //- sends the NOTIFICATION message with a Cease,
+                // TODO tokio
 
-            (S::OpenConfirm, E::ManualStop) => { todo!() }
+                //- releases all BGP resources,
+                // TODO something?
+
+                //- drops the TCP connection,
+                // TODO tokio
+
+                //- sets the ConnectRetryCounter to zero,
+                self.reset_connect_retry_counter();
+
+                //- sets the ConnectRetryTimer to zero, and
+                self.start_connect_retry_timer();
+
+                //- changes its state to Idle.
+                self.session_mut().state = State::Idle;
+            }
             // optional: 
             //(S::OpenConfirm, E::AutomaticStop) => { todo!() }
            
-            (S::OpenConfirm, E::HoldTimerExpires) => { todo!() }
-            (S::OpenConfirm, E::KeepaliveTimerExpires) => { todo!() }
+            (S::OpenConfirm, E::HoldTimerExpires) => {
+                //- sends the NOTIFICATION message with the Error Code Hold
+                //Timer Expired,
+                // TODO tokio
+
+                //- sets the ConnectRetryTimer to zero,
+                self.start_connect_retry_timer();
+
+                //- releases all BGP resources,
+                // TODO something?
+
+                //- drops the TCP connection,
+                // TODO tokio
+
+                //- increments the ConnectRetryCounter by 1,
+                self.increase_connect_retry_counter();
+
+                //- (optionally) performs peer oscillation damping if the
+                // DampPeerOscillations attribute is set to TRUE, and
+                // TODO once DampPeerOscillations is implemented
+
+                //- changes its state to Idle.
+                self.session_mut().state = State::Idle;
+            }
+            (S::OpenConfirm, E::KeepaliveTimerExpires) => {
+                //- sends a KEEPALIVE message,
+                // TODO tokio
+
+                //- restarts the KeepaliveTimer, and
+                // TODO
+
+                //- remains in the OpenConfirmed state.
+                // noop
+            }
 
             (S::OpenConfirm,
              //E::TcpConnectionValid | // optional
-             E::TcpCrAcked | E::TcpConnectionConfirmed ) => { todo!() }
-
+             E::TcpCrAcked | E::TcpConnectionConfirmed ) => {
+                todo!()
+                // TODO: track second connection
+            }
 
             // optional:
             //(S::OpenConfirm, E::TcpCrInvalid) => { 
             //    info!("ignored {:?} in state OpenConfirm", event)
             //}
 
-            (S::OpenConfirm, E::TcpConnectionFails | E::NotifMsg ) => { todo!() }
-            (S::OpenConfirm, E::NotifMsgVerErr) => { todo!() }
-            (S::OpenConfirm, E::BgpOpen) => { todo!() }
-            (S::OpenConfirm, E::BgpHeaderErr | E::BgpOpenMsgErr) => { todo!() }
+            (S::OpenConfirm, E::TcpConnectionFails | E::NotifMsg ) => {
+                //- sets the ConnectRetryTimer to zero,
+                self.start_connect_retry_timer();
+
+                //- releases all BGP resources,
+                // TODO something?
+
+                //- drops the TCP connection,
+                // TODO tokio
+
+                //- increments the ConnectRetryCounter by 1,
+                self.increase_connect_retry_counter();
+
+                //- (optionally) performs peer oscillation damping if the
+                // DampPeerOscillations attribute is set to TRUE, and
+                // TODO once DampPeerOscillations is implemented
+
+                //- changes its state to Idle.
+                self.session_mut().state = State::Idle;
+            }
+            (S::OpenConfirm, E::NotifMsgVerErr) => {
+                //- sets the ConnectRetryTimer to zero,
+                self.start_connect_retry_timer();
+
+                //- releases all BGP resources,
+                //TODO something?
+
+                //- drops the TCP connection, and
+                //TODO tokio
+
+                //- changes its state to Idle.
+                self.session_mut().state = State::Idle;
+            }
+            (S::OpenConfirm, E::BgpOpen) => {
+                // If the local system receives a valid OPEN message (BGPOpen
+                // (Event 19)), the collision detect function is processed per
+                //    Section 6.8.  If this connection is to be dropped due to
+                //    connection collision, the local system:
+
+                //- sends a NOTIFICATION with a Cease,
+                // TODO tokio
+
+                //- sets the ConnectRetryTimer to zero,
+                self.start_connect_retry_timer();
+
+                //- releases all BGP resources,
+                // TODO something?
+
+                //- drops the TCP connection (send TCP FIN),
+                // TODO tokio
+
+                //- increments the ConnectRetryCounter by 1,
+                self.increase_connect_retry_counter();
+
+                //- (optionally) performs peer oscillation damping if the
+                //  DampPeerOscillations attribute is set to TRUE, and
+                //  TODO once DampPeerOscillations is implemented
+
+                //- changes its state to Idle.
+                self.session_mut().state = State::Idle;
+            }
+            (S::OpenConfirm, E::BgpHeaderErr | E::BgpOpenMsgErr) => {
+                //- sends a NOTIFICATION message with the appropriate error
+                //code,
+                // TODO tokio
+
+                //- sets the ConnectRetryTimer to zero,
+                self.start_connect_retry_timer();
+
+                //- releases all BGP resources,
+                // TODO something?
+
+                //- drops the TCP connection,
+                // TODO tokio
+
+                //- increments the ConnectRetryCounter by 1,
+                self.increase_connect_retry_counter();
+
+                //- (optionally) performs peer oscillation damping if the
+                //  DampPeerOscillations attribute is set to TRUE, and
+                //  TODO once DampPeerOscillations is implemented
+
+                //- changes its state to Idle.
+                self.session_mut().state = State::Idle;
+            }
             // optional:
             //(S::OpenConfirm, E::OpenCollisionDump) => { todo!() }
-            (S::OpenConfirm, E::KeepAliveMsg) => { todo!() }
+            (S::OpenConfirm, E::KeepAliveMsg) => {
+                //- restarts the HoldTimer and
+                // TODO
 
+                //- changes its state to Established.
+                self.session_mut().state = State::Established;
+            }
             (S::OpenConfirm, 
                 E::ConnectRetryTimerExpires |
                 //E::DelayOpenTimerExpires |
@@ -309,49 +955,255 @@ impl BgpSession {
                 //E::BgpOpenWithDelayOpenTimerRunning |
                 E::UpdateMsg |
                 E::UpdateMsgErr
-            ) => { todo!() }
+            ) => {
+                //- sends a NOTIFICATION with a code of Finite State Machine
+                //  Error,
+                //  TODO tokio
+
+                //- sets the ConnectRetryTimer to zero,
+                self.start_connect_retry_timer();
+
+                //- releases all BGP resources,
+                //TODO something?
+
+                //- drops the TCP connection,
+                //TODO tokio
+
+                //- increments the ConnectRetryCounter by 1,
+                self.increase_connect_retry_counter();
+
+                //- (optionally) performs peer oscillation damping if the
+                //  DampPeerOscillations attribute is set to TRUE, and
+                //  TODO once DampPeerOscillations is implemented
+
+                //- changes its state to Idle.
+                self.session_mut().state = State::Idle;
+            }
 
             //--- Established ------------------------------------------------
 
             (S::Established, E::ManualStart /* | events 3-7 */ ) => {
                 info!("ignored {:?} in state Established", event)
             }
-            (S::Established, E::ManualStop) => { todo!() }
+            (S::Established, E::ManualStop) => {
+                //- sends the NOTIFICATION message with a Cease,
+                //TODO tokio
+
+                //- sets the ConnectRetryTimer to zero,
+                self.start_connect_retry_timer();
+
+                //- deletes all routes associated with this connection,
+                //TODO manage store
+
+                //- releases BGP resources,
+                //TODO something?
+
+                //- drops the TCP connection,
+                //TODO tokio
+
+                //- sets the ConnectRetryCounter to zero, and
+                self.reset_connect_retry_counter();
+
+                //- changes its state to Idle.
+                self.session_mut().state = State::Idle;
+            }
             // optional:
             //(S::Established, E::AutomaticStop) => { todo!() }
 
-            (S::Established, E::HoldTimerExpires) => { todo!() }
-            (S::Established, E::KeepaliveTimerExpires) => { todo!() }
+            (S::Established, E::HoldTimerExpires) => {
+
+                //- sends a NOTIFICATION message with the Error Code Hold Timer
+                //  Expired,
+                //  TODO tokio
+
+                //- sets the ConnectRetryTimer to zero,
+                self.start_connect_retry_timer();
+
+                //- releases all BGP resources,
+                // TODO store
+
+                //- drops the TCP connection,
+                //TODO tokio
+
+                //- increments the ConnectRetryCounter by 1,
+                self.increase_connect_retry_counter();
+
+                //- (optionally) performs peer oscillation damping if the
+                //  DampPeerOscillations attribute is set to TRUE, and
+                //  TODO once DampPeerOscillations is implemented
+
+                //- changes its state to Idle.
+                self.session_mut().state = State::Idle;
+            }
+            (S::Established, E::KeepaliveTimerExpires) => {
+                //- sends a KEEPALIVE message, and
+                // TODO tokio
+
+                //- restarts its KeepaliveTimer, unless the negotiated HoldTime
+                //  value is zero.
+                //  TODO
+            }
             // optional:
             // (S::Established, E::TcpConnectionValid) => { todo!() }
             // (S::Established, E::TcpCrInvalid) => { info!("ignored etc") }
 
             (S::Established,
-             E::TcpCrAcked | E::TcpConnectionConfirmed ) => { todo!() }
-
-            (S::Established, E::BgpOpen) => { todo!() }
+             E::TcpCrAcked | E::TcpConnectionConfirmed ) => {
+                todo!()
+                // In response to an indication that the TCP connection is
+                // successfully established (Event 16 or Event 17), the second
+                // connection SHALL be tracked until it sends an OPEN message.
+            }
+            (S::Established, E::BgpOpen) => {
+                todo!()
+                // once CollisionDetectEstablishedState is implemented, things
+                // need to happen here
+            }
             // optional:
             //(S::Established, E::OpenCollisionDump) => { todo!() }
             (S::Established,
              E::NotifMsgVerErr | E::NotifMsg | E::TcpConnectionFails) => {
-                todo!()
+
+                //- sets the ConnectRetryTimer to zero,
+                self.start_connect_retry_timer();
+
+                //- deletes all routes associated with this connection,
+                // TODO store
+
+                //- releases all the BGP resources,
+                // TODO something?
+
+                //- drops the TCP connection,
+                // TODO tokio
+
+                //- increments the ConnectRetryCounter by 1,
+                self.increase_connect_retry_counter();
+
+                //- changes its state to Idle.
+                self.session_mut().state = State::Idle;
             }
 
-            (S::Established, E::KeepAliveMsg) => { todo!() }
-            (S::Established, E::UpdateMsg) => { todo!() }
-            (S::Established, E::UpdateMsgErr) => { todo!() }
+            (S::Established, E::KeepAliveMsg) => {
+                //- restarts its HoldTimer, if the negotiated HoldTime value is
+                //  non//-zero, and
+                // TODO
+
+                //- remains in the Established state.
+                self.session_mut().state = State::Established;
+            }
+            (S::Established, E::UpdateMsg) => {
+                //- processes the message,
+                // TODO
+
+                //- restarts its HoldTimer, if the negotiated HoldTime value is
+                //  non//-zero, and
+                //  TODO
+
+                //- remains in the Established state.
+                // noop
+            }
+            (S::Established, E::UpdateMsgErr) => {
+                //- sends a NOTIFICATION message with an Update error,
+                //TODO tokio
+
+                //- sets the ConnectRetryTimer to zero,
+                self.start_connect_retry_timer();
+
+                //- deletes all routes associated with this connection,
+                // TODO store
+
+                //- releases all BGP resources,
+                // TODO something?
+
+                //- drops the TCP connection,
+                // TODO tokio
+
+                //- increments the ConnectRetryCounter by 1,
+                self.increase_connect_retry_counter();
+
+                //- (optionally) performs peer oscillation damping if the
+                // DampPeerOscillations attribute is set to TRUE, and
+                // TODO once DampPeerOscillations is implemented
+
+                //- changes its state to Idle.
+                self.session_mut().state = State::Idle;
+            }
 
 
             (S::Established, 
                 E::ConnectRetryTimerExpires |
                 E::BgpHeaderErr |
                 E::BgpOpenMsgErr
-            ) => { todo!() }
+            ) => {
+                //- sends a NOTIFICATION message with the Error Code Finite State
+                //  Machine Error,
+                // TODO tokio
 
+                //- deletes all routes associated with this connection,
+                // TODO store
 
+                //- sets the ConnectRetryTimer to zero,
+                self.start_connect_retry_timer();
 
+                //- releases all BGP resources,
+                // TODO something?
+
+                //- drops the TCP connection,
+                // TODO tokio
+
+                //- increments the ConnectRetryCounter by 1,
+                self.increase_connect_retry_counter();
+
+                //- (optionally) performs peer oscillation damping if the
+                //  DampPeerOscillations attribute is set to TRUE, and
+                //  TODO once DampPeerOscillations is implemented
+
+                //- changes its state to Idle.
+                self.session_mut().state = State::Idle;
+            }
         }
     }
 }
 
+//--- Tests ------------------------------------------------------------------
 
+#[cfg(test)]
+mod tests {
+
+    use super::*;
+
+    //--- Idle ---------------------------------------------------------------
+    #[test]
+    fn idle_to_connect() {
+        let mut s = BgpSession::new();
+        assert_eq!(s.state(), State::Idle);
+        let t1 = s.session().connect_retry_last_tick;
+        assert!(t1.is_none());
+
+        s.handle_event(Event::ManualStart);
+        assert_eq!(s.state(), State::Connect);
+        
+        let t2 = s.session().connect_retry_last_tick;
+        assert!(t2.is_some());
+    }
+
+    #[test]
+    fn idle_manualstop() {
+        let mut s = BgpSession::new();
+        assert_eq!(s.state(), State::Idle);
+        s.handle_event(Event::ManualStop);
+        assert_eq!(s.state(), State::Idle);
+    }
+
+    //--- Connect ------------------------------------------------------------
+    #[test]
+    fn connect_manualstop() {
+        let mut s = BgpSession::new();
+        s.handle_event(Event::ManualStart);
+        s.handle_event(Event::ManualStop);
+        assert_eq!(s.state(), State::Idle);
+
+
+    }
+
+}
