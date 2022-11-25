@@ -14,7 +14,7 @@ use crate::typeenum; // from util::macros
 pub use open::OpenMessage;
 pub use update::{UpdateMessage, SessionConfig};
 pub use notification::NotificationMessage;
-pub use keepalive::KeepAliveMessage;
+pub use keepalive::KeepaliveMessage;
 
 //--- Generic ----------------------------------------------------------------
 
@@ -33,7 +33,7 @@ pub use keepalive::KeepAliveMessage;
 ///  * `OpenMessage`
 ///  * `UpdateMessage`
 ///  * `NotificationMessage`
-///  * `KeepAliveMessage`
+///  * `KeepaliveMessage`
 ///  * TODO: `RouteRefreshMessage`
 ///
 #[derive(Clone)]
@@ -41,7 +41,7 @@ pub enum Message<Octets> {
     Open(OpenMessage<Octets>),
     Update(UpdateMessage<Octets>),
     Notification(NotificationMessage<Octets>),
-    KeepAlive(KeepAliveMessage<Octets>),
+    Keepalive(KeepaliveMessage<Octets>),
 }
 
 impl<Octets: AsRef<[u8]>> AsRef<[u8]> for Message<Octets>
@@ -51,7 +51,7 @@ impl<Octets: AsRef<[u8]>> AsRef<[u8]> for Message<Octets>
             Message::Open(m) => m.as_ref(),
             Message::Update(m) => m.as_ref(),
             Message::Notification(m) => m.as_ref(),
-            Message::KeepAlive(m) => m.as_ref(),
+            Message::Keepalive(m) => m.as_ref(),
         }
     }
 }
@@ -63,7 +63,7 @@ impl<Octets: AsRef<[u8]>> Message<Octets>
             Message::Open(m) => m.octets(),
             Message::Update(m) => m.octets(),
             Message::Notification(m) => m.octets(),
-            Message::KeepAlive(m) => m.octets(),
+            Message::Keepalive(m) => m.octets(),
         }
     }
 }
@@ -93,7 +93,7 @@ typeenum!(
     1 => Open,
     2 => Update,
     3 => Notification,
-    4 => KeepAlive,
+    4 => Keepalive,
     5 => RouteRefresh, // RFC2918
     //6 => //Capability, // draft-ietf-idr-dynamic-cap
 );
@@ -126,9 +126,9 @@ where
                 Ok(Message::Notification(
                     NotificationMessage::from_octets(octets)?
                 )),
-            MsgType::KeepAlive =>
-                Ok(Message::KeepAlive(
-                        KeepAliveMessage::from_octets(octets)?
+            MsgType::Keepalive =>
+                Ok(Message::Keepalive(
+                        KeepaliveMessage::from_octets(octets)?
                 )),
             t => panic!("not implemented yet: {:?}", t)
         }
@@ -236,7 +236,7 @@ impl<Octets: AsRef<[u8]>> Header<Octets> {
             1 => MsgType::Open,
             2 => MsgType::Update,
             3 => MsgType::Notification,
-            4 => MsgType::KeepAlive,
+            4 => MsgType::Keepalive,
             5 => MsgType::RouteRefresh,
             u => panic!("illegal Message Type {}", u)
         }
