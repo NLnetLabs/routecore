@@ -6,7 +6,9 @@
 
 use crate::asn::Asn;
 use crate::bgp::message::{Message as BgpMsg, OpenMessage as BgpOpen, UpdateMessage as BgpUpdate, NotificationMessage as BgpNotification};
-use crate::bgp::message::{AFI, SAFI, CapabilityType, SessionConfig};
+use crate::bgp::types::{AFI, SAFI};
+use crate::bgp::message::update::SessionConfig;
+use crate::bgp::message::open::CapabilityType;
 use crate::util::parser::ParseError;
 use crate::typeenum; // from util::macros
 
@@ -1682,8 +1684,8 @@ mod tests {
     use bytes::Bytes;
     use std::str::FromStr;
     use crate::addr::Prefix;
-    use crate::bgp::message::{AFI, SAFI,PathAttributeType};
-    use crate::bgp::message::{SessionConfig, FourOctetAsn, AddPath};
+    use crate::bgp::types::{AFI, SAFI, PathAttributeType};
+    use crate::bgp::message::update::{AddPath, FourOctetAsn, SessionConfig};
 
     // Helper for generating a .pcap, pass output to `text2pcap`.
     #[allow(dead_code)]

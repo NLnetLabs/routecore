@@ -33,8 +33,13 @@ mod prefix_record;
 mod route;
 
 pub mod communities;
+pub mod types;
+
+
+#[cfg(feature = "bgpfsm")]
 pub mod fsm;
 pub mod message;
+pub use crate::util::parser::ParseError;
 
 pub use self::meta::*;
 pub use self::prefix_record::*;

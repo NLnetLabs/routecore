@@ -1,7 +1,7 @@
 //! FlowSpec v1 parsing.
 
 use crate::addr::Prefix;
-use crate::bgp::message::AFI;
+use crate::bgp::types::AFI;
 use crate::util::parser::ParseError;
 use log::warn;
 use octseq::{OctetsRef, Parser};
