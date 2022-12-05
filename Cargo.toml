@@ -21,7 +21,7 @@ bytes = { version = "1.1.0", optional = true }
 chrono = { version = "0.4", optional = true }
 log = { version = "0.4.17", optional = true }
 
-octseq = { git = "https://github.com/NLnetLabs/octseq", features = ["bytes"], optional = true }
+octseq = { git = "https://github.com/NLnetLabs/octseq", rev="7ce668d", features = ["bytes"], optional = true }
 tokio = { version = "1", features = ["sync", "rt"], optional = true }
 
 [dev-dependencies]
