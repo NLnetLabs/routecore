@@ -3,6 +3,8 @@
 /// # Example 
 ///
 /// ```rust
+/// # #[cfg(feature = "serde")]
+/// # use serde::{Serialize, Deserialize};
 /// # #[macro_use] extern crate routecore;
 /// # fn main() {
 /// typeenum!(AFI, u16,
@@ -21,6 +23,7 @@ macro_rules! typeenum {
     ($(#[$attr:meta])* $name:ident, $ty:ty, $($x:expr => $y:ident),+ $(,)*) => {
         $(#[$attr])*
         #[derive(Clone, Copy, Debug, Hash, Eq, Ord, PartialEq, PartialOrd)]
+        #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
         pub enum $name {
             $($y),+,
             Unimplemented($ty),

@@ -11,6 +11,9 @@ use log::warn;
 use std::net::IpAddr;
 use std::fmt::{Debug, Display, Formatter, Result as FmtResult};
 
+#[cfg(feature = "serde")]
+use serde::{Serialize, Deserialize};
+
 //--- NextHop in MP_REACH_NLRI -----------------------------------------------
 impl NextHop {
     pub fn check<R: AsRef<[u8]>>(parser: &mut Parser<R>, afi: AFI, safi: SAFI)
@@ -203,6 +206,7 @@ impl<Octets: AsRef<[u8]>> Labels<Octets> {
 ///
 /// Used in [`MplsVpnNlri`], [`VplsNlri`] and [`NextHop`].
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct RouteDistinguisher {
     bytes: [u8; 8]
 }

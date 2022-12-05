@@ -3,6 +3,9 @@ use std::net::{Ipv4Addr, Ipv6Addr};
 
 use crate::bgp::message::nlri::RouteDistinguisher;
 
+#[cfg(feature = "serde")]
+use serde::{Serialize, Deserialize};
+
 typeenum!(
 /// AFI as used in BGP OPEN and UPDATE messages.
     AFI, u16,
@@ -75,6 +78,7 @@ pub struct LocalPref(pub u32);
 
 /// Conventional and BGP-MP Next Hop variants.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum NextHop {
     Ipv4(Ipv4Addr),
     Ipv6(Ipv6Addr),

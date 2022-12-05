@@ -11,6 +11,9 @@ use std::error::Error;
 use crate::addr::PrefixError;
 use crate::typeenum; // from util::macros
 
+#[cfg(feature = "serde")]
+use serde::{Serialize, Deserialize};
+
 pub use open::OpenMessage;
 pub use update::{UpdateMessage, SessionConfig};
 pub use notification::NotificationMessage;

@@ -24,6 +24,10 @@ use std::hash::Hash;
 use std::io::Cursor;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
+#[cfg(feature = "serde")]
+use serde::{Serialize, Deserialize};
+
+
 
 // --- Error stuff, refactor this crate-wide after bgmp is merged ------------
 

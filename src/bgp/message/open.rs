@@ -6,6 +6,8 @@ use crate::util::parser::ParseError;
 use log::warn;
 use octseq::{OctetsBuilder, OctetsRef, Parser, ShortBuf, Truncate};
 
+#[cfg(feature = "serde")]
+use serde::{Serialize, Deserialize};
 
 const COFF: usize = 19; // XXX replace this with .skip()'s?
 
