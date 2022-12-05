@@ -1106,6 +1106,9 @@ impl Asn16 {
     pub fn from_u16(u: u16) -> Self {
         Self(u)
     }
+    pub fn to_u16(self) -> u16 {
+        self.0
+    }
     pub fn into_asn32(self) -> Asn {
         Asn::from_u32(self.0 as u32)
     }
