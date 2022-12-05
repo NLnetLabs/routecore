@@ -94,6 +94,8 @@ use std::net::{Ipv4Addr, Ipv6Addr};
 
 use crate::asn::Asn;
 
+#[cfg(feature = "serde")]
+use serde::{Serialize, Deserialize};
 
 //--- Community --------------------------------------------------------------
 
@@ -1099,7 +1101,8 @@ impl Display for LargeCommunity {
 
 //--- Tmp should be in other place in routecore ------------------------------
 
-#[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd )]
+#[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Asn16(u16);
 
 impl Asn16 {
