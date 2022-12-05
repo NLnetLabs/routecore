@@ -74,7 +74,7 @@ pub struct MultiExitDisc(pub u32);
 pub struct LocalPref(pub u32);
 
 /// Conventional and BGP-MP Next Hop variants.
-#[derive(Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum NextHop {
     Ipv4(Ipv4Addr),
     Ipv6(Ipv6Addr),
