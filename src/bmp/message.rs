@@ -527,6 +527,7 @@ pub enum PeerType {
 }
 
 /// Specify which RIB the contents of a message originated from.
+#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq, Ord, PartialOrd)]
 pub enum RibType {
     AdjRibIn,
     AdjRibOut,
