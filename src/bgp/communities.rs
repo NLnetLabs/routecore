@@ -333,7 +333,7 @@ wellknown!(Wellknown,
     0xFFFFFF03 => NoExportSubconfed, "NO_EXPORT_SUBCONFED";
     0xFFFFFF04 => NoPeer, "NOPEER", "NO_PEER";
 
-    0xFFFF029A => BlackHole, "BLACKHOLE";
+    0xFFFF029A => Blackhole, "BLACKHOLE";
 );
 
 
