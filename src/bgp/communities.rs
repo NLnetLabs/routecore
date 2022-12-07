@@ -787,7 +787,7 @@ impl FromStr for ExtendedCommunity {
                         .ok_or("expected ':'")?;
                     // XXX do we want to force/allow an AS prefix here?
                     // e.g. rt:AS1234:789 ?
-                    let ga = ga.strip_prefix("AS").unwrap_or(ga);
+                    let ga = strip_as(ga);
                     if let Ok(as2) = u16::from_str(ga) {
                         Ok(Self::transitive_as2_route_target(
                             as2.into(),
@@ -812,7 +812,7 @@ impl FromStr for ExtendedCommunity {
                         .ok_or("expected ':'")?;
                     // XXX do we want to force/allow an AS prefix here?
                     // e.g. rt:AS1234:789 ?
-                    let ga = ga.strip_prefix("AS").unwrap_or(ga);
+                    let ga = strip_as(ga);
                     if let Ok(as2) = u16::from_str(ga) {
                         Ok(Self::transitive_as2_route_origin(
                             as2.into(),
@@ -1081,7 +1081,7 @@ impl FromStr for LargeCommunity {
         let mut parts = s.splitn(3, ':');
 
         let ga = parts.next().ok_or("expected more parts")?;
-        let ga = ga.strip_prefix("AS").unwrap_or(ga);
+        let ga = strip_as(ga);
         let ga = u32::from_str(ga)
             .map_err(|_| "failed to parse global admin part")?;
 
@@ -1142,15 +1142,29 @@ impl From<u16> for Asn16 {
     }
 }
 
+fn strip_as(s: &str) -> &str {
+    s.strip_prefix("AS")
+        .or(s.strip_prefix("as"))
+        .or(s.strip_prefix("As"))
+        .or(s.strip_prefix("aS"))
+        .unwrap_or(&s)
+}
+
 impl FromStr for Asn16 {
     type Err = ParseError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
+        u16::from_str(strip_as(s)).map_err(|_e| "u16 parsing failed".into())
+            .map(Asn16::from_u16)
+    
+    // more strict version:
+    /*
         s.strip_prefix("AS").ok_or_else(|| "missing AS".into())
             .and_then(|e| u16::from_str(e)
                       .map_err(|_e| "u16 parsing failed".into())
                      )
             .map(Asn16::from_u16)
+    */
     }
 }
 
@@ -1224,9 +1238,17 @@ mod tests {
             StandardCommunity::from_wellknown(NoExport),
             StandardCommunity::from_str("NoExport").unwrap()
         );
+        StandardCommunity::from_str("1234:890").unwrap();
+        StandardCommunity::from_str("as1234:890").unwrap();
+        StandardCommunity::from_str("As1234:890").unwrap();
+        StandardCommunity::from_str("aS1234:890").unwrap();
+
+        assert_eq!(
+            StandardCommunity::from_str("aS1234:890").unwrap(),
+            StandardCommunity::from_str("1234:890").unwrap(),
+        );
 
         //fails
-        StandardCommunity::from_str("1234:890").unwrap_err();
         StandardCommunity::from_str("ASxyz:890").unwrap_err();
         StandardCommunity::from_str("AS1234:xyz").unwrap_err();
         StandardCommunity::from_str("AS1234:xyz:zzz").unwrap_err();
