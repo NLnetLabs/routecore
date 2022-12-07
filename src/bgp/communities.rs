@@ -88,9 +88,10 @@
 //! );
 //! ```
 
+use const_str::convert_case;
 use std::fmt::{Display, Error, Formatter};
-use std::str::FromStr;
 use std::net::{Ipv4Addr, Ipv6Addr};
+use std::str::FromStr;
 
 use crate::asn::Asn;
 
@@ -221,8 +222,7 @@ impl Display for Community {
 
 macro_rules! wellknown {
     ($name:ident,
-        $($hex:expr => $var:ident, $pprim:expr $(,$psec:expr)* );+
-        $(;)+
+        $($hex:expr => $var:ident, $pprim:expr $(,$psec:expr)* ;)+
     )
     => {
 
@@ -291,9 +291,19 @@ macro_rules! wellknown {
             type Err = ParseError;
 
             fn from_str(s: &str) -> Result<Self, Self::Err> {
-                match s {
-                    $($pprim $(|$psec)* | stringify!($var) => Ok($name::$var),)+
-                        _ => Err(ParseError("cant parse"))
+                let s = s.to_lowercase();
+                match s.as_str() {
+                    $(
+                        convert_case!(lower, $pprim)
+                        $(
+                        |convert_case!(lower, $psec)
+                        )* => Ok($name::$var),
+                        // until inline consts on pattern position are
+                        // allowed, we abuse a match arm:
+                        _ if s == stringify!($var).to_lowercase()
+                            => Ok($name::$var),
+                    )+
+                    _ => Err(ParseError("cant parse"))
                 }
             }
         }
@@ -1309,6 +1319,15 @@ mod tests {
             } else {
                 false
             }
+        );
+
+        assert!(
+            Community::from_str("nO_eXpOrT").is_ok()
+        );
+
+        assert_eq!(
+                Community::from_str("No_Export").unwrap(),
+                Community::from_str("NOEXPORT").unwrap()
         );
 
         Community::from_str("abc").unwrap_err();
