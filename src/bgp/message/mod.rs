@@ -4,7 +4,7 @@ pub mod nlri;
 pub mod notification;
 pub mod keepalive;
 
-use octseq::{OctetsRef, Parser};
+use octseq::{Octets, Parser};
 use crate::util::parser::ParseError;
 use std::fmt::{Debug, Display, Formatter, Result as FmtResult};
 use std::error::Error;
@@ -40,15 +40,14 @@ pub use keepalive::KeepaliveMessage;
 ///  * TODO: `RouteRefreshMessage`
 ///
 #[derive(Clone)]
-pub enum Message<Octets> {
-    Open(OpenMessage<Octets>),
-    Update(UpdateMessage<Octets>),
-    Notification(NotificationMessage<Octets>),
-    Keepalive(KeepaliveMessage<Octets>),
+pub enum Message<Octs: Octets> {
+    Open(OpenMessage<Octs>),
+    Update(UpdateMessage<Octs>),
+    Notification(NotificationMessage<Octs>),
+    Keepalive(KeepaliveMessage<Octs>),
 }
 
-impl<Octets: AsRef<[u8]>> AsRef<[u8]> for Message<Octets>
-{
+impl<Octs: Octets> AsRef<[u8]> for Message<Octs> {
     fn as_ref(&self) -> &[u8] {
         match self {
             Message::Open(m) => m.as_ref(),
@@ -59,9 +58,8 @@ impl<Octets: AsRef<[u8]>> AsRef<[u8]> for Message<Octets>
     }
 }
 
-impl<Octets: AsRef<[u8]>> Message<Octets>
-{
-    fn octets(&self) -> &Octets {
+impl<Octs: Octets> Message<Octs> {
+    fn octets(&self) -> &Octs {
         match self {
             Message::Open(m) => m.octets(),
             Message::Update(m) => m.octets(),
@@ -71,12 +69,9 @@ impl<Octets: AsRef<[u8]>> Message<Octets>
     }
 }
 
-impl<Octets: AsRef<[u8]>> Message<Octets>
-where
-    for <'a> &'a Octets: OctetsRef
-{
-    fn header(&self) -> Header<<&Octets as OctetsRef>::Range> {
-        Header::for_slice(self.octets().range_to(19))
+impl<Octs: Octets> Message<Octs> {
+    fn header(&self) -> Header<Octs::Range<'_>> {
+        Header::for_slice(self.octets().range(..19))
     }
 
     /// Returns the length in bytes of the entire BGP message.
@@ -101,13 +96,10 @@ typeenum!(
     //6 => //Capability, // draft-ietf-idr-dynamic-cap
 );
 
-impl<Octets: AsRef<[u8]>> Message<Octets>
-where
-    for<'b> &'b Octets: OctetsRef
-{
+impl<Octs: Octets> Message<Octs> {
     /// Create a Message from an octets sequence.
-    pub fn from_octets(octets: Octets, config: Option<SessionConfig>)
-        -> Result<Message<Octets>, ParseError>
+    pub fn from_octets(octets: Octs, config: Option<SessionConfig>)
+        -> Result<Message<Octs>, ParseError>
     {
         let mut parser = Parser::from_ref(&octets);
         let hdr = Header::parse(&mut parser)?;
@@ -141,10 +133,10 @@ where
 //--- From / TryFrom ---------------------------------------------------------
 
 
-impl<Octets: AsRef<[u8]>>TryFrom<Message<Octets>> for OpenMessage<Octets> {
+impl<Octs: Octets> TryFrom<Message<Octs>> for OpenMessage<Octs> {
     type Error = MessageError;
 
-    fn try_from(msg: Message<Octets>) -> Result<Self, Self::Error> {
+    fn try_from(msg: Message<Octs>) -> Result<Self, Self::Error> {
         match msg {
             Message::Open(u) => Ok(u),
             _ => Err(MessageError::InvalidMsgType),
@@ -152,10 +144,10 @@ impl<Octets: AsRef<[u8]>>TryFrom<Message<Octets>> for OpenMessage<Octets> {
     }
 }
 
-impl<Octets: AsRef<[u8]>>TryFrom<Message<Octets>> for UpdateMessage<Octets> {
+impl<Octs: Octets> TryFrom<Message<Octs>> for UpdateMessage<Octs> {
     type Error = MessageError;
 
-    fn try_from(msg: Message<Octets>) -> Result<Self, Self::Error> {
+    fn try_from(msg: Message<Octs>) -> Result<Self, Self::Error> {
         match msg {
             Message::Update(u) => Ok(u),
             _ => Err(MessageError::InvalidMsgType),
@@ -163,10 +155,10 @@ impl<Octets: AsRef<[u8]>>TryFrom<Message<Octets>> for UpdateMessage<Octets> {
     }
 }
 
-impl<Octets: AsRef<[u8]>> TryFrom<Message<Octets>> for NotificationMessage<Octets> {
+impl<Octs: Octets> TryFrom<Message<Octs>> for NotificationMessage<Octs> {
     type Error = MessageError;
 
-    fn try_from(msg: Message<Octets>) -> Result<Self, Self::Error> {
+    fn try_from(msg: Message<Octs>) -> Result<Self, Self::Error> {
         match msg {
             Message::Notification(u) => Ok(u),
             _ => Err(MessageError::InvalidMsgType),
@@ -195,9 +187,9 @@ impl<Octets: AsRef<[u8]>> TryFrom<Message<Octets>> for NotificationMessage<Octet
         
 /// BGP Message header.
 #[derive(Clone, Copy, Default)]
-pub struct Header<Octets>(Octets);
+pub struct Header<Octs: Octets>(Octs);
 
-impl<Octets: AsMut<[u8]>> Header<Octets> {
+impl<Octs: Octets + AsMut<[u8]>> Header<Octs> {
     pub fn set_type(&mut self, typ: MsgType) {
         self.0.as_mut()[18] = typ.into();
     }
@@ -206,13 +198,14 @@ impl<Octets: AsMut<[u8]>> Header<Octets> {
         self.0.as_mut()[16..=17].copy_from_slice( &(len.to_be_bytes()) );
     }
 }
-impl<Octets: AsRef<[u8]>> AsRef<[u8]> for Header<Octets> {
+
+impl<Octs: Octets> AsRef<[u8]> for Header<Octs> {
     fn as_ref(&self) -> &[u8] {
         self.0.as_ref()
     }
 }
 
-impl<Octets: AsRef<[u8]>> Header<Octets> {
+impl<Octs: Octets> Header<Octs> {
 
     pub fn new() -> Header<Vec<u8>> {
         let mut buf = vec![0xff; 19]; // set marker
@@ -224,7 +217,7 @@ impl<Octets: AsRef<[u8]>> Header<Octets> {
 
 
     /// Create a Header from an Octets.
-    pub fn for_slice(s: Octets) -> Self {
+    pub fn for_slice(s: Octs) -> Self {
         Header(s)
     }
 
@@ -246,10 +239,10 @@ impl<Octets: AsRef<[u8]>> Header<Octets> {
     }
 }
 
-impl<Octets: AsRef<[u8]>> Header<Octets> {
-    fn parse<R>(parser: &mut Parser<R>) -> Result<Self, ParseError>
+impl<Octs: Octets> Header<Octs> {
+    fn parse<'a, R>(parser: &mut Parser<'a, R>) -> Result<Self, ParseError>
     where
-        R: OctetsRef<Range = Octets>
+        R: Octets<Range<'a> = Octs>
     {
         let pos = parser.pos();
         Marker::check(parser)?;
@@ -260,7 +253,9 @@ impl<Octets: AsRef<[u8]>> Header<Octets> {
         Ok(Header(res))
     }
 
-    pub fn check<Ref: OctetsRef>(parser: &mut Parser<Ref>) -> Result<(), ParseError> {
+    pub fn check<R: Octets>(parser: &mut Parser<'_, R>)
+        -> Result<(), ParseError>
+    {
         Marker::check(parser)?;
         let len = parser.parse_u16()? as usize;
         if len != parser.len() {
@@ -275,7 +270,9 @@ impl<Octets: AsRef<[u8]>> Header<Octets> {
 
 struct Marker;
 impl Marker {
-    fn check<Ref: OctetsRef>(parser: &mut Parser<Ref>) -> Result<(), ParseError> {
+    fn check<R: Octets>(parser: &mut Parser<'_, R>)
+        -> Result<(), ParseError>
+    {
         let mut buf = [0u8; 16];
         parser.parse_buf(&mut buf)?;
         if buf != [

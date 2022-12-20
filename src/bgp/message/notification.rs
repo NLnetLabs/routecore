@@ -1,6 +1,6 @@
 use crate::bgp::message::Header;
 use crate::util::parser::ParseError;
-use octseq::{OctetsRef, Parser, ShortBuf};
+use octseq::{Octets, Parser};
 
 const COFF: usize = 19; // XXX replace this with .skip()'s?
 
@@ -10,14 +10,10 @@ pub struct NotificationMessage<Octets> {
     octets: Octets
 }
 
-impl<Octets: AsRef<[u8]>> NotificationMessage<Octets>
-where
-    for <'a> &'a Octets: OctetsRef
-{
+impl<Octs: Octets> NotificationMessage<Octs> {
     /// Returns the [`Header`] for this message.
-    pub fn header(&self) -> Header<<&Octets as OctetsRef>::Range>
-    {
-        Header::for_slice(self.octets.range_to(19))
+    pub fn header(&self) -> Header<Octs::Range<'_>> {
+        Header::for_slice(self.octets.range(..19))
     }
 
     /// Returns the length in bytes of the entire BGP message.
@@ -26,7 +22,7 @@ where
 	}
 }
 
-impl<Octets: AsRef<[u8]>> AsRef<[u8]> for NotificationMessage<Octets> {
+impl<Octs: Octets> AsRef<[u8]> for NotificationMessage<Octs> {
     fn as_ref(&self) -> &[u8] {
         self.octets.as_ref()
     }
@@ -43,16 +39,14 @@ impl<Octets: AsRef<[u8]>> AsRef<[u8]> for NotificationMessage<Octets> {
 /// BGP NOTIFICATION Message.
 ///
 ///
-impl<Octets: AsRef<[u8]>> NotificationMessage<Octets> {
+impl<Octs: Octets> NotificationMessage<Octs> {
 
-    pub fn octets(&self) -> &Octets {
+    pub fn octets(&self) -> &Octs {
             &self.octets
     }
 
-    pub fn for_slice(s: Octets) -> Self {
-        Self {
-            octets: s
-        }
+    pub fn for_slice(s: Octs) -> Self {
+        Self { octets: s }
     }
     
     pub fn code(&self) -> u8 {
@@ -71,16 +65,18 @@ impl<Octets: AsRef<[u8]>> NotificationMessage<Octets> {
         }
     }
 }
-impl<Octets: AsRef<[u8]>> NotificationMessage<Octets> {
-    pub fn from_octets(octets: Octets) -> Result<Self, ParseError> {
+
+impl<Octs: Octets> NotificationMessage<Octs> {
+    pub fn from_octets(octets: Octs) -> Result<Self, ParseError> {
         Ok(NotificationMessage { octets })
     }
 
     // TODO impl fn check()
 
-    pub fn parse<Ref>(parser: &mut Parser<Ref>) -> Result<Self, ParseError>
+    pub fn parse<'a, R>(parser: &mut Parser<'a, R>)
+        -> Result<Self, ParseError>
     where
-        Ref: OctetsRef<Range = Octets>
+        R: Octets<Range<'a> = Octs>, 
     {
         // parse header
         let pos = parser.pos();

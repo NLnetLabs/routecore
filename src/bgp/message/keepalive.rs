@@ -1,6 +1,6 @@
 use crate::bgp::message::{Header, MsgType};
 use crate::util::parser::ParseError;
-use octseq::{OctetsBuilder, OctetsRef, Parser, ShortBuf, Truncate};
+use octseq::{Octets, OctetsBuilder, Parser, ShortBuf, Truncate};
 
 /// BGP Keepalive message, variant of the [`Message`] enum.
 #[derive(Clone, Debug)]
@@ -8,19 +8,15 @@ pub struct KeepaliveMessage<Octets> {
     octets: Octets
 }
 
-impl<Octets: AsRef<[u8]>> KeepaliveMessage<Octets>
-where
-    for <'a> &'a Octets: OctetsRef
-{
-    pub fn from_octets(octets: Octets) -> Result<Self, ParseError> {
+impl<Octs: Octets> KeepaliveMessage<Octs> {
+    pub fn from_octets(octets: Octs) -> Result<Self, ParseError> {
         Self::check(&octets)?;
         Ok(KeepaliveMessage { octets })
     }
 
-    pub fn check(octets: &Octets) -> Result<(), ParseError>
-    {
+    pub fn check(octets: &Octs) -> Result<(), ParseError> {
         let mut parser = Parser::from_ref(octets);
-        Header::<Octets>::check(&mut parser)?;
+        Header::<Octs>::check(&mut parser)?;
         if parser.remaining() > 0 {
             return Err(ParseError::form_error("KEEPALIVE of >19 bytes"));
         }
@@ -28,13 +24,13 @@ where
     }
 }
 
-impl<Octets: AsRef<[u8]>> KeepaliveMessage<Octets> {
-    pub fn octets(&self) -> &Octets {
+impl<Octs: Octets> KeepaliveMessage<Octs> {
+    pub fn octets(&self) -> &Octs {
             &self.octets
     }
 }
 
-impl<Octets: AsRef<[u8]>> AsRef<[u8]> for KeepaliveMessage<Octets> {
+impl<Octs: Octets> AsRef<[u8]> for KeepaliveMessage<Octs> {
     fn as_ref(&self) -> &[u8] {
         self.octets.as_ref()
     }
@@ -50,11 +46,12 @@ pub struct KeepaliveBuilder<Target> {
 
 use core::convert::Infallible;
 impl<Target: OctetsBuilder + Truncate> KeepaliveBuilder<Target>
-where Infallible: From<<Target as OctetsBuilder>::AppendError>
+where
+    Infallible: From<<Target as OctetsBuilder>::AppendError>
 {
     pub fn from_target(mut target: Target) -> Result<Self, ShortBuf> {
         target.truncate(0);
-        let mut h = Header::<Target::Octets>::new();
+        let mut h = Header::<&[u8]>::new();
         h.set_type(MsgType::Keepalive);
         target.append_slice(h.as_ref());
         Ok(KeepaliveBuilder { target })

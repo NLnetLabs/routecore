@@ -5,7 +5,7 @@ use crate::addr::Prefix;
 use crate::util::parser::{parse_ipv4addr, parse_ipv6addr, ParseError};
 use crate::bgp::message::update::{AddPath, SessionConfig};
 use crate::flowspec::Component;
-use octseq::{OctetsRef, Parser};
+use octseq::{Octets, Parser};
 use log::warn;
 
 use std::net::IpAddr;
@@ -16,7 +16,7 @@ use serde::{Serialize, Deserialize};
 
 //--- NextHop in MP_REACH_NLRI -----------------------------------------------
 impl NextHop {
-    pub fn check<R: AsRef<[u8]>>(parser: &mut Parser<R>, afi: AFI, safi: SAFI)
+    pub fn check<R: Octets>(parser: &mut Parser<'_, R>, afi: AFI, safi: SAFI)
         -> Result<(), ParseError>
     {
         let len = parser.parse_u8()?;
@@ -56,7 +56,7 @@ impl NextHop {
         Ok(())
     }
 
-    pub fn parse<R: AsRef<[u8]>>(parser: &mut Parser<R>, afi: AFI, safi: SAFI)
+    pub fn parse<R: Octets>(parser: &mut Parser<'_, R>, afi: AFI, safi: SAFI)
         -> Result<Self, ParseError>
     {
         let len = parser.parse_u8()?;
@@ -96,7 +96,7 @@ impl NextHop {
         Ok(res)
     }
 
-    pub fn skip<R: AsRef<[u8]>>(parser: &mut Parser<R>)
+    pub fn skip<R: Octets>(parser: &mut Parser<'_, R>)
         -> Result<(), ParseError>
     {
         let len = parser.parse_u8()?;
@@ -115,14 +115,14 @@ impl NextHop {
 pub struct PathId(u32);
 
 impl PathId {
-    pub fn check<R: AsRef<[u8]>>(parser: &mut Parser<R>)
+    pub fn check<R: Octets>(parser: &mut Parser<'_, R>)
         -> Result<(), ParseError> 
     {
         parser.advance(4)?;
         Ok(())
     }
 
-    pub fn parse<R: AsRef<[u8]>>(parser: &mut Parser<R>)
+    pub fn parse<R: Octets>(parser: &mut Parser<'_, R>)
         -> Result<Self, ParseError> 
     {
         Ok(PathId(parser.parse_u32()?))
@@ -135,16 +135,17 @@ pub struct Labels<Octets> {
     octets: Octets
 }
 
-impl<Octets: AsRef<[u8]>> Labels<Octets> {
+impl<Octs: Octets> Labels<Octs> {
     fn len(&self) -> usize {
         self.octets.as_ref().len()
     }
 }
 
-impl<Octets: AsRef<[u8]>> Labels<Octets> {
+impl<Octs: Octets> Labels<Octs> {
     // XXX check all this Label stuff again
-    fn _check<R>(parser: &mut Parser<R>) -> Result<(), ParseError>
-        where R: OctetsRef<Range = Octets>
+    fn _check<'a, R>(parser: &mut Parser<'a, R>) -> Result<(), ParseError>
+        where
+            R: Octets<Range<'a> = Octs>
     {
         let mut stop = false;
         let mut buf = [0u8; 3];
@@ -169,8 +170,9 @@ impl<Octets: AsRef<[u8]>> Labels<Octets> {
     // XXX consider splitting up the parsing for this for announcements vs
     // withdrawals? Perhaps via another fields in the (currently so-called)
     // SessionConfig...
-    fn parse<Ref>(parser: &mut Parser<Ref>) -> Result<Self, ParseError>
-        where Ref: OctetsRef<Range = Octets>
+    fn parse<'a, R>(parser: &mut Parser<'a, R>) -> Result<Self, ParseError>
+    where
+        R: Octets<Range<'a> = Octs>
     {
         let pos = parser.pos();
         
@@ -212,13 +214,14 @@ pub struct RouteDistinguisher {
 }
 
 impl RouteDistinguisher {
-    pub fn check<R: AsRef<[u8]>>(parser: &mut Parser<R>)
+    pub fn check<R: Octets>(parser: &mut Parser<'_, R>)
         -> Result<(), ParseError>
     {
         parser.advance(8)?;
         Ok(())
     }
-    pub fn parse<R: AsRef<[u8]>>(parser: &mut Parser<R>)
+
+    pub fn parse<R: Octets>(parser: &mut Parser<'_, R>)
         -> Result<Self, ParseError>
     {
         let mut b = [0u8; 8];
@@ -431,8 +434,8 @@ fn prefix_bits_to_bytes(bits: u8) -> usize {
     }
 }
 
-fn check_prefix<R: AsRef<[u8]>>(
-    parser: &mut Parser<R>,
+fn check_prefix<R: Octets>(
+    parser: &mut Parser<'_, R>,
     prefix_bits: u8,
     afi: AFI
 ) -> Result<(), ParseError> {
@@ -460,10 +463,8 @@ fn check_prefix<R: AsRef<[u8]>>(
     Ok(())
 }
 
-fn parse_prefix<R>(parser: &mut Parser<R>, prefix_bits: u8, afi: AFI)
+fn parse_prefix<R: Octets>(parser: &mut Parser<'_, R>, prefix_bits: u8, afi: AFI)
     -> Result<Prefix, ParseError>
-where
-    R: AsRef<[u8]>
 {
     let prefix_bytes = prefix_bits_to_bytes(prefix_bits);
     let prefix = match (afi, prefix_bytes) {
@@ -503,8 +504,8 @@ where
 }
 
 impl BasicNlri {
-    pub fn check<R: AsRef<[u8]>>(
-        parser: &mut Parser<R>,
+    pub fn check<R: Octets>(
+        parser: &mut Parser<'_, R>,
         config: SessionConfig,
         afi: AFI
     ) -> Result<(), ParseError> {
@@ -518,8 +519,8 @@ impl BasicNlri {
         Ok(())
     }
 
-    pub fn parse<R: AsRef<[u8]>>(
-        parser: &mut Parser<R>,
+    pub fn parse<R: Octets>(
+        parser: &mut Parser<'_, R>,
         config: SessionConfig,
         afi: AFI
     ) -> Result<Self, ParseError> {
@@ -539,11 +540,12 @@ impl BasicNlri {
     }
 }
 
-impl<Octets: AsRef<[u8]>> MplsVpnNlri<Octets> {
-    pub fn check<R>(parser: &mut Parser<R>, config: SessionConfig, afi: AFI)
-        -> Result<(), ParseError>
-    where
-        R: OctetsRef
+impl<Octs: Octets> MplsVpnNlri<Octs> {
+    pub fn check<R: Octets>(
+        parser: &mut Parser<'_, R>,
+        config: SessionConfig,
+        afi: AFI
+        ) -> Result<(), ParseError>
     {
         if config.add_path == AddPath::Enabled {
             parser.advance(4)?;
@@ -570,10 +572,12 @@ impl<Octets: AsRef<[u8]>> MplsVpnNlri<Octets> {
         Ok(())
     }
 
-    pub fn parse<Ref>(parser: &mut Parser<Ref>, config: SessionConfig, afi: AFI)
-        -> Result<Self, ParseError>
+    pub fn parse<'a, R>(
+        parser: &mut Parser<'a, R>,
+        config: SessionConfig,
+        afi: AFI) -> Result<Self, ParseError>
     where
-        Ref: OctetsRef<Range = Octets>
+        R: Octets<Range<'a> = Octs>
     {
         let path_id = match config.add_path {
             AddPath::Enabled => Some(PathId::parse(parser)?),
@@ -603,11 +607,11 @@ impl<Octets: AsRef<[u8]>> MplsVpnNlri<Octets> {
     }
 }
 
-impl<Octets: AsRef<[u8]>> MplsNlri<Octets> {
-    pub fn check<R>(parser: &mut Parser<R>, config: SessionConfig, afi: AFI)
-        -> Result<(), ParseError>
-    where
-        R: OctetsRef
+impl<Octs: Octets> MplsNlri<Octs> {
+    pub fn check<R: Octets>(
+        parser: &mut Parser<'_, R>,
+        config: SessionConfig,
+        afi: AFI) -> Result<(), ParseError>
     {
         if config.add_path == AddPath::Enabled {
             parser.advance(4)?;
@@ -628,9 +632,13 @@ impl<Octets: AsRef<[u8]>> MplsNlri<Octets> {
         check_prefix(parser, prefix_bits, afi)?;
         Ok(())
     }
-    pub fn parse<Ref>(parser: &mut Parser<Ref>, config: SessionConfig, afi: AFI) -> Result<Self, ParseError>
+
+    pub fn parse<'a, R>(
+        parser: &mut Parser<'a, R>,
+        config: SessionConfig,
+        afi: AFI) -> Result<Self, ParseError>
     where
-        Ref: OctetsRef<Range = Octets>
+        R: Octets<Range<'a> = Octs>
     {
         let path_id = match config.add_path {
             AddPath::Enabled => Some(PathId::parse(parser)?),
@@ -638,7 +646,7 @@ impl<Octets: AsRef<[u8]>> MplsNlri<Octets> {
         };
 
         let mut prefix_bits = parser.parse_u8()?;
-        let labels = Labels::<Octets>::parse(parser)?;
+        let labels = Labels::<Octs>::parse(parser)?;
 
         // Check whether we can safely subtract the labels length from the
         // prefix size. If there is an unexpected path id, we might silently
@@ -662,9 +670,8 @@ impl<Octets: AsRef<[u8]>> MplsNlri<Octets> {
 }
 
 impl VplsNlri {
-    pub fn check<R>(parser: &mut Parser<R>) -> Result<(), ParseError>
-    where
-        R: OctetsRef
+    pub fn check<R: Octets>(parser: &mut Parser<'_, R>)
+        -> Result<(), ParseError>
     {
         parser.advance(2)?; // length, u16
         RouteDistinguisher::check(parser)?; 
@@ -674,9 +681,8 @@ impl VplsNlri {
         Ok(())
     }
 
-    pub fn parse<Ref>(parser: &mut Parser<Ref>) -> Result<Self, ParseError>
-    where
-        Ref: OctetsRef
+    pub fn parse<R: Octets>(parser: &mut Parser<'_, R>)
+        -> Result<Self, ParseError>
     {
         let _len = parser.parse_u16()?;
         let rd = RouteDistinguisher::parse(parser)?; 
@@ -698,10 +704,9 @@ impl VplsNlri {
     }
 }
 
-impl<Octets: AsRef<[u8]>> FlowSpecNlri<Octets> {
-    pub fn check<R>(parser: &mut Parser<R>) -> Result<(), ParseError>
-    where
-        R: OctetsRef
+impl<Octs: Octets> FlowSpecNlri<Octs> {
+    pub fn check<R: Octets>(parser: &mut Parser<'_, R>)
+        -> Result<(), ParseError>
     {
         let len1 = parser.parse_u8()?;
         let len: u16 = if len1 >= 0xf0 {
@@ -719,9 +724,10 @@ impl<Octets: AsRef<[u8]>> FlowSpecNlri<Octets> {
         Ok(())
     }
 
-    pub fn parse<Ref>(parser: &mut Parser<Ref>) -> Result<Self, ParseError>
+    pub fn parse<'a, R>(parser: &mut Parser<'a, R>)
+        -> Result<Self, ParseError>
     where
-        Ref: OctetsRef<Range = Octets>
+        R: Octets<Range<'a> = Octs>
     {
         let pos = parser.pos();
         let len1 = parser.parse_u8()?;
@@ -748,10 +754,9 @@ impl<Octets: AsRef<[u8]>> FlowSpecNlri<Octets> {
     }
 }
 
-impl<Octets: AsRef<[u8]>> RouteTargetNlri<Octets> {
-    pub fn check<R>(parser: &mut Parser<R>) -> Result<(), ParseError>
-    where
-        R: OctetsRef
+impl<Octs: Octets> RouteTargetNlri<Octs> {
+    pub fn check<R: Octets>(parser: &mut Parser<'_, R>)
+        -> Result<(), ParseError>
     {
         let prefix_bits = parser.parse_u8()?;
         let prefix_bytes = prefix_bits_to_bytes(prefix_bits);
@@ -760,9 +765,10 @@ impl<Octets: AsRef<[u8]>> RouteTargetNlri<Octets> {
         Ok(())
     }
 
-    pub fn parse<Ref>(parser: &mut Parser<Ref>) -> Result<Self, ParseError>
+    pub fn parse<'a, R>(parser: &mut Parser<'a, R>)
+        -> Result<Self, ParseError>
     where
-        Ref: OctetsRef<Range = Octets>
+        R: Octets<Range<'a> = Octs>
     {
         let prefix_bits = parser.parse_u8()?;
         let prefix_bytes = prefix_bits_to_bytes(prefix_bits);
@@ -773,160 +779,5 @@ impl<Octets: AsRef<[u8]>> RouteTargetNlri<Octets> {
                 raw
             }
         )
-    }
-}
-
-pub struct Withdrawals<Octets> {
-    octets: Octets,
-    session_config: SessionConfig,
-    afi: AFI,
-    safi: SAFI,
-}
-
-impl<Octets: AsRef<[u8]>> Withdrawals<Octets> {
-    pub fn iter<'s>(&'s self) -> WithdrawalsIterMp<&Octets>
-        where &'s Octets: OctetsRef
-    {
-        WithdrawalsIterMp::new(&self.octets, self.session_config, self.afi, self.safi)
-    }
-
-    /// Returns the AFI for these withdrawals.
-    pub fn afi(&self) -> AFI {
-        self.afi
-    }
-
-    /// Returns the SAFI for these withdrawals
-    pub fn safi(&self) -> SAFI {
-        self.safi
-    }
-}
-
-/// Iterator over the withdrawn NLRIs.
-///
-/// Returns items of the enum [`Nlri`], thus both conventional and
-/// BGP MultiProtocol (RFC4760) withdrawn NLRIs.
-pub struct WithdrawalsIterMp<Ref> {
-    parser: Parser<Ref>,
-    session_config: SessionConfig,
-    afi: AFI,
-    safi: SAFI,
-}
-
-impl<Ref: OctetsRef> WithdrawalsIterMp<Ref> {
-    pub fn new(octets: Ref, config: SessionConfig, afi: AFI, safi: SAFI) -> Self {
-        let parser = Parser::from_ref(octets);
-        Self {
-            parser,
-            session_config: config,
-            afi,
-            safi,
-        }
-    }
-
-    fn get_nlri(&mut self) -> Nlri<Ref::Range> {
-        match (self.afi, self.safi) {
-            (_, SAFI::MplsVpnUnicast) => {
-                Nlri::MplsVpn(MplsVpnNlri::parse(&mut self.parser, self.session_config, self.afi).expect("parsed before"))
-            },
-            (_, SAFI::MplsUnicast) => {
-                Nlri::Mpls(MplsNlri::parse(&mut self.parser, self.session_config, self.afi).expect("parsed before"))
-            },
-            (_, SAFI::Unicast) => {
-                Nlri::Basic(BasicNlri::parse(&mut self.parser, self.session_config, self.afi).expect("parsed before"))
-            }
-            (_, _) => panic!("should not come here")
-        }
-    }
-}
-
-impl<Octets: AsRef<[u8]>> Withdrawals<Octets> {
-    pub fn parse_conventional<R>(parser: &mut Parser<R>, config: SessionConfig)
-        -> Result<Self, ParseError>
-    where
-        R: OctetsRef<Range = Octets>
-    {
-        let pos = parser.pos();
-        while parser.remaining() > 0 {
-            BasicNlri::parse(parser, config, AFI::Ipv4)?;
-        }
-        let len = parser.pos() - pos;
-        parser.seek(pos)?;
-        Ok(
-            Withdrawals {
-                octets: parser.parse_octets(len)?,
-                session_config: config,
-                afi: AFI::Ipv4,
-                safi: SAFI::Unicast,
-            }
-        )
-    }
-
-    pub fn check<R>(parser: &mut Parser<R>,  config: SessionConfig)
-        -> Result<(), ParseError>
-    where
-        R: OctetsRef
-    {
-        // NLRIs from MP_UNREACH_NLRI.
-        // Length is given in the Path Attribute length field.
-        // AFI, SAFI, are also in this Path Attribute.
-
-        let afi: AFI = parser.parse_u16()?.into();
-        let safi: SAFI = parser.parse_u8()?.into();
-
-        while parser.remaining() > 0 {
-            match (afi, safi) {
-                (_, SAFI::MplsVpnUnicast) => { MplsVpnNlri::<Octets>::check(parser, config, afi)?;},
-                (_, SAFI::MplsUnicast) => { MplsNlri::<Octets>::check(parser, config, afi)?;},
-                (_, SAFI::Unicast) => { BasicNlri::check(parser, config, afi)?; }
-                (_, _) => { /* return Err(FormError("unimplemented")) */ }
-            }
-        }
-
-        Ok(())
-    }
-
-    /*
-    fn parse<R>(parser: &mut Parser<R>,  config: SessionConfig) -> Result<Self, ParseError>
-    where
-        R: OctetsRef<Range = Octets>
-    {
-        // NLRIs from MP_UNREACH_NLRI.
-        // Length is given in the Path Attribute length field.
-        // AFI, SAFI, are also in this Path Attribute.
-
-        let afi: AFI = parser.parse_u16()?.into();
-        let safi: SAFI = parser.parse_u8()?.into();
-        let pos = parser.pos();
-
-        while parser.remaining() > 0 {
-            match (afi, safi) {
-                (_, SAFI::MplsVpnUnicast) => { MplsVpnNlri::parse(parser, config, afi)?;},
-                (_, SAFI::MplsUnicast) => { MplsNlri::parse(parser, config, afi)?;},
-                (_, SAFI::Unicast) => { BasicNlri::parse(parser, config, afi)?; }
-                (_, _) => { /* return Err(FormError("unimplemented")) */ }
-            }
-        }
-
-        let len = parser.pos() - pos;
-        parser.seek(pos)?;
-        Ok(
-            Withdrawals {
-                octets: parser.parse_octets(len)?,
-                session_config: config,
-                afi,
-                safi,
-            }
-        )
-    }
-*/
-}
-
-impl<Ref: OctetsRef> Iterator for WithdrawalsIterMp<Ref> {
-    type Item = Nlri<Ref::Range>;
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.parser.remaining() == 0 {
-            return None;
-        }
-        Some(self.get_nlri())
     }
 }

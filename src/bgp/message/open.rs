@@ -4,7 +4,7 @@ use crate::bgp::types::{AFI, SAFI};
 use crate::typeenum; // from util::macros
 use crate::util::parser::ParseError;
 use log::warn;
-use octseq::{OctetsBuilder, OctetsRef, Parser, ShortBuf, Truncate};
+use octseq::{Octets, OctetsBuilder, Parser, ShortBuf, Truncate};
 
 #[cfg(feature = "serde")]
 use serde::{Serialize, Deserialize};
@@ -52,23 +52,20 @@ pub struct OpenMessage<Octets> {
 //  |             Optional Parameters (variable)                    |
 //  |                                                               |
 //  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-impl<Octets: AsRef<[u8]>> OpenMessage<Octets> {
-    pub fn for_slice(s: Octets) -> Self {
+impl<Octs: Octets> OpenMessage<Octs> {
+    pub fn for_slice(s: Octs) -> Self {
         OpenMessage { octets: s }
     }
 
-    pub fn octets(&self) -> &Octets {
+    pub fn octets(&self) -> &Octs {
         &self.octets
     }
 }
 
-impl<Octets: AsRef<[u8]>> OpenMessage<Octets>
-where
-    for <'a> &'a Octets: OctetsRef
-{
+impl<Octs: Octets> OpenMessage<Octs> {
     /// Returns the [`Header`] for this message.
-    pub fn header(&self) -> Header<<&Octets as OctetsRef>::Range> {
-        Header::for_slice(self.octets().range_to(19))
+    pub fn header(&self) -> Header<Octs::Range<'_>> {
+        Header::for_slice(self.octets().range(..19))
     }
     
     /// Returns the length in bytes of the entire BGP message.
@@ -77,13 +74,13 @@ where
 	}
 }
 
-impl<Octets: AsRef<[u8]>> AsRef<[u8]> for OpenMessage<Octets> {
+impl<Octs: Octets> AsRef<[u8]> for OpenMessage<Octs> {
     fn as_ref(&self) -> &[u8] {
         self.octets().as_ref()
     }
 }
 
-impl<Octets: AsRef<[u8]>> OpenMessage<Octets> {
+impl<Octs: Octets> OpenMessage<Octs> {
     /// Returns the protocol version number, which should be 4.
     pub fn version(&self) -> u8 {
         self.octets.as_ref()[COFF]
@@ -91,10 +88,7 @@ impl<Octets: AsRef<[u8]>> OpenMessage<Octets> {
 
     /// Convenience method: returns the `Asn` from the Capabilities if any,
     /// otherwise the two-octet Asn from the 'My Autonomous System' field.
-    pub fn my_asn(&self) -> Asn 
-    where
-        for<'a> &'a Octets: OctetsRef,
-    {
+    pub fn my_asn(&self) -> Asn {
         if let Some(c) = self.capabilities().find(|c|
             c.typ() == CapabilityType::FourOctetAsn
         ) {
@@ -128,11 +122,11 @@ impl<Octets: AsRef<[u8]>> OpenMessage<Octets> {
     }
 
     /// Returns an iterator over the Optional Parameters.
-    pub fn parameters(&self) -> ParametersParser<&Octets> {
+    pub fn parameters(&self) -> ParametersParser<Octs> {
         self.parameters_iter()
     }
 
-    fn parameters_iter(&self) -> ParametersParser<&Octets> {
+    fn parameters_iter(&self) -> ParametersParser<Octs> {
         let mut p = Parser::from_ref(&self.octets); 
         p.advance(COFF+10).unwrap();
 
@@ -145,10 +139,8 @@ impl<Octets: AsRef<[u8]>> OpenMessage<Octets> {
     // Multiple Capabilities can be carried in a single Optional Parameter, or
     // multiple individual Optional Parameters can carry a single Capability
     // each. Hence the flatten.
-	pub fn capabilities(&'_ self)
-        -> impl Iterator<Item = Capability<<&'_ Octets as OctetsRef>::Range>>
-    where
-        for <'a> &'a Octets: OctetsRef,
+	pub fn capabilities(&self)
+        -> impl Iterator<Item = Capability<Octs::Range<'_>>>
     {
         self.parameters_iter().filter(|p|
             p.typ() == OptionalParameterType::Capabilities
@@ -173,20 +165,14 @@ impl<Octets: AsRef<[u8]>> OpenMessage<Octets> {
 
     /// Returns true if this message contains the Four-Octet-Capable
     /// capability in the Optional Parameters.
-    pub fn four_octet_capable(&self) -> bool
-    where
-        for<'a> &'a Octets: OctetsRef,
-    {
+    pub fn four_octet_capable(&self) -> bool {
         self.capabilities().any(|c|
             c.typ() == CapabilityType::FourOctetAsn
         )
     }
 
     // FIXME this should return a AFI/SAFI combination, not a bool
-    pub fn add_path_capable(&self) -> bool
-    where
-        for<'a> &'a Octets: OctetsRef,
-    {
+    pub fn add_path_capable(&self) -> bool {
         self.capabilities().any(|c|
             c.typ() == CapabilityType::AddPath
         )
@@ -194,10 +180,7 @@ impl<Octets: AsRef<[u8]>> OpenMessage<Octets> {
 
     /// Returns an iterator over `(AFI, SAFI)` tuples listed as
     /// MultiProtocol Capabilities in the Optional Parameters of this message.
-    pub fn multiprotocol_ids(&self) -> impl Iterator<Item = (AFI,SAFI)> + '_ 
-    where
-        for <'a> &'a Octets: OctetsRef,
-    {
+    pub fn multiprotocol_ids(&self) -> impl Iterator<Item = (AFI,SAFI)> + '_ {
         self.capabilities().filter(|c|
             c.typ() == CapabilityType::MultiProtocol
         ).map(|mp_cap| {
@@ -212,33 +195,24 @@ impl<Octets: AsRef<[u8]>> OpenMessage<Octets> {
 
 }
 
-impl<Octets: AsMut<[u8]>> OpenMessage<Octets> {
-}
 
-
-impl<Octets: AsRef<[u8]>> OpenMessage<Octets> {
+impl<Octs: Octets> OpenMessage<Octs> {
     /// Create an OpenMessage from an octets sequence.
-    pub fn from_octets(octets: Octets) -> Result<Self, ParseError>
-    where
-        for <'a> &'a Octets: OctetsRef
-    {
+    pub fn from_octets(octets: Octs) -> Result<Self, ParseError> {
         Self::check(&octets)?;
         Ok( OpenMessage { octets } )
     }
 
-    fn check(octets: &Octets) -> Result<(), ParseError>
-    where
-        for <'a> &'a Octets: OctetsRef
-    {
+    fn check(octets: &Octs) -> Result<(), ParseError> {
         let mut parser = Parser::from_ref(octets);
-        Header::<Octets>::check(&mut parser)?;
+        Header::<Octs>::check(&mut parser)?;
         // jump over version, 2-octet ASN, Hold timer and BGP ID
         parser.advance(1 + 2 + 2 + 4)?;
         let opt_param_len = parser.parse_u8()? as usize;
         let mut param_parser = parser.parse_parser(opt_param_len)?;
 
         while param_parser.remaining() > 0 {
-            Parameter::<Octets>::check(&mut param_parser)?;
+            Parameter::<Octs>::check(&mut param_parser)?;
         }
 
         if parser.remaining() > 0 {
@@ -250,9 +224,9 @@ impl<Octets: AsRef<[u8]>> OpenMessage<Octets> {
     }
 
     // XXX used in bmp/message.rs still
-    pub fn parse<R>(parser: &mut Parser<R>) -> Result<Self, ParseError>
+    /*pub fn parse<'a, R>(parser: &mut Parser<'a, R>) -> Result<Self, ParseError>
     where
-        R: OctetsRef<Range = Octets>,
+        for<'b>  R: Octets<Range<'b> = Octs>,
     {
         // parse header
         let pos = parser.pos();
@@ -271,7 +245,7 @@ impl<Octets: AsRef<[u8]>> OpenMessage<Octets> {
         }
 
         while opt_param_len > 0 {
-            let param = Parameter::parse(parser)?;
+            let param = Parameter::<Octs>::parse(parser)?;
             opt_param_len -= 2 + param.length() as usize;
         }
 
@@ -287,13 +261,15 @@ impl<Octets: AsRef<[u8]>> OpenMessage<Octets> {
         )
 
     }
+    */
 }
 
-impl<Octets: AsRef<[u8]>> Parameter<Octets> {
+impl<Octs: Octets> Parameter<Octs> {
     // XXX still used in bmp/message.rs
-    pub fn parse<Ref>(parser: &mut Parser<Ref>) -> Result<Self, ParseError>
+    /*
+    pub fn parse<'a, R>(parser: &mut Parser<'a, R>) -> Result<Self, ParseError>
     where
-        Ref: OctetsRef<Range = Octets>
+        Ref: Octets<Range<'a> = Octs>
     {
         let pos = parser.pos();
         let typ = parser.parse_u8()?;
@@ -316,8 +292,9 @@ impl<Octets: AsRef<[u8]>> Parameter<Octets> {
             )
         )
     }
+    */
 
-    fn check<Ref: OctetsRef>(parser: &mut Parser<Ref>)
+    fn check<R: Octets>(parser: &mut Parser<'_, R>)
         -> Result<(), ParseError>
     {
         let typ = parser.parse_u8()?;
@@ -327,7 +304,7 @@ impl<Octets: AsRef<[u8]>> Parameter<Octets> {
             // Parameter, so we need to loop.
             let mut caps_parser = parser.parse_parser(len)?;
             while caps_parser.remaining() > 0 {
-                Capability::<Octets>::check(&mut caps_parser)?;
+                Capability::<Octs>::check(&mut caps_parser)?;
             }
         } else {
             warn!("Optional Parameter in BGP OPEN other than Capability: {}",
@@ -338,8 +315,8 @@ impl<Octets: AsRef<[u8]>> Parameter<Octets> {
     }
 }
 
-impl<Octets: AsRef<[u8]>> Capability<Octets> {
-    fn check<Ref: OctetsRef>(parser: &mut Parser<Ref>)
+impl<Octs: Octets> Capability<Octs> {
+    fn check<R: Octets>(parser: &mut Parser<'_, R>)
         -> Result<(), ParseError>
     {
         let _typ = parser.parse_u8()?;
@@ -348,9 +325,10 @@ impl<Octets: AsRef<[u8]>> Capability<Octets> {
         Ok(())
     }
 
-    fn parse<Ref>(parser: &mut Parser<Ref>) -> Result<Self, ParseError>
+    fn parse<'a, Ref>(parser: &mut Parser<'a, Ref>)
+        -> Result<Self, ParseError>
     where
-        Ref: OctetsRef<Range = Octets>
+        Ref: Octets<Range<'a> = Octs>
     {
         let pos = parser.pos();
         let typ = parser.parse_u8()?;
@@ -530,12 +508,12 @@ impl<Octets: AsRef<[u8]>> Capability<Octets> {
 // <https://www.iana.org/assignments/capability-codes/capability-codes.xhtml>
 
 #[derive(Debug)]
-pub struct Capability<Octets> {
-    octets: Octets,
+pub struct Capability<Octs: Octets> {
+    octets: Octs,
 }
 
-impl<Octets: AsRef<[u8]>> Capability<Octets> {
-    fn for_slice(octets: Octets) -> Capability<Octets> {
+impl<Octs: Octets> Capability<Octs> {
+    fn for_slice(octets: Octs) -> Capability<Octs> {
         Capability { octets }
     }
 
@@ -553,19 +531,19 @@ impl<Octets: AsRef<[u8]>> Capability<Octets> {
     }
 }
 
-impl<Octets: AsRef<[u8]>> AsRef<[u8]> for Capability<Octets> {
+impl<Octs: Octets> AsRef<[u8]> for Capability<Octs> {
     fn as_ref(&self) -> &[u8] {
         self.octets.as_ref()
     }
 }
 
 /// Iterator for BGP OPEN Capabilities.
-pub struct CapabilitiesIter<Ref> {
-    parser: Parser<Ref>,
+pub struct CapabilitiesIter<'a, Ref> {
+    parser: Parser<'a, Ref>,
 }
 
-impl<Ref: OctetsRef> Iterator for CapabilitiesIter<Ref> {
-    type Item = Capability<Ref::Range>;
+impl<'a, Ref: Octets> Iterator for CapabilitiesIter<'a, Ref> {
+    type Item = Capability<Ref::Range<'a>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.parser.remaining() == 0 {
@@ -590,17 +568,17 @@ pub struct Parameter<Octets> {
 }
 
 /// Iterator over BGP OPEN Optional [`Parameter`]s.
-pub struct ParametersParser<Ref> {
-    parser: Parser<Ref>
+pub struct ParametersParser<'a, Ref> {
+    parser: Parser<'a, Ref>
 }
 
-pub struct ParameterParser<Ref> {
+pub struct ParameterParser<'a, Ref> {
     typ: OptionalParameterType,
-    parser: Parser<Ref>
+    parser: Parser<'a, Ref>
 }
 
-impl<Ref> ParameterParser<Ref> {
-    fn into_capability_iter(self) -> CapabilitiesIter<Ref> {
+impl<'a, Ref> ParameterParser<'a, Ref> {
+    fn into_capability_iter(self) -> CapabilitiesIter<'a, Ref> {
         CapabilitiesIter { parser: self.parser }
     }
 
@@ -610,7 +588,7 @@ impl<Ref> ParameterParser<Ref> {
     }
 }
 
-impl<Octets: AsRef<[u8]>> Parameter<Octets> {
+impl<Octs: Octets> Parameter<Octs> {
     /// Returns the parameter type.
     pub fn typ(&self) -> OptionalParameterType {
         self.octets.as_ref()[0].into()
@@ -622,24 +600,21 @@ impl<Octets: AsRef<[u8]>> Parameter<Octets> {
     }
 }
 
-impl<Octets: AsRef<[u8]>> Parameter<Octets> {
-    pub fn for_slice(slice: Octets) -> Self {
+impl<Octs: Octets> Parameter<Octs> {
+    pub fn for_slice(slice: Octs) -> Self {
         Parameter { octets: slice }
     }
 }
 
-impl<Octets: AsRef<[u8]>> Parameter<Octets>
-where
-    for <'a> &'a Octets: OctetsRef<Range = Octets>
-{
+impl<Octs: Octets> Parameter<Octs> {
     /// Returns the raw value of the parameter.
-    pub fn value(&self) -> <&Octets as OctetsRef>::Range {
-        self.octets.range_from(2)
+    pub fn value(&self) -> Octs::Range<'_> {
+        self.octets.range(2..)
     }
 }
 
-impl<Ref: OctetsRef> Iterator for ParametersParser<Ref> {
-    type Item = ParameterParser<Ref>;
+impl<'a, Ref: Octets> Iterator for ParametersParser<'a, Ref> {
+    type Item = ParameterParser<'a, Ref>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.parser.remaining() == 0 {
@@ -701,16 +676,17 @@ typeenum!(
 #[derive(Debug)]
 pub struct OpenBuilder<Target> {
     target: Target,
-    capabilities: Vec<Capability<[u8; 6]>>,
+    capabilities: Vec<Capability<Vec<u8>>>,
 }
 
 use core::convert::Infallible;
 impl<Target: OctetsBuilder + Truncate> OpenBuilder<Target>
-where Infallible: From<<Target as OctetsBuilder>::AppendError>
+where
+    Infallible: From<<Target as OctetsBuilder>::AppendError>
 {
     pub fn from_target(mut target: Target) -> Result<Self, ShortBuf> {
         //target.truncate(0);
-        let mut h = Header::<Target::Octets>::new();
+        let mut h = Header::<&[u8]>::new();
         h.set_length(29);
         h.set_type(MsgType::Open);
         target.append_slice(h.as_ref());
@@ -750,7 +726,7 @@ impl<Target: OctetsBuilder + AsMut<[u8]>> OpenBuilder<Target> {
 
     //pub fn append_optional_parameter(&mut self, opt: OptionalParameterType);
     
-    pub fn add_capability(&mut self, cap: Capability<[u8; 6]>) {
+    pub fn add_capability(&mut self, cap: Capability<Vec<u8>>) {
         // keep a vec of capabilities
         // append cap in that vec
         // update opt param len
@@ -766,7 +742,7 @@ impl<Target: OctetsBuilder + AsMut<[u8]>> OpenBuilder<Target> {
         let a = <AFI as Into<u16>>::into(afi).to_be_bytes();
         s[2] = a[0];
         s[3] = a[1];
-        self.add_capability(Capability::<[u8; 6]>::for_slice(s))
+        self.add_capability(Capability::<Vec<u8>>::for_slice(s.to_vec()))
     }
 
 }

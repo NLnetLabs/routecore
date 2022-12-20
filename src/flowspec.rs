@@ -4,7 +4,7 @@ use crate::addr::Prefix;
 use crate::bgp::types::AFI;
 use crate::util::parser::ParseError;
 use log::warn;
-use octseq::{OctetsRef, Parser};
+use octseq::{Octets, Parser};
 
 use std::net::IpAddr;
 
@@ -56,7 +56,7 @@ pub enum Component<Octets> {
 }
 
 impl NumericOp {
-    fn parse<R: AsRef<[u8]>>(parser: &mut Parser<R>)
+    fn parse<R: Octets>(parser: &mut Parser<'_, R>)
         -> Result<Self, ParseError>
     {
         let op = parser.parse_u8()?;
@@ -72,7 +72,7 @@ impl NumericOp {
 }
 
 impl BitmaskOp {
-    fn parse<R: AsRef<[u8]>>(parser: &mut Parser<R>)
+    fn parse<R: Octets>(parser: &mut Parser<'_, R>)
         -> Result<Self, ParseError>
     {
         let op = parser.parse_u8()?;
@@ -95,10 +95,11 @@ fn prefix_bits_to_bytes(bits: u8) -> usize {
     }
 }
 
-fn parse_prefix<R>(parser: &mut Parser<R>, afi: AFI, prefix_bits: u8)
-    -> Result<Prefix, ParseError>
-where
-    R: AsRef<[u8]>
+fn parse_prefix<R: Octets>(
+    parser: &mut Parser<'_, R>,
+    afi: AFI,
+    prefix_bits: u8
+) -> Result<Prefix, ParseError>
 {
     let prefix_bytes = prefix_bits_to_bytes(prefix_bits);
     let prefix = match (afi, prefix_bytes) {
@@ -137,13 +138,11 @@ where
     Ok(prefix)
 }
 
-impl<Octets> Component<Octets>
-where 
-    Octets: AsRef<[u8]>
-{
-    pub(crate) fn parse<Ref>(parser: &mut Parser<Ref>) -> Result<Self, ParseError>
+impl<Octs: Octets> Component<Octs> {
+    pub(crate) fn parse<'a, R>(parser: &mut Parser<'a, R>)
+        -> Result<Self, ParseError>
     where
-        Ref: OctetsRef<Range = Octets>
+        R: Octets<Range<'a> = Octs>
     {
         let typ = parser.parse_u8()?;
         let res = match typ {

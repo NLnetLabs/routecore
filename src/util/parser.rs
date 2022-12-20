@@ -4,7 +4,7 @@
 
 use core::fmt;
 use octseq::ShortInput;
-use octseq::Parser;
+use octseq::{Octets, Parser};
 use std::net::{Ipv4Addr, Ipv6Addr};
 
 
@@ -15,7 +15,7 @@ use std::net::{Ipv4Addr, Ipv6Addr};
 /// The value is created using a constructor from [`Ipv4Addr`]. The parser
 /// is advanced by four octets. If there aren't enough octets left, leaves
 /// the parser untouched and returns an error instead.
-pub fn parse_ipv4addr<R: AsRef<[u8]>>(parser: &mut Parser<R>)
+pub fn parse_ipv4addr<R: Octets>(parser: &mut Parser<'_, R>)
     -> Result<Ipv4Addr, ShortInput>
 {
     parser.check_len(4)?;
@@ -32,7 +32,7 @@ pub fn parse_ipv4addr<R: AsRef<[u8]>>(parser: &mut Parser<R>)
 /// The value is created using a constructor from [`Ipv6Addr`]. The parser
 /// is advanced by sixteen octets. If there aren't enough octets left,
 /// leaves the parser untouched and returns an error instead.
-pub fn parse_ipv6addr<R: AsRef<[u8]>>(parser: &mut Parser<R>)
+pub fn parse_ipv6addr<R: Octets>(parser: &mut Parser<'_, R>)
     -> Result<Ipv6Addr, ShortInput>
 {
     let mut buf = [0u8; 16];
