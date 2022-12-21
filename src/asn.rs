@@ -431,6 +431,16 @@ impl<T: AsRef<[Asn]>> AsPath<T> {
     pub fn iter(&self) -> AsPath<&[Asn]> {
         AsPath { segments: self.segments.as_ref() }
     }
+    
+    /// Returns true if the path contains the given ASN.
+    pub fn contains(&self, asn: Asn) -> bool {
+        for segment in self.iter() {
+            if segment.elements().contains(&asn) {
+                return true
+            }
+        }
+        false
+    }
 }
 
 
