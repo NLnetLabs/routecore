@@ -547,10 +547,7 @@ impl<Octs: Octets> UpdateMessage<Octs> {
         Ok(())
     }
 
-    /*
-    // XXX can we replace this with a from_octets now?
-    // or rewrite this to check() + UpdateMessage { parse_octets() } or something?
-    // XXX still used in bmp/message.rs
+    // still used in bmp/message.rs
     pub fn parse<'a, R>(parser: &mut Parser<'a, R>, config: SessionConfig)
         -> Result<Self, ParseError>
     where
@@ -593,7 +590,6 @@ impl<Octs: Octets> UpdateMessage<Octs> {
                 config
         ))
     }
-    */
 }
 //--- Enums for passing config / state ---------------------------------------
 

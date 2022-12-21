@@ -15,7 +15,7 @@ use crate::typeenum; // from util::macros
 use bytes::Buf;
 use chrono::{DateTime, TimeZone, Utc};
 use log::warn;
-use octseq::{OctetsRef, Parser};
+use octseq::{Octets, Parser};
 
 
 use std::error::Error;
@@ -129,11 +129,8 @@ impl<Octets: AsRef<[u8]>> AsRef<[u8]> for RouteMirroring<Octets> {
 
 //--- Parsing and impl of the Message enum wrapper ---------------------------
 
-impl<Octets: AsRef<[u8]>> Message<Octets>
-where
-    for<'a> &'a Octets: OctetsRef,
-{
-    pub fn from_octets(octets: Octets) -> Result<Self, ParseError> {
+impl<'a, Octs: Octets + 'a> Message<Octs> {
+    pub fn from_octets(octets: Octs) -> Result<Self, ParseError> {
         let mut parser = Parser::from_ref(&octets);
         let ch = CommonHeader::parse(&mut parser)?;
         match ch.msg_type() {
@@ -158,10 +155,7 @@ where
     }
 }
 
-impl<Octets: AsRef<[u8]>> Message<Octets>
-where
-    for <'a> &'a Octets: OctetsRef,
-{
+impl<Octs: Octets> Message<Octs> {
     pub fn check(src: &mut Cursor<&[u8]>) -> Result<u32, MessageError> {
         if src.remaining() >= 5 {
             let _version = src.get_u8();
@@ -177,14 +171,10 @@ where
     }
 }
 
-impl<Octets: AsRef<[u8]>> Message<Octets>
-where
-    for <'x> &'x Octets: OctetsRef,
+impl<Octs: Octets> Message<Octs>
 {
     /// Return the [`CommonHeader`] for this message.
-    pub fn common_header(&self)
-        -> CommonHeader<<&Octets as OctetsRef>::Range>
-    {
+    pub fn common_header(&self) -> CommonHeader<Octs::Range<'_>> {
         match self {
             Message::RouteMonitoring(m) => m.common_header(),
             Message::StatisticsReport(m) => m.common_header(),
@@ -226,10 +216,7 @@ impl<Octets: AsRef<[u8]>> Display for Message<Octets> {
     }
 }
 
-impl<Octets: AsRef<[u8]>> Debug for Message<Octets>
-where
-    for <'a> &'a Octets: OctetsRef
-{
+impl<Octs: Octets> Debug for Message<Octs> {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         let _ = writeln!(f, "{:?} ({})",
             &self.common_header().msg_type(),
@@ -281,12 +268,12 @@ pub struct CommonHeader<Octets> {
 	octets: Octets
 }
 
-impl<Octets: AsRef<[u8]>> CommonHeader<Octets> {
-    fn for_slice(s: Octets) -> Self {
+impl<Octs: Octets> CommonHeader<Octs> {
+    fn for_slice(s: Octs) -> Self {
         CommonHeader { octets: s }
     }
 
-    fn check<Ref: OctetsRef>(parser: &mut Parser<Ref>)
+    fn check<Ref: Octets>(parser: &mut Parser<Ref>)
         -> Result<(), ParseError>
     {
         let version = parser.parse_u8()?;
@@ -318,10 +305,9 @@ impl<Octets: AsRef<[u8]>> CommonHeader<Octets> {
 
 }
 
-impl<Octets: AsRef<[u8]>> CommonHeader<Octets> {
-    fn parse<R>(parser: &mut Parser<R>) -> Result<Self, ParseError>
-    where
-        R: OctetsRef<Range = Octets>
+impl<Octs: Octets> CommonHeader<Octs> {
+    fn parse<'a>(parser: &mut Parser<'a, Octs>)
+        -> Result<CommonHeader<Octs::Range<'a>>, ParseError>
     {
         // TODO check validity of version, length and msg type
         Ok (
@@ -365,13 +351,13 @@ pub struct PerPeerHeader<Octets: AsRef<[u8]>> {
     octets: Octets
 }
 
-impl<Octets: AsRef<[u8]>> PerPeerHeader<Octets> {
+impl<Octs: Octets> PerPeerHeader<Octs> {
 
-    pub fn for_slice(s: Octets) -> Self {
+    pub fn for_slice(s: Octs) -> Self {
         PerPeerHeader { octets: s }
     }
 
-    pub fn check<Ref: OctetsRef>(parser: &mut Parser<Ref>)
+    pub fn check<Ref: Octets>(parser: &mut Parser<Ref>)
         -> Result<(), ParseError>
     {
         let peer_type = parser.parse_u8()?;
@@ -543,20 +529,16 @@ pub struct RouteMonitoring<Octets: AsRef<[u8]>>
     octets: Octets
 }
 
-impl<Octets: AsRef<[u8]>> RouteMonitoring<Octets> 
-where
-    for <'a> &'a Octets: OctetsRef
-{
-    pub fn from_octets(octets: Octets) -> Result<Self, ParseError> {
+impl<Octs: Octets> RouteMonitoring<Octs> {
+    pub fn from_octets(octets: Octs) -> Result<Self, ParseError> {
         Self::check(&octets)?;
         Ok(RouteMonitoring { octets })
     }
 
-    pub fn check(octets: &Octets) -> Result<(), ParseError>
-    {
+    pub fn check(octets: &Octs) -> Result<(), ParseError> {
         let mut parser = Parser::from_ref(octets);
-        CommonHeader::<Octets>::check(&mut parser)?;
-        PerPeerHeader::<Octets>::check(&mut parser)?;
+        CommonHeader::<Octs>::check(&mut parser)?;
+        PerPeerHeader::<Octs>::check(&mut parser)?;
         //  If we check/parse the encapsulated BGP UPDATE here, and it fails,
         //  this entire BMP RouteMonitoring message is lost.
         //  Instead, if we skip the parsing here, and do the parsing in
@@ -566,29 +548,21 @@ where
     }
 }
 
-impl<Octets: AsRef<[u8]>> RouteMonitoring<Octets>
-where
-    for <'a> &'a Octets: OctetsRef
-{
+impl<Octs: Octets> RouteMonitoring<Octs> {
     /// Return the [`CommonHeader`] for this message.
-    pub fn common_header(&self)
-        -> CommonHeader<<&Octets as OctetsRef>::Range> {
-        CommonHeader::for_slice(self.octets.range_to(6))
+    pub fn common_header(&self) -> CommonHeader<Octs::Range<'_>> {
+        CommonHeader::for_slice(self.octets.range(..6))
     }
 
     /// Return the [`PerPeerHeader`] for this message.
-    pub fn per_peer_header(&self)
-        -> PerPeerHeader<<&Octets as OctetsRef>::Range>
-    {
-        PerPeerHeader::for_slice(self.octets.range(6,6+42))
+    pub fn per_peer_header(&self) -> PerPeerHeader<Octs::Range<'_>> {
+        PerPeerHeader::for_slice(self.octets.range(6..6+42))
     }
 
     /// Return the encapsulated
     /// [BGP UPDATE message](`crate::bgp::MessageUpdate`).
     pub fn bgp_update(&self, config: SessionConfig)
-        -> Result<BgpUpdate<<&Octets as OctetsRef>::Range>, ParseError>
-    where
-        for <'a> &'a Octets: OctetsRef
+        -> Result<BgpUpdate<Octs::Range<'_>>, ParseError>
     {
         let mut parser = Parser::from_ref(
             &self.octets,//.range_from(6+42),
@@ -599,27 +573,19 @@ where
 }
 
 /// Statistics Report message.
-pub struct StatisticsReport<Octets> {
-    octets: Octets,
+pub struct StatisticsReport<Octs> {
+    octets: Octs,
 }
 
-impl<Octets: AsRef<[u8]>> StatisticsReport<Octets> {
+impl<Octs: Octets> StatisticsReport<Octs> {
     /// Return the [`CommonHeader`] for this message.
-    pub fn common_header<'s>(&'s self)
-        -> CommonHeader<<&'s Octets as OctetsRef>::Range>
-    where
-        &'s Octets: OctetsRef
-    {
-        CommonHeader::for_slice(self.octets.range_to(6))
+    pub fn common_header(&self) -> CommonHeader<Octs::Range<'_>> {
+        CommonHeader::for_slice(self.octets.range(..6))
     }
 
     /// Return the [`PerPeerHeader`] for this message.
-    pub fn per_peer_header<'s>(&'s self)
-        -> PerPeerHeader<<&'s Octets as OctetsRef>::Range>
-    where
-        &'s Octets: OctetsRef
-    {
-        PerPeerHeader::for_slice(self.octets.range(6,6+42))
+    pub fn per_peer_header(&self) -> PerPeerHeader<Octs::Range<'_>> {
+        PerPeerHeader::for_slice(self.octets.range(6..6+42))
     }
 
     /// Return the number of statistics listed in this report.
@@ -636,19 +602,16 @@ impl<Octets: AsRef<[u8]>> StatisticsReport<Octets> {
 
 }
 
-impl<Octets: AsRef<[u8]>> StatisticsReport<Octets>
-where
-    for <'a> &'a Octets: OctetsRef
-{
-    pub fn from_octets(octets: Octets) -> Result<Self, ParseError> {
+impl<Octs: Octets> StatisticsReport<Octs> {
+    pub fn from_octets(octets: Octs) -> Result<Self, ParseError> {
         Self::check(&octets)?;
         Ok(Self { octets })
     }
 
-    pub fn check(octets: &Octets) -> Result<(), ParseError> {
+    pub fn check(octets: &Octs) -> Result<(), ParseError> {
         let mut parser = Parser::from_ref(octets);
-        CommonHeader::<Octets>::check(&mut parser)?;
-        PerPeerHeader::<Octets>::check(&mut parser)?;
+        CommonHeader::<Octs>::check(&mut parser)?;
+        PerPeerHeader::<Octs>::check(&mut parser)?;
 
         let count = parser.parse_u32()?;
         for _ in 0..count {
@@ -660,7 +623,7 @@ where
     }
 }
 
-impl<Octets: AsRef<[u8]>> Debug for StatisticsReport<Octets> {
+impl<Octs: Octets> Debug for StatisticsReport<Octs> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for s in self.stats() {
             let _ = writeln!(f, "{}", s);
@@ -675,21 +638,15 @@ pub struct PeerDownNotification<Octets: AsRef<[u8]>> {
     octets: Octets,
 }
 
-impl<Octets: AsRef<[u8]>> PeerDownNotification<Octets>
-where
-    for <'a> &'a Octets: OctetsRef
-{
+impl<Octs: Octets> PeerDownNotification<Octs> {
     /// Return the [`CommonHeader`] for this message.
-    pub fn common_header(&self)
-        -> CommonHeader<<&Octets as OctetsRef>::Range> {
-        CommonHeader::for_slice(self.octets.range_to(6))
+    pub fn common_header(&self) -> CommonHeader<Octs::Range<'_>> {
+        CommonHeader::for_slice(self.octets.range(..6))
     }
 
     /// Return the [`PerPeerHeader`] for this message.
-    pub fn per_peer_header(&self)
-        -> PerPeerHeader<<&Octets as OctetsRef>::Range>
-    {
-        PerPeerHeader::for_slice(self.octets.range(6,6+42))
+    pub fn per_peer_header(&self) -> PerPeerHeader<Octs::Range<'_>> {
+        PerPeerHeader::for_slice(self.octets.range(6..6+42))
     }
 
     /// Return the [`PeerDownReason`] for this message.
@@ -708,9 +665,7 @@ where
     /// Return the optional encapsulated [BGP NOTIFICATION
     /// message](`crate::bgp::MessageNotification`), that should be present
     /// for the Local and Remote Notification PeerDownReasons.
-    pub fn notification(&self)
-        -> Option<BgpNotification<<&Octets as OctetsRef>::Range>>
-    {
+    pub fn notification(&self) -> Option<BgpNotification<Octs::Range<'_>>> {
         if self.reason() == PeerDownReason::LocalNotification ||
            self.reason() == PeerDownReason::RemoteNotification
         {
@@ -720,7 +675,8 @@ where
                 return None
             }
             Some({
-                BgpNotification::from_octets(self.octets.range_from(COFF+1)).expect("parsed before")
+                BgpNotification::from_octets(self.octets.range(COFF+1..))
+                    .expect("parsed before")
             })
         } else {
             None
@@ -751,19 +707,16 @@ pub enum PeerDownReason {
 }
 
 
-impl<Octets: AsRef<[u8]>> PeerDownNotification<Octets>
-where
-    for <'a> &'a Octets: OctetsRef
-{
-    pub fn from_octets(octets: Octets) -> Result<Self, ParseError> {
+impl<Octs: Octets> PeerDownNotification<Octs> {
+    pub fn from_octets(octets: Octs) -> Result<Self, ParseError> {
         Self::check(&octets)?;
         Ok(Self { octets })
     }
 
-    pub fn check(octets: &Octets) -> Result<(), ParseError> {
+    pub fn check(octets: &Octs) -> Result<(), ParseError> {
         let mut parser = Parser::from_ref(octets);
-        CommonHeader::<Octets>::check(&mut parser)?;
-        PerPeerHeader::<Octets>::check(&mut parser)?;
+        CommonHeader::<Octs>::check(&mut parser)?;
+        PerPeerHeader::<Octs>::check(&mut parser)?;
 
         let reason = parser.parse_u8()?;
         match reason {
@@ -792,21 +745,15 @@ pub struct PeerUpNotification<Octets: AsRef<[u8]>> {
     octets: Octets,
 }
 
-impl<Octets: AsRef<[u8]>> PeerUpNotification<Octets>
-where
-    for<'a> &'a Octets: OctetsRef,
-{
+impl<Octs: Octets> PeerUpNotification<Octs> {
     /// Return the [`CommonHeader`] for this message.
-    pub fn common_header(&self)
-        -> CommonHeader<<&Octets as OctetsRef>::Range> {
-        CommonHeader::for_slice(self.octets.range_to(6))
+    pub fn common_header(&self) -> CommonHeader<Octs::Range<'_>> {
+        CommonHeader::for_slice(self.octets.range(..6))
     }
 
     /// Return the [`PerPeerHeader`] for this message.
-    pub fn per_peer_header(&self)
-        -> PerPeerHeader<<&Octets as OctetsRef>::Range>
-    {
-        PerPeerHeader::for_slice(self.octets.range(6,6+42))
+    pub fn per_peer_header(&self) -> PerPeerHeader<Octs::Range<'_>> {
+        PerPeerHeader::for_slice(self.octets.range(6..6+42))
     }
 
     /// Return the local address used for the BGP session.
@@ -839,11 +786,7 @@ where
     }
 
     /// Return the [BGP OPEN message](BgpOpen) sent to the peer.
-    pub fn bgp_open_sent(&self)
-        -> BgpOpen<<&Octets as OctetsRef>::Range>
-    where
-        for <'a> &'a <&'a Octets as OctetsRef>::Range: OctetsRef
-    {
+    pub fn bgp_open_sent(&self) -> BgpOpen<Octs::Range<'_>> {
         let mut parser = Parser::from_ref(
             &self.octets
         );
@@ -855,11 +798,7 @@ where
     }
 
     /// Return the [BGP OPEN message](BgpOpen) received from the peer.
-    pub fn bgp_open_rcvd(&self)
-        -> BgpOpen<<&Octets as OctetsRef>::Range>
-    where
-        for <'a>&'a <&'a Octets as OctetsRef>::Range: OctetsRef
-    {
+    pub fn bgp_open_rcvd(&self) -> BgpOpen<Octs::Range<'_>> {
         let mut pos: usize = 20;
         pos += self.bgp_open_sent().as_ref().len();
         let mut parser = Parser::from_ref(
@@ -875,12 +814,7 @@ where
     /// `bgp_open_rcvd` individually.
     #[allow(clippy::type_complexity)]
     pub fn bgp_open_sent_rcvd(&self)
-        -> (
-            BgpOpen<<&Octets as OctetsRef>::Range>,
-            BgpOpen<<&Octets as OctetsRef>::Range>
-           )
-    where
-        for <'a>&'a <&'a Octets as OctetsRef>::Range: OctetsRef
+        -> ( BgpOpen<Octs::Range<'_>>, BgpOpen<Octs::Range<'_>>,)
     {
         let mut parser = Parser::from_ref(
             &self.octets, //.range_from(COFF+20)
@@ -899,11 +833,7 @@ where
     /// parsing future messages, specifically BGP UPDATEs carried in
     /// RouteMonitoring BMP messages. See [`SessionConfig`] for an example
     /// using it in that way.
-    pub fn session_config(&self) -> SessionConfig
-    where
-        for <'a> &'a Octets: OctetsRef,
-        for <'a, 'b> &'a <&'b Octets as OctetsRef>::Range: OctetsRef,
-    {
+    pub fn session_config(&self) -> SessionConfig {
         let (sent, rcvd) = self.bgp_open_sent_rcvd();
         let mut conf = SessionConfig::modern();
 
@@ -922,10 +852,7 @@ where
     }
 
 
-    pub fn supported_protocols(&self) -> Vec<(AFI, SAFI)>
-    where
-        for <'a, 'b> &'a <&'b Octets as OctetsRef>::Range: OctetsRef,
-    {
+    pub fn supported_protocols(&self) -> Vec<(AFI, SAFI)> {
         let mut v = Vec::new();
         let mut res = Vec::new();
         let (sent, rcvd) = self.bgp_open_sent_rcvd();
@@ -952,10 +879,7 @@ where
 
 
     // XXX: 
-    pub fn information_tlvs(&self) -> InformationTlvIter
-    where
-        for <'a> &'a Octets: OctetsRef<Range = Octets>,
-    {
+    pub fn information_tlvs(&self) -> InformationTlvIter {
         let mut parser = Parser::from_ref(&self.octets);
         parser.advance(6+42).expect("parsed before");
         BgpOpen::parse(&mut parser).expect("parsed before");
@@ -964,22 +888,18 @@ where
         InformationTlvIter::new(&self.as_ref()[parser.pos()..])
     }
 
-
 }
 
-impl<Octets: AsRef<[u8]>> PeerUpNotification<Octets> 
-where
-    for <'a> &'a Octets: OctetsRef
-{
-    pub fn from_octets(octets: Octets) -> Result<Self, ParseError> {
+impl<Octs: Octets> PeerUpNotification<Octs> {
+    pub fn from_octets(octets: Octs) -> Result<Self, ParseError> {
         Self::check(&octets)?;
         Ok(PeerUpNotification { octets })
     }
 
-    pub fn check(octets: &Octets) -> Result<(), ParseError> {
+    pub fn check(octets: &Octs) -> Result<(), ParseError> {
         let mut parser = Parser::from_ref(octets);
-        CommonHeader::<Octets>::check(&mut parser)?;
-        PerPeerHeader::<Octets>::check(&mut parser)?;
+        CommonHeader::<Octs>::check(&mut parser)?;
+        PerPeerHeader::<Octs>::check(&mut parser)?;
 
         // local address, local port, remote port
         parser.advance(16 + 2 + 2)?;
@@ -1007,14 +927,10 @@ pub struct InitiationMessage<Octets: AsRef<[u8]>> {
     octets: Octets,
 }
 
-impl<Octets: AsRef<[u8]>> InitiationMessage<Octets> {
+impl<Octs: Octets> InitiationMessage<Octs> {
     /// Return the [`CommonHeader`] for this message.
-    pub fn common_header<'s>(&'s self)
-        -> CommonHeader<<&'s Octets as OctetsRef>::Range>
-    where
-        &'s Octets: OctetsRef
-    {
-        CommonHeader::for_slice(self.octets.range_to(6))
+    pub fn common_header(&self) -> CommonHeader<Octs::Range<'_>> {
+        CommonHeader::for_slice(self.octets.range(..6))
     }
 
     /// Return an iterator over the Information TLVs.
@@ -1026,18 +942,15 @@ impl<Octets: AsRef<[u8]>> InitiationMessage<Octets> {
     }
 }
 
-impl<Octets: AsRef<[u8]>> InitiationMessage<Octets>
-where
-    for <'a> &'a Octets: OctetsRef
-{
-    pub fn from_octets(octets: Octets) -> Result<Self, ParseError> {
+impl<Octs: Octets> InitiationMessage<Octs> {
+    pub fn from_octets(octets: Octs) -> Result<Self, ParseError> {
         Self::check(&octets)?;
         Ok(Self { octets })
     }
     
-    pub fn check(octets: &Octets) -> Result<(), ParseError> {
+    pub fn check(octets: &Octs) -> Result<(), ParseError> {
         let mut parser = Parser::from_ref(octets);
-        CommonHeader::<Octets>::check(&mut parser)?;
+        CommonHeader::<Octs>::check(&mut parser)?;
         while parser.remaining() > 0 {
             parser.advance(2)?; // type u16
             let info_len = parser.parse_u16()?;
@@ -1053,22 +966,15 @@ pub struct TerminationMessage<Octets: AsRef<[u8]>> {
     octets: Octets,
 }
 
-impl<Octets: AsRef<[u8]>> TerminationMessage<Octets> {
+impl<Octs: Octets> TerminationMessage<Octs> {
     /// Return the [`CommonHeader`] for this message.
-    pub fn common_header<'s>(&'s self)
-        -> CommonHeader<<&'s Octets as OctetsRef>::Range>
-    where
-        &'s Octets: OctetsRef
-    {
-        CommonHeader::for_slice(self.octets.range_to(6))
+    pub fn common_header(&self) -> CommonHeader<Octs::Range<'_>> {
+        CommonHeader::for_slice(self.octets.range(..6))
     }
 
     /// Return an iterator over the Information TLVs.
     // XXX D-R-Y with TLVs from InitiationMessage
-    pub fn information<'s>(&'s self) -> InformationIter
-    where
-        &'s Octets: OctetsRef
-    {
+    pub fn information(&self) -> InformationIter {
         InformationIter::new(
             &self.octets.as_ref()[6..],
             self.common_header().length() as usize - 6
@@ -1076,18 +982,15 @@ impl<Octets: AsRef<[u8]>> TerminationMessage<Octets> {
     }
 }
 
-impl<Octets: AsRef<[u8]>> TerminationMessage<Octets>
-where
-    for <'a> &'a Octets: OctetsRef
-{
-    pub fn from_octets(octets: Octets) -> Result<Self, ParseError> {
+impl<Octs: Octets> TerminationMessage<Octs> {
+    pub fn from_octets(octets: Octs) -> Result<Self, ParseError> {
         Self::check(&octets)?;
         Ok(Self { octets })
     }
 
-    pub fn check(octets: &Octets) -> Result<(), ParseError> {
+    pub fn check(octets: &Octs) -> Result<(), ParseError> {
         let mut parser = Parser::from_ref(octets);
-        CommonHeader::<Octets>::check(&mut parser)?;
+        CommonHeader::<Octs>::check(&mut parser)?;
 
         while parser.remaining() > 0 {
             parser.advance(2)?; // type u16
@@ -1103,43 +1006,32 @@ where
 /// RouteMirroring.
 ///
 /// NB: Not well tested/supported at this moment!  
-pub struct RouteMirroring<Octets: AsRef<[u8]>> {
-    octets: Octets,
+pub struct RouteMirroring<Octs> {
+    octets: Octs,
 }
 
-impl<Octets: AsRef<[u8]>> RouteMirroring<Octets> {
+impl<Octs: Octets> RouteMirroring<Octs> {
     /// Return the [`CommonHeader`] for this message.
-    pub fn common_header<'s>(&'s self)
-        -> CommonHeader<<&'s Octets as OctetsRef>::Range>
-    where
-        &'s Octets: OctetsRef
-    {
-        CommonHeader::for_slice(self.octets.range_to(6))
+    pub fn common_header(&self) -> CommonHeader<Octs::Range<'_>> {
+        CommonHeader::for_slice(self.octets.range(..6))
     }
 
     /// Return the [`PerPeerHeader`] for this message.
-    pub fn per_peer_header<'s>(&'s self)
-        -> PerPeerHeader<<&'s Octets as OctetsRef>::Range>
-    where
-        &'s Octets: OctetsRef
-    {
-        PerPeerHeader::for_slice(self.octets.range(6,6+42))
+    pub fn per_peer_header(&self) -> PerPeerHeader<Octs::Range<'_>> {
+        PerPeerHeader::for_slice(self.octets.range(6..6+42))
     }
 }
 
-impl<Octets: AsRef<[u8]>> RouteMirroring<Octets>
-where
-    for <'a> &'a Octets: OctetsRef
-{
-    pub fn from_octets(octets: Octets) -> Result<Self, ParseError> {
+impl<Octs: Octets> RouteMirroring<Octs> {
+    pub fn from_octets(octets: Octs) -> Result<Self, ParseError> {
         Self::check(&octets)?;
         Ok(Self { octets })
     }
 
-    pub fn check(octets: &Octets) -> Result<(), ParseError> {
+    pub fn check(octets: &Octs) -> Result<(), ParseError> {
         let mut parser = Parser::from_ref(octets);
-        CommonHeader::<Octets>::check(&mut parser)?;
-        PerPeerHeader::<Octets>::check(&mut parser)?;
+        CommonHeader::<Octs>::check(&mut parser)?;
+        PerPeerHeader::<Octs>::check(&mut parser)?;
         // TODO try to check the encapsulated BGP message, the TLVs..
         warn!("Route Mirroring message check not properly implemenented yet");
         Ok(())
@@ -1516,11 +1408,11 @@ impl Display for TerminationInformation {
 //--- Route Mirroring --------------------------------------------------------
 
 /// Types of Route Mirroring TLVs.
-pub enum RouteMirroringType<Octets: AsRef<[u8]> + OctetsRef> {
-    BgpMessage(Result<BgpMsg<Octets>, ParseError>),         // type 0
+pub enum RouteMirroringType<Octs: Octets> {
+    BgpMessage(Result<BgpMsg<Octs>, ParseError>),         // type 0
     InfoErrorPdu,       // type 1 code 0
     InfoMessagesLost,   // type 1 code 1
-    Undefined(u16, Octets),     // carries the type
+    Undefined(u16, Octs),     // carries the type
 }
 
 /*
@@ -1726,7 +1618,7 @@ mod tests {
 
     #[test]
     fn per_peer_header() {
-        let buf = [
+        let buf = vec![
             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
             0x0a, 0xff, 0x00, 0x65, 0x00, 0x01, 0x00, 0x00, 0x0a, 0x0a, 0x0a,

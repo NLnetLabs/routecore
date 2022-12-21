@@ -223,10 +223,9 @@ impl<Octs: Octets> OpenMessage<Octs> {
 
     }
 
-    // XXX used in bmp/message.rs still
-    /*pub fn parse<'a, R>(parser: &mut Parser<'a, R>) -> Result<Self, ParseError>
-    where
-        for<'b>  R: Octets<Range<'b> = Octs>,
+    // used in bmp/message.rs still
+    pub fn parse<'a>(parser: &mut Parser<'a, Octs>)
+        -> Result<OpenMessage<Octs::Range<'a>>, ParseError>
     {
         // parse header
         let pos = parser.pos();
@@ -245,7 +244,7 @@ impl<Octs: Octets> OpenMessage<Octs> {
         }
 
         while opt_param_len > 0 {
-            let param = Parameter::<Octs>::parse(parser)?;
+            let param = Parameter::parse(parser)?;
             opt_param_len -= 2 + param.length() as usize;
         }
 
@@ -257,19 +256,17 @@ impl<Octs: Octets> OpenMessage<Octs> {
         }
         parser.seek(pos)?;
         Ok(
-            Self { octets: parser.parse_octets(hdr.length().into())? }
+            OpenMessage { octets: parser.parse_octets(hdr.length().into())? }
         )
-
     }
-    */
 }
 
 impl<Octs: Octets> Parameter<Octs> {
     // XXX still used in bmp/message.rs
-    /*
-    pub fn parse<'a, R>(parser: &mut Parser<'a, R>) -> Result<Self, ParseError>
+    pub fn parse<'a, R>(parser: &mut Parser<'a, R>)
+        -> Result<Self, ParseError>
     where
-        Ref: Octets<Range<'a> = Octs>
+        R: Octets<Range<'a> = Octs>
     {
         let pos = parser.pos();
         let typ = parser.parse_u8()?;
@@ -292,7 +289,6 @@ impl<Octs: Octets> Parameter<Octs> {
             )
         )
     }
-    */
 
     fn check<R: Octets>(parser: &mut Parser<'_, R>)
         -> Result<(), ParseError>
