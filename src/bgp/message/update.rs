@@ -1,6 +1,6 @@
 use crate::bgp::message::Header;
 use octseq::{Octets, Parser};
-use log::{warn, error};
+use log::{debug, warn, error};
 
 use crate::asn::{Asn, AsPath, AsPathBuilder, SegmentType};
 use crate::bgp::types::{
@@ -970,6 +970,71 @@ impl<'a, Octs: Octets> PathAttribute<'a, Octs> {
                     LargeCommunity::check(&mut pp)?;
                 }
             },
+            PathAttributeType::BgpsecAsPath => {
+                let mut pp = parser.parse_parser(len)?;
+                // SecurePath block
+                //
+                // Signature Block 1
+                // Signature Block 2?
+                //
+                //Secure_Path
+                //    [2 bytes length (octets of total Secure_Path) , 1..N Segments]
+                //$(
+                //Segment
+                //    [1byte pCount (prependCount?), 1 byte flags, 4byte ASN]
+                //)+
+
+                let len_path = pp.parse_u16()?;
+                if (len_path - 2) % 6 != 0 {
+                    warn!("BGPsec_Path Path Segments not a multiple of 6 bytes")
+                }
+                pp.advance(len_path as usize - 2)?;
+
+                //Signature_Block
+                //    [2 bytes length , 1 byte algo suite, 1..N segments]
+                //$(
+                //Segment
+                //    [20 bytes SKI, 2 bytes sig length, sig]
+                //)+
+
+                let len_sigs = pp.parse_u16()?;
+                let algo_id = pp.parse_u8()?;
+                if algo_id != 0x01 {
+                    warn!("BGPsec_Path Signature Block containing unknown\
+                            Algorithm Suite ID {algo_id}");
+                }
+
+                let mut sb1_parser = pp.parse_parser(len_sigs as usize - 3)?;
+                while sb1_parser.remaining() > 0 {
+                    // SKI
+                    sb1_parser.advance(20)?;
+                    let sig_len = sb1_parser.parse_u16()?;
+                    sb1_parser.advance(sig_len as usize)?;
+                }
+
+                // check for another Signature Block:
+                if pp.remaining() > 0 {
+                    debug!("{} bytes in BgpsecAsPath,\
+                           assuming a second Signature Block",
+                           pp.remaining()
+                    );
+
+                    let mut sb2_parser = pp.parse_parser(len_sigs as usize - 3)?;
+                    while sb2_parser.remaining() > 0 {
+                        // SKI
+                        sb2_parser.advance(20)?;
+                        let sig_len = sb2_parser.parse_u16()?;
+                        sb2_parser.advance(sig_len as usize)?;
+                    }
+                }
+                if pp.remaining() > 0 {
+                    warn!("{} bytes left in BgpsecAsPath\
+                          after two Signature Blocks",
+                           pp.remaining()
+                    );
+                }
+
+            },
             PathAttributeType::AttrSet => {
                 parser.advance(4)?;
                 let mut pp = parser.parse_parser(len - 4)?;
@@ -1149,6 +1214,70 @@ impl<'a, Octs: Octets> PathAttribute<'a, Octs> {
                 let pos = parser.pos();
                 while parser.pos() < pos + len {
                     LargeCommunity::parse(parser)?;
+                }
+            },
+            PathAttributeType::BgpsecAsPath => {
+                let mut pp = parser.parse_parser(len)?;
+                // SecurePath block
+                //
+                // Signature Block 1
+                // Signature Block 2?
+                //
+                //Secure_Path
+                //    [2 bytes length (octets of total Secure_Path) , 1..N Segments]
+                //$(
+                //Segment
+                //    [1byte pCount (prependCount?), 1 byte flags, 4byte ASN]
+                //)+
+
+                let len_path = pp.parse_u16()?;
+                if (len_path - 2) % 6 != 0 {
+                    warn!("BGPsec_Path Path Segments not a multiple of 6 bytes")
+                }
+                pp.advance(len_path as usize - 2)?;
+
+                //Signature_Block
+                //    [2 bytes length , 1 byte algo suite, 1..N segments]
+                //$(
+                //Segment
+                //    [20 bytes SKI, 2 bytes sig length, sig]
+                //)+
+
+                let len_sigs = pp.parse_u16()?;
+                let algo_id = pp.parse_u8()?;
+                if algo_id != 0x01 {
+                    warn!("BGPsec_Path Signature Block containing unknown\
+                            Algorithm Suite ID {algo_id}");
+                }
+
+                let mut sb1_parser = pp.parse_parser(len_sigs as usize - 3)?;
+                while sb1_parser.remaining() > 0 {
+                    // SKI
+                    sb1_parser.advance(20)?;
+                    let sig_len = sb1_parser.parse_u16()?;
+                    sb1_parser.advance(sig_len as usize)?;
+                }
+
+                // check for another Signature Block:
+                if pp.remaining() > 0 {
+                    debug!("{} bytes in BgpsecAsPath,\
+                           assuming a second Signature Block",
+                           pp.remaining()
+                    );
+
+                    let mut sb2_parser = pp.parse_parser(len_sigs as usize - 3)?;
+                    while sb2_parser.remaining() > 0 {
+                        // SKI
+                        sb2_parser.advance(20)?;
+                        let sig_len = sb2_parser.parse_u16()?;
+                        sb2_parser.advance(sig_len as usize)?;
+                    }
+                }
+                if pp.remaining() > 0 {
+                    warn!("{} bytes left in BgpsecAsPath\
+                          after two Signature Blocks",
+                           pp.remaining()
+                    );
                 }
             },
             PathAttributeType::AttrSet => {
@@ -2361,5 +2490,41 @@ mod tests {
               [0x40, 0x04, 0x00, 0x00, 0x44, 0x9c, 0x40, 0x00].into(),
         ]))
 
+    }
+
+    #[test]
+    fn bgpsec() {
+        let buf = vec![
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0x00, 0xab, 0x02, 0x00, 0x00, 0x00, 0x94, 0x90,
+            0x0e, 0x00, 0x11, 0x00, 0x01, 0x01, 0x04, 0xac,
+            0x12, 0x00, 0x02, 0x00, 0x18, 0xc0, 0x00, 0x02,
+            0x18, 0xc0, 0x00, 0x03, 0x40, 0x01, 0x01, 0x00,
+            0x40, 0x03, 0x04, 0x00, 0x00, 0x00, 0x00, 0x80,
+            0x04, 0x04, 0x00, 0x00, 0x00, 0x00, 0x90, 0x21,
+            0x00, 0x69, 0x00, 0x08, 0x01, 0x00, 0x00, 0x00,
+            0xfb, 0xf0, 0x00, 0x61, 0x01, 0xab, 0x4d, 0x91,
+            0x0f, 0x55, 0xca, 0xe7, 0x1a, 0x21, 0x5e, 0xf3,
+            0xca, 0xfe, 0x3a, 0xcc, 0x45, 0xb5, 0xee, 0xc1,
+            0x54, 0x00, 0x48, 0x30, 0x46, 0x02, 0x21, 0x00,
+            0xe7, 0xb7, 0x0b, 0xaf, 0x00, 0x0d, 0xe1, 0xce,
+            0x8b, 0xb2, 0x11, 0xaf, 0xd4, 0x8f, 0xc3, 0x76,
+            0x59, 0x54, 0x3e, 0xa5, 0x80, 0x5c, 0xa2, 0xa2,
+            0x06, 0x3a, 0xc9, 0x2e, 0x12, 0xfa, 0xc0, 0x67,
+            0x02, 0x21, 0x00, 0xa5, 0x8c, 0x0f, 0x37, 0x0e,
+            0xe9, 0x77, 0xae, 0xd4, 0x11, 0xbd, 0x3f, 0x0f,
+            0x47, 0xbb, 0x1f, 0x38, 0xcf, 0xde, 0x09, 0x49,
+            0xd5, 0x97, 0xcd, 0x2e, 0x41, 0xa4, 0x8a, 0x94,
+            0x1b, 0x7e, 0xbf
+            ];
+
+        let sc = SessionConfig::modern_addpath();
+        let upd: UpdateMessage<_> = Message::from_octets(&buf, Some(sc))
+            .unwrap().try_into().unwrap();
+        //for pa in upd.path_attributes() {
+        //    println!("{}", pa.type_code());
+        //    println!("{:#x?}", pa.value());
+        //}
     }
 }

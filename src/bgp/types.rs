@@ -64,6 +64,7 @@ typeenum!(
     22 => PmsiTunnel,
     25 => Ipv6ExtendedCommunities,
     32 => LargeCommunities,
+    33 => BgpsecAsPath,
     128 => AttrSet,
     255 => RsrvdDevelopment,
 );
