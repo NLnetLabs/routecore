@@ -1,6 +1,6 @@
 use crate::bgp::message::{Header, MsgType};
 use crate::util::parser::ParseError;
-use octseq::{Octets, OctetsBuilder, Parser, ShortBuf, Truncate};
+use octseq::{FreezeBuilder, Octets, OctetsBuilder, Parser, ShortBuf, Truncate};
 
 /// BGP Keepalive message, variant of the [`Message`] enum.
 #[derive(Clone, Debug)]
@@ -62,7 +62,11 @@ impl<Target: OctetsBuilder> KeepaliveBuilder<Target> {
     pub fn finish(self) -> Target {
         self.target
     }
-    pub fn into_message(self) -> KeepaliveMessage<Target::Octets> {
+
+    pub fn into_message(
+        self
+    ) -> KeepaliveMessage<<Target as FreezeBuilder>::Octets>
+    where Target: FreezeBuilder {
         KeepaliveMessage{ octets: self.finish().freeze() }
     }
 }

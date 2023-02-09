@@ -1,9 +1,10 @@
 use log::{debug, info, warn};
 use std::time::Instant;
+use octseq::Octets;
 use tokio::sync::mpsc;
 
 use crate::bgp::message::Message as BgpMsg;
-use crate::bgp::message::keepalive::KeepAliveBuilder;
+use crate::bgp::message::keepalive::KeepaliveBuilder;
 
 // TMP
 const HARDCODED_OPEN: &[u8] = &[
@@ -250,13 +251,13 @@ impl BgpSession {
         self.handle_event(Event::TcpConnectionConfirmed);
     }
 
-    pub fn handle_msg<Octets: AsRef<[u8]>>(&mut self, msg: BgpMsg<Octets>) {
+    pub fn handle_msg<Octs: Octets>(&mut self, msg: BgpMsg<Octs>) {
        match msg {
            BgpMsg::Open(m) => {
                debug!("got OPEN, generating event");
                self.handle_event(Event::BgpOpen);
            }
-           BgpMsg::KeepAlive(m) => {
+           BgpMsg::Keepalive(m) => {
                debug!("got KEEPALIVE, generating event");
                self.handle_event(Event::KeepAliveMsg);
            }
@@ -768,7 +769,7 @@ impl BgpSession {
 
                 //- sends a KEEPALIVE message, and
                 // TODO tokio
-                self.send_raw(KeepAliveBuilder::new_vec().finish());
+                self.send_raw(KeepaliveBuilder::new_vec().finish());
 
                 //- sets a KeepaliveTimer:
                 // If the negotiated hold time value is zero, then the

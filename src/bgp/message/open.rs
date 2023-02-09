@@ -4,7 +4,7 @@ use crate::bgp::types::{AFI, SAFI};
 use crate::typeenum; // from util::macros
 use crate::util::parser::ParseError;
 use log::warn;
-use octseq::{Octets, OctetsBuilder, Parser, ShortBuf, Truncate};
+use octseq::{FreezeBuilder, Octets, OctetsBuilder, Parser, ShortBuf, Truncate};
 
 #[cfg(feature = "serde")]
 use serde::{Serialize, Deserialize};
@@ -769,7 +769,11 @@ where Infallible: From<<Target as OctetsBuilder>::AppendError>
         self.target.as_mut()[16..=17].copy_from_slice( &(msg_len.to_be_bytes()) );
         self.target
     }
-    pub fn into_message(self) -> OpenMessage<Target::Octets> {
+
+    pub fn into_message(
+        self
+    ) -> OpenMessage<<Target as FreezeBuilder>::Octets>
+    where Target: FreezeBuilder {
         OpenMessage{ octets: self.finish().freeze() }
     }
 }
