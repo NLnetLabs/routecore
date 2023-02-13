@@ -3,7 +3,7 @@ use octseq::{Octets, Parser};
 use log::{debug, warn, error};
 
 use crate::asn::{Asn, AsPath, AsPathBuilder, SegmentType};
-use crate::bgp::types::{
+pub use crate::bgp::types::{
     AFI, SAFI, LocalPref, MultiExitDisc, NextHop, OriginType, PathAttributeType
 };
 
@@ -1340,6 +1340,7 @@ impl<'a, Ref: Octets> IntoIterator for PathAttributes<'a, Ref> {
 
 //--- Aggregator -------------------------------------------------------------
 /// Path Attribute (7).
+#[derive(Debug, Eq, PartialEq, Copy, Clone)]
 pub struct Aggregator {
     asn: Asn,
     speaker: Ipv4Addr,
