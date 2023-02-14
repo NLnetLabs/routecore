@@ -685,11 +685,11 @@ where
         let mut h = Header::<&[u8]>::new();
         h.set_length(29);
         h.set_type(MsgType::Open);
-        target.append_slice(h.as_ref());
+        let _ =target.append_slice(h.as_ref());
 
         // BGP version
-        target.append_slice(&[4]);
-        target.append_slice(&[0; 8]);
+        let _ =target.append_slice(&[4]);
+        let _ =target.append_slice(&[0; 8]);
 
         // opt param len is set in finish()
 
@@ -757,11 +757,11 @@ where Infallible: From<<Target as OctetsBuilder>::AppendError>
             opt_param_len += cap_len + 2;
         }
 
-        self.target.append_slice(&[opt_param_len]);
+        let _ = self.target.append_slice(&[opt_param_len]);
         if opt_param_len > 0 {
-            self.target.append_slice(&[0x02, cap_len]);
+            let _ = self.target.append_slice(&[0x02, cap_len]);
             for c in self.capabilities {
-                self.target.append_slice(c.as_ref());
+                let _ = self.target.append_slice(c.as_ref());
             }
         }
         // TODO self.header_mut().set_length(29 + opt_param_len);

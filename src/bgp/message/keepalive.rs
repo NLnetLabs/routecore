@@ -53,7 +53,7 @@ where
         target.truncate(0);
         let mut h = Header::<&[u8]>::new();
         h.set_type(MsgType::Keepalive);
-        target.append_slice(h.as_ref());
+        let _ = target.append_slice(h.as_ref());
         Ok(KeepaliveBuilder { target })
     }
 }

@@ -13,7 +13,7 @@ use crate::util::parser::ParseError;
 use crate::typeenum; // from util::macros
 
 use bytes::Buf;
-use chrono::{DateTime, TimeZone, Utc};
+use chrono::{DateTime, LocalResult, TimeZone, Utc};
 use log::warn;
 use octseq::{Octets, Parser};
 
@@ -470,7 +470,16 @@ impl<Octets: AsRef<[u8]>> PerPeerHeader<Octets> {
     pub fn timestamp(&self) -> DateTime<Utc> {
         let s = self.ts_seconds() as i64;
         let us = self.ts_micros();
-        Utc.timestamp(s, us*1000)
+        if let LocalResult::Single(ts)= Utc.timestamp_opt(s, us*1000) {
+            ts 
+        } else {
+            warn!(
+                "invalid timestamp in Per-peer header: {}.{},\
+                 returning epoch",
+                 s, us
+            );
+            DateTime::<Utc>::MIN_UTC
+        }
     }
 }
 
