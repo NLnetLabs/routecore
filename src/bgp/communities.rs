@@ -1144,9 +1144,9 @@ impl From<u16> for Asn16 {
 
 fn strip_as(s: &str) -> &str {
     s.strip_prefix("AS")
-        .or(s.strip_prefix("as"))
-        .or(s.strip_prefix("As"))
-        .or(s.strip_prefix("aS"))
+        .or_else(|| s.strip_prefix("as"))
+        .or_else(|| s.strip_prefix("As"))
+        .or_else(|| s.strip_prefix("aS"))
         .unwrap_or(s)
 }
 
