@@ -35,9 +35,6 @@ mod route;
 pub mod communities;
 pub mod types;
 
-
-#[cfg(feature = "bgpfsm")]
-pub mod fsm;
 pub mod message;
 pub use crate::util::parser::ParseError;
 

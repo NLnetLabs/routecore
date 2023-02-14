@@ -30,7 +30,6 @@ serde_test      = "1.0"
 
 [features]
 default = []
-bgpfsm = ["bgp", "tokio"]
 bgp = ["bytes", "log", "octseq", "const-str"]
 bmp = ["bgp", "bytes", "chrono", "log", "octseq"]
 std = []
