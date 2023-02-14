@@ -28,6 +28,11 @@ impl Asn {
     pub fn into_u32(self) -> u32 {
         self.0
     }
+
+    /// Converts an AS number into a network-order byte array.
+    pub fn to_raw(self) -> [u8; 4] {
+        self.0.to_be_bytes()
+    }
 }
 
 #[cfg(feature = "bcder")]
@@ -411,7 +416,7 @@ impl fmt::Display for SegmentType {
 //  So, the first element in the path is a sentinel, followed by as many real
 //  ASNs as is encoded in the sentinel, followed by another sentinel and so
 //  on.
-#[derive(Clone, Debug, Hash)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 #[cfg_attr(
     feature = "serde",
     derive(serde::Serialize, serde::Deserialize)
@@ -425,6 +430,16 @@ impl<T: AsRef<[Asn]>> AsPath<T> {
     /// Returns an iterator over the segments of the path.
     pub fn iter(&self) -> AsPath<&[Asn]> {
         AsPath { segments: self.segments.as_ref() }
+    }
+    
+    /// Returns true if the path contains the given ASN.
+    pub fn contains(&self, asn: Asn) -> bool {
+        for segment in self.iter() {
+            if segment.elements().contains(&asn) {
+                return true
+            }
+        }
+        false
     }
 }
 

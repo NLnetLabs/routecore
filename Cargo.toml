@@ -1,11 +1,12 @@
 [package]
 name = "routecore"
-version = "0.2.1-dev"
+version = "0.3.0-dev"
 authors = ["The NLnet Labs RPKI team <rpki-team@nlnetlabs.nl>"]
 categories = ["network-programming"]
 description = "A Library with Building Blocks for BGP Routing"
 documentation = "https://docs.rs/routecore/"
-edition = "2018"
+edition = "2021"
+rust-version = "1.65"
 keywords = ["routing", "bgp"]
 license = "BSD-3-Clause"
 
@@ -15,8 +16,20 @@ license = "BSD-3-Clause"
 bcder = { version = "0.7.0", optional = true }
 serde = { version = "1.0.95", optional = true, features = ["derive"] }
 
+
+bytes = { version = "1.1.0", optional = true }
+chrono = { version = "0.4", optional = true }
+const-str = { version = "0.5.3", optional = true, features = ["case"] }
+log = { version = "0.4.17", optional = true }
+
+octseq = { git = "https://github.com/NLnetLabs/octseq", features = ["bytes"], optional = true }
+tokio = { version = "1", features = ["sync", "rt"], optional = true }
+
 [dev-dependencies]
 serde_test      = "1.0"
 
 [features]
 default = []
+bgp = ["bytes", "log", "octseq", "const-str"]
+bmp = ["bgp", "bytes", "chrono", "log", "octseq"]
+std = []
