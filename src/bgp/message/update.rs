@@ -2521,7 +2521,7 @@ mod tests {
             ];
 
         let sc = SessionConfig::modern_addpath();
-        let upd: UpdateMessage<_> = Message::from_octets(&buf, Some(sc))
+        let _upd: UpdateMessage<_> = Message::from_octets(&buf, Some(sc))
             .unwrap().try_into().unwrap();
         //for pa in upd.path_attributes() {
         //    println!("{}", pa.type_code());
