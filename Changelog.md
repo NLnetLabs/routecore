@@ -6,14 +6,27 @@ Breaking changes
 
 New
 
-* Parsing of BGP and BMP messages.
+* Parsing of BGP and BMP messages. ([#14])
+
+  The newly added feature flags `bgp` and `bmp` enable parsing capabilities
+  for these messages using the [OctSeq](https://github.com/NLnetLabs/octseq)
+  crate. This allows parsing of raw wireformat representations in multiple
+  data types, including
+  [bytes::Bytes](https://docs.rs/bytes/latest/bytes/struct.Bytes.html). The
+  parsing and the resulting types `bgp::Message` and `bmp::Message` are mostly
+  non-allocating and provide (lazy) iterators to the actual data (e.g. Path
+  Attributes or NLRI in a BGP UPDATE PDU), to enable use in high throughput
+  scenarios.
+
+[#14]: https://github.com/NLnetLabs/routecore/pull/14
 
 Bug fixes
 
 Other changes
 
-* Changed Rust edition from 2018 to 2021, bumping the minimal supported Rust
-  version to 1.56.1 .
+* Changed Rust edition from 2018 to 2021.
+* Changed the the minimal supported Rust version to 1.65, as the parsing of
+  BGP and BMP messages relies on GATs.
 
 
 ## 0.2.0
