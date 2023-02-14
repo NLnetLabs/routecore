@@ -1147,7 +1147,7 @@ fn strip_as(s: &str) -> &str {
         .or(s.strip_prefix("as"))
         .or(s.strip_prefix("As"))
         .or(s.strip_prefix("aS"))
-        .unwrap_or(&s)
+        .unwrap_or(s)
 }
 
 impl FromStr for Asn16 {

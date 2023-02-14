@@ -1230,7 +1230,7 @@ impl <'a>StatIter<'a> {
 
     fn _take_u32(&mut self) -> u32 {
         let res = u32::from_be_bytes(
-            self.octets[(self.pos + 4 .. self.pos + 4 + 4)]
+            self.octets[self.pos + 4 .. self.pos + 4 + 4]
             .try_into().unwrap()
         );
         self.pos += 4 + 4;
@@ -1239,7 +1239,7 @@ impl <'a>StatIter<'a> {
 
     fn _take_u64(&mut self) -> u64 {
         let res = u64::from_be_bytes(
-            self.octets[(self.pos + 4 .. self.pos + 4 + 8)]
+            self.octets[self.pos + 4 .. self.pos + 4 + 8]
             .try_into().unwrap()
         );
         self.pos += 4 + 8;
@@ -1249,12 +1249,12 @@ impl <'a>StatIter<'a> {
     fn _take_afi_safi_u64(&mut self) -> (AFI, SAFI, u64) {
 
         let afi: AFI = u16::from_be_bytes(
-            self.octets[(self.pos + 4 .. self.pos + 4 + 2)].try_into().unwrap()
+            self.octets[self.pos + 4 .. self.pos + 4 + 2].try_into().unwrap()
         ).into();
         let safi: SAFI = self.octets[self.pos + 4 + 2].into();
 
         let v = u64::from_be_bytes(
-            self.octets[(self.pos + 4 + 3 .. self.pos + 4 + 3 + 8)]
+            self.octets[self.pos + 4 + 3 .. self.pos + 4 + 3 + 8]
             .try_into().unwrap()
         );
         self.pos += 4 + 2 + 1 + 8;
