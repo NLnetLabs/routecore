@@ -28,14 +28,14 @@ impl AttributeList {
         Self(vec![])
     }
 
-    pub fn get(&self, key: PathAttributeType) -> Option<&AttributeTypeValue> {
+    pub fn get_attr(&self, key: PathAttributeType) -> Option<&AttributeTypeValue> {
         self.0
             .binary_search_by_key(&key, |item| item.get_type())
             .map(|idx| &self.0[idx])
             .ok()
     }
 
-    pub fn get_owned(
+    pub fn get_attr_owned(
         &mut self,
         key: PathAttributeType,
     ) -> Option<AttributeTypeValue> {
@@ -45,7 +45,7 @@ impl AttributeList {
             .ok()
     }
 
-    pub fn insert(
+    pub fn insert_attr(
         &mut self,
         value: AttributeTypeValue,
     ) -> Option<&AttributeTypeValue> {
@@ -61,7 +61,7 @@ impl AttributeList {
         }
     }
 
-    pub fn replace(&mut self, new_list: AttributeList) {
+    pub fn replace_attr_list(&mut self, new_list: AttributeList) {
         *self = new_list;
     }
 }
@@ -73,9 +73,9 @@ impl FromIterator<AttributeTypeValue> for AttributeList {
         let mut attr_list = AttributeList(vec![]);
 
         for attr in iter {
-            let res = attr_list.insert(attr);
+            let res = attr_list.insert_attr(attr);
             if res.is_none() {
-                panic!("Invalid Insert into MGP attributes list")
+                panic!("Invalid Insert into BGP attributes list")
             }
         }
 
@@ -201,14 +201,14 @@ pub enum RouteStatus {
 
 impl UpdateMessage<bytes::Bytes> {
     // Collect the attributes on the raw message into an AttributeList.
-    pub fn get_attribute_list(&self) -> AttributeList {
+    pub fn get_attr_list(&self) -> AttributeList {
         self.path_attributes()
             .iter()
-            .filter_map(|attr| self.get_attribute_value(attr.type_code()))
+            .filter_map(|attr| self.get_attr(attr.type_code()))
             .collect()
     }
 
-    fn get_attribute_value(
+    pub fn get_attr(
         &self,
         key: PathAttributeType,
     ) -> Option<AttributeTypeValue> {
