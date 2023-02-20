@@ -22,6 +22,8 @@ use crate::bgp::communities::{
     LargeCommunity
 };
 
+use crate::bgp::message::attribute::{AttributeTypeValue, AttributeList};
+
 const COFF: usize = 19; // XXX replace this with .skip()'s?
 
 /// BGP UPDATE message, variant of the [`Message`] enum.
@@ -591,7 +593,95 @@ impl<Octs: Octets> UpdateMessage<Octs> {
         ))
     }
 }
-//--- Enums for passing config / state ---------------------------------------
+
+//------------- impl for AttributeList methods ------------------------------
+
+impl<Octs: Octets> UpdateMessage<Octs> {
+    // Collect the attributes on the raw message into an AttributeList.
+    pub fn get_attr_list(&self) -> AttributeList {
+        self.path_attributes()
+            .iter()
+            .filter_map(|attr| self.get_attr(attr.type_code()))
+            .collect()
+    }
+
+    pub fn get_attr(
+        &self,
+        key: PathAttributeType,
+    ) -> Option<AttributeTypeValue> {
+        match key {
+            PathAttributeType::Origin => {
+                Some(AttributeTypeValue::OriginType(self.origin()))
+            }
+            PathAttributeType::AsPath => {
+                Some(AttributeTypeValue::AsPath(self.aspath()))
+            }
+            PathAttributeType::NextHop => {
+                Some(AttributeTypeValue::NextHop(self.next_hop()))
+            }
+            PathAttributeType::MultiExitDisc => {
+                Some(AttributeTypeValue::MultiExitDiscriminator(
+                    self.multi_exit_desc(),
+                ))
+            }
+            PathAttributeType::LocalPref => {
+                Some(AttributeTypeValue::LocalPref(self.local_pref()))
+            }
+            PathAttributeType::AtomicAggregate => {
+                Some(AttributeTypeValue::AtomicAggregate(
+                    self.is_atomic_aggregate(),
+                ))
+            }
+            PathAttributeType::Aggregator => {
+                Some(AttributeTypeValue::Aggregator(self.aggregator()))
+            }
+            PathAttributeType::Communities => {
+                Some(AttributeTypeValue::Communities(self.all_communities()))
+            }
+            PathAttributeType::OriginatorId => todo!(),
+            PathAttributeType::ClusterList => todo!(),
+            PathAttributeType::MpReachNlri => {
+                Some(AttributeTypeValue::MpReachNlri(Some(
+                    self.nlris().iter().filter_map(|n| n.prefix()).collect(),
+                )))
+            }
+            PathAttributeType::MpUnreachNlri => {
+                Some(AttributeTypeValue::MpUnReachNlri(Some(
+                    self.withdrawals()
+                        .iter()
+                        .filter_map(|n| n.prefix())
+                        .collect(),
+                )))
+            }
+            PathAttributeType::ExtendedCommunities => {
+                Some(AttributeTypeValue::ExtendedCommunities(
+                    self.ext_communities().map(|ec| ec.collect()),
+                ))
+            }
+            PathAttributeType::As4Path => {
+                Some(AttributeTypeValue::As4Path(self.as4path()))
+            }
+            PathAttributeType::As4Aggregator => todo!(),
+            PathAttributeType::Connector => todo!(),
+            PathAttributeType::AsPathLimit => todo!(),
+            PathAttributeType::PmsiTunnel => todo!(),
+            PathAttributeType::Ipv6ExtendedCommunities => todo!(),
+            PathAttributeType::LargeCommunities => {
+                Some(AttributeTypeValue::LargeCommunities(
+                    self.large_communities().map(|lc| lc.collect()),
+                ))
+            }
+            PathAttributeType::BgpsecAsPath => todo!(),
+            PathAttributeType::AttrSet => todo!(),
+            PathAttributeType::RsrvdDevelopment => todo!(),
+            PathAttributeType::Reserved => todo!(),
+            PathAttributeType::Unimplemented(_) => todo!(),
+        }
+    }
+}
+
+
+//--- Data structures for passing config / state ----------------------------
 
 /// Configuration parameters for an established BGP session.
 ///
