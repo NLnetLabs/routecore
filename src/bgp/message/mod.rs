@@ -3,7 +3,6 @@ pub mod update;
 pub mod nlri;
 pub mod notification;
 pub mod keepalive;
-pub mod attribute;
 
 use octseq::{Octets, Parser};
 use crate::util::parser::ParseError;

@@ -421,12 +421,28 @@ impl fmt::Display for SegmentType {
     feature = "serde",
     derive(serde::Serialize, serde::Deserialize)
 )]
-pub struct AsPath<T> {
+pub struct AsPath<T: ?Sized> {
     /// The segments of the path.
     segments: T,
 }
 
 impl<T: AsRef<[Asn]>> AsPath<T> {
+    /// Creates an AS path from a s sequence of ASNs.
+    pub fn from_segments(segments: T) -> Self {
+        AsPath { segments }
+    }
+}
+
+impl AsPath<[Asn]> {
+    /// Creates a reference to an AS path atop a slice of ASNs.
+    pub fn from_segments_slice(slice: &[Asn]) -> &Self {
+        unsafe {
+            &*(slice as *const [Asn] as *const AsPath<[Asn]>)
+        }
+    }
+}
+
+impl<T: AsRef<[Asn]> + ?Sized> AsPath<T> {
     /// Returns an iterator over the segments of the path.
     pub fn iter(&self) -> AsPath<&[Asn]> {
         AsPath { segments: self.segments.as_ref() }
@@ -441,12 +457,22 @@ impl<T: AsRef<[Asn]>> AsPath<T> {
         }
         false
     }
+
+    /// Returns an AS path for the ASN slice of the content.
+    pub fn for_segments_slice(&self) -> &AsPath<[Asn]> {
+        AsPath::from_segments_slice(self.segments.as_ref())
+    }
+
+    /// Returns an AS path for the ASN slice of the content.
+    pub fn for_segments_rc_slice(&self) -> AsPath<std::rc::Rc<[Asn]>> {
+        AsPath { segments: self.segments.as_ref().into() }
+    }
 }
 
 
 //--- IntoIterator and Iterator
 
-impl<'a, T: AsRef<[Asn]>> IntoIterator for &'a AsPath<T> {
+impl<'a, T: AsRef<[Asn]> + ?Sized> IntoIterator for &'a AsPath<T> {
     type Item = PathSegment<'a>;
     type IntoIter = AsPath<&'a [Asn]>;
 
@@ -470,7 +496,7 @@ impl<'a> Iterator for AsPath<&'a [Asn]> {
 
 //--- Display
 
-impl<T: AsRef<[Asn]>> fmt::Display for AsPath<T> {
+impl<T: AsRef<[Asn]> + ?Sized> fmt::Display for AsPath<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut first = true;
         for item in self {
@@ -554,8 +580,18 @@ impl AsPathBuilder {
         Ok(())
     }
 
+    pub fn extend_from_as_path(
+        &mut self, other: AsPath<std::rc::Rc<[Asn]>>
+    ) -> Result<(), LongSegmentError> {
+        if self.segment_len() + other.segments.len() > 255 {
+            return Err(LongSegmentError)
+        }
+        self.segments.extend_from_slice(other.segments.as_ref());
+        Ok(())
+    }
+
     /// Finalizes and returns the AS path.
-    pub fn finalize<U: From<Vec<Asn>>>(mut self) -> AsPath<U> {
+    pub fn finalize<U: From<Vec<Asn>> + ?Sized>(mut self) -> AsPath<U> {
         let len = self.segment_len();
         if len > 0 {
             update_sentinel_len(
