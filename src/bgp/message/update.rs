@@ -777,10 +777,15 @@ impl<'a, Octs: Octets> PathAttribute<'a, Octs> {
 
     /// Returns the length of the value of this path attribute.
     pub fn length(&self) -> u16 {
-        let lenbytes = self.parser.peek(4).expect("parsed before");
         match self.is_extended_length() {
-            true => u16::from_be_bytes([lenbytes[2], lenbytes[3]]),
-            false => lenbytes[2] as u16,
+            true => {
+                let lenbytes = self.parser.peek(4).expect("parsed before");
+                u16::from_be_bytes([lenbytes[2], lenbytes[3]])
+            }
+            false => {
+                let lenbytes = self.parser.peek(3).expect("parsed before");
+                lenbytes[2] as u16
+            }
         }
     }
 
