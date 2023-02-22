@@ -1,5 +1,6 @@
 //! Types for Autonomous Systems Numbers (ASN) and ASN collections
 
+use std::rc::Rc;
 use std::str::FromStr;
 use std::convert::{TryFrom, TryInto};
 use std::{error, fmt, ops};
@@ -320,6 +321,60 @@ impl fmt::Display for PathSegment<'_> {
     }
 }
 
+//------------ MaterializedPathSegment ---------------------------------------------------
+
+/// A segment of an AS path.
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct MaterializedPathSegment {
+    /// The type of the path segment.
+    pub stype: SegmentType,
+
+    /// The elements of the path segment.
+    pub elements: Vec<Asn>,
+}
+
+impl MaterializedPathSegment {
+    /// Creates a path segment from a type and a slice of elements.
+    fn new(stype: SegmentType, elements: Vec<Asn>) -> Self {
+        MaterializedPathSegment { stype, elements }
+    }
+
+    /// Returns the type of the segment.
+    pub fn segment_type(self) -> SegmentType {
+        self.stype
+    }
+
+    /// Returns a slice with the elements of the segment.
+    pub fn elements(self) -> Vec<Asn> {
+        self.elements
+    }
+}
+
+
+//--- Display
+
+impl fmt::Display for MaterializedPathSegment {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}(", self.stype)?;
+        if let Some((first, tail)) = self.elements.split_first() {
+            write!(f, "{}", first)?;
+            for elem in tail {
+                write!(f, ", {}", elem)?;
+            }
+        }
+        write!(f, ")")
+    }
+}
+
+impl From<PathSegment<'_>> for MaterializedPathSegment {
+    fn from(value: PathSegment) -> Self {
+        Self {
+            stype: value.stype,
+            elements: value.elements.to_vec()
+        }
+    }
+}
+
 
 //------------ SegmentType ---------------------------------------------------
 
@@ -416,14 +471,14 @@ impl fmt::Display for SegmentType {
 //  So, the first element in the path is a sentinel, followed by as many real
 //  ASNs as is encoded in the sentinel, followed by another sentinel and so
 //  on.
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Debug, Clone, Eq, Hash, PartialEq)]
 #[cfg_attr(
     feature = "serde",
     derive(serde::Serialize, serde::Deserialize)
 )]
 pub struct AsPath<T: ?Sized> {
     /// The segments of the path.
-    segments: T,
+    pub segments: T,
 }
 
 impl<T: AsRef<[Asn]>> AsPath<T> {
@@ -435,7 +490,7 @@ impl<T: AsRef<[Asn]>> AsPath<T> {
 
 impl AsPath<[Asn]> {
     /// Creates a reference to an AS path atop a slice of ASNs.
-    pub fn from_segments_slice(slice: &[Asn]) -> &Self {
+    pub fn from_asn_slice(slice: &[Asn]) -> &Self {
         unsafe {
             &*(slice as *const [Asn] as *const AsPath<[Asn]>)
         }
@@ -459,8 +514,8 @@ impl<T: AsRef<[Asn]> + ?Sized> AsPath<T> {
     }
 
     /// Returns an AS path for the ASN slice of the content.
-    pub fn for_segments_slice(&self) -> &AsPath<[Asn]> {
-        AsPath::from_segments_slice(self.segments.as_ref())
+    pub fn for_asn_slice(&self) -> &AsPath<[Asn]> {
+        AsPath::from_asn_slice(self.segments.as_ref())
     }
 
     /// Returns an AS path for the ASN slice of the content.
@@ -511,12 +566,13 @@ impl<T: AsRef<[Asn]> + ?Sized> fmt::Display for AsPath<T> {
     }
 }
 
+
 //------------ AsPathBuilder -------------------------------------------------
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AsPathBuilder {
     /// A vec with the elements we have so far.
-    segments: Vec<Asn>,
+    pub segments: Vec<Asn>,
 
     /// The index of the head element of the currently build segment.
     curr_start: usize,
@@ -525,7 +581,7 @@ pub struct AsPathBuilder {
 impl AsPathBuilder {
     /// Creates a new, empty AS path builder.
     ///
-    /// The builder will start out with building an initial segement of
+    /// The builder will start out with building an initial segment of
     /// sequence type.
     pub fn new() -> Self {
         AsPathBuilder {
@@ -581,7 +637,7 @@ impl AsPathBuilder {
     }
 
     pub fn extend_from_as_path(
-        &mut self, other: AsPath<std::rc::Rc<[Asn]>>
+        &mut self, other: AsPath<Vec<Asn>>
     ) -> Result<(), LongSegmentError> {
         if self.segment_len() + other.segments.len() > 255 {
             return Err(LongSegmentError)
@@ -624,7 +680,7 @@ fn decode_sentinel(sentinel: Asn) -> (SegmentType, u8) {
 }
 
 /// Converts segment type and length into a sentinel `Asn`.
-fn encode_sentinel(t: SegmentType, len: u8) -> Asn {
+pub fn encode_sentinel(t: SegmentType, len: u8) -> Asn {
     Asn((u8::from(t) as u32) << 8 | (len as u32))
 }
 
