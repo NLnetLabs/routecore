@@ -1,5 +1,7 @@
 //! Types for Autonomous Systems Numbers (ASN) and ASN collections
 
+use std::borrow::Borrow;
+use std::ops::RangeBounds;
 use std::rc::Rc;
 use std::str::FromStr;
 use std::convert::{TryFrom, TryInto};
@@ -585,8 +587,28 @@ impl From<AsPath<Vec<Asn>>> for AsPath<Vec<MaterializedPathSegment>> {
     }
 }
 
-impl From<&AsPath<Vec<MaterializedPathSegment>>> for AsPath<Vec<Asn>> {
-    fn from(value: &AsPath<Vec<MaterializedPathSegment>>) -> Self {
+//------------ Modification methods -----------------------------------------
+
+// We need to be able to prepend, append and insert arbitrary numbers of Asns
+// into a materialized AsPath, i.e. an AsPath that is generic over a Vec of
+// most probably, a PathSegment that holds a Vec with the containind ASNs.
+// It needs to be all materialized into the AsPath struct, since we've
+// decided to Clone all path attributes in AttrChangeSets from one delta to
+// another, so that a AttrChangeSet is completely self-contained, i.e. no
+// references to its parent (delta, or raw message). A raw message may
+// contain AS_SETs, AS_CONFEDERATIONs, etc. and we need to preserve those in
+// our AttrChangeSets, while being able to append|prepend|insert|remove ASNs.
+
+// This is a first ATTEMPT to do so.
+
+impl From<MaterializedPathSegment> for Asn {
+    fn from(value: MaterializedPathSegment) -> Self {
+        value.elements[0]
+    }
+}
+
+impl<T: Clone> From<&AsPath<Vec<T>>> for AsPath<Vec<Asn>> where Asn: From<T> {
+    fn from(value: &AsPath<Vec<T>>) -> Self {
         Self {
             segments: value.segments
                 .clone()
@@ -596,12 +618,87 @@ impl From<&AsPath<Vec<MaterializedPathSegment>>> for AsPath<Vec<Asn>> {
     }
 }
 
-impl From<MaterializedPathSegment> for Asn {
-    fn from(value: MaterializedPathSegment) -> Self {
-        value.elements[0]
+impl AsPath<Vec<MaterializedPathSegment>> {
+    pub fn append(&mut self, asns: Vec<Asn>) -> Result<(), LongSegmentError> {
+        if self.segments.len() + asns.len() >= 255 {
+            return Err(LongSegmentError)
+        }
+
+        self.segments.extend(
+            asns.into_iter().map(|asn| MaterializedPathSegment {
+                stype: SegmentType::Sequence,
+                elements: vec![
+                    encode_sentinel(SegmentType::Sequence, 1),
+                    asn,
+                ],
+            }
+        ).collect::<Vec<_>>());
+
+        Ok(())
+    }
+
+    pub fn prepend(&mut self, asns: Vec<Asn>) -> Result<(), LongSegmentError> {
+        if self.segments.len() + asns.len() >= 255 {
+            return Err(LongSegmentError)
+        }
+
+        let mut pre_path = AsPath {
+            segments: vec![MaterializedPathSegment {
+                stype: SegmentType::Sequence,
+                elements: asns,
+            }],
+        };
+        pre_path.segments.extend_from_slice(self.segments.as_slice());
+
+        *self = pre_path;
+
+        Ok(())
+    }
+
+    pub fn insert(&mut self, pos: u8, asns: Vec<Asn>) -> Result<(), LongSegmentError> {
+        if self.segments.len() + asns.len() >= 255 {
+            return Err(LongSegmentError)
+        }
+        
+        let segments = self.segments.as_slice();
+
+        let mut pre_path = 
+            (segments[0..pos as usize]).to_vec();
+
+        pre_path.extend(
+          asns.into_iter().map(|asn| MaterializedPathSegment {
+                    stype: SegmentType::Sequence,
+                    elements: vec![
+                        encode_sentinel(SegmentType::Sequence, 1),
+                        asn,
+                    ],
+                }
+            )
+        );
+
+        pre_path.extend_from_slice(&segments[pos as usize..]);
+
+        self.segments = pre_path;
+        
+        Ok(())
+    }
+
+    pub fn remove(&mut self, range: std::ops::Range<u8>) {}
+
+    //-------- And them some retrieval methods ------------------------------
+
+    pub fn len(&self) -> u8 {
+        self.segments.len() as u8
+    }
+
+    pub fn get(&self, pos: u8) -> Option<&MaterializedPathSegment> {
+        self.segments.get(pos as usize)
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.segments.is_empty()
     }
 }
-
 
 
 //------------ AsPathBuilder -------------------------------------------------
