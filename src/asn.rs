@@ -375,6 +375,15 @@ impl From<PathSegment<'_>> for MaterializedPathSegment {
     }
 }
 
+impl From<Asn> for MaterializedPathSegment {
+    fn from(value: Asn) -> Self {
+        Self {
+            stype: SegmentType::Sequence,
+            elements: vec![value]
+        }
+    }
+}
+
 
 //------------ SegmentType ---------------------------------------------------
 
@@ -519,7 +528,7 @@ impl<T: AsRef<[Asn]> + ?Sized> AsPath<T> {
     }
 
     /// Returns an AS path for the ASN slice of the content.
-    pub fn for_segments_rc_slice(&self) -> AsPath<std::rc::Rc<[Asn]>> {
+    pub fn for_segments_vec(&self) -> AsPath<Vec<Asn>> {
         AsPath { segments: self.segments.as_ref().into() }
     }
 }
@@ -565,6 +574,34 @@ impl<T: AsRef<[Asn]> + ?Sized> fmt::Display for AsPath<T> {
         Ok(())
     }
 }
+
+impl From<AsPath<Vec<Asn>>> for AsPath<Vec<MaterializedPathSegment>> {
+    fn from(value: AsPath<Vec<Asn>>) -> Self {
+        Self {
+            segments: value
+                .into_iter()
+                .map(|p| p.into()).collect()
+        }
+    }
+}
+
+impl From<&AsPath<Vec<MaterializedPathSegment>>> for AsPath<Vec<Asn>> {
+    fn from(value: &AsPath<Vec<MaterializedPathSegment>>) -> Self {
+        Self {
+            segments: value.segments
+                .clone()
+                .into_iter()
+                .map(|p| p.into()).collect()
+        }
+    }
+}
+
+impl From<MaterializedPathSegment> for Asn {
+    fn from(value: MaterializedPathSegment) -> Self {
+        value.elements[0]
+    }
+}
+
 
 
 //------------ AsPathBuilder -------------------------------------------------
