@@ -13,7 +13,6 @@ use crate::bgp::message::nlri::{
 };
 
 use std::net::Ipv4Addr;
-use std::rc::Rc;
 use crate::util::parser::{parse_ipv4addr, ParseError};
 
 
