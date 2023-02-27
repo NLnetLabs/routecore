@@ -1,8 +1,5 @@
 //! Types for Autonomous Systems Numbers (ASN) and ASN collections
 
-use std::borrow::Borrow;
-use std::ops::RangeBounds;
-use std::rc::Rc;
 use std::str::FromStr;
 use std::convert::{TryFrom, TryInto};
 use std::{error, fmt, ops};
@@ -337,7 +334,7 @@ pub struct MaterializedPathSegment {
 
 impl MaterializedPathSegment {
     /// Creates a path segment from a type and a slice of elements.
-    fn new(stype: SegmentType, elements: Vec<Asn>) -> Self {
+    pub fn new(stype: SegmentType, elements: Vec<Asn>) -> Self {
         MaterializedPathSegment { stype, elements }
     }
 
@@ -683,7 +680,7 @@ impl AsPath<Vec<MaterializedPathSegment>> {
         Ok(())
     }
 
-    pub fn remove(&mut self, range: std::ops::Range<u8>) {}
+    // pub fn remove(&mut self, range: std::ops::Range<u8>) {}
 
     //-------- And them some retrieval methods ------------------------------
 
