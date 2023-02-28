@@ -91,12 +91,15 @@
 use const_str::convert_case;
 use std::fmt::{Display, Error, Formatter};
 use std::net::{Ipv4Addr, Ipv6Addr};
+use std::ops::Index;
 use std::str::FromStr;
 
-use crate::asn::Asn;
+use crate::asn::{Asn, LongSegmentError};
 
 #[cfg(feature = "serde")]
 use serde::{Serialize, Deserialize};
+
+use super::route::VectorValue;
 
 //--- Community --------------------------------------------------------------
 

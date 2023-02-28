@@ -1,11 +1,14 @@
 //! Types for Autonomous Systems Numbers (ASN) and ASN collections
 
+use std::ops::Index;
 use std::str::FromStr;
 use std::convert::{TryFrom, TryInto};
 use std::{error, fmt, ops};
 
 #[cfg(feature = "bcder")]
 use bcder::decode::{self, DecodeError, Source};
+
+use crate::bgp::route::VectorValue;
 
 
 //------------ Asn -----------------------------------------------------------
@@ -603,7 +606,7 @@ impl<T: Into<Asn>> From<Vec<T>> for AsPath<Vec<T>> {
 // contain AS_SETs, AS_CONFEDERATIONs, etc. and we need to preserve those in
 // our AttrChangeSets, while being able to append|prepend|insert|remove ASNs.
 
-// This is a first ATTEMPT to do so.
+// This is a f̶i̶r̶s̶t̶ second ATTEMPT to do so.
 
 impl From<MaterializedPathSegment> for Asn {
     fn from(value: MaterializedPathSegment) -> Self {
@@ -611,19 +614,29 @@ impl From<MaterializedPathSegment> for Asn {
     }
 }
 
-impl<T: Clone> From<&AsPath<Vec<T>>> for AsPath<Vec<Asn>> where Asn: From<T> {
-    fn from(value: &AsPath<Vec<T>>) -> Self {
-        Self {
-            segments: value.segments
-                .clone()
-                .into_iter()
-                .map(|p| p.into()).collect()
+impl<T: Clone> From<&AsPath<Vec<T>>> for AsPath<Vec<Asn>> 
+    where Asn: From<T> {
+        fn from(value: &AsPath<Vec<T>>) -> Self {
+            Self {
+                segments: value.segments
+                    .clone()
+                    .into_iter()
+                    .map(|p| p.into()).collect()
+            }
         }
+}
+
+impl Index<usize> for AsPath<Vec<MaterializedPathSegment>> {
+    type Output = MaterializedPathSegment;
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.segments[index]
     }
 }
 
-impl AsPath<Vec<MaterializedPathSegment>> {
-    pub fn append(&mut self, asns: Vec<Asn>) -> Result<(), LongSegmentError> {
+impl VectorValue for AsPath<Vec<MaterializedPathSegment>> {
+    type Item = Asn;
+
+    fn append_vec(&mut self, asns: Vec<Asn>) -> Result<(), LongSegmentError> {
         if self.segments.len() + asns.len() >= 255 {
             return Err(LongSegmentError)
         }
@@ -635,16 +648,12 @@ impl AsPath<Vec<MaterializedPathSegment>> {
         Ok(())
     }
 
-    pub fn prepend(&mut self, asns: Vec<Asn>) -> Result<(), LongSegmentError> {
+    fn prepend_vec(&mut self, asns: Vec<Asn>) -> Result<(), LongSegmentError> {
         if self.segments.len() + asns.len() >= 255 {
             return Err(LongSegmentError)
         }
 
-        let mut pre_path = AsPath::from(
-            asns
-                .into_iter()
-                .map(|asn| asn.into()).collect::<Vec<_>>()
-            );
+        let mut pre_path: AsPath<Vec<MaterializedPathSegment>> = AsPath::from(asns);
         pre_path.segments.extend_from_slice(self.segments.as_slice());
 
         *self = pre_path;
@@ -652,7 +661,7 @@ impl AsPath<Vec<MaterializedPathSegment>> {
         Ok(())
     }
 
-    pub fn insert(&mut self, pos: u8, asns: Vec<Asn>) -> Result<(), LongSegmentError> {
+    fn insert_vec(&mut self, pos: u8, asns: Vec<Asn>) -> Result<(), LongSegmentError> {
         if self.segments.len() + asns.len() >= 255 {
             return Err(LongSegmentError)
         }
@@ -671,19 +680,26 @@ impl AsPath<Vec<MaterializedPathSegment>> {
 
     //-------- And them some retrieval methods ------------------------------
 
-    pub fn len(&self) -> u8 {
+    fn vec_len(&self) -> u8 {
         self.segments.len() as u8
     }
 
-    pub fn get(&self, pos: u8) -> Option<&MaterializedPathSegment> {
-        self.segments.get(pos as usize)
-    }
-
-    pub fn is_empty(&self) -> bool {
+    fn vec_is_empty(&self) -> bool {
         self.segments.is_empty()
     }
 }
 
+impl AsPath<Vec<MaterializedPathSegment>> {
+    fn get(&self, pos: u8) -> Option<&MaterializedPathSegment> {
+        self.segments.get(pos as usize)
+    }
+}
+
+impl From<Vec<Asn>> for AsPath<Vec<MaterializedPathSegment>> {
+    fn from(value: Vec<Asn>) -> Self {
+        AsPath { segments: value.into_iter().map(|asn| asn.into()).collect() }
+    }
+}
 
 //------------ AsPathBuilder -------------------------------------------------
 
