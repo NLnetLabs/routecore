@@ -8,6 +8,7 @@ use std::{error, fmt, ops};
 #[cfg(feature = "bcder")]
 use bcder::decode::{self, DecodeError, Source};
 
+#[cfg(feature = "bgp")]
 use crate::bgp::route::VectorValue;
 
 
@@ -633,6 +634,7 @@ impl Index<usize> for AsPath<Vec<MaterializedPathSegment>> {
     }
 }
 
+#[cfg(feature = "bgp")]
 impl VectorValue for AsPath<Vec<MaterializedPathSegment>> {
     type Item = Asn;
 
