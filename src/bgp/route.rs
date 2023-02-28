@@ -191,6 +191,12 @@ impl<V: VectorValue> ChangedOption<V> {
     pub fn len(&self) -> Option<u8> {
         self.value.as_ref().map(|v| v.vec_len())
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.value
+            .as_ref()
+            .map_or_else(|| true, |v| v.vec_is_empty())
+    }
 }
 
 impl<T: ScalarValue> ChangedOption<T> {

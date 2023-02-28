@@ -689,12 +689,6 @@ impl VectorValue for AsPath<Vec<MaterializedPathSegment>> {
     }
 }
 
-impl AsPath<Vec<MaterializedPathSegment>> {
-    fn get(&self, pos: u8) -> Option<&MaterializedPathSegment> {
-        self.segments.get(pos as usize)
-    }
-}
-
 impl From<Vec<Asn>> for AsPath<Vec<MaterializedPathSegment>> {
     fn from(value: Vec<Asn>) -> Self {
         AsPath { segments: value.into_iter().map(|asn| asn.into()).collect() }
