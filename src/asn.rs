@@ -584,6 +584,13 @@ impl From<AsPath<Vec<Asn>>> for AsPath<Vec<MaterializedPathSegment>> {
     }
 }
 
+impl<T: Into<Asn>> From<Vec<T>> for AsPath<Vec<T>> {
+    fn from(value: Vec<T>) -> Self {
+        Self { segments: value }
+    }
+}
+
+
 //------------ Modification methods -----------------------------------------
 
 // We need to be able to prepend, append and insert arbitrary numbers of Asns
@@ -622,13 +629,7 @@ impl AsPath<Vec<MaterializedPathSegment>> {
         }
 
         self.segments.extend(
-            asns.into_iter().map(|asn| MaterializedPathSegment {
-                stype: SegmentType::Sequence,
-                elements: vec![
-                    encode_sentinel(SegmentType::Sequence, 1),
-                    asn,
-                ],
-            }
+            asns.into_iter().map(|asn| asn.into()
         ).collect::<Vec<_>>());
 
         Ok(())
@@ -639,12 +640,11 @@ impl AsPath<Vec<MaterializedPathSegment>> {
             return Err(LongSegmentError)
         }
 
-        let mut pre_path = AsPath {
-            segments: vec![MaterializedPathSegment {
-                stype: SegmentType::Sequence,
-                elements: asns,
-            }],
-        };
+        let mut pre_path = AsPath::from(
+            asns
+                .into_iter()
+                .map(|asn| asn.into()).collect::<Vec<_>>()
+            );
         pre_path.segments.extend_from_slice(self.segments.as_slice());
 
         *self = pre_path;
@@ -657,24 +657,11 @@ impl AsPath<Vec<MaterializedPathSegment>> {
             return Err(LongSegmentError)
         }
         
-        let segments = self.segments.as_slice();
-
         let mut pre_path = 
-            (segments[0..pos as usize]).to_vec();
+            (self.segments[0..pos as usize]).to_vec();
 
-        pre_path.extend(
-          asns.into_iter().map(|asn| MaterializedPathSegment {
-                    stype: SegmentType::Sequence,
-                    elements: vec![
-                        encode_sentinel(SegmentType::Sequence, 1),
-                        asn,
-                    ],
-                }
-            )
-        );
-
-        pre_path.extend_from_slice(&segments[pos as usize..]);
-
+        pre_path.extend(asns.into_iter().map(|asn| asn.into()));
+        pre_path.extend_from_slice(&self.segments[pos as usize..]);
         self.segments = pre_path;
         
         Ok(())
