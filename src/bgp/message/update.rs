@@ -1,4 +1,5 @@
 use crate::bgp::message::Header;
+use crate::bgp::route::{ChangedOption, AttrChangeSet};
 use octseq::{Octets, Parser};
 use log::{debug, warn, error};
 
@@ -47,6 +48,113 @@ impl<Octs: Octets> UpdateMessage<Octs> {
 	pub fn length(&self) -> u16 {
         self.header().length()
 	}
+}
+
+//------------ Modification & Creation of new Updates -----------------------
+
+impl<Octs: Octets> UpdateMessage<Octs> {
+
+    // Materialize a ChangeSet from the Update message. The materialized
+    // Change set is completely self-contained (no references of any kind) &
+    // holds all the attributes of the current BGP Update message.
+    pub fn create_changeset(&self) -> AttrChangeSet {
+        AttrChangeSet {
+            as_path: ChangedOption {
+                value: self.aspath().map(|p| p.into()),
+                changed: false,
+            },
+            origin_type: ChangedOption {
+                value: self.origin(),
+                changed: false,
+            },
+            next_hop: ChangedOption {
+                value: self.next_hop(),
+                changed: false,
+            },
+            multi_exit_discriminator: ChangedOption {
+                value: self.multi_exit_desc(),
+                changed: false,
+            },
+            local_pref: ChangedOption {
+                value: self.local_pref(),
+                changed: false,
+            },
+            atomic_aggregate: ChangedOption {
+                value: Some(self.is_atomic_aggregate()),
+                changed: false,
+            },
+            aggregator: ChangedOption {
+                value: self.aggregator(),
+                changed: false,
+            },
+            communities: ChangedOption {
+                value: self.all_communities(),
+                changed: false,
+            },
+            originator_id: ChangedOption {
+                value: None,
+                changed: false,
+            },
+            cluster_list: ChangedOption {
+                value: None,
+                changed: false,
+            },
+            extended_communities: ChangedOption {
+                value: self
+                    .ext_communities()
+                    .map(|c| c.collect::<Vec<ExtendedCommunity>>()),
+                changed: false,
+            },
+            as4_path: ChangedOption {
+                value: self.as4path(),
+                changed: false,
+            },
+            as4_aggregator: ChangedOption {
+                value: None,
+                changed: false,
+            },
+            connector: ChangedOption {
+                value: None,
+                changed: false,
+            },
+            as_path_limit: ChangedOption {
+                value: None,
+                changed: false,
+            },
+            pmsi_tunnel: ChangedOption {
+                value: None,
+                changed: false,
+            },
+            ipv6_extended_communities: ChangedOption {
+                value: None,
+                changed: false,
+            },
+            large_communities: ChangedOption {
+                value: self
+                    .large_communities()
+                    .map(|c| c.collect::<Vec<LargeCommunity>>()),
+                changed: false,
+            },
+            bgpsec_as_path: ChangedOption {
+                value: None,
+                changed: false,
+            },
+            attr_set: ChangedOption {
+                value: None,
+                changed: false,
+            },
+            rsrvd_development: ChangedOption {
+                value: None,
+                changed: false,
+            },
+        }
+    }
+
+    // Create a new BGP Update message by applying the attributes changes
+    // in the supplied change set to our current Update message.
+    pub fn create_update_from_changeset(_change_set: &AttrChangeSet) -> Self {
+        todo!()
+    }
 }
 
 impl<Octs: Octets> AsRef<[u8]> for UpdateMessage<Octs> {
