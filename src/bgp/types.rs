@@ -37,6 +37,17 @@ pub enum OriginType {
     Unknown(u8),
 }
 
+impl std::fmt::Display for OriginType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            OriginType::Igp => write!(f, "IGP"),
+            OriginType::Egp => write!(f, "EGP"),
+            OriginType::Incomplete => write!(f, "Incomplete"),
+            OriginType::Unknown(val) => write!(f, "Unknown: {}", val),
+        }
+    }
+}
+
 typeenum!(
 /// PathAttributeType
 ///
