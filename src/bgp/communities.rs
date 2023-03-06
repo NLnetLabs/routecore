@@ -1173,6 +1173,7 @@ impl FromStr for Asn16 {
 
 //------------ MaterializedCommunities --------------------------------------
 
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct MaterializedCommunities {
     communities: Vec<Community>
 }
