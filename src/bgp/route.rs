@@ -242,6 +242,8 @@ pub enum RouteStatus {
     Empty,
 }
 
+impl ScalarValue for RouteStatus {}
+
 impl std::fmt::Display for RouteStatus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
