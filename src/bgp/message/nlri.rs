@@ -255,6 +255,12 @@ impl RouteDistinguisher {
     }
 }
 
+impl std::fmt::Display for RouteDistinguisher {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        write!(f, "{:#?}", self.bytes)
+    }
+}
+
 /// Route Distinguisher types as defined in RFC4364.
 #[derive(Eq, PartialEq, Debug)]
 pub enum RouteDistinguisherType {

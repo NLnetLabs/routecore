@@ -84,9 +84,21 @@ typeenum!(
 #[derive(Debug, Eq, PartialEq, Copy, Clone)]
 pub struct MultiExitDisc(pub u32);
 
+impl std::fmt::Display for MultiExitDisc {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
 /// Wrapper for the 4 byte Local Preference value in path attributes.
 #[derive(Debug, Eq, PartialEq, Copy, Clone)]
 pub struct LocalPref(pub u32);
+
+impl std::fmt::Display for LocalPref {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
 
 /// Conventional and BGP-MP Next Hop variants.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -101,3 +113,16 @@ pub enum NextHop {
     Unimplemented(AFI, SAFI),
 }
 
+impl std::fmt::Display for NextHop {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            NextHop::Ipv4(ip) => write!(f, "{}", ip),
+            NextHop::Ipv6(ip) => write!(f, "{}", ip),
+            NextHop::Ipv6LL(ip1, ip2) => write!(f, "{} {} ", ip1, ip2),
+            NextHop::Ipv4MplsVpnUnicast(rd, ip) => write!(f, "rd {} {}", rd, ip),
+            NextHop::Ipv6MplsVpnUnicast(rd, ip) => write!(f, "rd {} {}", rd, ip),
+            NextHop::Empty => write!(f, "empty"),
+            NextHop::Unimplemented(afi, safi) => write!(f, "unimplemented for AFI {} /SAFI {}", afi, safi),
+        }
+    }
+}
