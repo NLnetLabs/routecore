@@ -77,7 +77,7 @@ pub struct Path<Octs> {
 }
 
 impl<Octs> Path<Octs> {
-    pub unsafe fn from_octets_unchecked(octets: Octs) {
+    pub unsafe fn from_octets_unchecked(octets: Octs) -> Self {
         Path { octets }
     }
 }
@@ -97,7 +97,7 @@ pub struct PathIterator<'a, Octs> {
 }
 
 impl<'a, Octs: Octets> Iterator for PathIterator<'a, Octs> {
-    type Item = Hop<Octs>;
+    type Item = Hop<Octs::Range<'a>>;
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(sequence) = &mut self.current {
             if let Some(asn) = sequence.next() {
@@ -105,9 +105,10 @@ impl<'a, Octs: Octets> Iterator for PathIterator<'a, Octs> {
             }
             self.current = None
         }
-        if let Some(seg) = self.segments.next() {
-            if seg.stype == SegmentType::Sequence {
-                let mut asn_iter = seg.into_iter();
+        if let Some((stype, mut parser)) = self.segments.next_pair() {
+            if stype == SegmentType::Sequence {
+                let mut asn_iter = AsnIterator { parser };//  seg.into_iter(); // make manually, sneak in
+                                                    // parser
                 if let Some(asn) = asn_iter.next() {
                     self.current = Some(asn_iter);
                     return Some(Hop::Asn(asn))
@@ -115,7 +116,9 @@ impl<'a, Octs: Octets> Iterator for PathIterator<'a, Octs> {
                     return None
                 }
             } else {
-                return Some(Hop::Segment(seg))
+                return Some(Hop::Segment(Segment {
+                    stype,
+                    octets: parser.parse_octets(parser.remaining()).expect("parsed before") } ) )
             }
         }
 
@@ -130,8 +133,23 @@ pub struct SegmentIterator<'a, Octs> {
     parser: Parser<'a, Octs>
 }
 
+impl<'a, Octs: Octets> SegmentIterator<'a, Octs> {
+    pub fn next_pair(&mut self) -> Option<(SegmentType, Parser<'a, Octs>)> {
+        if self.parser.remaining() == 0 {
+            return None;
+        }
+        let stype = self.parser.parse_u8().expect("parsed before")
+            .try_into().expect("illegally encoded AS path");
+
+        let len = self.parser.parse_u8().expect("parsed before");
+        // XXX 4 for 32bit ASNs, how can we support 16bit ASNs nicely?
+        let parser = self.parser.parse_parser(len as usize * 4).expect("parsed before");
+        Some((stype, parser))
+    }
+}
+
 impl<'a, Octs: Octets> Iterator for SegmentIterator<'a, Octs> {
-    type Item = Segment<Octs>;
+    type Item = Segment<Octs::Range<'a>>;
     fn next(&mut self) -> Option<Self::Item> {
         if self.parser.remaining() == 0 {
             return None;
@@ -162,7 +180,7 @@ impl<'a, Octs: Octets> Iterator for AsnIterator<'a, Octs> {
     }
 }
 
-impl<'a, Octs: 'a + Octets> IntoIterator for Segment<Octs> {
+impl<'a, Octs: 'a + Octets> IntoIterator for &'a Segment<Octs> {
     type Item = Asn;
     type IntoIter = AsnIterator<'a, Octs>;
     fn into_iter(self) -> Self::IntoIter {
@@ -237,7 +255,7 @@ impl PathBuilder {
         &self
     ) -> Result<
         Path<Octs>,
-        <Octs as OctetsBuilder>::AppendError
+        <<Octs as FromBuilder>::Builder as OctetsBuilder>::AppendError
     >
     where
         Octs: FromBuilder,
