@@ -2,6 +2,7 @@
 
 pub mod addr;
 pub mod asn;
+pub mod aspath;
 #[cfg(feature = "bgp")]
 pub mod bgp;
 pub mod bgpsec;
