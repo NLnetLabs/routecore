@@ -134,7 +134,7 @@ pub struct SegmentIterator<'a, Octs> {
 }
 
 impl<'a, Octs: Octets> SegmentIterator<'a, Octs> {
-    pub fn next_pair(&mut self) -> Option<(SegmentType, Parser<'a, Octs>)> {
+    fn next_pair(&mut self) -> Option<(SegmentType, Parser<'a, Octs>)> {
         if self.parser.remaining() == 0 {
             return None;
         }
@@ -184,7 +184,7 @@ impl<'a, Octs: 'a + Octets> IntoIterator for &'a Segment<Octs> {
     type Item = Asn;
     type IntoIter = AsnIterator<'a, Octs>;
     fn into_iter(self) -> Self::IntoIter {
-        AsnIterator { parser: self.parser }
+        AsnIterator { parser: Parser::from_ref(&self.octets) }
     }
 }
 
@@ -198,7 +198,7 @@ pub struct PathBuilder {
 
 impl PathBuilder {
     pub fn prepend(&mut self, hop: Hop<Vec<u8>>) {
-        self.hops.prepend(hop);
+        self.hops.insert(0, hop);
     }
 
     pub fn prepend_asn(&mut self, asn: Asn) {
