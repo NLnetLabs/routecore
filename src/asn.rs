@@ -4,6 +4,8 @@ use std::str::FromStr;
 use std::convert::{TryFrom, TryInto};
 use std::{error, fmt, ops};
 
+use octseq::builder::OctetsBuilder;
+
 #[cfg(feature = "bcder")]
 use bcder::decode::{self, DecodeError, Source};
 
@@ -32,6 +34,12 @@ impl Asn {
     /// Converts an AS number into a network-order byte array.
     pub fn to_raw(self) -> [u8; 4] {
         self.0.to_be_bytes()
+    }
+
+    pub fn compose<Target: OctetsBuilder>(
+        self, target: &mut Target
+    ) -> Result<(), Target::AppendError> {
+        target.append_slice(&self.to_raw())
     }
 }
 
