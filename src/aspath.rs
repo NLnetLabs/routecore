@@ -3,8 +3,13 @@
 //! Using Hop etc etc
 
 use crate::asn::Asn;
-use octseq::{EmptyBuilder, FromBuilder, Octets, OctetsBuilder, Parser};
+use octseq::{
+    EmptyBuilder, FromBuilder, Octets, OctetsBuilder, OctetsFrom, OctetsInto,
+    Parser,
+};
 use std::{error, fmt};
+use core::ops::{Index, IndexMut};
+use std::slice::SliceIndex;
 
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -51,15 +56,43 @@ pub struct Segment<Octs> {
 }
 
 impl<Octs: Octets> Segment<Octs> {
-    pub fn new_set(asns: impl IntoIterator<Item = Asn>) -> Self {
+    pub fn new_set(_asns: impl IntoIterator<Item = Asn>) -> Self {
         todo!()
         //Segment {
         //    stype: SegmentType::Set,
         //    octets:
         //}
     }
+
+    pub fn asns(&self) -> Asns<Octs> {
+        todo!()
+    }
+
+    pub fn compose<Target: OctetsBuilder>(
+        &self, target: &mut Target
+    ) -> Result<(), Target::AppendError> {
+        target.append_slice(
+            &[self.stype.into(), 
+            u8::try_from(self.octets.as_ref().len() / 4)
+                .expect("long sequence")
+            ]
+        )
+    }
 }
 
+impl<Source, Octs> OctetsFrom<Segment<Source>> for Segment<Octs>
+    where
+    Octs: OctetsFrom<Source>
+{
+    type Error = Octs::Error;
+
+    fn try_octets_from(source: Segment<Source>) -> Result<Self, Self::Error> {
+        Ok(Segment {
+            stype: source.stype, 
+            octets: Octs::try_octets_from(source.octets)?
+        })
+    }
+}
 
 
 
@@ -70,33 +103,83 @@ pub enum Hop<Octs> {
     Segment(Segment<Octs>),
 }
 
+impl<Source, Octs> OctetsFrom<Hop<Source>> for Hop<Octs>
+    where
+    Octs: OctetsFrom<Source>
+{
+    type Error = Octs::Error;
 
-//--- Path -------------------------------------------------------------------
-pub struct Path<Octs> {
+    fn try_octets_from(source: Hop<Source>) -> Result<Self, Self::Error> {
+        match source {
+            Hop::Asn(asn) => Ok(Hop::Asn(asn)),
+            Hop::Segment(seg) => Ok(Hop::Segment(Segment::try_octets_from(seg)?))
+        }
+    }
+}
+
+
+
+//--- AsPath -----------------------------------------------------------------
+pub struct AsPath<Octs> {
     octets: Octs,
 }
 
-impl<Octs> Path<Octs> {
+impl<Octs> AsPath<Octs> {
     pub unsafe fn from_octets_unchecked(octets: Octs) -> Self {
-        Path { octets }
+        AsPath { octets }
     }
 }
 
-impl <'a, Octs: Octets>Path<Octs> {
-    pub fn iter(&'a self) -> PathIterator<'a, Octs> {
-        let parser = Parser::from_ref(&self.octets);
-        PathIterator { segments: SegmentIterator { parser }, current: None }
+impl<Octs: Octets> AsPath<Octs> {
+    pub fn hops(&self) -> PathHops<Octs> {
+        PathHops::new(&self.octets)
     }
+    
+    pub fn segments(&self) -> PathSegments<Octs> {
+        PathSegments::new(&self.octets)
+    }
+
+    pub fn prepend(
+        &self, asn: Asn, n: usize
+    ) -> Result<
+        AsPath<Octs>,
+        <<Octs as FromBuilder>::Builder as OctetsBuilder>::AppendError
+    >
+    where
+        Octs: FromBuilder,
+        <Octs as FromBuilder>::Builder: EmptyBuilder,
+        for<'a> Vec<u8>: From<Octs::Range<'a>>
+    {
+        let mut hops = self.to_hop_path();
+        hops.prepend_n(asn, n);
+        hops.to_as_path()
+    }
+
+    pub fn to_hop_path(&self) -> HopPath
+    where for<'a> Vec<u8>: From<Octs::Range<'a>> {
+        HopPath { hops: self.hops().map(OctetsInto::octets_into).collect() }
+    }
+
 }
 
-//--- PathIterator -----------------------------------------------------------
+//----------- PathHops -------------------------------------------------------
+
 /// Iterators over `Hop`s in a Path.
-pub struct PathIterator<'a, Octs> {
-    segments: SegmentIterator<'a, Octs>,
-    current: Option<AsnIterator<'a, Octs>>,
+pub struct PathHops<'a, Octs> {
+    segments: PathSegments<'a, Octs>,
+    current: Option<Asns<'a, Octs>>,
 }
 
-impl<'a, Octs: Octets> Iterator for PathIterator<'a, Octs> {
+impl<'a, Octs: AsRef<[u8]>> PathHops<'a, Octs> {
+    fn new(octets: &'a Octs) -> Self {
+        PathHops {
+            segments: PathSegments::new(octets),
+            current: None,
+        }
+    }
+}
+
+impl<'a, Octs: Octets> Iterator for PathHops<'a, Octs> {
     type Item = Hop<Octs::Range<'a>>;
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(sequence) = &mut self.current {
@@ -107,7 +190,7 @@ impl<'a, Octs: Octets> Iterator for PathIterator<'a, Octs> {
         }
         if let Some((stype, mut parser)) = self.segments.next_pair() {
             if stype == SegmentType::Sequence {
-                let mut asn_iter = AsnIterator { parser };//  seg.into_iter(); // make manually, sneak in
+                let mut asn_iter = Asns { parser };//  seg.into_iter(); // make manually, sneak in
                                                     // parser
                 if let Some(asn) = asn_iter.next() {
                     self.current = Some(asn_iter);
@@ -127,13 +210,19 @@ impl<'a, Octs: Octets> Iterator for PathIterator<'a, Octs> {
     }
 }
 
-//--- SegmentIterator --------------------------------------------------------
+//--- PathSegments --------------------------------------------------------
 /// Iterates over Segments in a Path.
-pub struct SegmentIterator<'a, Octs> {
+pub struct PathSegments<'a, Octs> {
     parser: Parser<'a, Octs>
 }
 
-impl<'a, Octs: Octets> SegmentIterator<'a, Octs> {
+impl<'a, Octs: AsRef<[u8]>> PathSegments<'a, Octs> {
+    fn new(octets: &'a Octs) -> Self {
+        PathSegments { parser: Parser::from_ref(octets) }
+    }
+}
+
+impl<'a, Octs: Octets> PathSegments<'a, Octs> {
     fn next_pair(&mut self) -> Option<(SegmentType, Parser<'a, Octs>)> {
         if self.parser.remaining() == 0 {
             return None;
@@ -148,7 +237,7 @@ impl<'a, Octs: Octets> SegmentIterator<'a, Octs> {
     }
 }
 
-impl<'a, Octs: Octets> Iterator for SegmentIterator<'a, Octs> {
+impl<'a, Octs: Octets> Iterator for PathSegments<'a, Octs> {
     type Item = Segment<Octs::Range<'a>>;
     fn next(&mut self) -> Option<Self::Item> {
         if self.parser.remaining() == 0 {
@@ -165,11 +254,11 @@ impl<'a, Octs: Octets> Iterator for SegmentIterator<'a, Octs> {
 }
 
 /// Iterates over ASNs in a Segment.
-pub struct AsnIterator<'a, Octs> {
+pub struct Asns<'a, Octs> {
     parser: Parser<'a, Octs>
 }
 
-impl<'a, Octs: Octets> Iterator for AsnIterator<'a, Octs> {
+impl<'a, Octs: Octets> Iterator for Asns<'a, Octs> {
     type Item = Asn;
     fn next(&mut self) -> Option<Self::Item> {
         if self.parser.remaining() == 0 {
@@ -182,9 +271,9 @@ impl<'a, Octs: Octets> Iterator for AsnIterator<'a, Octs> {
 
 impl<'a, Octs: 'a + Octets> IntoIterator for &'a Segment<Octs> {
     type Item = Asn;
-    type IntoIter = AsnIterator<'a, Octs>;
+    type IntoIter = Asns<'a, Octs>;
     fn into_iter(self) -> Self::IntoIter {
-        AsnIterator { parser: Parser::from_ref(&self.octets) }
+        Asns { parser: Parser::from_ref(&self.octets) }
     }
 }
 
@@ -192,20 +281,21 @@ impl<'a, Octs: 'a + Octets> IntoIterator for &'a Segment<Octs> {
 //--- Building / composing ---------------------------------------------------
 
 
-pub struct PathBuilder {
+pub struct HopPath {
     hops: Vec<Hop<Vec<u8>>>,
 }
 
-impl PathBuilder {
+impl HopPath {
     pub fn prepend(&mut self, hop: Hop<Vec<u8>>) {
         self.hops.insert(0, hop);
     }
 
+    // XXX make prepend operate on Into<Hop<Vec<u8>>
     pub fn prepend_asn(&mut self, asn: Asn) {
         self.hops.insert(0, Hop::Asn(asn))
     }
 
-    pub fn prepend_n(&mut self, asn: Asn, n: u8) {
+    pub fn prepend_n(&mut self, asn: Asn, n: usize) {
         for _ in 0..n {
             self.prepend_asn(asn)
         }
@@ -216,19 +306,19 @@ impl PathBuilder {
     }
 
     pub fn prepend_confed_sequence(
-        &mut self, set: impl IntoIterator<Item = Asn>)
+        &mut self, _set: impl IntoIterator<Item = Asn>)
     {
         todo!()
     }
 
     pub fn prepend_confed_set(
-        &mut self, set: impl IntoIterator<Item = Asn>)
+        &mut self, _set: impl IntoIterator<Item = Asn>)
     {
         todo!()
     }
 
     pub fn append(&mut self, hop: Hop<Vec<u8>>) {
-        self.hops.append(hop);
+        self.hops.push(hop);
     }
 
     pub fn append_asn(&mut self, asn: Asn) {
@@ -240,21 +330,21 @@ impl PathBuilder {
     }
 
     pub fn append_confed_sequence(
-        &mut self, set: impl IntoIterator<Item = Asn>)
+        &mut self, _set: impl IntoIterator<Item = Asn>)
     {
         todo!()
     }
 
     pub fn append_confed_set(
-        &mut self, set: impl IntoIterator<Item = Asn>)
+        &mut self, _set: impl IntoIterator<Item = Asn>)
     {
         todo!()
     }
 
-    pub fn to_path<Octs>(
+    pub fn to_as_path<Octs>(
         &self
     ) -> Result<
-        Path<Octs>,
+        AsPath<Octs>,
         <<Octs as FromBuilder>::Builder as OctetsBuilder>::AppendError
     >
     where
@@ -262,14 +352,74 @@ impl PathBuilder {
         <Octs as FromBuilder>::Builder: EmptyBuilder
     {
         let mut target = EmptyBuilder::empty();
-        self.compose(&mut target);
-        Ok(unsafe { Path::from_octets_unchecked(Octs::from_builder(target)) })
+        Self::compose_hops(&self.hops, &mut target)?;
+        Ok(unsafe { AsPath::from_octets_unchecked(Octs::from_builder(target)) })
     }
 
-    pub fn compose<Octs: Octets, Target: OctetsBuilder>(
-        hops: impl Iterator<Item = Hop<Octs>>, target: &mut Target
+    fn compose_hops<Octs: Octets, Target: OctetsBuilder>(
+        mut hops: &[Hop<Octs>], target: &mut Target
     ) -> Result<(), Target::AppendError> {
-        todo!()
+        while !hops.is_empty() {
+            let i = hops.iter().position(|h| matches!(h, Hop::Asn(_))).unwrap_or_else(|| hops.len());
+            let (head, tail) = hops.split_at(i);
+
+            if !head.is_empty() {
+                // hops[0..idx] represents |idx| ASNs in a Sequence
+                let (head, tail) = head.split_at(head.len() % 256);
+                target.append_slice(
+                    &[
+                        SegmentType::Sequence.into(),
+                        u8::try_from(head.len()).expect("long sequence")
+                    ]
+                )?;
+                head.iter().try_for_each(|h| {
+                    match h {
+                        Hop::Asn(asn) => asn.compose(target),
+                        _ => unreachable!()
+                    }
+                })?;
+
+                for c in tail.chunks(255) {
+                    target.append_slice(
+                        &[
+                            SegmentType::Sequence.into(),
+                            u8::try_from(c.len()).expect("long sequence")
+                        ]
+                    )?;
+                    c.iter().try_for_each(|h| {
+                        match h {
+                            Hop::Asn(asn) => asn.compose(target),
+                            _ => unreachable!()
+                        }
+                    })?;
+
+                }
+            }
+            if let Some((first, tail)) = tail.split_first() {
+                match first {
+                    Hop::Asn(_) => unreachable!(),
+                    Hop::Segment(seg) => seg.compose(target)?
+                }
+                hops = tail;
+            }
+            else {
+                hops = tail;
+            }
+        }
+        Ok(())
+    }
+}
+
+impl<I: SliceIndex<[Hop<Vec<u8>>]>> Index<I> for HopPath {
+    type Output = I::Output;
+    fn index(&self, i: I) -> &Self::Output {
+        &self.hops[i]
+    }
+}
+
+impl<I: SliceIndex<[Hop<Vec<u8>>]>> IndexMut<I> for HopPath {
+    fn index_mut(&mut self, i: I) -> &mut Self::Output {
+        &mut self.hops[i]
     }
 }
 
@@ -304,8 +454,8 @@ mod tests {
             0x24, 0x0d
         ];
 
-        let path = Path{ octets: &raw };
-        for hop in path.iter() {
+        let path = AsPath{ octets: &raw };
+        for hop in path.hops() {
             println!("{hop:?}");
         }
     }
@@ -323,8 +473,8 @@ mod tests {
             0x00, 0x04, 0x16, 0x0a
         ];
 
-        let path = Path{ octets: &raw };
-        for hop in path.iter() {
+        let path = AsPath{ octets: &raw };
+        for hop in path.hops() {
             println!("{hop:?}");
         }
     }
