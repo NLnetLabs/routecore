@@ -1,15 +1,15 @@
 //! Types for Autonomous Systems Numbers (ASN) and ASN collections
 
-use std::ops::Index;
 use std::str::FromStr;
 use std::convert::{TryFrom, TryInto};
-use std::{error, fmt, ops};
+use std::{error, fmt, ops, vec};
+use std::ops::Index;
+
+use octseq::{Octets, Parser};
+use octseq::builder::OctetsBuilder;
 
 #[cfg(feature = "bcder")]
 use bcder::decode::{self, DecodeError, Source};
-
-#[cfg(feature = "bgp")]
-use crate::bgp::route::VectorValue;
 
 
 //------------ Asn -----------------------------------------------------------
@@ -36,6 +36,12 @@ impl Asn {
     /// Converts an AS number into a network-order byte array.
     pub fn to_raw(self) -> [u8; 4] {
         self.0.to_be_bytes()
+    }
+}
+
+impl AsRef<Asn> for Asn {
+    fn as_ref(&self) -> &Asn {
+        &self
     }
 }
 
@@ -283,107 +289,332 @@ impl fmt::Display for Asn {
 
 /// A segment of an AS path.
 #[derive(Debug, Clone, Copy)]
-pub struct PathSegment<'a> {
+pub struct PathSegment<'a, Octets> {
     /// The type of the path segment.
     stype: SegmentType,
 
     /// The elements of the path segment.
-    elements: &'a [Asn],
+    parser: Parser<'a, Octets>,
 }
 
-impl<'a> PathSegment<'a> {
+impl<'a, Octs: Octets> PathSegment<'a, Octs> {
     /// Creates a path segment from a type and a slice of elements.
-    fn new(stype: SegmentType, elements: &'a [Asn]) -> Self {
-        PathSegment { stype, elements }
+    fn new(stype: SegmentType, parser: Parser<'a, Octs>) -> Self {
+        PathSegment { stype, parser }
     }
 
     /// Returns the type of the segment.
-    pub fn segment_type(self) -> SegmentType {
+    pub fn segment_type(&self) -> SegmentType {
         self.stype
     }
 
     /// Returns a slice with the elements of the segment.
-    pub fn elements(self) -> &'a [Asn] {
-        self.elements
+    pub fn elements(&self) -> SegmentElementIter<'a, Octs> {
+        SegmentElementIter { parser: self.parser }
     }
-}
 
+    pub fn len(&self) -> usize {
+        self.elements().count()
+    }
 
-//--- Display
+    /*
+    pub fn elements_ref(self) -> SegmentElementRefIter<'a, Octs> {
+        SegmentElementRefIter { parser: self.parser }
+    }
+    */
 
-impl fmt::Display for PathSegment<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}(", self.stype)?;
-        if let Some((first, tail)) = self.elements.split_first() {
-            write!(f, "{}", first)?;
-            for elem in tail {
-                write!(f, ", {}", elem)?;
-            }
+    pub fn into_owned(self) -> OwnedPathSegment {
+        OwnedPathSegment {
+            stype: self.stype,
+            elements: self.elements().collect()
         }
-        write!(f, ")")
+    }
+
+    pub fn into_owned2(self) -> OwnedPathSegment2 {
+        let inner = self.elements().collect();
+        match self.stype {
+            SegmentType::Set => OwnedPathSegment2::Set(inner),
+            SegmentType::Sequence => OwnedPathSegment2::Sequence(inner),
+            SegmentType::ConfedSequence => OwnedPathSegment2::ConfedSequence(inner),
+            SegmentType::ConfedSet => OwnedPathSegment2::ConfedSet(inner),
+        }
     }
 }
 
-//------------ MaterializedPathSegment ---------------------------------------------------
-
-/// A segment of an AS path.
+/// Another go at an Owned version of PathSegment.
+///
+/// By implementing Deref and DerefMut, we get Index and IndexMut like
+/// features for free.
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub struct MaterializedPathSegment {
-    /// The type of the path segment.
-    pub stype: SegmentType,
-
-    /// The elements of the path segment.
-    pub elements: Vec<Asn>,
+pub enum OwnedPathSegment2 {
+    Set(Vec<Asn>),
+    Sequence(Vec<Asn>),
+    ConfedSequence(Vec<Asn>),
+    ConfedSet(Vec<Asn>),
 }
 
-impl MaterializedPathSegment {
-    /// Creates a path segment from a type and a slice of elements.
-    pub fn new(stype: SegmentType, elements: Vec<Asn>) -> Self {
-        MaterializedPathSegment { stype, elements }
+use std::ops::{Deref, DerefMut};
+
+impl Deref for OwnedPathSegment2 {
+    type Target = Vec<Asn>;
+    fn deref(&self) -> &Self::Target {
+        match self {
+            OwnedPathSegment2::Set(a) => a,
+            OwnedPathSegment2::Sequence(a) => a,
+            OwnedPathSegment2::ConfedSequence(a) => a,
+            OwnedPathSegment2::ConfedSet(a) => a,
+        }
+    }
+}
+
+impl DerefMut for OwnedPathSegment2 {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        match self {
+            OwnedPathSegment2::Set(a) => a,
+            OwnedPathSegment2::Sequence(a) => a,
+            OwnedPathSegment2::ConfedSequence(a) => a,
+            OwnedPathSegment2::ConfedSet(a) => a,
+        }
+    }
+}
+
+impl OwnedPathSegment2 {
+
+    /// Returns the type code.
+    pub fn typecode(&self) -> u8 {
+        match self {
+            OwnedPathSegment2::Set(_) => 1,
+            OwnedPathSegment2::Sequence(_) => 2,
+            OwnedPathSegment2::ConfedSequence(_) => 3,
+            OwnedPathSegment2::ConfedSet(_) => 4,
+        }
     }
 
-    /// Returns the type of the segment.
+    /// Appends `asn` to this segment, or throws a LongSegmentError if this
+    /// exceeds the maximum of 255 elements per segment.
+    pub fn append(&mut self, asn: Asn) -> Result<(), LongSegmentError> {
+        if self.len() == 255 {
+            return Err(LongSegmentError)
+        }
+        self.push(asn);
+        Ok(())
+    }
+
+    /// Prepends `asn` to this segment, or throws a LongSegmentError if this
+    /// exceeds the maximum of 255 elements per segment.
+    pub fn prepend(&mut self, asn: Asn) -> Result<(), LongSegmentError>  {
+        if self.len() == 255 {
+            return Err(LongSegmentError)
+        }
+        self.insert(0, asn);
+        Ok(())
+    }
+
+    /// Appends the `Asn`s in `slice` to this segment, or throws a
+    /// LongSegmentError if this exceeds the maximum of 255 elements per
+    /// segment.
+    pub fn append_slice(&mut self, slice: &[Asn]) -> Result<(), LongSegmentError>  {
+        if self.len() + slice.len() > 255 {
+            return Err(LongSegmentError)
+        }
+        self.extend_from_slice(slice);
+        Ok(())
+    }
+
+    /// Prepends the `Asn`s in `slice` to this segment, or throws a
+    /// LongSegmentError if this exceeds the maximum of 255 elements per
+    /// segment.
+    pub fn prepend_slice(&mut self, asns: &[Asn]) -> Result<(), LongSegmentError>  {
+        if self.len() + asns.len() > 255 {
+            return Err(LongSegmentError)
+        }
+        let mut new = asns.to_vec();
+        new.append(self);
+        *(*self) = new;
+        Ok(())
+    }
+
+    // --- convenience methods -----------------------------------------------
+    /// Creates a Sequence variant containing `asns`.
+    pub fn sequence_from<T: AsRef<[Asn]>>(asns: T)
+        -> Result<Self, LongSegmentError>
+    {
+        if asns.as_ref().len() > 255 { return Err(LongSegmentError); }
+        Ok(OwnedPathSegment2::Sequence(asns.as_ref().to_vec()))
+    }
+
+    /// Creates a ConfedSequence variant containing `asns`.
+    pub fn confed_sequence_from<T: AsRef<[Asn]>>(asns: T)
+        -> Result<Self, LongSegmentError>
+    {
+        if asns.as_ref().len() > 255 { return Err(LongSegmentError); }
+        Ok(OwnedPathSegment2::ConfedSequence(asns.as_ref().to_vec()))
+    }
+ 
+    /// Creates a Set variant containing `asns`.
+    pub fn set_from<T: AsRef<[Asn]>>(asns: T)
+        -> Result<Self, LongSegmentError>
+    {
+        if asns.as_ref().len() > 255 { return Err(LongSegmentError); }
+        Ok(OwnedPathSegment2::Set(asns.as_ref().to_vec()))
+    }
+
+    /// Creates a ConfedSet variant containing `asns`.
+    pub fn confed_set_from<T: AsRef<[Asn]>>(asns: T)
+        -> Result<Self, LongSegmentError>
+    {
+        if asns.as_ref().len() > 255 { return Err(LongSegmentError); }
+        Ok(OwnedPathSegment2::ConfedSet(asns.as_ref().to_vec()))
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OwnedPathSegment {
+    stype: SegmentType,
+    elements: Vec<Asn>,
+}
+
+
+impl OwnedPathSegment {
+
     pub fn segment_type(self) -> SegmentType {
         self.stype
     }
 
-    /// Returns a slice with the elements of the segment.
-    pub fn elements(self) -> Vec<Asn> {
-        self.elements
+    pub fn append(&mut self, asn: Asn) -> Result<(), LongSegmentError> {
+        if self.elements.len() == 255 {
+            return Err(LongSegmentError)
+        }
+        self.elements.push(asn);
+        Ok(())
+    }
+
+    pub fn append_slice(&mut self, slice: &[Asn]) -> Result<(), LongSegmentError>  {
+        if self.elements.len() + slice.len() > 255 {
+            return Err(LongSegmentError)
+        }
+        self.elements.extend_from_slice(slice);
+        Ok(())
+    }
+
+    pub fn prepend_slice(&mut self, asns: &[Asn]) -> Result<(), LongSegmentError>  {
+        if self.elements.len() + asns.len() > 255 {
+            return Err(LongSegmentError)
+        }
+        let mut new = asns.to_vec();
+        new.append(&mut self.elements);
+        self.elements = new;
+        Ok(())
+    }
+
+
+    pub fn len(&self) -> usize {
+        self.elements.len()
+    }
+
+    pub fn prepend(&mut self, asn: Asn) -> Result<(), LongSegmentError>  {
+        if self.elements.len() == 255 {
+            return Err(LongSegmentError)
+        }
+        self.elements.insert(0, asn);
+        Ok(())
+    }
+
+    // --- convenience methods -----------------------------------------------
+    
+    pub fn sequence_from_slice(asns: &[Asn]) -> Self {
+        OwnedPathSegment {
+            stype: SegmentType::Sequence,
+            elements: asns.to_vec()
+        }
+    }
+
+    pub fn confed_sequence_from_slice(asns: &[Asn]) -> Self {
+        OwnedPathSegment {
+            stype: SegmentType::ConfedSequence,
+            elements: asns.to_vec()
+        }
+    }
+
+    pub fn set_from_slice(asns: &[Asn]) -> Self {
+        OwnedPathSegment {
+            stype: SegmentType::Set,
+            elements: asns.to_vec()
+        }
+    }
+
+    pub fn confed_set_from_slice(asns: &[Asn]) -> Self {
+        OwnedPathSegment {
+            stype: SegmentType::ConfedSet,
+            elements: asns.to_vec()
+        }
+    }
+}
+
+impl Index<usize> for OwnedPathSegment {
+    type Output = Asn;
+
+    fn index(&self, i: usize) -> &Self::Output {
+        &self.elements[i]
+    }
+
+}
+
+impl<'a, Octs: Octets> FromIterator<PathSegment<'a, Octs>> for Vec<OwnedPathSegment> {
+    fn from_iter<I: IntoIterator<Item = PathSegment<'a, Octs>>>(it: I) -> Self {
+        let mut res = Vec::new();
+
+        for s in it {
+            res.push(s.into_owned())
+        }
+        res
+    }
+}
+
+impl<'a, Octs: Octets> FromIterator<PathSegment<'a, Octs>> for Vec<OwnedPathSegment2> {
+    fn from_iter<I: IntoIterator<Item = PathSegment<'a, Octs>>>(it: I) -> Self {
+        let mut res = Vec::new();
+
+        for s in it {
+            res.push(s.into_owned2())
+        }
+        res
+    }
+}
+
+
+#[derive(Copy, Clone)]
+pub struct SegmentElementIter<'a, Octets> {
+    parser: Parser<'a, Octets>
+}
+
+
+impl<'a, Octs: Octets> Iterator for SegmentElementIter<'a, Octs> {
+    type Item = Asn;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.parser.remaining() == 0 {
+            return None
+        }
+        let n = self.parser.parse_u32().expect("parsed before");
+        Some(Asn::from(n))
     }
 }
 
 
 //--- Display
 
-impl fmt::Display for MaterializedPathSegment {
+impl<'a, Octs: Octets> fmt::Display for PathSegment<'a, Octs> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}(", self.stype)?;
-        if let Some((first, tail)) = self.elements.split_first() {
-            write!(f, "{}", first)?;
-            for elem in tail {
-                write!(f, ", {}", elem)?;
-            }
+        let mut elems = self.elements();
+        if let Some(e) = elems.next() {
+            write!(f, "{}", e)?;
+        }
+        for elem in elems {
+            write!(f, ", {}", elem)?;
         }
         write!(f, ")")
-    }
-}
-
-impl From<PathSegment<'_>> for MaterializedPathSegment {
-    fn from(value: PathSegment) -> Self {
-        Self {
-            stype: value.stype,
-            elements: value.elements.to_vec()
-        }
-    }
-}
-
-impl From<Asn> for MaterializedPathSegment {
-    fn from(value: Asn) -> Self {
-        Self {
-            stype: SegmentType::Sequence,
-            elements: vec![value]
-        }
     }
 }
 
@@ -469,93 +700,189 @@ impl fmt::Display for SegmentType {
 
 /// An AS path.
 ///
-/// An AS path is a sequence of path segments. The type is generic over some
-/// type that provides access to a slice of `Asn`s.
-//
-//  As AS paths are really a sequence of sequences, we employ a bit of
-//  trickery to store them in a single sequence of `Asn`s. Specifically, each
-//  segment is preceded by a sentinel element describing the segment type and
-//  the length. Since we have a sequence of ASNs, we need to abuse `Asn` for
-//  this purpose. Both the type and the length are `u8`s in BGP, so there is
-//  plenty space in a 32 bit ASN for them. The specific encoding can be found
-//  in `decode_sentinel` and `encode_sentinel` below.
-//
-//  So, the first element in the path is a sentinel, followed by as many real
-//  ASNs as is encoded in the sentinel, followed by another sentinel and so
-//  on.
-#[derive(Debug, Clone, Eq, Hash, PartialEq)]
+/// An AS path is a sequence of path segments, generic over Octets.
+#[derive(Clone, Debug, Eq, Hash, PartialEq, Default)]
 #[cfg_attr(
     feature = "serde",
     derive(serde::Serialize, serde::Deserialize)
 )]
-pub struct AsPath<T: ?Sized> {
+pub struct AsPath<Octets> {
     /// The segments of the path.
-    pub segments: T,
+    octets: Octets,
 }
 
-impl<T: AsRef<[Asn]>> AsPath<T> {
-    /// Creates an AS path from a s sequence of ASNs.
-    pub fn from_segments(segments: T) -> Self {
-        AsPath { segments }
-    }
-}
-
-impl AsPath<[Asn]> {
-    /// Creates a reference to an AS path atop a slice of ASNs.
-    pub fn from_asn_slice(slice: &[Asn]) -> &Self {
-        unsafe {
-            &*(slice as *const [Asn] as *const AsPath<[Asn]>)
-        }
-    }
-}
-
-impl<T: AsRef<[Asn]> + ?Sized> AsPath<T> {
+impl<Octs: Octets> AsPath<Octs> {
     /// Returns an iterator over the segments of the path.
-    pub fn iter(&self) -> AsPath<&[Asn]> {
-        AsPath { segments: self.segments.as_ref() }
+    pub fn iter(&self) -> PathSegmentIter<'_, Octs> {
+        let parser = Parser::from_ref(&self.octets);
+        PathSegmentIter{ parser } 
     }
     
     /// Returns true if the path contains the given ASN.
     pub fn contains(&self, asn: Asn) -> bool {
         for segment in self.iter() {
-            if segment.elements().contains(&asn) {
+            if segment.elements().any(|a| a == asn) {
                 return true
             }
         }
         false
     }
 
-    /// Returns an AS path for the ASN slice of the content.
-    pub fn for_asn_slice(&self) -> &AsPath<[Asn]> {
-        AsPath::from_asn_slice(self.segments.as_ref())
+    /// Converts this AsPath into an `AsPathBuilder`.
+    pub fn into_builder(self) -> AsPathBuilder<Vec<u8>> {
+        AsPathBuilder {
+            segments: self.iter().collect(),
+            target: vec![],
+        }
     }
 
-    /// Returns an AS path for the ASN slice of the content.
-    pub fn for_segments_vec(&self) -> AsPath<Vec<Asn>> {
-        AsPath { segments: self.segments.as_ref().into() }
+    /// Returns the right-most ASN in the right-most segment.
+    ///
+    /// A valid path will never have a (Confed) Set as its  right-most
+    /// segment, but in that case, a single ASN is returned.
+    pub fn origin(&self) -> Option<Asn> {
+        if let Some(seg) = self.iter().last() {
+            seg.elements().last()
+        } else {
+            None
+        }
+    }
+
+    /// Returns true if this AS Path consists of a single segment of type
+    /// Sequence.
+    pub fn is_single_sequence(&self) -> bool {
+        let mut segs = self.iter();
+        if let Some(maybe_seq) = segs.next() {
+            segs.next().is_none() &&
+                maybe_seq.segment_type() == SegmentType::Sequence
+        } else {
+            false
+        }
+    }
+
+    /// Returns the length of this AS Path in terms of AS hops.
+    ///
+    /// Every ASN in a Sequence counts as 1. A non-empty Set counts as 1.
+    /// Confederated segments count as 0, as per RFC6065 sec 5.3 point 3.
+    pub fn path_len(&self) -> usize {
+        self.iter().fold(0, |res, s| {
+            match s.segment_type() {
+                SegmentType::Sequence => res + s.len(),
+                SegmentType::Set => {
+                    if s.len() > 0 { res + 1 } else { res }
+                }
+                _ => res
+            }
+        })
+    }
+
+    /// Prepends `Asn` N times.
+    ///
+    /// If the left-most segment in the current path is not a Sequence, or if
+    /// the maximum number of elements would be exceeded after adding N more
+    /// elements, this method returns a PrependError.
+    pub fn prepend_n<const N: u8>(&self, asn: Asn)
+        -> Result<AsPath<Vec<u8>>, PrependError>
+    {
+        if let Some(&[cur_type, cur_len]) = self.octets.as_ref().get(0..2) {
+            if cur_type != SegmentType::Sequence.into() ||
+                cur_len.checked_add(N).is_none() {
+                return Err(PrependError);
+            }
+        }
+        let mut new: Vec<u8> = Vec::with_capacity(
+            self.octets.as_ref().len() + 4*N as usize //FIXME 16bit ASN case
+        ); 
+        new.push(SegmentType::Sequence.into());
+        new.push(self.octets.as_ref()[1] + N as u8);
+        for _ in 0..N {
+            new.extend_from_slice(&asn.to_raw());
+        }
+        new.extend_from_slice(&self.octets.as_ref()[2..]);
+        Ok(AsPath { octets: new })
     }
 }
 
 
+//TODO impl Index<usize> for AsPath
+
+// impl Index<usize> for AsPath<Vec<u8>> {
+//     type Output = OwnedPathSegment2;
+
+//     fn index(&self, i: usize) -> &Self::Output {
+//         &self.iter().nth(i).map(|s| s.into_owned2()).expect("out of bounds")
+//     }
+// }
+
+//TODO
+//impl <T: AsRef<[Asn]>>TryFrom<T> for AsPath<Vec<u8>>
+impl TryFrom<&[Asn]> for AsPath<Vec<u8>> {
+    type Error = LongSegmentError;
+    fn try_from(t: &[Asn]) -> Result<Self, Self::Error> {
+        if t.len() > 255 {
+            return Err(LongSegmentError)
+        }
+        let mut octets = Vec::with_capacity(2 + 4*t.as_ref().len());
+        octets.push(SegmentType::Sequence.into());
+        octets.push(t.as_ref().len() as u8);
+        for asn in t {
+            octets.extend_from_slice(&asn.to_raw());
+        }
+
+        Ok(AsPath { octets })
+    }
+}
+
+//struct If<const B: bool>;
+//trait True { }
+//impl True for If<true> { }
+
+//XXX can we limit N to 0..255 at compile time in any way here?
+impl <const N: usize>From<[Asn; N]> for AsPath<Vec<u8>> {
+    fn from(t: [Asn; N]) -> Self {
+        let mut octets = Vec::with_capacity(2 + 4*t.as_ref().len());
+        octets.push(SegmentType::Sequence.into());
+        octets.push(t.as_ref().len() as u8);
+        for asn in t {
+            octets.extend_from_slice(&asn.to_raw());
+        }
+
+        AsPath { octets }
+    }
+}
+
+
+
+/// Iterator for PathSegments, generic over Octets.
+pub struct PathSegmentIter<'a, Octets> {
+    parser: Parser<'a, Octets>,
+}
+
 //--- IntoIterator and Iterator
 
-impl<'a, T: AsRef<[Asn]> + ?Sized> IntoIterator for &'a AsPath<T> {
-    type Item = PathSegment<'a>;
-    type IntoIter = AsPath<&'a [Asn]>;
+impl<'a, Octs: Octets> IntoIterator for &'a AsPath<Octs> {
+    type Item = PathSegment<'a, Octs>;
+    type IntoIter = PathSegmentIter<'a, Octs>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.iter()
     }
 }
 
-impl<'a> Iterator for AsPath<&'a [Asn]> {
-    type Item = PathSegment<'a>;
+impl<'a, Octs: Octets> Iterator for PathSegmentIter<'a, Octs> {
+    type Item = PathSegment<'a, Octs>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let (&first, segments) = self.segments.split_first()?;
-        let (stype, len) = decode_sentinel(first);
-        let (res, tail) = segments.split_at(len as usize);
-        self.segments = tail;
+        if self.parser.remaining() == 0 {
+            return None;
+        }
+
+        let stype = self.parser.parse_u8().expect("parsed before")
+            .try_into().expect("illegally encoded AS path");
+
+        let len = self.parser.parse_u8().expect("parsed before");
+        // XXX 4 for 32bit ASNs, how can we support 16bit ASNs nicely?
+        let res = self.parser.parse_parser(len as usize * 4).expect("parsed before");
         Some(PathSegment::new(stype, res))
     }
 }
@@ -563,10 +890,10 @@ impl<'a> Iterator for AsPath<&'a [Asn]> {
 
 //--- Display
 
-impl<T: AsRef<[Asn]> + ?Sized> fmt::Display for AsPath<T> {
+impl<Octs: Octets> fmt::Display for AsPath<Octs> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut first = true;
-        for item in self {
+        for item in self.iter() {
             if first {
                 write!(f, "{}", item)?;
                 first = false;
@@ -578,247 +905,292 @@ impl<T: AsRef<[Asn]> + ?Sized> fmt::Display for AsPath<T> {
     }
 }
 
-impl From<AsPath<Vec<Asn>>> for AsPath<Vec<MaterializedPathSegment>> {
-    fn from(value: AsPath<Vec<Asn>>) -> Self {
-        Self {
-            segments: value
-                .into_iter()
-                .map(|p| p.into()).collect()
-        }
-    }
-}
-
-impl<T: Into<Asn>> From<Vec<T>> for AsPath<Vec<T>> {
-    fn from(value: Vec<T>) -> Self {
-        Self { segments: value }
-    }
-}
-
-
-//------------ Modification methods -----------------------------------------
-
-// We need to be able to prepend, append and insert arbitrary numbers of Asns
-// into a materialized AsPath, i.e. an AsPath that is generic over a Vec of
-// most probably, a PathSegment that holds a Vec with the containind ASNs.
-// It needs to be all materialized into the AsPath struct, since we've
-// decided to Clone all path attributes in AttrChangeSets from one delta to
-// another, so that a AttrChangeSet is completely self-contained, i.e. no
-// references to its parent (delta, or raw message). A raw message may
-// contain AS_SETs, AS_CONFEDERATIONs, etc. and we need to preserve those in
-// our AttrChangeSets, while being able to append|prepend|insert|remove ASNs.
-
-// This is a f̶i̶r̶s̶t̶ second ATTEMPT to do so.
-
-impl From<MaterializedPathSegment> for Asn {
-    fn from(value: MaterializedPathSegment) -> Self {
-        value.elements[0]
-    }
-}
-
-impl<T: Clone> From<&AsPath<Vec<T>>> for AsPath<Vec<Asn>> 
-    where Asn: From<T> {
-        fn from(value: &AsPath<Vec<T>>) -> Self {
-            Self {
-                segments: value.segments
-                    .clone()
-                    .into_iter()
-                    .map(|p| p.into()).collect()
-            }
-        }
-}
-
-impl Index<usize> for AsPath<Vec<MaterializedPathSegment>> {
-    type Output = MaterializedPathSegment;
-    fn index(&self, index: usize) -> &Self::Output {
-        &self.segments[index]
-    }
-}
-
-#[cfg(feature = "bgp")]
-impl VectorValue for AsPath<Vec<MaterializedPathSegment>> {
-    type Item = Asn;
-
-    fn append_vec(&mut self, asns: Vec<Asn>) -> Result<(), LongSegmentError> {
-        if self.segments.len() + asns.len() >= 255 {
-            return Err(LongSegmentError)
-        }
-
-        self.segments.extend(
-            asns.into_iter().map(|asn| asn.into()
-        ).collect::<Vec<_>>());
-
-        Ok(())
-    }
-
-    fn prepend_vec(&mut self, asns: Vec<Asn>) -> Result<(), LongSegmentError> {
-        if self.segments.len() + asns.len() >= 255 {
-            return Err(LongSegmentError)
-        }
-
-        let mut pre_path: AsPath<Vec<MaterializedPathSegment>> = AsPath::from(asns);
-        pre_path.segments.extend_from_slice(self.segments.as_slice());
-
-        *self = pre_path;
-
-        Ok(())
-    }
-
-    fn insert_vec(&mut self, pos: u8, asns: Vec<Asn>) -> Result<(), LongSegmentError> {
-        if self.segments.len() + asns.len() >= 255 {
-            return Err(LongSegmentError)
-        }
-        
-        let mut pre_path = 
-            (self.segments[0..pos as usize]).to_vec();
-
-        pre_path.extend(asns.into_iter().map(|asn| asn.into()));
-        pre_path.extend_from_slice(&self.segments[pos as usize..]);
-        self.segments = pre_path;
-        
-        Ok(())
-    }
-
-    // pub fn remove(&mut self, range: std::ops::Range<u8>) {}
-
-    //-------- And them some retrieval methods ------------------------------
-
-    fn vec_len(&self) -> u8 {
-        self.segments.len() as u8
-    }
-
-    fn vec_is_empty(&self) -> bool {
-        self.segments.is_empty()
-    }
-}
-
-impl From<Vec<Asn>> for AsPath<Vec<MaterializedPathSegment>> {
-    fn from(value: Vec<Asn>) -> Self {
-        AsPath { segments: value.into_iter().map(|asn| asn.into()).collect() }
-    }
-}
-
 //------------ AsPathBuilder -------------------------------------------------
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct AsPathBuilder {
-    /// A vec with the elements we have so far.
-    pub segments: Vec<Asn>,
 
-    /// The index of the head element of the currently build segment.
-    curr_start: usize,
+// Luuk (after talking with Jasper):
+// we might want to get rid of 'start' and 'push', because those are unclear
+// about where things are added (i.e. on the left or the right side of the
+// path).
+// Instead, everything should be either prepend, or append.
+// There will be no 'current segment' to alter.
+// For confederation, specific methods are introduced, e.g. append_confed or
+// something alike.
+
+/// Builder for `AsPath`s.
+///
+/// To minimize ambiguity, methods are named to explicitly include the type of
+/// segment they operate on (e.g. `_as_sequence`) and whether the modification
+/// should happen at the left (`prepend_`) or the right (`append_`) of the path.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AsPathBuilder<Target> { // XXX use FreezeBuilder?
+    /// The (owned) segments of the path being built.
+    segments: Vec<OwnedPathSegment2>,
+   
+    /// The destination once completely built.
+    target: Target,
 }
 
-impl AsPathBuilder {
+impl<Target: OctetsBuilder> AsPathBuilder<Target> {
     /// Creates a new, empty AS path builder.
     ///
-    /// The builder will start out with building an initial segment of
-    /// sequence type.
-    pub fn new() -> Self {
+    /// The builder will start out without any segments: those have to be
+    /// added explicitly to disambiguate segment types.
+    pub fn from_target(target: Target) -> Self {
         AsPathBuilder {
-            segments: vec![encode_sentinel(SegmentType::Sequence, 0)],
-            curr_start: 0,
+            segments: vec![],
+            target,
         }
     }
 
-    /// Starts a new segment, closing the current one, if any.
-    pub fn start(&mut self, stype: SegmentType) {
-        let len = self.segment_len();
-        if len > 0 {
-            update_sentinel_len(
-                &mut self.segments[self.curr_start], len as u8
-            );
-            self.curr_start = self.segments.len();
-            self.segments.push(encode_sentinel(stype, 0));
-        }
-        else {
-            self.segments[self.curr_start] = encode_sentinel(stype, 0);
-        }
+    pub fn segments_len(&self) -> usize {
+        self.segments.len()
     }
-
-    /// Returns the length of the currently built segment.
-    pub fn segment_len(&self) -> usize {
-        self.segments.len() - self.curr_start - 1
-    }
-
-    /// Appends an AS number to the currently built segment.
+    /// Appends ASNs in forms of an AS_SEQUENCE segment type.
     ///
-    /// This can fail if it would result in a segment that is longer than
-    /// 255 ASNs.
-    pub fn push(&mut self, asn: Asn) -> Result<(), LongSegmentError> {
-        if self.segment_len() == 255 {
-            return Err(LongSegmentError)
+    /// If there is no segment yet, or the right-most segment is not of type
+    /// Sequence, a new Sequence is created. If the right-most segment is a
+    /// Sequence, the ASNs are appended to that segment. If we go over the
+    /// maximum number of ASNs for that segment, new segments are created
+    /// accordingly and everything is shifted to the right, i.e. the full
+    /// segments are on the right and the non-full segment is on the left. 
+    pub fn append_as_sequence(&mut self, asns: &[Asn]) {
+        let mut tail = Vec::new();
+        // fill up the right most segment, if that is a Sequence
+        if let Some(rms @ OwnedPathSegment2::Sequence(_)) = self.segments.last_mut() {
+            match rms.append_slice(asns) {
+                Ok(_) => return,
+                Err(LongSegmentError) => {
+                    tail = (*self).segments.pop().unwrap().to_vec();
+                }
+            }
         }
-        self.segments.push(asn);
-        Ok(())
-    }
 
-    /// Appends the content of a slice of ASNs to the currently built segment.
-    ///
-    /// This can fail if it would result in a segment that is longer than
-    /// 255 ASNs.
-    pub fn extend_from_slice(
-        &mut self, other: &[Asn]
-    ) -> Result<(), LongSegmentError> {
-        if self.segment_len() + other.len() > 255 {
-            return Err(LongSegmentError)
-        }
-        self.segments.extend_from_slice(other);
-        Ok(())
-    }
+        tail.extend(asns);
 
-    pub fn extend_from_as_path(
-        &mut self, other: AsPath<Vec<Asn>>
-    ) -> Result<(), LongSegmentError> {
-        if self.segment_len() + other.segments.len() > 255 {
-            return Err(LongSegmentError)
-        }
-        self.segments.extend_from_slice(other.segments.as_ref());
-        Ok(())
-    }
-
-    /// Finalizes and returns the AS path.
-    pub fn finalize<U: From<Vec<Asn>> + ?Sized>(mut self) -> AsPath<U> {
-        let len = self.segment_len();
-        if len > 0 {
-            update_sentinel_len(
-                &mut self.segments[self.curr_start], len as u8
+        // add new segments from the remainder
+        // the 'first' segment should be the incomplete one!
+        let pos = tail.len() % 255; 
+        if pos != 0 {
+            self.segments.push(
+                OwnedPathSegment2::sequence_from(&tail[..pos]).unwrap()
             );
         }
-        AsPath { segments: self.segments.into() }
+        for c in (&tail[pos..]).chunks(255) {
+            self.segments.push(OwnedPathSegment2::sequence_from(c).unwrap());
+        }
+    }
+
+    // Sets are deprecated or at least their use is discouraged, so instead of
+    // trying to deal with Sets bigger than 255, we simply error out.
+    pub fn append_as_set(&mut self, asns: &[Asn])
+        -> Result<(), LongSegmentError>
+    {
+        if asns.len() > 255 {
+            return Err(LongSegmentError)
+        }
+
+        if let Some(rms @ OwnedPathSegment2::Set(_)) = self.segments.last_mut() {
+            return rms.append_slice(asns)
+        } 
+
+        self.segments.push(OwnedPathSegment2::set_from(asns).unwrap());
+        Ok(())
+    }
+
+
+    /// Prepends ASNs in forms of an AS_SEQUENCE segment type.
+    ///
+    /// If there is no segment yet, or the left-most segment is not of type
+    /// Sequence, a new Sequence is created. If the left-most segment is a
+    /// Sequence, the ASNs are prepended to that segment.
+    /// If the (existing) Sequence goes over 255 elements, additional Sequence
+    /// segments are prepended. The order of the ASNs passed to this method is
+    /// maintained, so the first elements of the ASNs passed in will end up in
+    /// the new, left-most segment of the AS path.
+    // TODO add doctest showcasing this
+    pub fn prepend_as_sequence<T: AsRef<[Asn]>>(&mut self, asns: T) {
+
+        let mut head = &asns.as_ref()[..];
+
+        // fill up the right most segment, if that is a Sequence
+        if let Some(lms @ OwnedPathSegment2::Sequence(_)) = self.segments.first_mut() {
+            match lms.prepend_slice(asns.as_ref()) {
+                Ok(_) => return,
+                Err(LongSegmentError) => {
+                    // Fill up the existing segment, `head` contains the
+                    // remainder to prepend after this block. 
+                    let chunk;
+                    (head, chunk) = head.split_at(
+                        head.len() - (255 - lms.len())
+                        );
+                    lms.prepend_slice(chunk).expect("should fit now");
+                }
+            }
+        }
+
+        // We'll create a new vec to eventually replace self.segments.
+        let mut new = Vec::with_capacity(
+            head.len() / 255 + self.segments.len()
+        );
+
+        // First, push what will be the new left most (likely less-than-255
+        // long) segment.
+        let mut pos = head.len() % 255; 
+        if pos != 0 {
+            new.push(OwnedPathSegment2::sequence_from(&head[0..pos]).unwrap());
+        }
+
+        // Now, we have a multiple of 255 elements left, and we push a
+        // segment for each of those:
+        while pos < head.len() {
+            new.push(
+                OwnedPathSegment2::sequence_from(&head[pos..pos+255]).unwrap()
+            );
+            pos += 255;
+        }
+
+        new.append(&mut self.segments);
+        self.segments = new;
+    }
+
+    pub fn prepend_as_confed_sequence<T: AsRef<[Asn]>>(&mut self, asns: T) {
+
+        let mut head = &asns.as_ref()[..];
+
+        // fill up the right most segment, if that is a Sequence
+        if let Some(lms @ OwnedPathSegment2::ConfedSequence(_)) = self.segments.first_mut() {
+            match lms.prepend_slice(asns.as_ref()) {
+                Ok(_) => return,
+                Err(LongSegmentError) => {
+                    // Fill up the existing segment, `head` contains the
+                    // remainder to prepend after this block. 
+                    let chunk;
+                    (head, chunk) = head.split_at(
+                        head.len() - (255 - lms.len())
+                        );
+                    lms.prepend_slice(chunk).expect("should fit now");
+                }
+            }
+        }
+
+        // We'll create a new vec to eventually replace self.segments.
+        let mut new = Vec::with_capacity(
+            head.len() / 255 + self.segments.len()
+        );
+
+        // First, push what will be the new left most (likely less-than-255
+        // long) segment.
+        let mut pos = head.len() % 255; 
+        if pos != 0 {
+            new.push(OwnedPathSegment2::confed_sequence_from(&head[0..pos]).unwrap());
+        }
+
+        // Now, we have a multiple of 255 elements left, and we push a
+        // segment for each of those:
+        while pos < head.len() {
+            new.push(
+                OwnedPathSegment2::confed_sequence_from(&head[pos..pos+255]).unwrap()
+            );
+            pos += 255;
+        }
+
+        new.append(&mut self.segments);
+        self.segments = new;
+    }
+
+
+
+    pub fn prepend_as_set<T: AsRef<[Asn]>>(&mut self, asns: T)
+        -> Result<(), LongSegmentError>
+    {
+        if asns.as_ref().len() > 255 {
+            return Err(LongSegmentError)
+        }
+
+        if let Some(lms @ OwnedPathSegment2::Set(_)) = self.segments.first_mut() {
+            return lms.append_slice(asns.as_ref());
+        } 
+
+        self.segments.insert(0, OwnedPathSegment2::set_from(asns).unwrap());
+        Ok(())
+    }
+
+    //pub fn prepend_as(&mut self, stype: SegmentType, asns: &[Asn]) {
+    //fixme?
+    //    match stype {
+    //        SegmentType::Sequence => self.prepend_as_sequence(asns),
+    //        SegmentType::Set => self.prepend_as_set(asns),
+    //        SegmentType::ConfedSequence => self.prepend_as_confed_sequence(asns),
+    //        SegmentType::Sequence => self.prepend_as_sequence(asns),
+    //    }
+    //}
+
+
+    /// Alias for `append_as_sequence`.
+    pub fn append(&mut self, asn: Asn) {
+        self.append_as_sequence(&[asn]);
+    }
+
+    /// TODO?
+    pub fn extend_from_aspath() { todo!() }
+    /// TODO?
+    pub fn insert_vec() { todo!() }
+
+    /// Alias for `prepend_as_sequence`.
+    pub fn prepend(&mut self, asn: Asn) {
+        self.prepend_as_sequence(&[asn]);
+    }
+
+    /// Returns the length of this AS Path in terms of AS hops.
+    ///
+    /// Every ASN in a Sequence counts as 1. A non-empty Set counts as 1.
+    /// Confederated segments count as 0, as per RFC6065 sec 5.3 point 3.
+    pub fn path_len(&self) -> usize {
+        self.segments.iter().fold(0, |res, s| {
+            match s {
+                OwnedPathSegment2::Sequence(_) => res + s.len(),
+                OwnedPathSegment2::Set(a) if a.len() > 0 => res + 1,
+                _ => res
+            }
+        })
+    }
+
+    /// Convert this builder into an immutable `AsPath`.
+    pub fn finalize(mut self) -> Result<AsPath<Target>, Target::AppendError> {
+        for s in self.segments {
+            if s.len() == 0 {
+                continue;
+            }
+            self.target.append_slice(&[s.typecode()])?;
+            self.target.append_slice(&[s.len() as u8])?;
+            //self.target.append_slice(&[s.stype.into()])?;
+            //self.target.append_slice(&[s.elements.len() as u8])?;
+            for e in &(*s) {
+                self.target.append_slice(&e.to_raw())?;
+            }
+        }
+
+        Ok(AsPath { octets: self.target })
+    }
+}
+
+
+
+impl AsPathBuilder<Vec<u8>> {
+    pub fn new_vec() -> Self {
+        Self::from_target(Vec::new())
     }
 }
 
 
 //--- Default
 
-impl Default for AsPathBuilder {
+impl<Target: Default + OctetsBuilder> Default for AsPathBuilder<Target> {
     fn default() -> Self {
-        Self::new()
+        Self::from_target(Target::default())
     }
 }
-
-
-//------------ ASN as path segment sentinel ----------------------------------
-
-/// Converts a sentinel `Asn` into a segment type and length.
-fn decode_sentinel(sentinel: Asn) -> (SegmentType, u8) {
-    (
-        ((sentinel.0 >> 8) as u8)
-            .try_into().expect("illegally encoded AS path"),
-        sentinel.0 as u8
-    )
-}
-
-/// Converts segment type and length into a sentinel `Asn`.
-pub fn encode_sentinel(t: SegmentType, len: u8) -> Asn {
-    Asn((u8::from(t) as u32) << 8 | (len as u32))
-}
-
-/// Updates the length portion of a sentinel `Asn`.
-fn update_sentinel_len(sentinel: &mut Asn, len: u8) {
-    sentinel.0 = (sentinel.0 & 0xFFFF_FF00) | len as u32
-}
-
 
 //============ Error Types ===================================================
 
@@ -848,6 +1220,19 @@ impl fmt::Display for LongSegmentError {
 }
 
 impl error::Error for LongSegmentError { }
+
+//------------ PrependError ----------------------------------------------
+
+#[derive(Clone, Copy, Debug)]
+pub struct PrependError;
+
+impl fmt::Display for PrependError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str("prepending invalid")
+    }
+}
+
+impl error::Error for PrependError { }
 
 
 //------------ InvalidSegmentTypeError ---------------------------------------
@@ -1009,112 +1394,318 @@ mod tests {
     }
 
     #[test]
-    fn sentinel() {
-        let mut snt = encode_sentinel(SegmentType::Set, 0);
-        for i in 0_u8..=255 {
-            assert_eq!(
-                decode_sentinel(encode_sentinel(SegmentType::Set, i)),
-                (SegmentType::Set, i)
-            );
-            update_sentinel_len(&mut snt, i);
-            assert_eq!(encode_sentinel(SegmentType::Set, i), snt);
-        }
-    }
-
-    #[test]
     fn as_path_builder() {
         let default_pb = AsPathBuilder::default();
-        let mut pb = AsPathBuilder::new();
+        let mut pb = AsPathBuilder::new_vec();
         assert_eq!(default_pb, pb);
-        assert_eq!(pb.segments[0], encode_sentinel(SegmentType::Sequence, 0));
-        assert_eq!(pb.segments.len(), 1);
-        assert_eq!(pb.curr_start, 0);
 
-        pb.start(SegmentType::ConfedSet);
+        //pb.append_segment(
+        //    OwnedPathSegment::confed_set_from([])
+        //);
+
+        pb.append(Asn(1234));
+
+        pb.append_as_sequence(&[Asn(2000), Asn(3000)]);
+
+        pb.append_as_sequence(&[Asn(4000), Asn(5000), Asn(6000)]);
+        
+        assert_eq!(pb.path_len(), 6);
+
+        let asp = pb.finalize().unwrap();
+
+        let mut seg_iter = asp.iter();
         assert_eq!(
-            pb.segments[0],
-            encode_sentinel(SegmentType::ConfedSet, 0)
-        );
-        assert_eq!(pb.segments.len(), 1);
-        assert_eq!(pb.segment_len(), 0);
-        assert_eq!(pb.curr_start, 0);
-
-        assert!(pb.push(Asn(1234)).is_ok());
-        assert_eq!(pb.segments.len(), 2);
-        assert_eq!(pb.segment_len(), 1);
-        assert_eq!(pb.curr_start, 0);
-
-        // add another, new segment. start() should close the first one
-        pb.start(SegmentType::Sequence);
-        assert_eq!(pb.segments[2], encode_sentinel(SegmentType::Sequence, 0));
-        assert_eq!(pb.segments.len(), 3);
-        assert_eq!(pb.segment_len(), 0);
-        assert_eq!(pb.curr_start, 2);
-
-        assert!(pb.push(Asn(2000)).is_ok());
-        assert!(pb.push(Asn(3000)).is_ok());
-
-        assert_eq!(pb.segments.len(), 5);
-        assert_eq!(pb.segment_len(), 2);
-        assert_eq!(pb.curr_start, 2);
-
-        assert!(pb
-            .extend_from_slice(&[Asn(4000), Asn(5000), Asn(6000)])
-            .is_ok()
-        );
-        assert_eq!(pb.segments.len(), 8);
-        assert_eq!(pb.segment_len(), 5);
-        assert_eq!(pb.curr_start, 2);
-
-        let asp: AsPath<Vec<Asn>> = pb.finalize();
-
-        assert_eq!(
-            decode_sentinel(asp.segments[0]),
-            (SegmentType::ConfedSet, 1)
-        );
-        assert_eq!(
-            decode_sentinel(asp.segments[2]),
-            (SegmentType::Sequence, 2 + 3)
+            seg_iter.next().unwrap().segment_type(),
+            SegmentType::Sequence,
         );
 
-        let ps = asp.iter().collect::<Vec<PathSegment<'_>>>();
+        let ps = asp.iter().collect::<Vec<PathSegment<'_, _>>>();
 
-        assert_eq!(ps.len(), 2);
-        assert_eq!(ps[0].segment_type(), SegmentType::ConfedSet);
-        assert_eq!(ps[0].elements(), &[Asn(1234)]);
-        assert_eq!(ps[1].segment_type(), SegmentType::Sequence);
+        assert_eq!(ps.len(), 1);
+        assert!(ps[0].elements().eq([
+                Asn(1234),
+                Asn(2000), Asn(3000),
+                Asn(4000), Asn(5000), Asn(6000)
+        ]));
+
         assert_eq!(
-            ps[1].elements(),
-            &[Asn(2000), Asn(3000), Asn(4000), Asn(5000), Asn(6000)]
-        );
-        assert_eq!(
-            format!("{}", ps[1]).as_str(),
-            "AS_SEQUENCE(AS2000, AS3000, AS4000, AS5000, AS6000)"
+            format!("{}", ps[0]).as_str(),
+            "AS_SEQUENCE(AS1234, AS2000, AS3000, AS4000, AS5000, AS6000)"
         );
 
         assert_eq!(
             format!("{}", asp).as_str(),
-            "AS_CONFED_SET(AS1234), AS_SEQUENCE(AS2000, AS3000, AS4000, AS5000, AS6000)"
+            "AS_SEQUENCE(AS1234, AS2000, AS3000, AS4000, AS5000, AS6000)"
         );
 
-        let mut pb2 = AsPathBuilder::new();
-        assert!(pb2.extend_from_slice(&[Asn(1234); 255]).is_ok());
-        assert!(pb2.push(Asn(1235)).is_err());
-        assert!(pb2.extend_from_slice(&[Asn(1235)]).is_err());
+    }
 
-        pb2.start(SegmentType::Set);
-        assert!(pb2.extend_from_slice(&[Asn(2345); 255]).is_ok());
+    #[test]
+    fn max_size_segments_append() {
+        let mut pb = AsPathBuilder::new_vec();
+        assert_eq!(pb.segments.len(), 0);
+        pb.append_as_sequence(&[Asn(1234); 255]);
+        assert_eq!(pb.segments.len(), 1);
+        pb.append_as_sequence(&[Asn(1235)]);
 
-        let asp2: AsPath<Vec<Asn>> = pb2.finalize();
+        pb.append_as_set(&[Asn(2345); 255]).unwrap();
+
+        let asp = pb.finalize().unwrap();
+
         let mut segment_cnt = 0;
         let mut as_cnt = 0;
-        for ps in asp2.into_iter() {
+        for ps in asp.into_iter() {
             segment_cnt += 1;
             for _asn in ps.elements() {
                 as_cnt += 1;
             }
         }
-        assert_eq!(segment_cnt, 2);
-        assert_eq!(as_cnt, 255 + 255);
+        
+        assert_eq!(segment_cnt, 3);
+        assert_eq!(as_cnt, 255 + 255 + 1);
+
+        // Appending the second Sequence should shift the existing ASNs to the
+        // right, resulting in the right most segment begin full, filled with
+        // all but one of its original ASNs (1234), and the just-appended
+        // AS1235. The new Sequence contains a single ASN, being one AS1234
+        // coming from the original segment.
+
+        let mut segs = asp.iter();
+        let seg1 = segs.next().unwrap();
+        assert_eq!(seg1.segment_type(), SegmentType::Sequence);
+        assert_eq!(seg1.len(), 1);
+        assert!(seg1.elements().eq([Asn(1234)]));
+
+        let seg2 = segs.next().unwrap();
+        assert_eq!(seg2.segment_type(), SegmentType::Sequence);
+        assert_eq!(seg2.len(), 255);
+        let elems2: Vec<_> = seg2.elements().collect();
+        assert_eq!(elems2[0], Asn(1234));
+        assert_eq!(elems2[254], Asn(1235));
+
+        let seg3 = segs.next().unwrap();
+        assert_eq!(seg3.segment_type(), SegmentType::Set);
+        assert_eq!(seg3.len(), 255);
     }
+
+    #[test]
+    fn max_size_segments_prepend() {
+        let mut pb = AsPathBuilder::new_vec();
+        assert_eq!(pb.segments.len(), 0);
+        pb.prepend_as_sequence(&[Asn(1234); 255]);
+        assert_eq!(pb.segments.len(), 1);
+        pb.prepend_as_sequence(&[Asn(1235)]);
+
+        pb.prepend_as_set(&[Asn(2345); 255]).unwrap();
+
+        let asp = pb.finalize().unwrap();
+
+        let mut segment_cnt = 0;
+        let mut as_cnt = 0;
+        for ps in asp.into_iter() {
+            segment_cnt += 1;
+            for _asn in ps.elements() {
+                as_cnt += 1;
+            }
+        }
+        
+        assert_eq!(segment_cnt, 3);
+        assert_eq!(as_cnt, 255 + 255 + 1);
+
+        // Appending the second Sequence should shift the existing ASNs to the
+        // right, resulting in the right most segment begin full, filled with
+        // all but one of its original ASNs (1234), and the just-appended
+        // AS1235. The new Sequence contains a single ASN, being one AS1234
+        // coming from the original segment.
+
+        let mut segs = asp.iter();
+        let seg1 = segs.next().unwrap();
+        assert_eq!(seg1.segment_type(), SegmentType::Set);
+        assert_eq!(seg1.len(), 255);
+
+        let seg2 = segs.next().unwrap();
+        assert_eq!(seg2.segment_type(), SegmentType::Sequence);
+        assert_eq!(seg2.len(), 1);
+        assert!(seg2.elements().eq([Asn(1235)]));
+
+        let seg3 = segs.next().unwrap();
+        assert_eq!(seg3.segment_type(), SegmentType::Sequence);
+        assert_eq!(seg3.len(), 255);
+        //let elems3: Vec<_> = seg3.elements().collect();
+        assert!(seg3.elements().eq([Asn(1234); 255]));
+    }
+
+    #[test]
+    fn max_size_prepend_append() {
+        let mut pb = AsPathBuilder::new_vec();
+        pb.append_as_sequence(&[Asn(200); 255]);
+        pb.append_as_sequence(&[Asn(300); 3]);
+        pb.prepend_as_sequence(&[Asn(100); 3]);
+        assert_eq!(pb.segments.len(), 2);
+
+        let asp = pb.finalize().unwrap();
+        let mut segs = asp.iter();
+
+        let seg1 = segs.next().unwrap();
+        assert_eq!(seg1.segment_type(), SegmentType::Sequence);
+        assert!(seg1.elements().eq(
+                [Asn(100), Asn(100), Asn(100), Asn(200), Asn(200), Asn(200)]
+        ));
+
+        let seg2 = segs.next().unwrap();
+        let elems2: Vec<_> = seg2.elements().collect();
+        assert_eq!(elems2[0], Asn(200));
+        assert_eq!(elems2[254], Asn(300));
+
+        assert!(segs.next().is_none());
+
+    }
+
+    #[test]
+    fn aspath_octets() {
+        // AS path comprised of a single segment:
+        // AS_SEQUENCE(AS2027, AS35280, AS263903, AS271373)
+        let raw = vec![
+            0x02, 0x04, 0x00, 0x00, 0x07, 0xeb, 0x00, 0x00,
+            0x89, 0xd0, 0x00, 0x04, 0x06, 0xdf, 0x00, 0x04,
+            0x24, 0x0d
+        ];
+
+        let asp = AsPath{ octets: &raw };
+
+        assert_eq!(
+            format!("{}", asp).as_str(),
+            "AS_SEQUENCE(AS2027, AS35280, AS263903, AS271373)"
+        );
+
+        assert!(asp.contains(Asn::from(2027)));
+        assert!(asp.contains(Asn::from(35280)));
+        assert!(asp.contains(Asn::from(263903)));
+        assert!(asp.contains(Asn::from(271373)));
+        assert!(!asp.contains(Asn::from(12345)));
+
+    }
+
+    #[test]
+    fn aspath_octets_multiseg() {
+        let raw = vec![
+            0x02, 0x05, 0x00, 0x00,
+            0x19, 0x2f, 0x00, 0x00, 0x97, 0xe0, 0x00, 0x00,
+            0x23, 0x2a, 0x00, 0x00, 0x32, 0x9c, 0x00, 0x00,
+            0x59, 0x8f, 0x01, 0x04, 0x00, 0x00, 0xcc, 0x8f,
+            0x00, 0x04, 0x00, 0x1f, 0x00, 0x04, 0x0a, 0x6a,
+            0x00, 0x04, 0x16, 0x0a
+        ];
+
+        let asp = AsPath{ octets: &raw };
+
+        assert_eq!(
+            format!("{asp}").as_str(), 
+            "AS_SEQUENCE(AS6447, AS38880, AS9002, AS12956, AS22927), \
+             AS_SET(AS52367, AS262175, AS264810, AS267786)"
+        );
+
+        assert!(asp.contains(Asn::from(52367)));
+    }
+
+    #[test]
+    fn owned_path_segment() {
+        let raw = vec![
+            0x02, 0x05, 0x00, 0x00,
+            0x19, 0x2f, 0x00, 0x00, 0x97, 0xe0, 0x00, 0x00,
+            0x23, 0x2a, 0x00, 0x00, 0x32, 0x9c, 0x00, 0x00,
+            0x59, 0x8f, 0x01, 0x04, 0x00, 0x00, 0xcc, 0x8f,
+            0x00, 0x04, 0x00, 0x1f, 0x00, 0x04, 0x0a, 0x6a,
+            0x00, 0x04, 0x16, 0x0a
+        ];
+
+        let asp = AsPath{ octets: &raw };
+        let mut pb = asp.into_builder();
+
+        pb.prepend(Asn::from_u32(12345));
+
+        let asp2 = pb.finalize().unwrap();
+        assert_eq!(format!("{}", asp2).as_str(),
+            "AS_SEQUENCE(AS12345, AS6447, AS38880, AS9002, AS12956, AS22927), \
+             AS_SET(AS52367, AS262175, AS264810, AS267786)"
+        );
+    }
+
+    #[test]
+    fn prepend() {
+        let mut pb = AsPathBuilder::new_vec();
+        pb.append_as_set(&[Asn(500), Asn(600)]).unwrap();
+        pb.append_as_sequence(&[Asn(100), Asn(200)]);
+        pb.prepend(Asn(12345));
+        let asp = pb.finalize().unwrap();
+
+        assert_eq!(format!("{}", asp).as_str(),
+            "AS_SEQUENCE(AS12345), \
+             AS_SET(AS500, AS600), \
+             AS_SEQUENCE(AS100, AS200)"
+        );
+    }
+
+    #[test]
+    fn path_len() {
+        //TODO
+    }
+
+    #[test]
+    fn prepend_n() {
+        let mut pb = AsPathBuilder::new_vec();
+        pb.append_as_sequence(&[Asn(100), Asn(200)]);
+        let asp = pb.finalize().unwrap();
+
+        let new_asp = asp.prepend_n::<10>(Asn(1234)).unwrap();
+
+        const N: u8 = 25;
+        let new_asp2 = new_asp.prepend_n::<N>(Asn(9000)).unwrap();
+
+        let new_asp3 = new_asp2.prepend_n::<3>(Asn(600)).unwrap();
+
+        assert!(new_asp3.is_single_sequence());
+
+        assert_eq!(new_asp3.path_len(), 2 + 10 + N as usize + 3);
+
+        assert!(new_asp3.prepend_n::<250>(Asn(1)).is_err());
+
+        let mut pb2 = AsPathBuilder::new_vec();
+        pb2.append_as_set(&[Asn(100), Asn(200)]).unwrap();
+        let asp2 = pb2.finalize().unwrap();
+        assert!(asp2.prepend_n::<10>(Asn(1)).is_err());
+        assert!(!asp2.is_single_sequence());
+    }
+
+    #[test]
+    fn try_from_into_aspath() {
+        let asp: Result<AsPath<_>, _> = (&[Asn(10), Asn(20)][..]).try_into();
+        assert!(asp.is_ok());
+
+        assert!(AsPath::try_from(&[Asn(2000); 300][..]).is_err());
+    }
+
+    #[test]
+    fn owned_path_segment_index() {
+        let mut ps = OwnedPathSegment2::sequence_from(
+            &[Asn(100), Asn(200)]
+        ).unwrap();
+        assert_eq!(ps[0], Asn(100));
+        assert_eq!(ps[1], Asn(200));
+        ps[0] = Asn(9000);
+        assert_eq!(ps[0], Asn(9000));
+    }
+
+    #[test]
+    fn sequence_from_generic() {
+        assert_eq!(
+            OwnedPathSegment2::sequence_from([Asn(100), Asn(200)]).unwrap(),
+            OwnedPathSegment2::sequence_from(&[Asn(100), Asn(200)]).unwrap()
+        );
+        let mut pb = AsPathBuilder::new_vec();
+        pb.prepend_as_sequence(&[Asn(100)]);
+        pb.prepend_as_sequence([Asn(100)]);
+        pb.prepend_as_set([Asn(100)]).unwrap();
+    }
+
 }

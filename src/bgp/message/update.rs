@@ -1,5 +1,4 @@
 use crate::bgp::message::Header;
-use crate::bgp::route::{ChangedOption, AttrChangeSet};
 use octseq::{Octets, Parser};
 use log::{debug, warn, error};
 
@@ -48,113 +47,6 @@ impl<Octs: Octets> UpdateMessage<Octs> {
 	pub fn length(&self) -> u16 {
         self.header().length()
 	}
-}
-
-//------------ Modification & Creation of new Updates -----------------------
-
-impl<Octs: Octets> UpdateMessage<Octs> {
-
-    // Materialize a ChangeSet from the Update message. The materialized
-    // Change set is completely self-contained (no references of any kind) &
-    // holds all the attributes of the current BGP Update message.
-    pub fn create_changeset(&self) -> AttrChangeSet {
-        AttrChangeSet {
-            as_path: ChangedOption {
-                value: self.aspath().map(|p| p.into()),
-                changed: false,
-            },
-            origin_type: ChangedOption {
-                value: self.origin(),
-                changed: false,
-            },
-            next_hop: ChangedOption {
-                value: self.next_hop(),
-                changed: false,
-            },
-            multi_exit_discriminator: ChangedOption {
-                value: self.multi_exit_desc(),
-                changed: false,
-            },
-            local_pref: ChangedOption {
-                value: self.local_pref(),
-                changed: false,
-            },
-            atomic_aggregate: ChangedOption {
-                value: Some(self.is_atomic_aggregate()),
-                changed: false,
-            },
-            aggregator: ChangedOption {
-                value: self.aggregator(),
-                changed: false,
-            },
-            communities: ChangedOption {
-                value: self.all_communities(),
-                changed: false,
-            },
-            originator_id: ChangedOption {
-                value: None,
-                changed: false,
-            },
-            cluster_list: ChangedOption {
-                value: None,
-                changed: false,
-            },
-            extended_communities: ChangedOption {
-                value: self
-                    .ext_communities()
-                    .map(|c| c.collect::<Vec<ExtendedCommunity>>()),
-                changed: false,
-            },
-            as4_path: ChangedOption {
-                value: self.as4path(),
-                changed: false,
-            },
-            as4_aggregator: ChangedOption {
-                value: None,
-                changed: false,
-            },
-            connector: ChangedOption {
-                value: None,
-                changed: false,
-            },
-            as_path_limit: ChangedOption {
-                value: None,
-                changed: false,
-            },
-            pmsi_tunnel: ChangedOption {
-                value: None,
-                changed: false,
-            },
-            ipv6_extended_communities: ChangedOption {
-                value: None,
-                changed: false,
-            },
-            large_communities: ChangedOption {
-                value: self
-                    .large_communities()
-                    .map(|c| c.collect::<Vec<LargeCommunity>>()),
-                changed: false,
-            },
-            bgpsec_as_path: ChangedOption {
-                value: None,
-                changed: false,
-            },
-            attr_set: ChangedOption {
-                value: None,
-                changed: false,
-            },
-            rsrvd_development: ChangedOption {
-                value: None,
-                changed: false,
-            },
-        }
-    }
-
-    // Create a new BGP Update message by applying the attributes changes
-    // in the supplied change set to our current Update message.
-    pub fn create_update_from_changeset(_change_set: &AttrChangeSet) -> Self {
-        todo!()
-    }
 }
 
 impl<Octs: Octets> AsRef<[u8]> for UpdateMessage<Octs> {
@@ -355,20 +247,30 @@ impl<Octs: Octets> UpdateMessage<Octs> {
         )
     }
 
-    pub fn as4path(&self) -> Option<AsPath<Vec<Asn>>> {
+    pub fn as4path(&self) -> Option<AsPath<Vec<u8>>> {
         self.path_attributes().iter().find(|pa|
             pa.type_code() == PathAttributeType::As4Path
-        ).map(|pa| {
-            let asn_size = 4;
+        ).map(|pa| { 
             let octets = pa.value();
-            let mut aspb = AsPathBuilder::new();
+            let mut aspb = 
+            AsPathBuilder::from_target(octets.as_ref().to_vec());
+        
+
+        
+
+        // self.path_attributes().iter().find(|pa|
+        //     pa.type_code() == PathAttributeType::As4Path
+        // ).map(|pa| {
+            let asn_size = 4;
+        //     let octets = pa.value();
+        //     let mut aspb = AsPathBuilder::new_vec();
 
             let mut pos = 0;
             while pos < octets.as_ref().len() {
-                let st = SegmentType::try_from(octets.as_ref()[pos])
-                    .expect("parsed before");
+                // let st = SegmentType::try_from(octets.as_ref()[pos])
+                //     .expect("parsed before");
                 let num_asns = octets.as_ref()[pos+1] as usize;
-                aspb.start(st);
+                // aspb.start(st);
                 pos += 2;
 
                 for _ in 0..num_asns {
@@ -378,16 +280,19 @@ impl<Octs: Octets> UpdateMessage<Octs> {
                             .try_into().expect("parsed before")
                         )
                     );
-                    aspb.push(asn).expect("parsed before");
-                    pos += asn_size;
+                    aspb.append(asn); // .expect("parsed before");
+                    // pos += asn_size;
                 }
             }
-            aspb.finalize()
-        })
+        //     aspb.finalize().unwrap()
+        // })
+
+            aspb
+    })?.finalize().ok()
     }
 
     /// Returns the AS_PATH path attribute.
-    pub fn aspath(&self) -> Option<AsPath<Vec<Asn>>> {
+    pub fn aspath(&self) -> Option<AsPath<Vec<u8>>> {
         if let Some(as4path) = self.as4path() {
             // In all cases we know of, the AS4_PATH attribute contains
             // the entire AS_PATH with all the 4-octet ASNs. Instead of
@@ -415,7 +320,7 @@ impl<Octs: Octets> UpdateMessage<Octs> {
             };
 
             let octets = pa.value();
-            let mut aspb = AsPathBuilder::new();
+            let mut aspb = AsPathBuilder::from_target(octets.as_ref().to_vec());
 
             let mut pos = 0;
             let mut segment_idx = 0;
@@ -423,7 +328,7 @@ impl<Octs: Octets> UpdateMessage<Octs> {
                 let st = SegmentType::try_from(octets.as_ref()[pos]).expect("parsed
                     before");
                 let num_asns = octets.as_ref()[pos+1] as usize;
-                aspb.start(st);
+                // aspb.start(st);
                 pos += 2;
 
                 for _ in 0..num_asns {
@@ -455,16 +360,16 @@ impl<Octs: Octets> UpdateMessage<Octs> {
                         // AS4_PATH:
                         let seg = as4path.as_ref().expect("parsed before")
                             .iter().nth(segment_idx).expect("parsed before");
-                        let new_asn: Asn = seg.elements()[aspb.segment_len()];
-                        aspb.push(new_asn).expect("parsed before");
+                        let new_asn: Asn = seg.elements().collect::<Vec<_>>()[aspb.segments_len()];
+                        aspb.append(new_asn); //. expect("parsed before");
                     } else {
-                        aspb.push(asn).expect("parsed before");
+                        aspb.append(asn) //.expect("parsed before");
                     }
                     pos += asn_size;
                 }
                 segment_idx += 1;
             }
-            aspb.finalize()
+            aspb.finalize().ok().unwrap()
         })
     }
 
@@ -701,7 +606,7 @@ impl<Octs: Octets> UpdateMessage<Octs> {
 }
 
 
-//--- Data structures for passing config / state ----------------------------
+//--- Enums for passing config / state ---------------------------------------
 
 /// Configuration parameters for an established BGP session.
 ///
@@ -887,10 +792,15 @@ impl<'a, Octs: Octets> PathAttribute<'a, Octs> {
 
     /// Returns the length of the value of this path attribute.
     pub fn length(&self) -> u16 {
-        let lenbytes = self.parser.peek(4).expect("parsed before");
         match self.is_extended_length() {
-            true => u16::from_be_bytes([lenbytes[2], lenbytes[3]]),
-            false => lenbytes[2] as u16,
+            true => {
+                let lenbytes = self.parser.peek(4).expect("parsed before");
+                u16::from_be_bytes([lenbytes[2], lenbytes[3]])
+            }
+            false => {
+                let lenbytes = self.parser.peek(3).expect("parsed before");
+                lenbytes[2] as u16
+            }
         }
     }
 
@@ -1473,6 +1383,13 @@ impl Aggregator {
     }
 }
 
+impl std::fmt::Display for Aggregator {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "AS{} Speaker {}", self.asn, self.speaker)        
+    }
+}
+
+
 /// Iterator for BGP UPDATE Communities.
 ///
 /// Returns values of enum [`Community`], wrapping [`StandardCommunity`],
@@ -1505,6 +1422,7 @@ impl<Octs: Octets> Iterator for CommunityIter<Octs> {
         Some(self.get_community())
     }
 }
+
 
 /// Iterator over [`ExtendedCommunity`]s.
 pub struct ExtCommunityIter<Octs: Octets> {
@@ -1620,12 +1538,6 @@ impl Aggregator {
             },
         }
 
-    }
-}
-
-impl std::fmt::Display for Aggregator {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Speaker {} AS{}", self.speaker, self.asn)
     }
 }
 
@@ -2139,9 +2051,9 @@ mod tests {
         let asp = pa2.value();
         assert_eq!(asp.as_ref(), [0x02, 0x01, 0x00, 0x01, 0x00, 0x00]);
 
-        let mut pb = AsPathBuilder::new();
-        pb.push(Asn::from_u32(65536)).unwrap();
-        let asp: AsPath<Vec<Asn>> = pb.finalize();
+        let mut pb = AsPathBuilder::new_vec();
+        pb.append(Asn::from_u32(65536));
+        let asp: AsPath<Vec<u8>> = pb.finalize().unwrap();
 
         assert_eq!(update.aspath().unwrap(), asp);
 

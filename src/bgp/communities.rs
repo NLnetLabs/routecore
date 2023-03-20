@@ -91,15 +91,12 @@
 use const_str::convert_case;
 use std::fmt::{Display, Error, Formatter};
 use std::net::{Ipv4Addr, Ipv6Addr};
-use std::ops::Index;
 use std::str::FromStr;
 
-use crate::asn::{Asn, LongSegmentError};
+use crate::asn::Asn;
 
 #[cfg(feature = "serde")]
 use serde::{Serialize, Deserialize};
-
-use super::route::VectorValue;
 
 //--- Community --------------------------------------------------------------
 
@@ -1171,65 +1168,26 @@ impl FromStr for Asn16 {
     }
 }
 
-//------------ MaterializedCommunities --------------------------------------
+// //------------ Communities --------------------------------------
 
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub struct MaterializedCommunities {
-    communities: Vec<Community>
-}
+// #[derive(Debug, Clone, Eq, PartialEq)]
+// pub struct Communities {
+//     pub communities: Vec<Community>
+// }
 
-impl VectorValue for MaterializedCommunities {
-    type Item = Community;
+// impl Index<usize> for Communities {
+//     type Output = Community;
 
-    fn prepend_vec(&mut self, vector: Vec<Community>) -> Result<(), LongSegmentError> {
-        let mut comms = 
-            MaterializedCommunities { communities: vector };
-        comms.communities.extend_from_slice(self.communities.as_slice());
+//     fn index(&self, index: usize) -> &Self::Output {
+//         &self.communities[index]
+//     }
+// }
 
-        *self = comms;
-
-        Ok(())
-    }
-
-    fn append_vec(&mut self, vector: Vec<Community>) -> Result<(), LongSegmentError> {
-        self.communities.extend_from_slice(vector.as_slice());
-
-        Ok(())
-    }
-
-    fn insert_vec(&mut self, pos: u8, vector: Vec<Community>) -> Result<(), LongSegmentError> {
-        let mut comms = 
-            (self.communities[0..pos as usize]).to_vec();
-
-        comms.extend_from_slice(vector.as_slice());
-        comms.extend_from_slice(&self.communities[pos as usize..]);
-        self.communities = comms;
-
-        Ok(())
-    }
-
-    fn vec_len(&self) -> u8 {
-        self.communities.len() as u8
-    }
-
-    fn vec_is_empty(&self) -> bool {
-        self.communities.is_empty()
-    }
-}
-
-impl Index<usize> for MaterializedCommunities {
-    type Output = Community;
-
-    fn index(&self, index: usize) -> &Self::Output {
-        &self.communities[index]
-    }
-}
-
-impl From<Vec<Community>> for MaterializedCommunities {
-    fn from(value: Vec<Community>) -> Self {
-        Self { communities: value }
-    }
-}
+// impl From<Vec<Community>> for Communities {
+//     fn from(value: Vec<Community>) -> Self {
+//         Self { communities: value }
+//     }
+// }
 
 //--- Error ------------------------------------------------------------------
 
