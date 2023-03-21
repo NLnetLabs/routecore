@@ -29,7 +29,7 @@ typeenum!(
 );
 
 /// BGP Origin types as used in BGP UPDATE messages.
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum OriginType {
     Igp,
     Egp,
@@ -70,7 +70,7 @@ typeenum!(
 );
 
 /// Wrapper for the 4 byte Multi-Exit Discriminator in path attributes.
-#[derive(Debug, Eq, PartialEq, Clone)]
+#[derive(Debug, Eq, PartialEq, Clone, Copy)]
 pub struct MultiExitDisc(pub u32);
 
 /// Wrapper for the 4 byte Local Preference value in path attributes.
