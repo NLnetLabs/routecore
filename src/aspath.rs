@@ -408,7 +408,7 @@ impl<'a, Octs: 'a + Octets> IntoIterator for &'a Segment<Octs> {
 //--- Building / composing ---------------------------------------------------
 
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct HopPath {
     hops: Vec<Hop<Vec<u8>>>,
 }
