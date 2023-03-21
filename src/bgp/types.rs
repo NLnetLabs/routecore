@@ -81,7 +81,7 @@ typeenum!(
 );
 
 /// Wrapper for the 4 byte Multi-Exit Discriminator in path attributes.
-#[derive(Debug, Eq, PartialEq, Copy, Clone)]
+#[derive(Debug, Eq, PartialEq, Clone, Copy)]
 pub struct MultiExitDisc(pub u32);
 
 impl std::fmt::Display for MultiExitDisc {
@@ -91,7 +91,7 @@ impl std::fmt::Display for MultiExitDisc {
 }
 
 /// Wrapper for the 4 byte Local Preference value in path attributes.
-#[derive(Debug, Eq, PartialEq, Copy, Clone)]
+#[derive(Debug, Eq, PartialEq, Clone, Copy)]
 pub struct LocalPref(pub u32);
 
 impl std::fmt::Display for LocalPref {
