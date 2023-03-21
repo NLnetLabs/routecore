@@ -74,7 +74,7 @@ typeenum!(
 pub struct MultiExitDisc(pub u32);
 
 /// Wrapper for the 4 byte Local Preference value in path attributes.
-#[derive(Debug, Eq, PartialEq, Clone)]
+#[derive(Debug, Eq, PartialEq, Clone, Copy)]
 pub struct LocalPref(pub u32);
 
 /// Conventional and BGP-MP Next Hop variants.
