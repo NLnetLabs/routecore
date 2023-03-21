@@ -621,6 +621,20 @@ impl<const N: usize> From<[Asn; N]> for HopPath {
     }
 }
 
+impl fmt::Display for HopPath {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let mut first = true;
+        for s in &self.hops {
+            if first {
+                write!(f, "{}", s)?;
+                first = false;
+            } else {
+                write!(f, " {}", s)?;
+            }
+        }
+        Ok(())
+    }
+}
 
 //============ Error Types ===================================================
 
