@@ -407,6 +407,10 @@ impl HopPath {
         self.hops.last()
     }
 
+    pub fn contains(&self, hop: &Hop<Vec<u8>>) -> bool {
+        self.hops.iter().any(|h| h == hop)
+    }
+
     pub fn prepend(&mut self, hop: impl Into<Hop<Vec<u8>>>) {
         self.hops.insert(0, hop.into());
     }
@@ -659,6 +663,13 @@ mod tests {
 
         let asp: AsPath<Vec<u8>> = hp.to_as_path().unwrap();
         assert_eq!(asp.origin(), Some(Hop::Asn(Asn::from_u32(1234))));
+    }
 
+    #[test]
+    fn contains() {
+        let mut hp = HopPath::new();
+        hp.prepend_arr([Asn::from_u32(10), Asn::from_u32(20)]);
+        assert!(hp.contains(&Hop::Asn(Asn::from_u32(10).into())));
+        assert!(!hp.contains(&Hop::Asn(Asn::from_u32(30).into())));
     }
 }
