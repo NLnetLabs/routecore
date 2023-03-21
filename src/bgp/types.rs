@@ -91,7 +91,7 @@ impl std::fmt::Display for MultiExitDisc {
 }
 
 /// Wrapper for the 4 byte Local Preference value in path attributes.
-#[derive(Debug, Eq, PartialEq, Copy, Clone)]
+#[derive(Debug, Eq, PartialEq, Clone, Copy)]
 pub struct LocalPref(pub u32);
 
 impl std::fmt::Display for LocalPref {
