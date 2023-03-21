@@ -55,17 +55,26 @@ pub struct Segment<Octs> {
     octets: Octs,
 }
 
-impl<Octs: Octets> Segment<Octs> {
-    pub fn new_set(_asns: impl IntoIterator<Item = Asn>) -> Self {
-        todo!()
-        //Segment {
-        //    stype: SegmentType::Set,
-        //    octets:
-        //}
-    }
+impl Segment<Vec<u8>> {
+    pub fn new_set(asns: impl IntoIterator<Item = Asn>) -> Self {
+        let mut set = vec![SegmentType::Set.into(), 0u8];
+        let mut len = 0u8;
+        for a in asns.into_iter().map(|a| a.to_raw()) {
+            set.extend_from_slice(&a);
+            len += 1;
+        }
+        set[1] = len;
 
+        Segment {
+            stype: SegmentType::Set,
+            octets: set
+        }
+    }
+}
+
+impl<Octs: Octets> Segment<Octs> {
     pub fn asns(&self) -> Asns<Octs> {
-        todo!()
+        Asns::new(&self.octets)
     }
 
     pub fn compose<Target: OctetsBuilder>(
@@ -73,10 +82,14 @@ impl<Octs: Octets> Segment<Octs> {
     ) -> Result<(), Target::AppendError> {
         target.append_slice(
             &[self.stype.into(), 
-            u8::try_from(self.octets.as_ref().len() / 4)
+            u8::try_from((self.octets.as_ref().len() - 2) / 4)
                 .expect("long sequence")
             ]
-        )
+        )?;
+        for c in self.octets.as_ref()[2..].chunks(4) {
+            target.append_slice(c)?
+        }
+        Ok(())
     }
 }
 
@@ -91,6 +104,27 @@ impl<Source, Octs> OctetsFrom<Segment<Source>> for Segment<Octs>
             stype: source.stype, 
             octets: Octs::try_octets_from(source.octets)?
         })
+    }
+}
+
+impl<Octs: Octets> std::fmt::Display for Segment<Octs> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let _ = match self.stype {
+            SegmentType::Sequence => write!(f, "AS_SEQUENCE("),
+            SegmentType::Set => write!(f, "AS_SET("),
+            SegmentType::ConfedSet => write!(f, "AS_CONFED_SET("),
+            SegmentType::ConfedSequence => write!(f, "AS_CONFED_SEQUENCE("),
+        };
+        let mut first = true;
+        for a in self.asns() {
+            if first {
+                let _ = write!(f, "{}", a);
+                first = false;
+            } else {
+                let _ = write!(f, ", {}", a);
+            }
+        }
+        write!(f, ")")
     }
 }
 
@@ -109,6 +143,18 @@ impl Hop<Vec<u8>> {
     }
 }
 
+impl<Octs> From<Asn> for Hop<Octs> {
+    fn from(a: Asn) -> Self {
+        Hop::Asn(a)
+    }
+}
+
+impl<Octs> From<Segment<Octs>> for Hop<Octs> {
+    fn from(seg: Segment<Octs>) -> Self {
+        Hop::Segment(seg)
+    }
+}
+
 impl<Source, Octs> OctetsFrom<Hop<Source>> for Hop<Octs>
     where
     Octs: OctetsFrom<Source>
@@ -123,12 +169,6 @@ impl<Source, Octs> OctetsFrom<Hop<Source>> for Hop<Octs>
     }
 }
 
-impl<Octs: Octets> From<Asn> for Hop<Octs> {
-    fn from(value: Asn) -> Self {
-        todo!()
-    }
-}
-
 impl fmt::Display for Hop<Vec<u8>> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         todo!()
@@ -137,6 +177,7 @@ impl fmt::Display for Hop<Vec<u8>> {
 
 
 //--- AsPath -----------------------------------------------------------------
+#[derive(Debug)]
 pub struct AsPath<Octs> {
     octets: Octs,
 }
@@ -172,11 +213,44 @@ impl<Octs: Octets> AsPath<Octs> {
         hops.to_as_path()
     }
 
+    pub fn prepend_arr<const N: usize>(
+        &self,
+        arr: [Asn; N]
+    ) -> Result<
+        AsPath<Octs>,
+        <<Octs as FromBuilder>::Builder as OctetsBuilder>::AppendError
+    >
+    where
+    Octs: FromBuilder,
+    <Octs as FromBuilder>::Builder: EmptyBuilder,
+    for<'a> Vec<u8>: From<Octs::Range<'a>>
+    {
+        let mut hops = self.to_hop_path();
+        hops.prepend_arr(arr);
+        hops.to_as_path()
+    }
+
     pub fn to_hop_path(&self) -> HopPath
     where for<'a> Vec<u8>: From<Octs::Range<'a>> {
         HopPath { hops: self.hops().map(OctetsInto::octets_into).collect() }
     }
 
+}
+
+impl<Octs: Octets> std::fmt::Display for AsPath<Octs> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let mut first = true;
+        let _ = write!(f, "[");
+        for s in self.segments() {
+            if first {
+                let _ = write!(f, "{}", s);
+                first = false;
+            } else {
+                let _ = write!(f, ", {}", s);
+            }
+        }
+        write!(f, "]")
+    }
 }
 
 //----------- PathHops -------------------------------------------------------
@@ -207,8 +281,7 @@ impl<'a, Octs: Octets> Iterator for PathHops<'a, Octs> {
         }
         if let Some((stype, mut parser)) = self.segments.next_pair() {
             if stype == SegmentType::Sequence {
-                let mut asn_iter = Asns { parser };//  seg.into_iter(); // make manually, sneak in
-                                                    // parser
+                let mut asn_iter = Asns { parser };
                 if let Some(asn) = asn_iter.next() {
                     self.current = Some(asn_iter);
                     return Some(Hop::Asn(asn))
@@ -273,6 +346,11 @@ impl<'a, Octs: Octets> Iterator for PathSegments<'a, Octs> {
 /// Iterates over ASNs in a Segment.
 pub struct Asns<'a, Octs> {
     parser: Parser<'a, Octs>
+}
+impl<'a, Octs: Octets> Asns<'a, Octs> {
+    fn new(octets: &'a Octs) -> Self {
+        Asns { parser: Parser::from_ref(octets) }
+    }
 }
 
 impl<'a, Octs: Octets> Iterator for Asns<'a, Octs> {
@@ -344,20 +422,32 @@ impl std::iter::IntoIterator for HopPath {
 
 
 impl HopPath {
-    pub fn prepend(&mut self, hop: Hop<Vec<u8>>) {
-        self.hops.insert(0, hop);
+    pub fn new() -> Self {
+        Self { hops: vec![] }
     }
 
-    // XXX make prepend operate on Into<Hop<Vec<u8>>
-    pub fn prepend_asn(&mut self, asn: Asn) {
-        self.hops.insert(0, Hop::Asn(asn))
+    pub fn prepend(&mut self, hop: impl Into<Hop<Vec<u8>>>) {
+        self.hops.insert(0, hop.into());
     }
 
     pub fn prepend_n(&mut self, asn: Asn, n: usize) {
         for _ in 0..n {
-            self.prepend_asn(asn)
+            self.prepend(asn)
         }
     }
+
+    pub fn prepend_arr<const N: usize>(
+        &mut self,
+        arr: [Asn; N]
+    ) {
+        let mut new = Vec::with_capacity(N + self.hops.len());
+
+        new.extend_from_slice(&arr.map(Hop::Asn));
+        new.extend_from_slice(&self.hops);
+
+        self.hops = new;
+    }
+
 
     pub fn prepend_set(&mut self, set: impl IntoIterator<Item = Asn>) {
         self.prepend(Hop::Segment(Segment::new_set(set)))
@@ -422,7 +512,7 @@ impl HopPath {
         mut hops: &[Hop<Octs>], target: &mut Target
     ) -> Result<(), Target::AppendError> {
         while !hops.is_empty() {
-            let i = hops.iter().position(|h| matches!(h, Hop::Asn(_))).unwrap_or_else(|| hops.len());
+            let i = hops.iter().position(|h| !matches!(h, Hop::Asn(_))).unwrap_or_else(|| hops.len());
             let (head, tail) = hops.split_at(i);
 
             if !head.is_empty() {
@@ -557,5 +647,30 @@ mod tests {
         for hop in path.hops() {
             println!("{hop:?}");
         }
+    }
+
+    #[test]
+    fn prepend() {
+        let mut hp = HopPath::new();
+        hp.prepend(Asn::from_u32(100));
+        hp.prepend_n(Asn::from_u32(200), 3);
+        hp.prepend_arr([Asn::from_u32(300)]);
+        hp.prepend_arr([Asn::from_u32(400), Asn::from_u32(500)]);
+        println!("{hp:?}");
+
+        hp.prepend(Segment::new_set([Asn::from_u32(1000), Asn::from_u32(2000)]));
+
+        let asp = hp.to_as_path::<Vec<u8>>().unwrap();
+        println!("{asp}");
+    }
+
+    #[test]
+    fn new_set() {
+        let set = Segment::new_set([Asn::from_u32(100), Asn::from_u32(200)]);
+        let mut hp = HopPath::new();
+        hp.prepend(set);
+        let asp = hp.to_as_path::<Vec<u8>>().unwrap();
+        println!("{asp}");
+
     }
 }
