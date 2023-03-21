@@ -82,6 +82,36 @@ impl Segment<Vec<u8>> {
             octets: set
         }
     }
+
+    pub fn new_confed_set(asns: impl IntoIterator<Item = Asn>) -> Self {
+        let mut set = vec![SegmentType::ConfedSet.into(), 0u8];
+        let mut len = 0u8;
+        for a in asns.into_iter().map(|a| a.to_raw()) {
+            set.extend_from_slice(&a);
+            len += 1;
+        }
+        set[1] = len;
+
+        Segment {
+            stype: SegmentType::ConfedSet,
+            octets: set
+        }
+    }
+
+    pub fn new_confed_sequence(asns: impl IntoIterator<Item = Asn>) -> Self {
+        let mut set = vec![SegmentType::ConfedSequence.into(), 0u8];
+        let mut len = 0u8;
+        for a in asns.into_iter().map(|a| a.to_raw()) {
+            set.extend_from_slice(&a);
+            len += 1;
+        }
+        set[1] = len;
+
+        Segment {
+            stype: SegmentType::ConfedSequence,
+            octets: set
+        }
+    }
 }
 
 impl<Octs: Octets> Segment<Octs> {
@@ -408,15 +438,15 @@ impl HopPath {
     }
 
     pub fn prepend_confed_sequence(
-        &mut self, _set: impl IntoIterator<Item = Asn>)
+        &mut self, seq: impl IntoIterator<Item = Asn>)
     {
-        todo!()
+        self.prepend(Hop::Segment(Segment::new_confed_sequence(seq)))
     }
 
     pub fn prepend_confed_set(
-        &mut self, _set: impl IntoIterator<Item = Asn>)
+        &mut self, set: impl IntoIterator<Item = Asn>)
     {
-        todo!()
+        self.prepend(Hop::Segment(Segment::new_confed_set(set)))
     }
 
     pub fn append(&mut self, hop: Hop<Vec<u8>>) {
@@ -432,15 +462,15 @@ impl HopPath {
     }
 
     pub fn append_confed_sequence(
-        &mut self, _set: impl IntoIterator<Item = Asn>)
+        &mut self, seq: impl IntoIterator<Item = Asn>)
     {
-        todo!()
+        self.append(Hop::Segment(Segment::new_confed_sequence(seq)))
     }
 
     pub fn append_confed_set(
-        &mut self, _set: impl IntoIterator<Item = Asn>)
+        &mut self, set: impl IntoIterator<Item = Asn>)
     {
-        todo!()
+        self.append(Hop::Segment(Segment::new_confed_set(set)))
     }
 
     pub fn to_as_path<Octs>(
