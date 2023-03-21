@@ -603,6 +603,12 @@ impl<T> From<T> for HopPath where T: IntoIterator<Item = Asn> {
 }
 */
 
+impl From<Vec<Hop<Vec<u8>>>> for HopPath {
+    fn from(hops: Vec<Hop<Vec<u8>>>) -> HopPath {
+        HopPath { hops }
+    }
+}
+
 impl From<Vec<Asn>> for HopPath {
     fn from(asns: Vec<Asn>) -> HopPath {
         HopPath { hops: asns.into_iter().map(Hop::Asn).collect() }  
