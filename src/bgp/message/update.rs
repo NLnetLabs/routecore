@@ -1,3 +1,4 @@
+use crate::aspath::HopPath;
 use crate::bgp::message::Header;
 use octseq::{Octets, Parser};
 use log::{debug, warn, error};
@@ -247,6 +248,10 @@ impl<Octs: Octets> UpdateMessage<Octs> {
         )
     }
 
+    pub fn as4_hop_path(&self) -> Option<HopPath> {
+        todo!()
+    }
+
     pub fn as4path(&self) -> Option<AsPath<Vec<Asn>>> {
         self.path_attributes().iter().find(|pa|
             pa.type_code() == PathAttributeType::As4Path
@@ -276,6 +281,10 @@ impl<Octs: Octets> UpdateMessage<Octs> {
             }
             aspb.finalize()
         })
+    }
+
+    pub fn hop_path(&self) -> Option<HopPath> {
+        todo!()
     }
 
     /// Returns the AS_PATH path attribute.
@@ -1365,6 +1374,12 @@ impl Aggregator {
     /// Returns the speaker IPv4 address.
     pub fn speaker(&self) -> Ipv4Addr {
         self.speaker
+    }
+}
+
+impl std::fmt::Display for Aggregator {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        todo!()
     }
 }
 

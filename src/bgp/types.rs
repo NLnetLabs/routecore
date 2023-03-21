@@ -37,6 +37,12 @@ pub enum OriginType {
     Unknown(u8),
 }
 
+impl std::fmt::Display for OriginType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        todo!()
+    }
+}
+
 typeenum!(
 /// PathAttributeType
 ///
@@ -73,9 +79,21 @@ typeenum!(
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub struct MultiExitDisc(pub u32);
 
+impl std::fmt::Display for MultiExitDisc {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        todo!()
+    }
+}
+
 /// Wrapper for the 4 byte Local Preference value in path attributes.
-#[derive(Debug, Eq, PartialEq, Clone)]
+#[derive(Debug, Eq, PartialEq, Copy, Clone)]
 pub struct LocalPref(pub u32);
+
+impl std::fmt::Display for LocalPref {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        todo!()
+    }
+}
 
 /// Conventional and BGP-MP Next Hop variants.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -90,3 +108,8 @@ pub enum NextHop {
     Unimplemented(AFI, SAFI),
 }
 
+impl std::fmt::Display for NextHop {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        todo!()
+    }
+}

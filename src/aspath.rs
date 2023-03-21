@@ -49,7 +49,7 @@ impl From<SegmentType> for u8 {
 }
 
 //--- Segment ----------------------------------------------------------------
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Segment<Octs> {
     stype: SegmentType,
     octets: Octs,
@@ -97,10 +97,16 @@ impl<Source, Octs> OctetsFrom<Segment<Source>> for Segment<Octs>
 
 
 //--- Hop --------------------------------------------------------------------
-#[derive(Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Hop<Octs> {
     Asn(Asn),
     Segment(Segment<Octs>),
+}
+
+impl Hop<Vec<u8>> {
+    pub fn try_into_asn(self) -> Result<Asn, InvalidSegmentTypeError> {
+        todo!()
+    }
 }
 
 impl<Source, Octs> OctetsFrom<Hop<Source>> for Hop<Octs>
@@ -117,6 +123,17 @@ impl<Source, Octs> OctetsFrom<Hop<Source>> for Hop<Octs>
     }
 }
 
+impl<Octs: Octets> From<Asn> for Hop<Octs> {
+    fn from(value: Asn) -> Self {
+        todo!()
+    }
+}
+
+impl fmt::Display for Hop<Vec<u8>> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        todo!()
+    }
+}
 
 
 //--- AsPath -----------------------------------------------------------------
@@ -278,12 +295,53 @@ impl<'a, Octs: 'a + Octets> IntoIterator for &'a Segment<Octs> {
 }
 
 
-//--- Building / composing ---------------------------------------------------
+//------------ HopPath ------------------------------------------------------
 
 
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct HopPath {
     hops: Vec<Hop<Vec<u8>>>,
 }
+
+//--- Reading ---------------------------------------------------------------
+
+
+impl HopPath {
+    pub fn contains(&self, _hop: &Hop<Vec<u8>>) -> bool {
+        todo!()
+    }
+
+    pub fn iter(&self) -> std::slice::Iter<'_, Hop<Vec<u8>>> {
+        todo!()
+    }
+
+    pub fn origin(&self) -> Option<Hop<Vec<u8>>> {
+        todo!()
+    }
+
+    pub fn path_len(&self) -> Option<usize> {
+        todo!()
+    }
+}
+
+impl fmt::Display for HopPath {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        todo!()
+    }
+}
+
+impl std::iter::IntoIterator for HopPath {
+    type IntoIter = std::vec::IntoIter<Hop<Vec<u8>>>;
+    type Item = Hop<Vec<u8>>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.hops.into_iter()
+    }
+}
+
+
+//--- Building / composing ---------------------------------------------------
+
 
 impl HopPath {
     pub fn prepend(&mut self, hop: Hop<Vec<u8>>) {
@@ -323,6 +381,10 @@ impl HopPath {
 
     pub fn append_asn(&mut self, asn: Asn) {
         self.hops.push(Hop::Asn(asn))
+    }
+
+    pub fn insert_asns(&mut self, pos: usize, asns: Vec<Asn>) {
+        todo!()
     }
 
     pub fn append_set(&mut self, set: impl IntoIterator<Item = Asn>) {
@@ -420,6 +482,24 @@ impl<I: SliceIndex<[Hop<Vec<u8>>]>> Index<I> for HopPath {
 impl<I: SliceIndex<[Hop<Vec<u8>>]>> IndexMut<I> for HopPath {
     fn index_mut(&mut self, i: I) -> &mut Self::Output {
         &mut self.hops[i]
+    }
+}
+
+impl From<Vec<Hop<Vec<u8>>>> for HopPath {
+    fn from(value: Vec<Hop<Vec<u8>>>) -> Self {
+        todo!()
+    }
+}
+
+impl From<Vec<Asn>> for HopPath {
+    fn from(value: Vec<Asn>) -> Self {
+        todo!()
+    }
+}
+
+impl From<&[Asn]> for HopPath {
+    fn from(value: &[Asn]) -> Self {
+        todo!()
     }
 }
 
