@@ -37,6 +37,17 @@ pub enum OriginType {
     Unknown(u8),
 }
 
+impl std::fmt::Display for OriginType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            OriginType::Igp => write!(f, "IGP"),
+            OriginType::Egp => write!(f, "EGP"),
+            OriginType::Incomplete => write!(f, "Incomplete"),
+            OriginType::Unknown(val) => write!(f, "Unknown: {}", val),
+        }
+    }
+}
+
 typeenum!(
 /// PathAttributeType
 ///
@@ -70,12 +81,24 @@ typeenum!(
 );
 
 /// Wrapper for the 4 byte Multi-Exit Discriminator in path attributes.
-#[derive(Debug, Eq, PartialEq, Clone, Copy)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct MultiExitDisc(pub u32);
 
+impl std::fmt::Display for MultiExitDisc {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
 /// Wrapper for the 4 byte Local Preference value in path attributes.
-#[derive(Debug, Eq, PartialEq, Clone, Copy)]
+#[derive(Debug, Eq, PartialEq, Copy, Clone)]
 pub struct LocalPref(pub u32);
+
+impl std::fmt::Display for LocalPref {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
 
 /// Conventional and BGP-MP Next Hop variants.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -90,3 +113,16 @@ pub enum NextHop {
     Unimplemented(AFI, SAFI),
 }
 
+impl std::fmt::Display for NextHop {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            NextHop::Ipv4(ip) => write!(f, "{}", ip),
+            NextHop::Ipv6(ip) => write!(f, "{}", ip),
+            NextHop::Ipv6LL(ip1, ip2) => write!(f, "{} {} ", ip1, ip2),
+            NextHop::Ipv4MplsVpnUnicast(rd, ip) => write!(f, "rd {} {}", rd, ip),
+            NextHop::Ipv6MplsVpnUnicast(rd, ip) => write!(f, "rd {} {}", rd, ip),
+            NextHop::Empty => write!(f, "empty"),
+            NextHop::Unimplemented(afi, safi) => write!(f, "unimplemented for AFI {} /SAFI {}", afi, safi),
+        }
+    }
+}
