@@ -212,6 +212,13 @@ pub struct AsPath<Octs> {
 }
 
 impl<Octs> AsPath<Octs> {
+    /// Create an AsPath from `octets` without performing validity checks. 
+    ///
+    /// # Safety
+    /// 
+    /// This assumes the caller has verified the `octets` passed in validly
+    /// represent an AS Path. Calling methods on the resulting `AsPath` will
+    /// panic if that is not the case.
     pub unsafe fn from_octets_unchecked(octets: Octs) -> Self {
         AsPath { octets }
     }
@@ -431,7 +438,7 @@ impl HopPath {
     }
 
     pub fn iter(&self) -> std::slice::Iter<'_, Hop<Vec<u8>>> {
-        self.hops[..].into_iter()
+        self.hops[..].iter()
     }
 
     pub fn prepend(&mut self, hop: impl Into<Hop<Vec<u8>>>) {
@@ -516,7 +523,7 @@ impl HopPath {
         mut hops: &[Hop<Octs>], target: &mut Target
     ) -> Result<(), Target::AppendError> {
         while !hops.is_empty() {
-            let i = hops.iter().position(|h| !matches!(h, Hop::Asn(_))).unwrap_or_else(|| hops.len());
+            let i = hops.iter().position(|h| !matches!(h, Hop::Asn(_))).unwrap_or(hops.len());
             let (head, tail) = hops.split_at(i);
 
             if !head.is_empty() {
@@ -604,7 +611,7 @@ impl From<Vec<Asn>> for HopPath {
 
 impl From<&[Asn]> for HopPath {
     fn from(asns: &[Asn]) -> HopPath {
-        HopPath { hops: asns.into_iter().map(|&a| Hop::Asn(a)).collect() }  
+        HopPath { hops: asns.iter().map(|&a| Hop::Asn(a)).collect() }  
     }
 }
 
@@ -632,6 +639,7 @@ impl error::Error for InvalidSegmentTypeError { }
 
 
 
+#[cfg(test)]
 mod tests {
     use super::*;
 
