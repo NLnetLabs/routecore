@@ -48,6 +48,18 @@ impl From<SegmentType> for u8 {
     }
 }
 
+
+impl fmt::Display for SegmentType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str(match *self {
+            SegmentType::Set => "AS_SET",
+            SegmentType::Sequence => "AS_SEQUENCE",
+            SegmentType::ConfedSequence => "AS_CONFED_SEQUENCE",
+            SegmentType::ConfedSet => "AS_CONFED_SET",
+        })
+    }
+}
+
 //--- Segment ----------------------------------------------------------------
 #[derive(Debug, Clone, Copy)]
 pub struct Segment<Octs> {
@@ -107,21 +119,15 @@ impl<Source, Octs> OctetsFrom<Segment<Source>> for Segment<Octs>
     }
 }
 
-impl<Octs: Octets> std::fmt::Display for Segment<Octs> {
+impl<Octs: Octets> fmt::Display for Segment<Octs> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let _ = match self.stype {
-            SegmentType::Sequence => write!(f, "AS_SEQUENCE("),
-            SegmentType::Set => write!(f, "AS_SET("),
-            SegmentType::ConfedSet => write!(f, "AS_CONFED_SET("),
-            SegmentType::ConfedSequence => write!(f, "AS_CONFED_SEQUENCE("),
-        };
-        let mut first = true;
-        for a in self.asns() {
-            if first {
-                let _ = write!(f, "{}", a);
-                first = false;
-            } else {
-                let _ = write!(f, ", {}", a);
+        write!(f, "{}(", self.stype)?;
+
+        let mut asns = self.into_iter();
+        if let Some(first) = asns.next() {
+            write!(f, "{}", first)?;
+            for elem in asns {
+                write!(f, ", {}", elem)?;
             }
         }
         write!(f, ")")
@@ -226,19 +232,18 @@ impl<Octs: Octets> AsPath<Octs> {
 
 }
 
-impl<Octs: Octets> std::fmt::Display for AsPath<Octs> {
+impl<Octs: Octets> fmt::Display for AsPath<Octs> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut first = true;
-        let _ = write!(f, "[");
         for s in self.segments() {
             if first {
-                let _ = write!(f, "{}", s);
+                write!(f, "{}", s)?;
                 first = false;
             } else {
-                let _ = write!(f, ", {}", s);
+                write!(f, ", {}", s)?;
             }
         }
-        write!(f, "]")
+        Ok(())
     }
 }
 
