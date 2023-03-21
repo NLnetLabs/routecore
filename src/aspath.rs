@@ -566,6 +566,15 @@ impl HopPath {
     }
 }
 
+impl IntoIterator for HopPath {
+    type Item = Hop<Vec<u8>>;
+    type IntoIter = std::vec::IntoIter<Self::Item>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.hops.into_iter()
+    }
+}
+
 impl<I: SliceIndex<[Hop<Vec<u8>>]>> Index<I> for HopPath {
     type Output = I::Output;
     fn index(&self, i: I) -> &Self::Output {
