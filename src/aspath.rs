@@ -61,7 +61,7 @@ impl fmt::Display for SegmentType {
 }
 
 //--- Segment ----------------------------------------------------------------
-#[derive(Debug, Clone, Copy)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub struct Segment<Octs> {
     stype: SegmentType,
     octets: Octs,
@@ -147,7 +147,7 @@ impl<Octs: Octets> fmt::Display for Segment<Octs> {
 
 
 //--- Hop --------------------------------------------------------------------
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum Hop<Octs> {
     Asn(Asn),
     Segment(Segment<Octs>),
@@ -209,6 +209,10 @@ impl<Octs: Octets> AsPath<Octs> {
     
     pub fn segments(&self) -> PathSegments<Octs> {
         PathSegments::new(&self.octets)
+    }
+
+    pub fn origin(&self) -> Option<Hop<Octs::Range<'_>>> {
+        self.hops().last()
     }
 
     pub fn prepend(
@@ -397,6 +401,10 @@ pub struct HopPath {
 impl HopPath {
     pub fn new() -> Self {
         Self { hops: vec![] }
+    }
+
+    pub fn origin(&self) -> Option<&Hop<Vec<u8>>> {
+        self.hops.last()
     }
 
     pub fn prepend(&mut self, hop: impl Into<Hop<Vec<u8>>>) {
@@ -640,5 +648,17 @@ mod tests {
             "AS_CONFED_SEQUENCE(AS500, AS600), AS_CONFED_SET(AS300, AS400), \
              AS_SET(AS100, AS200)"
         );
+    }
+
+    #[test]
+    fn origin() {
+        let mut hp = HopPath::new();
+        hp.prepend(Asn::from_u32(1234));
+        hp.prepend(Asn::from_u32(1235));
+        assert_eq!(hp.origin(), Some(&Hop::Asn(Asn::from_u32(1234))));
+
+        let asp: AsPath<Vec<u8>> = hp.to_as_path().unwrap();
+        assert_eq!(asp.origin(), Some(Hop::Asn(Asn::from_u32(1234))));
+
     }
 }
