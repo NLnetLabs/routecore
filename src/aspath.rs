@@ -153,6 +153,11 @@ pub enum Hop<Octs> {
     Segment(Segment<Octs>),
 }
 
+impl<Octs> Hop<Octs> {
+    pub fn try_into_asn(self) -> Result<Asn, <Self as TryInto<Asn>>::Error> {
+        TryInto::<Asn>::try_into(self)
+    }
+}
 impl<Octs> From<Asn> for Hop<Octs> {
     fn from(a: Asn) -> Self {
         Hop::Asn(a)
@@ -714,7 +719,7 @@ mod tests {
     }
 
     #[test]
-    fn froms()  {
+    fn froms_and_intos()  {
         let asns = vec![Asn::from_u32(100), Asn::from_u32(200)];
 
         let hp: HopPath = (&asns[..]).into();
@@ -740,10 +745,14 @@ mod tests {
                 Ok(Asn::from_u32(1234))
         );
 
-        let hop: Hop<Vec<u8>> = Segment::new_set([Asn::from_u32(10)]).into();
-        assert!(
-            TryInto::<Asn>::try_into(hop).is_err()
+        assert_eq!(
+                Hop::<Vec<u8>>::Asn(Asn::from_u32(1234)).try_into(),
+                Hop::<Vec<u8>>::Asn(Asn::from_u32(1234)).try_into_asn()
         );
+
+        let hop: Hop<Vec<u8>> = Segment::new_set([Asn::from_u32(10)]).into();
+        assert!(TryInto::<Asn>::try_into(hop.clone()).is_err());
+        assert!(hop.try_into_asn().is_err());
     }
 
 }
