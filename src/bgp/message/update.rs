@@ -1368,6 +1368,13 @@ impl Aggregator {
     }
 }
 
+impl std::fmt::Display for Aggregator {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "AS{} Speaker {}", self.asn, self.speaker)        
+    }
+}
+
+
 /// Iterator for BGP UPDATE Communities.
 ///
 /// Returns values of enum [`Community`], wrapping [`StandardCommunity`],
