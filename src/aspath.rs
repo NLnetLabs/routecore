@@ -69,48 +69,30 @@ pub struct Segment<Octs> {
 
 impl Segment<Vec<u8>> {
     pub fn new_set(asns: impl IntoIterator<Item = Asn>) -> Self {
-        let mut set = vec![SegmentType::Set.into(), 0u8];
-        let mut len = 0u8;
+        let mut set = vec![];
         for a in asns.into_iter().map(|a| a.to_raw()) {
             set.extend_from_slice(&a);
-            len += 1;
         }
-        set[1] = len;
 
-        Segment {
-            stype: SegmentType::Set,
-            octets: set
-        }
+        Segment { stype: SegmentType::Set, octets: set }
     }
 
     pub fn new_confed_set(asns: impl IntoIterator<Item = Asn>) -> Self {
-        let mut set = vec![SegmentType::ConfedSet.into(), 0u8];
-        let mut len = 0u8;
+        let mut set = vec![];
         for a in asns.into_iter().map(|a| a.to_raw()) {
             set.extend_from_slice(&a);
-            len += 1;
         }
-        set[1] = len;
 
-        Segment {
-            stype: SegmentType::ConfedSet,
-            octets: set
-        }
+        Segment { stype: SegmentType::ConfedSet, octets: set }
     }
 
     pub fn new_confed_sequence(asns: impl IntoIterator<Item = Asn>) -> Self {
-        let mut set = vec![SegmentType::ConfedSequence.into(), 0u8];
-        let mut len = 0u8;
+        let mut set = vec![];
         for a in asns.into_iter().map(|a| a.to_raw()) {
             set.extend_from_slice(&a);
-            len += 1;
         }
-        set[1] = len;
 
-        Segment {
-            stype: SegmentType::ConfedSequence,
-            octets: set
-        }
+        Segment { stype: SegmentType::ConfedSequence, octets: set }
     }
 }
 
@@ -124,13 +106,11 @@ impl<Octs: Octets> Segment<Octs> {
     ) -> Result<(), Target::AppendError> {
         target.append_slice(
             &[self.stype.into(), 
-            u8::try_from((self.octets.as_ref().len() - 2) / 4)
+            u8::try_from(self.octets.as_ref().len() / 4)
                 .expect("long sequence")
             ]
         )?;
-        for c in self.octets.as_ref()[2..].chunks(4) {
-            target.append_slice(c)?
-        }
+        target.append_slice(self.octets.as_ref())?;
         Ok(())
     }
 }
@@ -199,6 +179,15 @@ impl<Source, Octs> OctetsFrom<Hop<Source>> for Hop<Octs>
     }
 }
 
+
+impl<Octs: Octets> fmt::Display for Hop<Octs> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Hop::Asn(a) => fmt::Display::fmt(a, f),
+            Hop::Segment(s) => fmt::Display::fmt(s, f)
+        }
+    }
+}
 
 
 //--- AsPath -----------------------------------------------------------------
@@ -587,9 +576,10 @@ mod tests {
         ];
 
         let path = AsPath{ octets: &raw };
-        for hop in path.hops() {
-            println!("{hop:?}");
-        }
+        assert_eq!(
+            path.to_string(),
+            "AS_SEQUENCE(AS2027, AS35280, AS263903, AS271373)"
+        );
     }
 
     #[test]
@@ -606,9 +596,11 @@ mod tests {
         ];
 
         let path = AsPath{ octets: &raw };
-        for hop in path.hops() {
-            println!("{hop:?}");
-        }
+        assert_eq!(
+            path.to_string(),
+            "AS_SEQUENCE(AS6447, AS38880, AS9002, AS12956, AS22927), \
+             AS_SET(AS52367, AS262175, AS264810, AS267786)"
+        );
     }
 
     #[test]
@@ -616,23 +608,37 @@ mod tests {
         let mut hp = HopPath::new();
         hp.prepend(Asn::from_u32(100));
         hp.prepend_n(Asn::from_u32(200), 3);
-        hp.prepend_arr([Asn::from_u32(300)]);
-        hp.prepend_arr([Asn::from_u32(400), Asn::from_u32(500)]);
-        println!("{hp:?}");
-
-        hp.prepend(Segment::new_set([Asn::from_u32(1000), Asn::from_u32(2000)]));
+        hp.prepend(Segment::new_set([Asn::from_u32(98), Asn::from_u32(99)]));
+        hp.prepend_arr([Asn::from_u32(300), Asn::from_u32(400)]);
 
         let asp = hp.to_as_path::<Vec<u8>>().unwrap();
-        println!("{asp}");
+
+        assert_eq!(
+            asp.to_string(),
+            "AS_SEQUENCE(AS300, AS400), AS_SET(AS98, AS99), \
+             AS_SEQUENCE(AS200, AS200, AS200, AS100)"
+        );
     }
 
     #[test]
-    fn new_set() {
+    fn new_segments() {
         let set = Segment::new_set([Asn::from_u32(100), Asn::from_u32(200)]);
+        let confed_set = Segment::new_confed_set(
+            [Asn::from_u32(300), Asn::from_u32(400)]
+        );
+        let confed_sequence = Segment::new_confed_sequence(
+            [Asn::from_u32(500), Asn::from_u32(600)]
+        );
+        
         let mut hp = HopPath::new();
         hp.prepend(set);
+        hp.prepend(confed_set);
+        hp.prepend(confed_sequence);
         let asp = hp.to_as_path::<Vec<u8>>().unwrap();
-        println!("{asp}");
-
+        assert_eq!(
+            asp.to_string(),
+            "AS_CONFED_SEQUENCE(AS500, AS600), AS_CONFED_SET(AS300, AS400), \
+             AS_SET(AS100, AS200)"
+        );
     }
 }
