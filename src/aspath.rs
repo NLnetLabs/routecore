@@ -556,6 +556,32 @@ impl<I: SliceIndex<[Hop<Vec<u8>>]>> IndexMut<I> for HopPath {
     }
 }
 
+/*
+impl<T> From<T> for HopPath where T: IntoIterator<Item = Asn> {
+    fn from(asns: T) -> HopPath {
+        HopPath { hops: asns.into_iter().map(Hop::Asn).collect() }  
+    }
+}
+*/
+
+impl From<Vec<Asn>> for HopPath {
+    fn from(asns: Vec<Asn>) -> HopPath {
+        HopPath { hops: asns.into_iter().map(Hop::Asn).collect() }  
+    }
+}
+
+impl From<&[Asn]> for HopPath {
+    fn from(asns: &[Asn]) -> HopPath {
+        HopPath { hops: asns.into_iter().map(|&a| Hop::Asn(a)).collect() }  
+    }
+}
+
+impl<const N: usize> From<[Asn; N]> for HopPath {
+    fn from(asns: [Asn; N]) -> HopPath {
+        HopPath { hops: asns.into_iter().map(Hop::Asn).collect() }  
+    }
+}
+
 
 //============ Error Types ===================================================
 
@@ -672,4 +698,28 @@ mod tests {
         assert!(hp.contains(&Hop::Asn(Asn::from_u32(10).into())));
         assert!(!hp.contains(&Hop::Asn(Asn::from_u32(30).into())));
     }
+
+    #[test]
+    fn froms()  {
+        let asns = vec![Asn::from_u32(100), Asn::from_u32(200)];
+
+        let hp: HopPath = (&asns[..]).into();
+        assert_eq!(
+            hp.to_as_path::<Vec<u8>>().unwrap().to_string(),
+            "AS_SEQUENCE(AS100, AS200)"
+        );
+
+        let hp: HopPath = asns.into();
+        assert_eq!(
+            hp.to_as_path::<Vec<u8>>().unwrap().to_string(),
+            "AS_SEQUENCE(AS100, AS200)"
+        );
+
+        let hp: HopPath = [Asn::from_u32(100), Asn::from_u32(200)].into();
+        assert_eq!(
+            hp.to_as_path::<Vec<u8>>().unwrap().to_string(),
+            "AS_SEQUENCE(AS100, AS200)"
+        );
+    }
+
 }
