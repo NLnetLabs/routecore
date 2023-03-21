@@ -408,7 +408,7 @@ impl<'a, Octs: 'a + Octets> IntoIterator for &'a Segment<Octs> {
 //--- Building / composing ---------------------------------------------------
 
 
-#[derive(Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HopPath {
     hops: Vec<Hop<Vec<u8>>>,
 }
@@ -428,6 +428,10 @@ impl HopPath {
 
     pub fn hop_count(&self) -> usize {
         self.hops.len()
+    }
+
+    pub fn iter(&self) -> std::slice::Iter<'_, Hop<Vec<u8>>> {
+        self.hops[..].into_iter()
     }
 
     pub fn prepend(&mut self, hop: impl Into<Hop<Vec<u8>>>) {
@@ -753,6 +757,15 @@ mod tests {
         let hop: Hop<Vec<u8>> = Segment::new_set([Asn::from_u32(10)]).into();
         assert!(TryInto::<Asn>::try_into(hop.clone()).is_err());
         assert!(hop.try_into_asn().is_err());
+    }
+
+    #[test]
+    fn hop_path_iter() {
+        let mut hp = HopPath::new();
+        hp.prepend_arr([Asn::from_u32(10), Asn::from_u32(20)]);
+        assert!(hp.iter().eq(
+                &[Hop::Asn(Asn::from_u32(10)), Hop::Asn(Asn::from_u32(20))]
+        ));
     }
 
 }
