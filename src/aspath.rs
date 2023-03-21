@@ -411,9 +411,7 @@ impl HopPath {
         self.hops.iter().any(|h| h == hop)
     }
 
-    // XXX length in hops.
-    // Do we also need length in ASNs? do we count CONFED_* and how?
-    pub fn path_len(&self) -> usize {
+    pub fn hop_count(&self) -> usize {
         self.hops.len()
     }
 
