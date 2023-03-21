@@ -159,6 +159,16 @@ impl<Octs> From<Asn> for Hop<Octs> {
     }
 }
 
+impl<Octs> TryFrom<Hop<Octs>> for Asn {
+    type Error = InvalidSegmentTypeError;
+    fn try_from(hop: Hop<Octs>) -> Result<Asn, Self::Error> {
+        match hop {
+            Hop::Asn(asn) => Ok(asn),
+            _ => Err(InvalidSegmentTypeError)
+        }
+    }
+}
+
 impl<Octs> From<Segment<Octs>> for Hop<Octs> {
     fn from(seg: Segment<Octs>) -> Self {
         Hop::Segment(seg)
@@ -591,7 +601,7 @@ impl<const N: usize> From<[Asn; N]> for HopPath {
 
 //------------ InvalidSegmentTypeError ---------------------------------------
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct InvalidSegmentTypeError;
 
 impl fmt::Display for InvalidSegmentTypeError {
@@ -723,6 +733,16 @@ mod tests {
         assert_eq!(
             hp.to_as_path::<Vec<u8>>().unwrap().to_string(),
             "AS_SEQUENCE(AS100, AS200)"
+        );
+
+        assert_eq!(
+                Hop::<Vec<u8>>::Asn(Asn::from_u32(1234)).try_into(),
+                Ok(Asn::from_u32(1234))
+        );
+
+        let hop: Hop<Vec<u8>> = Segment::new_set([Asn::from_u32(10)]).into();
+        assert!(
+            TryInto::<Asn>::try_into(hop).is_err()
         );
     }
 
