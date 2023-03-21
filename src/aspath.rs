@@ -411,6 +411,12 @@ impl HopPath {
         self.hops.iter().any(|h| h == hop)
     }
 
+    // XXX length in hops.
+    // Do we also need length in ASNs? do we count CONFED_* and how?
+    pub fn path_len(&self) -> usize {
+        self.hops.len()
+    }
+
     pub fn prepend(&mut self, hop: impl Into<Hop<Vec<u8>>>) {
         self.hops.insert(0, hop.into());
     }
