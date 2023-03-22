@@ -32,6 +32,7 @@ mod meta;
 mod prefix_record;
 mod route;
 
+pub mod aspath;
 pub mod communities;
 pub mod types;
 
