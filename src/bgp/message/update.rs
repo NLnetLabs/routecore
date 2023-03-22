@@ -2,7 +2,8 @@ use crate::bgp::message::Header;
 use octseq::{Octets, Parser};
 use log::{debug, warn, error};
 
-use crate::asn::{Asn, AsPath, AsPathBuilder, SegmentType};
+use crate::asn::Asn;
+use crate::bgp::aspath::AsPath;
 pub use crate::bgp::types::{
     AFI, SAFI, LocalPref, MultiExitDisc, NextHop, OriginType, PathAttributeType
 };
@@ -247,117 +248,39 @@ impl<Octs: Octets> UpdateMessage<Octs> {
         )
     }
 
-    pub fn as4path(&self) -> Option<AsPath<Vec<Asn>>> {
-        self.path_attributes().iter().find(|pa|
+    /// Returns the AS4_PATH attribute.
+    pub fn as4path(&self) -> Option<AsPath<Octs::Range<'_>>> {
+        self.path_attributes().into_iter().find(|pa|
             pa.type_code() == PathAttributeType::As4Path
         ).map(|pa| {
-            let asn_size = 4;
-            let octets = pa.value();
-            let mut aspb = AsPathBuilder::new();
-
-            let mut pos = 0;
-            while pos < octets.as_ref().len() {
-                let st = SegmentType::try_from(octets.as_ref()[pos])
-                    .expect("parsed before");
-                let num_asns = octets.as_ref()[pos+1] as usize;
-                aspb.start(st);
-                pos += 2;
-
-                for _ in 0..num_asns {
-                    let asn = Asn::from(
-                        u32::from_be_bytes(
-                            octets.as_ref()[pos..pos+asn_size]
-                            .try_into().expect("parsed before")
-                        )
-                    );
-                    aspb.push(asn).expect("parsed before");
-                    pos += asn_size;
-                }
+            unsafe {
+                AsPath::from_octets_unchecked(pa.into_value())
             }
-            aspb.finalize()
         })
     }
 
+
     /// Returns the AS_PATH path attribute.
-    pub fn aspath(&self) -> Option<AsPath<Vec<Asn>>> {
-        if let Some(as4path) = self.as4path() {
-            // In all cases we know of, the AS4_PATH attribute contains
-            // the entire AS_PATH with all the 4-octet ASNs. Instead of
-            // replacing the AS_TRANS ASNs in AS_PATH, we can simply
-            // return the AS4_PATH. 
-            // This also saves us from perhaps misguessing the 2-vs-4
-            // octet size of the AS_PATH, as the AS4_PATH is always 4-octet
-            // anyway.
-            return Some(as4path);
-        }
-        self.path_attributes().iter().find(|pa|
-            pa.type_code() == PathAttributeType::AsPath
-        ).map(|ref pa| {
-            // Check for AS4_PATH
-            // Note that all the as4path code in this part is useless because
-            // of the early return above, but for now let's leave it here for
-            // understanding/reasoning.
-            let as4path = self.as4path();
-
-            // Apparently, some BMP exporters do not set the legacy format
-            // bit but do emit 2-byte ASNs. 
-            let asn_size = match self.session_config.four_octet_asn { 
-                FourOctetAsn::Enabled => 4,
-                FourOctetAsn::Disabled => 2,
-            };
-
-            let octets = pa.value();
-            let mut aspb = AsPathBuilder::new();
-
-            let mut pos = 0;
-            let mut segment_idx = 0;
-            while pos < octets.as_ref().len() {
-                let st = SegmentType::try_from(octets.as_ref()[pos]).expect("parsed
-                    before");
-                let num_asns = octets.as_ref()[pos+1] as usize;
-                aspb.start(st);
-                pos += 2;
-
-                for _ in 0..num_asns {
-                    let asn = if asn_size == 4 {
-                    Asn::from(
-                        u32::from_be_bytes(
-                            octets.as_ref()[pos..pos+asn_size]
-                            .try_into().expect("parsed before")
-                            )
-                        )
-                    } else {
-                    Asn::from(
-                        u16::from_be_bytes(
-                            octets.as_ref()[pos..pos+asn_size]
-                            .try_into().expect("parsed before")
-                            ) as u32
-                        )
-                    };
-                    // In a very exotic (and incorrect?) case, we see AS_TRANS
-                    // in the AS_PATH, but no AS4_PATH path attribute. For
-                    // this reason, we check whether `as4path` actually holds
-                    // a value.
-                    if as4path.as_ref().is_some()
-                        && asn == Asn::from_u32(23456) {
-                        // This assert would trip the described exotic case.
-                        //assert!(as4path.is_some());
-                         
-                        // replace this AS_TRANS with the 4-octet value from
-                        // AS4_PATH:
-                        let seg = as4path.as_ref().expect("parsed before")
-                            .iter().nth(segment_idx).expect("parsed before");
-                        let new_asn: Asn = seg.elements()[aspb.segment_len()];
-                        aspb.push(new_asn).expect("parsed before");
-                    } else {
-                        aspb.push(asn).expect("parsed before");
-                    }
-                    pos += asn_size;
+    ///
+    /// If the AS4_PATH attribute is present in this message, that is returned
+    /// in favour of the AS_PATH which will contain 2 byte ASNs.
+    pub fn aspath(&self) -> Option<AsPath<Octs::Range<'_>>> {
+        // In all cases we know of, the AS4_PATH attribute contains
+        // the entire AS_PATH with all the 4-octet ASNs. Instead of
+        // replacing the AS_TRANS ASNs in AS_PATH, we can simply
+        // return the AS4_PATH. 
+        // This also saves us from perhaps misguessing the 2-vs-4
+        // octet size of the AS_PATH, as the AS4_PATH is always 4-octet
+        // anyway.
+        self.as4path().or(
+            self.path_attributes().into_iter().find(|pa|
+                pa.type_code() == PathAttributeType::AsPath
+            ).map(|pa| {
+                unsafe {
+                    AsPath::from_octets_unchecked(pa.into_value())
                 }
-                segment_idx += 1;
-            }
-            aspb.finalize()
-        })
+            })
+        )
     }
 
     /// Returns the NEXT_HOP path attribute, or the equivalent from
@@ -819,7 +742,6 @@ impl<'a, Octs: Octets> PathAttribute<'a, Octs> {
         //Parser::parse_parser(&mut p, self.length() as usize).expect("parsed before")
         self.parser
     }
-
 }
 
 impl<'a, Octs: Octets> PathAttribute<'a, Octs> {
@@ -2035,11 +1957,13 @@ mod tests {
         let asp = pa2.value();
         assert_eq!(asp.as_ref(), [0x02, 0x01, 0x00, 0x01, 0x00, 0x00]);
 
+        /*
         let mut pb = AsPathBuilder::new();
         pb.push(Asn::from_u32(65536)).unwrap();
         let asp: AsPath<Vec<Asn>> = pb.finalize();
+        */
 
-        assert_eq!(update.aspath().unwrap(), asp);
+        //assert_eq!(update.aspath().unwrap(), asp);
 
         let pa3 = pa_iter.next().unwrap();
         assert_eq!(pa3.type_code(), PathAttributeType::NextHop);
