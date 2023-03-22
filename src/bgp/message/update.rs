@@ -272,7 +272,7 @@ impl<Octs: Octets> UpdateMessage<Octs> {
         // This also saves us from perhaps misguessing the 2-vs-4
         // octet size of the AS_PATH, as the AS4_PATH is always 4-octet
         // anyway.
-        self.as4path().or(
+        self.as4path().or_else(||
             self.path_attributes().into_iter().find(|pa|
                 pa.type_code() == PathAttributeType::AsPath
             ).map(|pa| {

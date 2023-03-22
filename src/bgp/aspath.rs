@@ -654,7 +654,7 @@ impl fmt::Display for HopPath {
 
 //------------ InvalidSegmentTypeError ---------------------------------------
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct InvalidSegmentTypeError;
 
 impl fmt::Display for InvalidSegmentTypeError {
