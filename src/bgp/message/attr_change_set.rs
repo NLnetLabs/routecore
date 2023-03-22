@@ -1,5 +1,5 @@
 use crate::addr::Prefix;
-use crate::aspath::AsPath;
+use crate::bgp::aspath::AsPath;
 use crate::bgp::communities::{
     ExtendedCommunity, Ipv6ExtendedCommunity, LargeCommunity,
     StandardCommunity,
