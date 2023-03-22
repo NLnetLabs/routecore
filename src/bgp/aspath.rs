@@ -214,7 +214,7 @@ pub struct AsPath<Octs> {
     octets: Octs,
 }
 
-impl<Octs> AsPath<Octs> {
+impl<Octs: AsRef<[u8]>> AsPath<Octs> {
     /// Create an AsPath from `octets` without performing validity checks. 
     ///
     /// # Safety
