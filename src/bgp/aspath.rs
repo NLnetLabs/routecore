@@ -12,6 +12,9 @@ use core::ops::{Index, IndexMut};
 use std::slice::SliceIndex;
 
 
+
+const FOUR_OCTETS: usize = 4;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum SegmentType {
@@ -106,7 +109,7 @@ impl<Octs: Octets> Segment<Octs> {
     ) -> Result<(), Target::AppendError> {
         target.append_slice(
             &[self.stype.into(), 
-            u8::try_from(self.octets.as_ref().len() / 4)
+            u8::try_from(self.octets.as_ref().len() / FOUR_OCTETS)
                 .expect("long sequence")
             ]
         )?;
@@ -221,6 +224,25 @@ impl<Octs> AsPath<Octs> {
     /// panic if that is not the case.
     pub unsafe fn from_octets_unchecked(octets: Octs) -> Self {
         AsPath { octets }
+    }
+
+    pub unsafe fn from_octets_unchecked_legacy(
+        octets: Octs
+    ) -> AsPath<Vec<u8>> {
+        let mut path = Vec::with_capacity(octets.as_ref().len() * 2 );
+        let mut parser = Parser::from_ref(&octets);
+        while parser.remaining() > 0 {
+            let stype = parser.parse_u8().expect("parsed before");
+            let len = parser.parse_u8().expect("parsed before");
+            path.extend_from_slice(&[stype, len]);
+            let mut four_octets = [0u8; 4];
+            for _ in 0..len {
+                parser.parse_buf(&mut four_octets[2..4]).expect("parsed before");
+                path.extend_from_slice(&four_octets);
+            }
+        }
+
+        AsPath { octets: path }
     }
 }
 
@@ -369,7 +391,7 @@ impl<'a, Octs: Octets> PathSegments<'a, Octs> {
 
         let len = self.parser.parse_u8().expect("parsed before");
         // XXX 4 for 32bit ASNs, how can we support 16bit ASNs nicely?
-        let parser = self.parser.parse_parser(len as usize * 4).expect("parsed before");
+        let parser = self.parser.parse_parser(len as usize * FOUR_OCTETS).expect("parsed before");
         Some((stype, parser))
     }
 }
@@ -385,7 +407,7 @@ impl<'a, Octs: Octets> Iterator for PathSegments<'a, Octs> {
 
         let len = self.parser.parse_u8().expect("parsed before");
         // XXX 4 for 32bit ASNs, how can we support 16bit ASNs nicely?
-        let octets = self.parser.parse_octets(len as usize * 4).expect("parsed before");
+        let octets = self.parser.parse_octets(len as usize * FOUR_OCTETS).expect("parsed before");
         Some(Segment { stype, octets } )
     }
 }
@@ -829,7 +851,21 @@ mod tests {
             "AS_SET(AS100), AS_SET(), AS_SEQUENCE(), AS_SET(AS101)"
             );
         assert_eq!(asp.hops().count(), 4);
+    }
 
+    #[test]
+    fn two_octet_paths() {
+        let raw = vec![
+            0x01, 0x01, 0x00, 0x64, // SET(AS100)
+            0x02, 0x02, 0x00, 0x66, 0x00, 0x65  // SET(AS102, AS101)
+
+        ];
+        let asp = unsafe { AsPath::from_octets_unchecked_legacy(&raw) };
+        assert_eq!(
+            asp.to_string(),
+            "AS_SET(AS100), AS_SEQUENCE(AS102, AS101)"
+        );
+        
     }
 
 }
