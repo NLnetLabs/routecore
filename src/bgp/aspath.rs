@@ -325,12 +325,20 @@ impl<'a, Octs: Octets> Iterator for PathHops<'a, Octs> {
                     self.current = Some(asn_iter);
                     return Some(Hop::Asn(asn))
                 } else {
-                    return None
+                    // For consistency with the other segment types, we do
+                    // return an empty Sequence if encountered, even though
+                    // such a thing is meaningless in an AS_PATH.
+                    return Some(Hop::Segment(Segment {
+                        stype: SegmentType::Sequence,
+                        octets: parser.parse_octets(0).expect("no-op")
+                    }));
                 }
             } else {
                 return Some(Hop::Segment(Segment {
                     stype,
-                    octets: parser.parse_octets(parser.remaining()).expect("parsed before") } ) )
+                    octets: parser.parse_octets(parser.remaining())
+                        .expect("parsed before")
+                }))
             }
         }
 
@@ -803,6 +811,25 @@ mod tests {
         assert!(hp.iter().eq(
                 &[Hop::Asn(Asn::from_u32(10)), Hop::Asn(Asn::from_u32(20))]
         ));
+    }
+
+
+    #[test]
+    fn empty_segments() {
+        let raw = vec![
+            0x01, 0x01, 0x00, 0x00, 0x00, 0x64, // SET(AS100)
+            0x01, 0x00,                         // SET()
+            0x02, 0x00,                         // SEQUENCE()
+            0x01, 0x01, 0x00, 0x00, 0x00, 0x65  // SET(AS101)
+
+        ];
+        let asp = unsafe { AsPath::from_octets_unchecked(&raw) };
+        assert_eq!(
+            asp.to_string(),
+            "AS_SET(AS100), AS_SET(), AS_SEQUENCE(), AS_SET(AS101)"
+            );
+        assert_eq!(asp.hops().count(), 4);
+
     }
 
 }
