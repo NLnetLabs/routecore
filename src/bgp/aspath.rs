@@ -226,6 +226,17 @@ impl<Octs: AsRef<[u8]>> AsPath<Octs> {
         AsPath { octets }
     }
 
+    /// Create an AsPath from `octets` representing a legacy 2-octet ASN based
+    /// AS path.
+    ///
+    /// This method parses the 2-octet wireformat and creates (an owned)
+    /// 4-octet representation in forms of a `AsPath<Vec<u8>>`.
+    ///
+    /// # Safety
+    /// 
+    /// This assumes the caller has verified the `octets` passed in validly
+    /// represent an AS Path. Calling methods on the resulting `AsPath` will
+    /// panic if that is not the case.
     pub unsafe fn from_octets_unchecked_legacy(
         octets: Octs
     ) -> AsPath<Vec<u8>> {
