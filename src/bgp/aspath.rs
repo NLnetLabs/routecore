@@ -72,8 +72,9 @@ pub struct Segment<Octs> {
 
 impl Segment<Vec<u8>> {
     pub fn new_set(asns: impl IntoIterator<Item = Asn>) -> Self {
-        let mut set = vec![];
-        for a in asns.into_iter().map(|a| a.to_raw()) {
+        let iter = asns.into_iter();
+        let mut set = Vec::with_capacity(iter.size_hint().0);
+        for a in iter.map(|a| a.to_raw()) {
             set.extend_from_slice(&a);
         }
 
@@ -81,8 +82,9 @@ impl Segment<Vec<u8>> {
     }
 
     pub fn new_confed_set(asns: impl IntoIterator<Item = Asn>) -> Self {
-        let mut set = vec![];
-        for a in asns.into_iter().map(|a| a.to_raw()) {
+        let iter = asns.into_iter();
+        let mut set = Vec::with_capacity(iter.size_hint().0);
+        for a in iter.map(|a| a.to_raw()) {
             set.extend_from_slice(&a);
         }
 
@@ -90,12 +92,13 @@ impl Segment<Vec<u8>> {
     }
 
     pub fn new_confed_sequence(asns: impl IntoIterator<Item = Asn>) -> Self {
-        let mut set = vec![];
-        for a in asns.into_iter().map(|a| a.to_raw()) {
-            set.extend_from_slice(&a);
+        let iter = asns.into_iter();
+        let mut seq = Vec::with_capacity(iter.size_hint().0);
+        for a in iter.map(|a| a.to_raw()) {
+            seq.extend_from_slice(&a);
         }
 
-        Segment { stype: SegmentType::ConfedSequence, octets: set }
+        Segment { stype: SegmentType::ConfedSequence, octets: seq }
     }
 }
 
