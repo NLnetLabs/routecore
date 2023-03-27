@@ -943,6 +943,7 @@ mod test_serde {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashSet;
 
     #[test]
     fn asn() {
@@ -964,6 +965,58 @@ mod tests {
         assert_eq!("".parse::<Asn>(), Err(ParseAsnError));
         assert_eq!("-1234".parse::<Asn>(), Err(ParseAsnError));
         assert_eq!("4294967296".parse::<Asn>(), Err(ParseAsnError));
+    }
+
+
+    //--- SmallAsnSet
+
+    // Checks that our set operation does the same as the same on
+    // HashSet<Asn>.
+    macro_rules! check_set_fn {
+        ( $fn:ident, $left:expr, $right:expr $(,)? ) => {{
+            let left = Vec::from_iter($left.into_iter().map(Asn::from_u32));
+            let right = Vec::from_iter($right.into_iter().map(Asn::from_u32));
+
+            let set_fn = {
+                let left = SmallAsnSet::from_iter(
+                    left.clone().into_iter()
+                );
+                let right = SmallAsnSet::from_iter(
+                    right.clone().into_iter()
+                );
+                left.$fn(&right).collect::<HashSet<Asn>>()
+            };
+            let hash_fn: HashSet<Asn> = {
+                let left: HashSet<Asn> = HashSet::from_iter(
+                    left.clone().into_iter()
+                );
+                let right: HashSet<Asn> = HashSet::from_iter(
+                    right.clone().into_iter()
+                );
+                left.$fn(&right).cloned().collect()
+            };
+            assert_eq!(set_fn, hash_fn);
+        }}
+    }
+
+    macro_rules! check_all_set_fns {
+        ( $left:expr, $right:expr $(,)? ) => {{
+            check_set_fn!(difference, $left, $right);
+            check_set_fn!(symmetric_difference, $left, $right);
+            check_set_fn!(intersection, $left, $right);
+            check_set_fn!(union, $left, $right);
+        }}
+    }
+
+    #[test]
+    fn small_set_operations() {
+        check_all_set_fns!([0, 1, 2, 3], [0, 1, 2, 3]);
+        check_all_set_fns!([0, 1, 2], [0, 1, 2, 3]);
+        check_all_set_fns!([0, 1, 2, 3], [0, 1, 2]);
+        check_all_set_fns!([0, 1, 2, 3], [0, 1, 2]);
+        check_all_set_fns!([], []);
+        check_all_set_fns!([1, 2, 3], []);
+        check_all_set_fns!([], [1, 2, 3]);
     }
 
     #[test]
