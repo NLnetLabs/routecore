@@ -377,7 +377,7 @@ impl<'a> Iterator for SmallSetDifference<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
-            match (self.left.peek(),self. right.peek()) {
+            match (self.left.peek(), self.right.peek()) {
                 (None, _) => return None,
                 (Some(_), None) => return self.left.next(),
                 (Some(left), Some(right)) => {
