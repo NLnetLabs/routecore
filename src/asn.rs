@@ -381,7 +381,7 @@ impl<'a> Iterator for SmallSetDifference<'a> {
                 (None, _) => return None,
                 (Some(_), None) => return self.left.next(),
                 (Some(left), Some(right)) => {
-                    match left.cmp(&right) {
+                    match left.cmp(right) {
                         Ordering::Less => return self.left.next(),
                         Ordering::Equal => {
                             let _ = self.left.next();
@@ -415,7 +415,7 @@ impl<'a> Iterator for SmallSetSymmetricDifference<'a> {
                 (Some(_), None) => return self.left.next(),
                 (None, Some(_)) => return self.right.next(),
                 (Some(left), Some(right)) => {
-                    match left.cmp(&right) {
+                    match left.cmp(right) {
                         Ordering::Equal => {
                             let _ = self.left.next();
                             let _ = self.right.next();
@@ -445,7 +445,7 @@ impl<'a> Iterator for SmallSetIntersection<'a> {
             match (self.left.peek(),self. right.peek()) {
                 (None, _) | (_, None) => return None,
                 (Some(left), Some(right)) => {
-                    match left.cmp(&right) {
+                    match left.cmp(right) {
                         Ordering::Equal => {
                             let _ = self.left.next();
                             return self.right.next()
@@ -480,7 +480,7 @@ impl<'a> Iterator for SmallSetUnion<'a> {
             (Some(_), None) => self.left.next(),
             (None, Some(_)) => self.right.next(),
             (Some(left), Some(right)) => {
-                match left.cmp(&right) {
+                match left.cmp(right) {
                     Ordering::Less => self.left.next(),
                     Ordering::Equal => {
                         let _ = self.left.next();
