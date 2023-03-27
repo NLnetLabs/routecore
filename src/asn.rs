@@ -1,8 +1,10 @@
 //! Types for Autonomous Systems Numbers (ASN) and ASN collections
 
-use std::str::FromStr;
+use std::{error, fmt, iter, ops, slice};
+use std::cmp::Ordering;
 use std::convert::{TryFrom, TryInto};
-use std::{error, fmt, ops};
+use std::str::FromStr;
+use std::iter::Peekable;
 
 #[cfg(feature = "bcder")]
 use bcder::decode::{self, DecodeError, Source};
@@ -273,6 +275,230 @@ impl fmt::Display for Asn {
         write!(f, "AS{}", self.0)
     }
 }
+
+
+//------------ SmallAsnSet --------------------------------------------------
+
+/// A relatively small set of ASNs.
+///
+/// This type is only efficient if the amount of ASNs in it is relatively
+/// small as it is represented internally by an ordered vec of ASNs to avoid
+/// memory overhead.
+#[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct SmallAsnSet(Vec<Asn>);
+
+impl SmallAsnSet {
+    pub fn iter(&self) -> SmallSetIter {
+        self.0.iter().cloned()
+    }
+
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    pub fn difference<'a>(
+        &'a self, other: &'a Self
+    ) -> SmallSetDifference<'a> {
+        SmallSetDifference {
+            left: self.iter().peekable(),
+            right: other.iter().peekable(),
+        }
+    }
+
+    pub fn symmetric_difference<'a>(
+        &'a self, other: &'a Self
+    ) -> SmallSetSymmetricDifference<'a> {
+        SmallSetSymmetricDifference {
+            left: self.iter().peekable(),
+            right: other.iter().peekable(),
+        }
+    }
+
+    pub fn intersection<'a>(
+        &'a self, other: &'a Self
+    ) -> SmallSetIntersection<'a> {
+        SmallSetIntersection {
+            left: self.iter().peekable(),
+            right: other.iter().peekable(),
+        }
+    }
+
+    pub fn union<'a>(&'a self, other: &'a Self) -> SmallSetUnion<'a> {
+        SmallSetUnion {
+            left: self.iter().peekable(),
+            right: other.iter().peekable(),
+        }
+    }
+
+    pub fn contains(&self, asn: Asn) -> bool {
+        self.0.binary_search(&asn).is_ok()
+    }
+
+    // Missing: is_disjoint, is_subset, is_superset, insert, remove,
+}
+
+
+impl iter::FromIterator<Asn> for SmallAsnSet {
+    fn from_iter<T: IntoIterator<Item = Asn>>(iter: T) -> Self {
+        let mut res = Self(iter.into_iter().collect());
+        res.0.sort();
+        res
+    }
+}
+
+impl<'a> IntoIterator for &'a SmallAsnSet {
+    type Item = Asn;
+    type IntoIter = SmallSetIter<'a>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter().cloned()
+    }
+}
+
+
+//------------ SmallSetIter --------------------------------------------------
+
+pub type SmallSetIter<'a> = iter::Cloned<slice::Iter<'a, Asn>>;
+
+
+//------------ SmallSetDifference --------------------------------------------
+
+pub struct SmallSetDifference<'a> {
+    left: Peekable<SmallSetIter<'a>>,
+    right: Peekable<SmallSetIter<'a>>,
+}
+
+impl<'a> Iterator for SmallSetDifference<'a> {
+    type Item = Asn;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            match (self.left.peek(),self. right.peek()) {
+                (None, _) => return None,
+                (Some(_), None) => return self.left.next(),
+                (Some(left), Some(right)) => {
+                    match left.cmp(&right) {
+                        Ordering::Less => return self.left.next(),
+                        Ordering::Equal => {
+                            let _ = self.left.next();
+                            let _ = self.right.next();
+                        }
+                        Ordering::Greater => {
+                            let _ = self.right.next();
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+
+//------------ SmallSetSymmetricDifference -----------------------------------
+
+pub struct SmallSetSymmetricDifference<'a> {
+    left: Peekable<SmallSetIter<'a>>,
+    right: Peekable<SmallSetIter<'a>>,
+}
+
+impl<'a> Iterator for SmallSetSymmetricDifference<'a> {
+    type Item = Asn;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            match (self.left.peek(),self. right.peek()) {
+                (None, None) => return None,
+                (Some(_), None) => return self.left.next(),
+                (None, Some(_)) => return self.right.next(),
+                (Some(left), Some(right)) => {
+                    match left.cmp(&right) {
+                        Ordering::Equal => {
+                            let _ = self.left.next();
+                            let _ = self.right.next();
+                        }
+                        Ordering::Less => return self.left.next(),
+                        Ordering::Greater => return self.right.next(),
+                    }
+                }
+            }
+        }
+    }
+}
+
+
+//------------ SmallSetIntersection ------------------------------------------
+
+pub struct SmallSetIntersection<'a> {
+    left: Peekable<SmallSetIter<'a>>,
+    right: Peekable<SmallSetIter<'a>>,
+}
+
+impl<'a> Iterator for SmallSetIntersection<'a> {
+    type Item = Asn;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            match (self.left.peek(),self. right.peek()) {
+                (None, _) | (_, None) => return None,
+                (Some(left), Some(right)) => {
+                    match left.cmp(&right) {
+                        Ordering::Equal => {
+                            let _ = self.left.next();
+                            return self.right.next()
+                        }
+                        Ordering::Less => {
+                            let _ = self.left.next();
+                        }
+                        Ordering::Greater => {
+                            let _ = self.right.next();
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+
+//------------ SmallSetUnion -------------------------------------------------
+
+pub struct SmallSetUnion<'a> {
+    left: Peekable<SmallSetIter<'a>>,
+    right: Peekable<SmallSetIter<'a>>,
+}
+
+impl<'a> Iterator for SmallSetUnion<'a> {
+    type Item = Asn;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match (self.left.peek(),self. right.peek()) {
+            (None, None) => None,
+            (Some(_), None) => self.left.next(),
+            (None, Some(_)) => self.right.next(),
+            (Some(left), Some(right)) => {
+                match left.cmp(&right) {
+                    Ordering::Less => self.left.next(),
+                    Ordering::Equal => {
+                        let _ = self.left.next();
+                        self.right.next()
+                    }
+                    Ordering::Greater => {
+                        self.right.next()
+                    }
+                }
+            }
+        }
+    }
+}
+
+
+//============ AS PATH =======================================================
+//
+// This is being moved to its own module in `bgp` can can be removed here.
 
 
 //------------ PathSegment ---------------------------------------------------
