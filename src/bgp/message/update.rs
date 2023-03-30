@@ -2272,9 +2272,20 @@ mod tests {
             panic!("AS4PATH path attribute not found")
         }
 
-        eprintln!("{:?}", update.session_config.has_four_octet_asn());
-        eprintln!("{:?}", update.aspath());
-        eprintln!("{:?}", update.as4path());
+        assert_eq!(
+            update.aspath().unwrap().hops().collect::<Vec<_>>(),
+            AsPath::vec_from_asns([
+                0xfbf0, 0xfbf1, 0xfbf2, 0xfbf3, 0x5ba0, 0x5ba0,
+                0x5ba0, 0x5ba0, 0x5ba0, 0x5ba0
+            ]).hops().collect::<Vec<_>>(),
+        );
+        assert_eq!(
+            update.as4path().unwrap().hops().collect::<Vec<_>>(),
+            AsPath::vec_from_asns([
+                0xfbf0, 0xfbf1, 0xfbf2, 0xfbf3, 0x10000, 0x10000,
+                0x10000, 0x10000, 0x10001, 0x1000a,
+            ]).hops().collect::<Vec<_>>(),
+        );
     }
 
     //--- Communities ----------------------------------------------------
