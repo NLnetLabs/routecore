@@ -56,7 +56,7 @@ pub enum Component<Octets> {
 }
 
 impl NumericOp {
-    fn parse<R: Octets>(parser: &mut Parser<'_, R>)
+    fn parse<R: Octets + ?Sized>(parser: &mut Parser<'_, R>)
         -> Result<Self, ParseError>
     {
         let op = parser.parse_u8()?;
@@ -72,7 +72,7 @@ impl NumericOp {
 }
 
 impl BitmaskOp {
-    fn parse<R: Octets>(parser: &mut Parser<'_, R>)
+    fn parse<R: Octets + ?Sized>(parser: &mut Parser<'_, R>)
         -> Result<Self, ParseError>
     {
         let op = parser.parse_u8()?;
@@ -95,7 +95,7 @@ fn prefix_bits_to_bytes(bits: u8) -> usize {
     }
 }
 
-fn parse_prefix<R: Octets>(
+fn parse_prefix<R: Octets + ?Sized>(
     parser: &mut Parser<'_, R>,
     afi: AFI,
     prefix_bits: u8
@@ -142,7 +142,7 @@ impl<Octs: Octets> Component<Octs> {
     pub(crate) fn parse<'a, R>(parser: &mut Parser<'a, R>)
         -> Result<Self, ParseError>
     where
-        R: Octets<Range<'a> = Octs>
+        R: Octets<Range<'a> = Octs> + ?Sized
     {
         let typ = parser.parse_u8()?;
         let res = match typ {
