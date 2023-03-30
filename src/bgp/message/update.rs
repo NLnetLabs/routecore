@@ -261,29 +261,19 @@ impl<Octs: Octets> UpdateMessage<Octs> {
 
 
     /// Returns the AS_PATH path attribute.
-    ///
-    /// If the AS4_PATH attribute is present in this message, that is returned
-    /// in favour of the AS_PATH which will contain 2 byte ASNs.
+    //
+    // NOTE: This is now the AS PATH and only the AS_PATH.
     pub fn aspath(&self) -> Option<AsPath<Octs::Range<'_>>> {
-        // In all cases we know of, the AS4_PATH attribute contains
-        // the entire AS_PATH with all the 4-octet ASNs. Instead of
-        // replacing the AS_TRANS ASNs in AS_PATH, we can simply
-        // return the AS4_PATH. 
-        // This also saves us from perhaps misguessing the 2-vs-4
-        // octet size of the AS_PATH, as the AS4_PATH is always 4-octet
-        // anyway.
-        self.as4path().or_else(||
-            self.path_attributes().into_iter().find(|pa|
-                pa.type_code() == PathAttributeType::AsPath
-            ).map(|pa| {
-                unsafe {
-                    AsPath::new_unchecked(
-                        pa.into_value(),
-                        self.session_config.has_four_octet_asn(),
-                    )
-                }
-            })
-        )
+        self.path_attributes().into_iter().find(|pa|
+            pa.type_code() == PathAttributeType::AsPath
+        ).map(|pa| {
+            unsafe {
+                AsPath::new_unchecked(
+                    pa.into_value(),
+                    self.session_config.has_four_octet_asn(),
+                )
+            }
+        })
     }
 
     /// Returns the NEXT_HOP path attribute, or the equivalent from
@@ -2282,6 +2272,9 @@ mod tests {
             panic!("AS4PATH path attribute not found")
         }
 
+        eprintln!("{:?}", update.session_config.has_four_octet_asn());
+        eprintln!("{:?}", update.aspath());
+        eprintln!("{:?}", update.as4path());
     }
 
     //--- Communities ----------------------------------------------------
