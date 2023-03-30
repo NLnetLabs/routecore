@@ -15,8 +15,8 @@ impl<Octs: Octets> KeepaliveMessage<Octs> {
     }
 
     pub fn check(octets: &Octs) -> Result<(), ParseError> {
-        let mut parser = Parser::from_ref(octets);
-        Header::<Octs>::check(&mut parser)?;
+        let mut parser = Parser::from_ref(octets.as_ref());
+        Header::check(&mut parser)?;
         if parser.remaining() > 0 {
             return Err(ParseError::form_error("KEEPALIVE of >19 bytes"));
         }

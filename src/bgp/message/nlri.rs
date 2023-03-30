@@ -16,7 +16,7 @@ use serde::{Serialize, Deserialize};
 
 //--- NextHop in MP_REACH_NLRI -----------------------------------------------
 impl NextHop {
-    pub fn check<R: Octets>(parser: &mut Parser<'_, R>, afi: AFI, safi: SAFI)
+    pub fn check(parser: &mut Parser<[u8]>, afi: AFI, safi: SAFI)
         -> Result<(), ParseError>
     {
         let len = parser.parse_u8()?;
@@ -115,7 +115,7 @@ impl NextHop {
 pub struct PathId(u32);
 
 impl PathId {
-    pub fn check<R: Octets>(parser: &mut Parser<'_, R>)
+    pub fn check(parser: &mut Parser<[u8]>)
         -> Result<(), ParseError> 
     {
         parser.advance(4)?;
@@ -131,7 +131,7 @@ impl PathId {
 
 /// MPLS labels, part of [`MplsNlri`] and [`MplsVpnNlri`].
 #[derive(Copy, Clone, Eq, Debug, PartialEq)]
-pub struct Labels<Octets> {
+pub struct Labels<Octets: ?Sized> {
     octets: Octets
 }
 
@@ -172,7 +172,7 @@ impl<Octs: Octets> Labels<Octs> {
     // SessionConfig...
     fn parse<'a, R>(parser: &mut Parser<'a, R>) -> Result<Self, ParseError>
     where
-        R: Octets<Range<'a> = Octs>
+        R: Octets<Range<'a> = Octs> + ?Sized,
     {
         let pos = parser.pos();
         
@@ -214,7 +214,7 @@ pub struct RouteDistinguisher {
 }
 
 impl RouteDistinguisher {
-    pub fn check<R: Octets>(parser: &mut Parser<'_, R>)
+    pub fn check(parser: &mut Parser<[u8]>)
         -> Result<(), ParseError>
     {
         parser.advance(8)?;
@@ -440,8 +440,8 @@ fn prefix_bits_to_bytes(bits: u8) -> usize {
     }
 }
 
-fn check_prefix<R: Octets>(
-    parser: &mut Parser<'_, R>,
+fn check_prefix(
+    parser: &mut Parser<[u8]>,
     prefix_bits: u8,
     afi: AFI
 ) -> Result<(), ParseError> {
@@ -510,8 +510,8 @@ fn parse_prefix<R: Octets>(parser: &mut Parser<'_, R>, prefix_bits: u8, afi: AFI
 }
 
 impl BasicNlri {
-    pub fn check<R: Octets>(
-        parser: &mut Parser<'_, R>,
+    pub fn check(
+        parser: &mut Parser<[u8]>,
         config: SessionConfig,
         afi: AFI
     ) -> Result<(), ParseError> {
@@ -546,9 +546,9 @@ impl BasicNlri {
     }
 }
 
-impl<Octs: Octets> MplsVpnNlri<Octs> {
-    pub fn check<R: Octets>(
-        parser: &mut Parser<'_, R>,
+impl MplsVpnNlri<()> {
+    pub fn check(
+        parser: &mut Parser<[u8]>,
         config: SessionConfig,
         afi: AFI
         ) -> Result<(), ParseError>
@@ -577,7 +577,9 @@ impl<Octs: Octets> MplsVpnNlri<Octs> {
 
         Ok(())
     }
+}
 
+impl<Octs: Octets> MplsVpnNlri<Octs> {
     pub fn parse<'a, R>(
         parser: &mut Parser<'a, R>,
         config: SessionConfig,
@@ -613,9 +615,9 @@ impl<Octs: Octets> MplsVpnNlri<Octs> {
     }
 }
 
-impl<Octs: Octets> MplsNlri<Octs> {
-    pub fn check<R: Octets>(
-        parser: &mut Parser<'_, R>,
+impl MplsNlri<()> {
+    pub fn check(
+        parser: &mut Parser<[u8]>,
         config: SessionConfig,
         afi: AFI) -> Result<(), ParseError>
     {
@@ -638,7 +640,9 @@ impl<Octs: Octets> MplsNlri<Octs> {
         check_prefix(parser, prefix_bits, afi)?;
         Ok(())
     }
+}
 
+impl<Octs: Octets> MplsNlri<Octs> {
     pub fn parse<'a, R>(
         parser: &mut Parser<'a, R>,
         config: SessionConfig,
@@ -676,7 +680,7 @@ impl<Octs: Octets> MplsNlri<Octs> {
 }
 
 impl VplsNlri {
-    pub fn check<R: Octets>(parser: &mut Parser<'_, R>)
+    pub fn check(parser: &mut Parser<[u8]>)
         -> Result<(), ParseError>
     {
         parser.advance(2)?; // length, u16
@@ -710,8 +714,8 @@ impl VplsNlri {
     }
 }
 
-impl<Octs: Octets> FlowSpecNlri<Octs> {
-    pub fn check<R: Octets>(parser: &mut Parser<'_, R>)
+impl FlowSpecNlri<()> {
+    pub fn check(parser: &mut Parser<[u8]>)
         -> Result<(), ParseError>
     {
         let len1 = parser.parse_u8()?;
@@ -729,7 +733,9 @@ impl<Octs: Octets> FlowSpecNlri<Octs> {
 
         Ok(())
     }
+}
 
+impl<Octs: Octets> FlowSpecNlri<Octs> {
     pub fn parse<'a, R>(parser: &mut Parser<'a, R>)
         -> Result<Self, ParseError>
     where
@@ -760,8 +766,8 @@ impl<Octs: Octets> FlowSpecNlri<Octs> {
     }
 }
 
-impl<Octs: Octets> RouteTargetNlri<Octs> {
-    pub fn check<R: Octets>(parser: &mut Parser<'_, R>)
+impl RouteTargetNlri<()> {
+    pub fn check(parser: &mut Parser<[u8]>)
         -> Result<(), ParseError>
     {
         let prefix_bits = parser.parse_u8()?;
@@ -770,7 +776,9 @@ impl<Octs: Octets> RouteTargetNlri<Octs> {
 
         Ok(())
     }
+}
 
+impl<Octs: Octets> RouteTargetNlri<Octs> {
     pub fn parse<'a, R>(parser: &mut Parser<'a, R>)
         -> Result<Self, ParseError>
     where

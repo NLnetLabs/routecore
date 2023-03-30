@@ -5,15 +5,12 @@
 use crate::asn::Asn;
 use octseq::{
     EmptyBuilder, FromBuilder, Octets, OctetsBuilder, OctetsFrom, OctetsInto,
-    Parser,
+    Parser, ShortInput,
 };
 use std::{error, fmt};
 use core::ops::{Index, IndexMut};
 use std::slice::SliceIndex;
 
-
-
-const FOUR_OCTETS: usize = 4;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -67,7 +64,14 @@ impl fmt::Display for SegmentType {
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub struct Segment<Octs> {
     stype: SegmentType,
+    four_byte_asns: bool,
     octets: Octs,
+}
+
+impl<Octs> Segment<Octs> {
+    fn new(stype: SegmentType, four_byte_asns: bool, octets: Octs) -> Self {
+        Segment { stype, four_byte_asns, octets }
+    }
 }
 
 impl Segment<Vec<u8>> {
@@ -77,8 +81,7 @@ impl Segment<Vec<u8>> {
         for a in iter.map(|a| a.to_raw()) {
             set.extend_from_slice(&a);
         }
-
-        Segment { stype: SegmentType::Set, octets: set }
+        Segment::new(SegmentType::Set, true, set)
     }
 
     pub fn new_confed_set(asns: impl IntoIterator<Item = Asn>) -> Self {
@@ -87,8 +90,7 @@ impl Segment<Vec<u8>> {
         for a in iter.map(|a| a.to_raw()) {
             set.extend_from_slice(&a);
         }
-
-        Segment { stype: SegmentType::ConfedSet, octets: set }
+        Segment::new(SegmentType::ConfedSet, true, set)
     }
 
     pub fn new_confed_sequence(asns: impl IntoIterator<Item = Asn>) -> Self {
@@ -97,26 +99,40 @@ impl Segment<Vec<u8>> {
         for a in iter.map(|a| a.to_raw()) {
             seq.extend_from_slice(&a);
         }
-
-        Segment { stype: SegmentType::ConfedSequence, octets: seq }
+        Segment::new(SegmentType::ConfedSequence, true, seq)
     }
 }
 
-impl<Octs: Octets> Segment<Octs> {
+impl<Octs: AsRef<[u8]>> Segment<Octs> {
     pub fn asns(&self) -> Asns<Octs> {
-        Asns::new(&self.octets)
+        Asns::new(Parser::from_ref(&self.octets), self.four_byte_asns)
     }
 
+    pub fn asn_count(&self) -> u8 {
+        u8::try_from(
+            self.octets.as_ref().len() / asn_size(self.four_byte_asns)
+        ).expect("long AS path segment")
+    }
+
+    /// Append the wire-format of the segment to the target.
+    ///
+    /// This method will always produce four-byte ASNs.
     pub fn compose<Target: OctetsBuilder>(
-        &self, target: &mut Target
-    ) -> Result<(), Target::AppendError> {
+        &self, target: &mut Target,
+    ) -> Result<(), Target::AppendError>
+    where Octs: Octets {
         target.append_slice(
-            &[self.stype.into(), 
-            u8::try_from(self.octets.as_ref().len() / FOUR_OCTETS)
-                .expect("long sequence")
+            &[
+                self.stype.into(),
+                self.asn_count(),
             ]
         )?;
-        target.append_slice(self.octets.as_ref())?;
+        if self.four_byte_asns {
+            target.append_slice(self.octets.as_ref())?;
+        }
+        else {
+            self.asns().try_for_each(|asn| asn.compose(target))?;
+        }
         Ok(())
     }
 }
@@ -128,10 +144,11 @@ impl<Source, Octs> OctetsFrom<Segment<Source>> for Segment<Octs>
     type Error = Octs::Error;
 
     fn try_octets_from(source: Segment<Source>) -> Result<Self, Self::Error> {
-        Ok(Segment {
-            stype: source.stype, 
-            octets: Octs::try_octets_from(source.octets)?
-        })
+        Ok(Segment::new(
+            source.stype,
+            source.four_byte_asns,
+            Octs::try_octets_from(source.octets)?
+        ))
     }
 }
 
@@ -147,6 +164,14 @@ impl<Octs: Octets> fmt::Display for Segment<Octs> {
             }
         }
         write!(f, ")")
+    }
+}
+
+impl<'a, Octs: 'a + Octets> IntoIterator for &'a Segment<Octs> {
+    type Item = Asn;
+    type IntoIter = Asns<'a, Octs>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.asns()
     }
 }
 
@@ -212,12 +237,27 @@ impl<Octs: Octets> fmt::Display for Hop<Octs> {
 
 
 //--- AsPath -----------------------------------------------------------------
+
 #[derive(Debug)]
 pub struct AsPath<Octs> {
+    /// The octets of the AS_PATH attribute.
     octets: Octs,
+
+    /// Does `octets` contain four byte ASNs?
+    four_byte_asns: bool,
 }
 
 impl<Octs: AsRef<[u8]>> AsPath<Octs> {
+    pub fn new(
+        octets: Octs,
+        four_byte_asns: bool,
+    ) -> Result<Self, ShortInput> {
+        AsPath::check(octets.as_ref(), four_byte_asns)?;
+        Ok(unsafe {
+            Self::new_unchecked(octets, four_byte_asns)
+        })
+    }
+
     /// Create an AsPath from `octets` without performing validity checks. 
     ///
     /// # Safety
@@ -225,48 +265,37 @@ impl<Octs: AsRef<[u8]>> AsPath<Octs> {
     /// This assumes the caller has verified the `octets` passed in validly
     /// represent an AS Path. Calling methods on the resulting `AsPath` will
     /// panic if that is not the case.
-    pub unsafe fn from_octets_unchecked(octets: Octs) -> Self {
-        AsPath { octets }
-    }
-
-    /// Create an AsPath from `octets` representing a legacy 2-octet ASN based
-    /// AS path.
-    ///
-    /// This method parses the 2-octet wireformat and creates (an owned)
-    /// 4-octet representation in forms of a `AsPath<Vec<u8>>`.
-    ///
-    /// # Safety
-    /// 
-    /// This assumes the caller has verified the `octets` passed in validly
-    /// represent an AS Path. Calling methods on the resulting `AsPath` will
-    /// panic if that is not the case.
-    pub unsafe fn from_octets_unchecked_legacy(
-        octets: Octs
-    ) -> AsPath<Vec<u8>> {
-        let mut path = Vec::with_capacity(octets.as_ref().len() * 2 );
-        let mut parser = Parser::from_ref(&octets);
-        while parser.remaining() > 0 {
-            let stype = parser.parse_u8().expect("parsed before");
-            let len = parser.parse_u8().expect("parsed before");
-            path.extend_from_slice(&[stype, len]);
-            let mut four_octets = [0u8; 4];
-            for _ in 0..len {
-                parser.parse_buf(&mut four_octets[2..4]).expect("parsed before");
-                path.extend_from_slice(&four_octets);
-            }
-        }
-
-        AsPath { octets: path }
+    pub unsafe fn new_unchecked(
+        octets: Octs,
+        four_byte_asns: bool,
+    ) -> Self {
+        AsPath { octets, four_byte_asns }
     }
 }
 
+impl AsPath<()> {
+    pub fn check(
+        octets: &[u8], four_byte_asns: bool
+    ) -> Result<(), ShortInput> {
+        let mut parser = Parser::from_ref(octets);
+        while parser.remaining() > 0 {
+            // XXX Should this error on an unknown segment type?
+            let _ = parser.advance(1)?; // segment type
+            let len = usize::from(parser.parse_u8()?); // segment length
+            parser.advance(len * asn_size(four_byte_asns))?; // ASNs.
+        }
+        Ok(())
+    }
+}
+
+
 impl<Octs: Octets> AsPath<Octs> {
     pub fn hops(&self) -> PathHops<Octs> {
-        PathHops::new(&self.octets)
+        PathHops::new(&self.octets, self.four_byte_asns)
     }
     
     pub fn segments(&self) -> PathSegments<Octs> {
-        PathSegments::new(&self.octets)
+        PathSegments::new(&self.octets, self.four_byte_asns)
     }
 
     pub fn origin(&self) -> Option<Hop<Octs::Range<'_>>> {
@@ -337,9 +366,9 @@ pub struct PathHops<'a, Octs> {
 }
 
 impl<'a, Octs: AsRef<[u8]>> PathHops<'a, Octs> {
-    fn new(octets: &'a Octs) -> Self {
+    fn new(octets: &'a Octs, four_byte_asns: bool) -> Self {
         PathHops {
-            segments: PathSegments::new(octets),
+            segments: PathSegments::new(octets, four_byte_asns),
             current: None,
         }
     }
@@ -354,85 +383,87 @@ impl<'a, Octs: Octets> Iterator for PathHops<'a, Octs> {
             }
             self.current = None
         }
-        if let Some((stype, mut parser)) = self.segments.next_pair() {
+        if let Some((stype, mut asns)) = self.segments.next_asns() {
             if stype == SegmentType::Sequence {
-                let mut asn_iter = Asns { parser };
-                if let Some(asn) = asn_iter.next() {
-                    self.current = Some(asn_iter);
-                    return Some(Hop::Asn(asn))
-                } else {
+                if let Some(asn) = asns.next() {
+                    self.current = Some(asns);
+                    Some(Hop::Asn(asn))
+                }
+                else {
                     // For consistency with the other segment types, we do
                     // return an empty Sequence if encountered, even though
                     // such a thing is meaningless in an AS_PATH.
-                    return Some(Hop::Segment(Segment {
-                        stype: SegmentType::Sequence,
-                        octets: parser.parse_octets(0).expect("no-op")
-                    }));
+                    Some(Hop::Segment(asns.into_segment(stype)))
                 }
-            } else {
-                return Some(Hop::Segment(Segment {
-                    stype,
-                    octets: parser.parse_octets(parser.remaining())
-                        .expect("parsed before")
-                }))
+            }
+            else {
+                Some(Hop::Segment(asns.into_segment(stype)))
             }
         }
-
-
-        None
+        else {
+            None
+        }
     }
 }
 
 //--- PathSegments --------------------------------------------------------
 /// Iterates over Segments in a Path.
 pub struct PathSegments<'a, Octs> {
-    parser: Parser<'a, Octs>
+    parser: Parser<'a, Octs>,
+    four_byte_asns: bool,
 }
 
 impl<'a, Octs: AsRef<[u8]>> PathSegments<'a, Octs> {
-    fn new(octets: &'a Octs) -> Self {
-        PathSegments { parser: Parser::from_ref(octets) }
+    fn new(octets: &'a Octs, four_byte_asns: bool) -> Self {
+        Self { parser: Parser::from_ref(octets), four_byte_asns }
     }
 }
 
 impl<'a, Octs: Octets> PathSegments<'a, Octs> {
-    fn next_pair(&mut self) -> Option<(SegmentType, Parser<'a, Octs>)> {
+    fn next_asns(&mut self) -> Option<(SegmentType, Asns<'a, Octs>)> {
         if self.parser.remaining() == 0 {
             return None;
         }
         let stype = self.parser.parse_u8().expect("parsed before")
             .try_into().expect("illegally encoded AS path");
-
-        let len = self.parser.parse_u8().expect("parsed before");
-        // XXX 4 for 32bit ASNs, how can we support 16bit ASNs nicely?
-        let parser = self.parser.parse_parser(len as usize * FOUR_OCTETS).expect("parsed before");
-        Some((stype, parser))
+        let len = usize::from(
+            self.parser.parse_u8().expect("parsed before")
+        ) * asn_size(self.four_byte_asns);
+        let parser = self.parser.parse_parser(len).expect("parsed before");
+        Some((stype, Asns::new(parser, self.four_byte_asns)))
     }
 }
 
 impl<'a, Octs: Octets> Iterator for PathSegments<'a, Octs> {
     type Item = Segment<Octs::Range<'a>>;
     fn next(&mut self) -> Option<Self::Item> {
-        if self.parser.remaining() == 0 {
-            return None;
-        }
-        let stype = self.parser.parse_u8().expect("parsed before")
-            .try_into().expect("illegally encoded AS path");
-
-        let len = self.parser.parse_u8().expect("parsed before");
-        // XXX 4 for 32bit ASNs, how can we support 16bit ASNs nicely?
-        let octets = self.parser.parse_octets(len as usize * FOUR_OCTETS).expect("parsed before");
-        Some(Segment { stype, octets } )
+        self.next_asns().map(|(stype, asns)| asns.into_segment(stype))
     }
 }
 
+
+//------------ Asns ----------------------------------------------------------
+
 /// Iterates over ASNs in a Segment.
 pub struct Asns<'a, Octs> {
-    parser: Parser<'a, Octs>
+    parser: Parser<'a, Octs>,
+    four_byte_asns: bool,
 }
-impl<'a, Octs: Octets> Asns<'a, Octs> {
-    fn new(octets: &'a Octs) -> Self {
-        Asns { parser: Parser::from_ref(octets) }
+impl<'a, Octs> Asns<'a, Octs> {
+    fn new(parser: Parser<'a, Octs>, four_byte_asns: bool) -> Self {
+        Asns { parser, four_byte_asns }
+    }
+
+    pub fn into_segment(
+        mut self, stype: SegmentType
+    ) -> Segment<Octs::Range<'a>>
+    where Octs: Octets {
+        Segment::new(
+            stype, self.four_byte_asns,
+            self.parser.parse_octets(
+                self.parser.remaining()
+            ).expect("parsed before")
+        )
     }
 }
 
@@ -442,16 +473,13 @@ impl<'a, Octs: Octets> Iterator for Asns<'a, Octs> {
         if self.parser.remaining() == 0 {
             return None
         }
-        let n = self.parser.parse_u32().expect("parsed before");
+        let n = if self.four_byte_asns {
+            self.parser.parse_u32().expect("parsed before")
+        }
+        else {
+            u32::from(self.parser.parse_u16().expect("parsed before"))
+        };
         Some(Asn::from(n))
-    }
-}
-
-impl<'a, Octs: 'a + Octets> IntoIterator for &'a Segment<Octs> {
-    type Item = Asn;
-    type IntoIter = Asns<'a, Octs>;
-    fn into_iter(self) -> Self::IntoIter {
-        Asns { parser: Parser::from_ref(&self.octets) }
     }
 }
 
@@ -560,7 +588,9 @@ impl HopPath {
     {
         let mut target = EmptyBuilder::empty();
         Self::compose_hops(&self.hops, &mut target)?;
-        Ok(unsafe { AsPath::from_octets_unchecked(Octs::from_builder(target)) })
+        Ok(unsafe {
+            AsPath::new_unchecked(Octs::from_builder(target), true)
+        })
     }
 
     fn compose_hops<Octs: Octets, Target: OctetsBuilder>(
@@ -686,6 +716,17 @@ impl fmt::Display for HopPath {
     }
 }
 
+//------------ Helper Functions ----------------------------------------------
+
+fn asn_size(four_byte_asns: bool) -> usize {
+    if four_byte_asns {
+        4
+    }
+    else {
+        2
+    }
+}
+
 //============ Error Types ===================================================
 
 //------------ InvalidSegmentTypeError ---------------------------------------
@@ -717,7 +758,7 @@ mod tests {
             0x24, 0x0d
         ];
 
-        let path = AsPath{ octets: &raw };
+        let path = AsPath::new(&raw, true).unwrap();
         assert_eq!(
             path.to_string(),
             "AS_SEQUENCE(AS2027, AS35280, AS263903, AS271373)"
@@ -737,7 +778,7 @@ mod tests {
             0x00, 0x04, 0x16, 0x0a
         ];
 
-        let path = AsPath{ octets: &raw };
+        let path = AsPath::new(&raw, true).unwrap();
         assert_eq!(
             path.to_string(),
             "AS_SEQUENCE(AS6447, AS38880, AS9002, AS12956, AS22927), \
@@ -859,7 +900,7 @@ mod tests {
             0x01, 0x01, 0x00, 0x00, 0x00, 0x65  // SET(AS101)
 
         ];
-        let asp = unsafe { AsPath::from_octets_unchecked(&raw) };
+        let asp = AsPath::new(&raw, true).unwrap();
         assert_eq!(
             asp.to_string(),
             "AS_SET(AS100), AS_SET(), AS_SEQUENCE(), AS_SET(AS101)"
@@ -874,7 +915,7 @@ mod tests {
             0x02, 0x02, 0x00, 0x66, 0x00, 0x65  // SET(AS102, AS101)
 
         ];
-        let asp = unsafe { AsPath::from_octets_unchecked_legacy(&raw) };
+        let asp = AsPath::new(&raw, false).unwrap();
         assert_eq!(
             asp.to_string(),
             "AS_SET(AS100), AS_SEQUENCE(AS102, AS101)"

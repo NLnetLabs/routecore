@@ -188,7 +188,7 @@ impl<Octs: Octets> TryFrom<Message<Octs>> for NotificationMessage<Octs> {
         
 /// BGP Message header.
 #[derive(Clone, Copy, Default)]
-pub struct Header<Octs: Octets>(Octs);
+pub struct Header<Octs>(Octs);
 
 impl<Octs: Octets + AsMut<[u8]>> Header<Octs> {
     pub fn set_type(&mut self, typ: MsgType) {
@@ -253,10 +253,10 @@ impl<Octs: Octets> Header<Octs> {
         let res = parser.parse_octets(19)?;
         Ok(Header(res))
     }
+}
 
-    pub fn check<R: Octets>(parser: &mut Parser<'_, R>)
-        -> Result<(), ParseError>
-    {
+impl Header<()> {
+    pub fn check(parser: &mut Parser<[u8]>) -> Result<(), ParseError> {
         Marker::check(parser)?;
         let len = parser.parse_u16()? as usize;
         if len != parser.len() {
@@ -271,7 +271,7 @@ impl<Octs: Octets> Header<Octs> {
 
 struct Marker;
 impl Marker {
-    fn check<R: Octets>(parser: &mut Parser<'_, R>)
+    fn check<R: Octets + ?Sized>(parser: &mut Parser<'_, R>)
         -> Result<(), ParseError>
     {
         let mut buf = [0u8; 16];
