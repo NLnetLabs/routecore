@@ -280,7 +280,7 @@ impl AsPath<()> {
         let mut parser = Parser::from_ref(octets);
         while parser.remaining() > 0 {
             // XXX Should this error on an unknown segment type?
-            let _ = parser.advance(1)?; // segment type
+            parser.advance(1)?; // segment type
             let len = usize::from(parser.parse_u8()?); // segment length
             parser.advance(len * asn_size(four_byte_asns))?; // ASNs.
         }
@@ -840,8 +840,8 @@ mod tests {
     fn contains() {
         let mut hp = HopPath::new();
         hp.prepend_arr([Asn::from_u32(10), Asn::from_u32(20)]);
-        assert!(hp.contains(&Hop::Asn(Asn::from_u32(10).into())));
-        assert!(!hp.contains(&Hop::Asn(Asn::from_u32(30).into())));
+        assert!(hp.contains(&Hop::Asn(Asn::from_u32(10))));
+        assert!(!hp.contains(&Hop::Asn(Asn::from_u32(30))));
     }
 
     #[test]
