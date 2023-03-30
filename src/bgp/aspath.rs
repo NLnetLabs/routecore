@@ -3,10 +3,9 @@
 //! Using Hop etc etc
 
 use crate::asn::Asn;
-use octseq::{
-    EmptyBuilder, FromBuilder, Octets, OctetsBuilder, OctetsFrom, OctetsInto,
-    Parser, ShortInput,
-};
+use octseq::builder::{infallible, EmptyBuilder, FromBuilder, OctetsBuilder};
+use octseq::octets::{Octets, OctetsFrom, OctetsInto};
+use octseq::parse::{Parser, ShortInput};
 use std::{error, fmt};
 use core::ops::{Index, IndexMut};
 use std::slice::SliceIndex;
@@ -273,6 +272,18 @@ impl<Octs: AsRef<[u8]>> AsPath<Octs> {
     }
 }
 
+impl AsPath<Vec<u8>> {
+    /// Creates a new path atop a vec from a sequence of ASNs.
+    pub fn vec_from_asns<Iter>(asns: Iter) -> Self
+    where Iter: IntoIterator, Iter::Item: Into<Asn> {
+        infallible(
+            HopPath::from(
+                asns.into_iter().map(Into::into).collect::<Vec<_>>()
+            ).to_as_path()
+        )
+    }
+}
+
 impl AsPath<()> {
     pub fn check(
         octets: &[u8], four_byte_asns: bool
@@ -484,8 +495,7 @@ impl<'a, Octs: Octets> Iterator for Asns<'a, Octs> {
 }
 
 
-//--- Building / composing ---------------------------------------------------
-
+//------------ HopPath -------------------------------------------------------
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct HopPath {
