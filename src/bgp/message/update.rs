@@ -1,6 +1,6 @@
 use crate::bgp::message::Header;
 use octseq::{Octets, Parser};
-use log::{debug, warn, error};
+use log::{debug, error, warn};
 
 use crate::asn::Asn;
 use crate::bgp::aspath::AsPath;
@@ -969,7 +969,7 @@ impl<'a> PathAttribute<'a, [u8]> {
                 parser.advance(len)?;
             },
             PathAttributeType::Unimplemented(_) => {
-                warn!("Unimplemented PA: {}", typecode);
+                debug!("Unimplemented PA: {}", typecode);
                 parser.advance(len)?;
             },
             //_ => {
@@ -1218,7 +1218,7 @@ impl<'a, Octs: Octets> PathAttribute<'a, Octs> {
                 // after the match, we do not need to do anything here.
             },
             PathAttributeType::Unimplemented(_) => {
-                warn!("Unimplemented PA: {}", typecode);
+                debug!("Unimplemented PA: {}", typecode);
                 parser.advance(len)?;
             },
             //_ => {
