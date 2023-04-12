@@ -6,7 +6,7 @@
 //! Secondly, `HopPath` is a (mutable) non-standard representation, comprised
 //! of `Hop`s rather than segments.
 //!
-//! See [`HopPath`](HopPath) for more details.
+//! See [`HopPath`] for more details.
 
 use core::ops::{Index, IndexMut};
 use std::slice::SliceIndex;
@@ -49,9 +49,9 @@ impl HopPath {
         Self { hops: vec![] }
     }
 
-    /// Returns the right-most `Hop` in the path, if any.
+    /// Returns the right-most [`Hop`] in the path, if any.
     ///
-    /// Note that this can be a `Segment` if the right-most Segment is not a
+    /// Note that this can be a [`Segment`] if the right-most Segment is not a
     /// Sequence.
     pub fn origin(&self) -> Option<&Hop<Vec<u8>>> {
         self.hops.last()
@@ -62,7 +62,7 @@ impl HopPath {
         self.hops.iter().any(|h| h == hop)
     }
 
-    /// Returns the number of `hop`s in this HopPath.
+    /// Returns the number of [`Hop`]s in this HopPath.
     ///
     /// Note that this counts AS_SETs, AS_CONFED_SEQUENCEs and AS_CONFED_SETs
     /// as a single hop.
@@ -70,14 +70,14 @@ impl HopPath {
         self.hops.len()
     }
 
-    /// Returns an iterator over the `Hop`s.
+    /// Returns an iterator over the [`Hop`]s.
     pub fn iter(&self) -> std::slice::Iter<'_, Hop<Vec<u8>>> {
         self.hops[..].iter()
     }
 
     /// Prepends `hop` to this HopPath.
     ///
-    /// If `hop` is an `Asn`, it as prepended as an individual `Hop`,
+    /// If `hop` is an [`Asn`], it as prepended as an individual [`Hop`],
     /// regardless of the type of the current left-most segment in this
     /// HopPath (if any). This means the appended ASN becomes (part of) an
     /// AS_SEQUENCE when converted to wireformat using `to_as_path()`.
@@ -92,7 +92,7 @@ impl HopPath {
         }
     }
 
-    /// Prepends an array of `Asn`s to this HopPath.
+    /// Prepends an array of [`Asn`]s to this HopPath.
     pub fn prepend_arr<const N: usize>(
         &mut self,
         arr: [Asn; N]
@@ -130,7 +130,7 @@ impl HopPath {
 
     /// Appends `hop` to this HopPath.
     ///
-    /// If `hop` is an `Asn`, it as appended as an individual `Hop`,
+    /// If `hop` is an [`Asn`], it as appended as an individual [`Hop`],
     /// regardless of the type of the current right-most segment in this
     /// HopPath (if any). This means the appended ASN becomes (part of) an
     /// AS_SEQUENCE when converted to wireformat using `to_as_path()`.
@@ -159,13 +159,13 @@ impl HopPath {
         self.append(Hop::Segment(Segment::new_confed_set(set)))
     }
 
-    /// Converts the HopPath into a four-octet based AS PATH.
+    /// Converts the HopPath into a four-octet based [`AsPath`].
     pub fn to_as_path<Octs>(
         &self
     ) -> Result<
-        AsPath<Octs>,
-        <<Octs as FromBuilder>::Builder as OctetsBuilder>::AppendError
-    >
+            AsPath<Octs>,
+            <<Octs as FromBuilder>::Builder as OctetsBuilder>::AppendError
+        >
     where
         Octs: FromBuilder,
         <Octs as FromBuilder>::Builder: EmptyBuilder
@@ -177,7 +177,7 @@ impl HopPath {
         })
     }
 
-    /// Converts the HopPath into a two-octet based AS PATH. (TODO)
+    /// Converts the HopPath into a two-octet based [`AsPath`]. (TODO)
     pub fn to_two_octet_as_path<Octs>(
         &self
         ) -> Result<AsPath<Octs>,
@@ -311,7 +311,7 @@ impl fmt::Display for HopPath {
 
 // TODO impl PartialEq so we can compare two-octet and four-octet based paths.
 
-/// AS Path generic over Octets in wireformat.
+/// AS Path generic over [`Octets`] in wireformat.
 #[derive(Debug)]
 pub struct AsPath<Octs> {
     /// The octets of the AS_PATH attribute.
@@ -378,12 +378,12 @@ impl AsPath<()> {
 
 
 impl<Octs: Octets> AsPath<Octs> {
-    /// Returns a [`PathHops`](PathHops) iterator for this path.
+    /// Returns a [`PathHops`] iterator for this path.
     pub fn hops(&self) -> PathHops<Octs> {
         PathHops::new(&self.octets, self.four_byte_asns)
     }
     
-    /// Returns a [`PathSegments`](PathSegments) iterator for this path.
+    /// Returns a [`PathSegments`] iterator for this path.
     pub fn segments(&self) -> PathSegments<Octs> {
         PathSegments::new(&self.octets, self.four_byte_asns)
     }
@@ -411,8 +411,8 @@ impl<Octs: Octets> AsPath<Octs> {
         hops.to_as_path()
     }
 
-    /// Returns a new AsPath comprised of this AsPath with the Asns in `arr`
-    /// prepended as an AS_SEQUENCE.
+    /// Returns a new AsPath comprised of this AsPath with the [`Asn`]s in
+    /// `arr` prepended as an AS_SEQUENCE.
     pub fn prepend_arr<const N: usize>(
         &self,
         arr: [Asn; N]
@@ -430,7 +430,7 @@ impl<Octs: Octets> AsPath<Octs> {
         hops.to_as_path()
     }
 
-    /// Returns a HopPath representation of this AsPath.
+    /// Returns a [`HopPath`] representation of this AsPath.
     pub fn to_hop_path<'a>(&'a self) -> HopPath
     where Vec<u8>: From<Octs::Range<'a>> {
         HopPath { hops: self.hops().map(OctetsInto::octets_into).collect() }
@@ -455,7 +455,7 @@ impl<Octs: Octets> fmt::Display for AsPath<Octs> {
 
 //----------- PathHops -------------------------------------------------------
 
-/// Iterates over `Hop`s in a Path.
+/// Iterates over [`Hop`]s in an [`AsPath`].
 pub struct PathHops<'a, Octs> {
     segments: PathSegments<'a, Octs>,
     current: Option<Asns<'a, Octs>>,
@@ -504,7 +504,7 @@ impl<'a, Octs: Octets> Iterator for PathHops<'a, Octs> {
 
 //----------- PathSegments ---------------------------------------------------
 
-/// Iterates over Segments in a Path.
+/// Iterates over [`Segment]`s in an [`AsPath`].
 pub struct PathSegments<'a, Octs> {
     parser: Parser<'a, Octs>,
     four_byte_asns: bool,
@@ -543,7 +543,7 @@ impl<'a, Octs: Octets> Iterator for PathSegments<'a, Octs> {
 
 //----------- Segment --------------------------------------------------------
 
-/// AS_PATH Segment generic over Octets.
+/// AS_PATH Segment generic over [`Octets`].
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub struct Segment<Octs> {
     stype: SegmentType,
@@ -590,7 +590,7 @@ impl Segment<Vec<u8>> {
 }
 
 impl<Octs: AsRef<[u8]>> Segment<Octs> {
-    /// Returns an iterator over the `Asn`s in this Segment.
+    /// Returns an iterator over the [`Asn`]s in this Segment.
     pub fn asns(&self) -> Asns<Octs> {
         Asns::new(Parser::from_ref(&self.octets), self.four_byte_asns)
     }
@@ -716,6 +716,12 @@ impl fmt::Display for SegmentType {
 
 //----------- Hop ------------------------------------------------------------
 
+/// The Hop enum used in [`HopPath`].
+///
+/// The `Asn` variant is used to represent ASNs that, in wireformat, occur in
+/// AS_SEQUENCE segments. Other segment types are represented by the other
+/// variant `Segment`, which contain the entire segment and thus (possibly)
+/// multiple ASNs.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum Hop<Octs> {
     Asn(Asn),
@@ -723,8 +729,8 @@ pub enum Hop<Octs> {
 }
 
 impl<Octs> Hop<Octs> {
-    /// Tries to convert the `Hop` into an `Asn`. This returns an error if
-    /// `Hop` is not of the `Hop::Asn` variant.
+    /// Tries to convert the `Hop` into an [`Asn`]. This returns an error if
+    /// `Hop` is not of the [`Hop::Asn`] variant.
     pub fn try_into_asn(self) -> Result<Asn, <Self as TryInto<Asn>>::Error> {
         TryInto::<Asn>::try_into(self)
     }
@@ -780,7 +786,7 @@ impl<Octs: Octets> fmt::Display for Hop<Octs> {
 
 //------------ Asns ----------------------------------------------------------
 
-/// Iterates over ASNs in a Segment.
+/// Iterates over ASNs in a [`Segment`].
 pub struct Asns<'a, Octs> {
     parser: Parser<'a, Octs>,
     four_byte_asns: bool,
