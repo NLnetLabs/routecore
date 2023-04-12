@@ -12,7 +12,7 @@ use core::ops::{Index, IndexMut};
 use std::slice::SliceIndex;
 use std::{error, fmt};
 
-use crate::asn::Asn;
+use crate::asn::{Asn, LargeAsnError};
 
 use octseq::builder::{infallible, EmptyBuilder, FromBuilder, OctetsBuilder};
 use octseq::octets::{Octets, OctetsFrom, OctetsInto};
@@ -177,20 +177,26 @@ impl HopPath {
         })
     }
 
-    /// Converts the HopPath into a two-octet based [`AsPath`]. (TODO)
-    // For this one, we need to decide to what extent we actually want to
-    // support legacy paths. Should this do all the AS_TRANS magic and replace
-    // 32bit ASNs? Or should it simply error out on anything that does not fit
-    // in 16 bits?
+    /// Converts the HopPath into a two-octet based [`AsPath`].
+    ///
+    /// Note that this method does not replace ASNs with AS_TRANS in case they
+    /// do not fit in 16 bits. If such ASNs appear in the path, an error is
+    /// returned instead.
     pub fn to_two_octet_as_path<Octs>(
         &self
         ) -> Result<AsPath<Octs>,
-        <<Octs as FromBuilder>::Builder as OctetsBuilder>::AppendError>
+        //<<Octs as FromBuilder>::Builder as OctetsBuilder>::AppendError
+        ToPathError
+            >
     where
         Octs: FromBuilder,
         <Octs as FromBuilder>::Builder: EmptyBuilder
     {
-        todo!()
+        let mut target = EmptyBuilder::empty();
+        Self::compose_hops_two_octets(&self.hops, &mut target)?;
+        Ok(unsafe {
+            AsPath::new_unchecked(Octs::from_builder(target), false)
+        })
     }
 
 
@@ -205,19 +211,21 @@ impl HopPath {
 
             if !head.is_empty() {
                 // hops[0..i] represents |i| ASNs in a Sequence
-                let (head, tail) = head.split_at(head.len() % 256);
-                target.append_slice(
-                    &[
-                        SegmentType::Sequence.into(),
-                        u8::try_from(head.len()).expect("long sequence")
-                    ]
-                )?;
-                head.iter().try_for_each(|h| {
-                    match h {
-                        Hop::Asn(asn) => asn.compose(target),
-                        _ => unreachable!()
-                    }
-                })?;
+                let (head, tail) = head.split_at(head.len() % 255);
+                if !head.is_empty() {
+                    target.append_slice(
+                        &[
+                            SegmentType::Sequence.into(),
+                            u8::try_from(head.len()).expect("long sequence")
+                        ]
+                    )?;
+                    head.iter().try_for_each(|h| {
+                        match h {
+                            Hop::Asn(asn) => asn.compose(target),
+                            _ => unreachable!()
+                        }
+                    })?;
+                }
 
                 for c in tail.chunks(255) {
                     target.append_slice(
@@ -248,6 +256,117 @@ impl HopPath {
         }
         Ok(())
     }
+
+    // Turn this HopPath into the two-octet based AS_PATH wireformat.
+    fn compose_hops_two_octets<Octs: Octets, Target: OctetsBuilder>(
+        mut hops: &[Hop<Octs>], target: &mut Target
+    ) -> Result<(), ToPathError> {
+        while !hops.is_empty() {
+            let i = hops.iter().position(|h| !matches!(h, Hop::Asn(_)))
+                .unwrap_or(hops.len());
+            let (head, tail) = hops.split_at(i);
+
+            if !head.is_empty() {
+                // hops[0..i] represents |i| ASNs in a Sequence
+                let (head, tail) = head.split_at(head.len() % 255);
+                if !head.is_empty() {
+                    target.append_slice(
+                        &[
+                            SegmentType::Sequence.into(),
+                            u8::try_from(head.len()).expect("long sequence")
+                        ]
+                    ).map_err(|_| ToPathError::append_error())?;
+                    head.iter().try_for_each(|h| {
+                        match h {
+                            Hop::Asn(asn) => { 
+                                let asn16 = asn.try_into_u16()?;
+                                target.append_slice(&asn16.to_be_bytes())
+                                    .map_err(|_| ToPathError::append_error())
+                            }
+                            _ => unreachable!()
+                        }
+                    })?;
+                }
+
+                for c in tail.chunks(255) {
+                    target.append_slice(
+                        &[
+                            SegmentType::Sequence.into(),
+                            u8::try_from(c.len()).expect("long sequence")
+                        ]
+                    ).map_err(|_| ToPathError::append_error())?;
+                    c.iter().try_for_each(|h| {
+                        match h {
+                            Hop::Asn(asn) => {
+                                let asn16 = asn.try_into_u16()?;
+                                target.append_slice(&asn16.to_be_bytes())
+                                    .map_err(|_| ToPathError::append_error())
+                            }
+                            _ => unreachable!()
+                        }
+                    })?;
+
+                }
+            }
+            if let Some((first, tail)) = tail.split_first() {
+                match first {
+                    Hop::Asn(_) => unreachable!(),
+                    Hop::Segment(seg) => seg.compose_16(target)?
+                }
+                hops = tail;
+            }
+            else {
+                hops = tail;
+            }
+        }
+        Ok(())
+    }
+}
+
+// XXX is there a more idiomatic way of introducing another error next to
+// AppendError?
+
+#[derive(Debug)]
+enum ToPathErrorType {
+    AppendError,
+    LargeAsnError,
+}
+#[derive(Debug)]
+pub struct ToPathError {
+    error_type: ToPathErrorType
+}
+
+impl ToPathError {
+    fn append_error() -> Self {
+        ToPathError { error_type: ToPathErrorType::AppendError }
+    }
+
+    // better handled by the From impl + `?`
+    //fn large_asn_error() -> Self {
+    //    ToPathError { error_type: ToPathErrorType::LargeAsnError }
+    //}
+}
+
+impl From<LargeAsnError> for ToPathError {
+    fn from(_: LargeAsnError) -> ToPathError {
+        ToPathError { error_type: ToPathErrorType::LargeAsnError }
+    }
+}
+
+impl From<octseq::ShortBuf> for ToPathError {
+    fn from(_: octseq::ShortBuf) -> ToPathError {
+        ToPathError { error_type: ToPathErrorType::AppendError }
+    }
+}
+
+impl std::error::Error for ToPathError { }
+impl fmt::Display for ToPathError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self.error_type {
+            ToPathErrorType::AppendError => f.write_str("could not append"),
+            ToPathErrorType::LargeAsnError => f.write_str("ASN too large"),
+        }
+    }
 }
 
 impl IntoIterator for HopPath {
@@ -275,6 +394,15 @@ impl<I: SliceIndex<[Hop<Vec<u8>>]>> IndexMut<I> for HopPath {
 impl From<Vec<Hop<Vec<u8>>>> for HopPath {
     fn from(hops: Vec<Hop<Vec<u8>>>) -> HopPath {
         HopPath { hops }
+    }
+}
+
+impl From<Vec<Segment<Vec<u8>>>> for HopPath {
+    fn from(segs: Vec<Segment<Vec<u8>>>) -> HopPath {
+        HopPath {
+            hops: segs.into_iter().map(Hop::Segment)
+                .collect::<Vec<Hop<Vec<u8>>>>()
+        }
     }
 }
 
@@ -312,8 +440,6 @@ impl fmt::Display for HopPath {
 }
 
 //----------- AsPath ---------------------------------------------------------
-
-// TODO impl PartialEq so we can compare two-octet and four-octet based paths.
 
 /// AS Path generic over [`Octets`] in wireformat.
 #[derive(Debug)]
@@ -442,6 +568,33 @@ impl<Octs: Octets> AsPath<Octs> {
 
 }
 
+impl<Octs: Octets> PartialEq for AsPath<Octs> {
+    // XXX how can (should?) we get a `OctsB: Octets` in here?
+    fn eq(&self, other: &AsPath<Octs>) -> bool {
+        if self.four_byte_asns == other.four_byte_asns
+            && self.octets.as_ref() == other.octets.as_ref()
+        {
+            return true
+        }
+        
+        let mut lhs = self.segments();
+        let mut rhs = other.segments();
+        loop {
+            match (lhs.next(), rhs.next()) {
+                (None, None) => return true,
+                (None, _) | (_, None) => return false,
+                (Some(s1), Some(s2)) => {
+                    if s1 != s2 {
+                        return false
+                    }
+                }
+            }
+        }
+    }
+}
+
+impl<Octs: Octets> Eq for AsPath<Octs> { }
+
 impl<Octs: Octets> fmt::Display for AsPath<Octs> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut first = true;
@@ -548,7 +701,7 @@ impl<'a, Octs: Octets> Iterator for PathSegments<'a, Octs> {
 //----------- Segment --------------------------------------------------------
 
 /// AS_PATH Segment generic over [`Octets`].
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug)]
 pub struct Segment<Octs> {
     stype: SegmentType,
     four_byte_asns: bool,
@@ -571,6 +724,21 @@ impl Segment<Vec<u8>> {
         }
         Segment::new(SegmentType::Set, true, set)
     }
+
+    /* XXX in context of HopPath, we do not want this
+     * because adding Sequence type segments is not consistent with the
+     * Hop::Asn variant.
+     * But it does seem a bit strange to leave it out in other contexts...
+    /// Creates a new Segment of type AS_SEQUENCE containing `asns`.
+    pub fn new_sequence(asns: impl IntoIterator<Item = Asn>) -> Self {
+        let iter = asns.into_iter();
+        let mut seq = Vec::with_capacity(iter.size_hint().0);
+        for a in iter.map(|a| a.to_raw()) {
+            seq.extend_from_slice(&a);
+        }
+        Segment::new(SegmentType::Sequence, true, seq)
+    }
+    */
 
     /// Creates a new Segment of type AS_CONFED_SET containing `asns`.
     pub fn new_confed_set(asns: impl IntoIterator<Item = Asn>) -> Self {
@@ -627,7 +795,69 @@ impl<Octs: AsRef<[u8]>> Segment<Octs> {
         }
         Ok(())
     }
+
+    /// Appends the wire-format of the segment to the target.
+    ///
+    /// This method will try fit the ASNs in 16 bits, or return an error.
+    pub fn compose_16<Target: OctetsBuilder>(
+        &self, target: &mut Target,
+    ) -> Result<(), ToPathError>
+    where Octs: Octets {
+        target.append_slice(
+            &[
+                self.stype.into(),
+                self.asn_count(),
+            ]
+        ).map_err(|_| ToPathError::append_error())?;
+        if !self.four_byte_asns {
+            target.append_slice(self.octets.as_ref())
+                .map_err(|_| ToPathError::append_error())?;
+        }
+        else {
+            self.asns().try_for_each(|asn| {
+                let asn16 = asn.try_into_u16()?;
+                target.append_slice(
+                    &asn16.to_be_bytes()
+                ).map_err(|_| ToPathError::append_error())
+            })?;
+        }
+        Ok(())
+    }
+
+
 }
+
+impl<Octs: Octets> PartialEq for Segment<Octs> {
+    fn eq(&self, other: &Segment<Octs>) -> bool {
+        if self.stype != other.stype {
+            return false
+        }
+        if self.four_byte_asns == other.four_byte_asns
+            && self.octets.as_ref() == other.octets.as_ref()
+        {
+            return true
+        }
+
+        // same stype but different ASN sizes
+
+        let mut lhs = self.asns();
+        let mut rhs = other.asns();
+        // XXX or, simply return lhs.eq(rhs)?
+        loop {
+            match (lhs.next(), rhs.next()) {
+                (None, None) => return true,
+                (None, _) | (_, None) => return false,
+                (Some(as1), Some(as2)) => {
+                    if as1 != as2 {
+                        return false
+                    }
+                }
+            }
+        }
+    }
+}
+
+impl<Octs: Octets> Eq for Segment<Octs> { }
 
 impl<Source, Octs> OctetsFrom<Segment<Source>> for Segment<Octs>
     where
@@ -726,11 +956,23 @@ impl fmt::Display for SegmentType {
 /// AS_SEQUENCE segments. Other segment types are represented by the other
 /// variant `Segment`, which contain the entire segment and thus (possibly)
 /// multiple ASNs.
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug)]
 pub enum Hop<Octs> {
     Asn(Asn),
     Segment(Segment<Octs>),
 }
+
+impl<Octs: Octets> PartialEq for Hop<Octs> {
+    fn eq(&self, other: &Hop<Octs>) -> bool {
+        match (self, other) {
+            (Hop::Asn(lhs), Hop::Asn(rhs)) => lhs == rhs,
+            (Hop::Segment(lhs), Hop::Segment(rhs)) => lhs == rhs,
+            (_, _) => false
+        }
+    }
+}
+
+impl<Octs: Octets> Eq for Hop<Octs> { }
 
 impl<Octs> Hop<Octs> {
     /// Tries to convert the `Hop` into an [`Asn`]. This returns an error if
@@ -942,6 +1184,19 @@ mod tests {
         );
     }
 
+    /* // XXX this is related to whether or not we want the pub fn
+     * new_sequence on Segment<_>
+    #[test]
+    fn hoppath_sequence() {
+        let hp1: HopPath = [Asn::from_u32(100); 5].into();
+        let hp2: HopPath = vec![Segment::new_sequence([Asn::from_u32(100); 5])].into();
+        println!("{hp1}");
+        println!("{hp2}");
+        assert_eq!(hp1, hp2);
+    }
+    */
+
+
     #[test]
     fn origin() {
         let mut hp = HopPath::new();
@@ -1040,4 +1295,147 @@ mod tests {
         
     }
 
+    #[test]
+    fn partial_eq() {
+        let mut hp = HopPath::new();
+        hp.prepend_arr([10, 20, 30, 40].map(Asn::from_u32));
+        let asp1_32: AsPath<Vec<u8>> = hp.to_as_path().unwrap();
+        let asp1_16 = AsPath::new(
+            vec![
+                0x02, 0x04, // SEQUENCE of 4
+                0x00, 10,
+                0x00, 20,
+                0x00, 30,
+                0x00, 40,
+            ],
+            false
+        ).unwrap();
+        assert_eq!(asp1_16, asp1_32);
+
+
+        let mut hp = HopPath::new();
+        hp.prepend_arr([10, 20, 30, 40].map(Asn::from_u32));
+        let asp1_32: AsPath<Vec<u8>> = hp.to_as_path().unwrap();
+        let asp1_16 = AsPath::new(
+            vec![
+                0x02, 0x02, // SEQUENCE of 2
+                0x00, 10,
+                0x00, 20,
+            ],
+            false
+        ).unwrap();
+        assert!(asp1_16 != asp1_32);
+
+
+        let mut hp = HopPath::new();
+        hp.prepend_arr([10, 20, 30, 40].map(Asn::from_u32));
+        let asp1_32: AsPath<Vec<u8>> = hp.to_as_path().unwrap();
+        let asp1_16 = AsPath::new(
+            vec![
+                0x01, 0x04, // SET of 4
+                0x00, 10,
+                0x00, 20,
+                0x00, 30,
+                0x00, 40,
+            ],
+            false
+        ).unwrap();
+        assert!(asp1_16 != asp1_32);
+
+
+        let mut hp = HopPath::new();
+        hp.prepend_arr([0x01010101, 20, 30, 40].map(Asn::from_u32));
+        let asp1_32: AsPath<Vec<u8>> = hp.to_as_path().unwrap();
+        let asp1_16 = AsPath::new(
+            vec![
+                0x02, 0x04, // SEQUENCE of 4
+                0x00, 10,
+                0x00, 20,
+                0x00, 30,
+                0x00, 40,
+            ],
+            false
+        ).unwrap();
+        assert!(asp1_16 != asp1_32);
+
+
+    }
+
+    #[test]
+    fn compose_legacy_path() {
+        let mut hp = HopPath::new();
+        hp.prepend_arr([10, 20, 30, 40].map(Asn::from_u32));
+        let asp: AsPath<Vec<u8>> = hp.to_as_path().unwrap();
+        let asp16: AsPath<Vec<u8>> = hp.to_two_octet_as_path().unwrap();
+        assert_eq!(asp, asp16);
+        assert!(asp.octets.len() > asp16.octets.len());
+
+        // back to four octets
+        let hp2 = asp16.to_hop_path();
+        let asp2 = hp2.to_as_path().unwrap();
+        assert_eq!(asp, asp2);
+        assert!(asp.octets.len() == asp2.octets.len());
+
+    }
+
+    #[test]
+    fn comparing_converting_legacy() {
+
+        fn good_hop_path(hp: impl Into<HopPath>) {
+            let hp = hp.into();
+            let asp32: AsPath<Vec<u8>> = hp.to_as_path().unwrap();
+            let asp16: AsPath<Vec<u8>> = hp.to_two_octet_as_path().unwrap();
+            assert_eq!(asp32, asp16);
+            assert!(asp32.octets.len() > asp16.octets.len());
+
+            let hp2 = asp16.to_hop_path();
+            let asp32_2 = hp2.to_as_path().unwrap();
+            assert_eq!(asp32, asp32_2);
+            assert_eq!(asp32.octets, asp32_2.octets);
+        }
+
+        let good_hop_paths: Vec<HopPath> = vec![
+            vec![Asn::from_u32(10)].into(),
+            vec![Asn::from_u32(10), Asn::from_u32(u16::MAX.into())].into(),
+            vec![Segment::new_set([10, 20, 30].map(Asn::from_u32))].into(),
+            vec![
+                Segment::new_confed_set([10, 20, 30].map(Asn::from_u32)),
+                Segment::new_confed_sequence([10, 20, 30].map(Asn::from_u32)),
+                //Segment::new_sequence([10, 20, 30].map(Asn::from_u32)),
+            ].into(),
+            [Asn::from_u32(123); 254].to_vec().into(),
+            [Asn::from_u32(123); 255].to_vec().into(),
+            [Asn::from_u32(123); 256].to_vec().into(),
+            [Asn::from_u32(123); 257].to_vec().into(),
+        ];
+
+        good_hop_paths.into_iter().for_each(good_hop_path);
+
+
+        // bad paths
+
+        let hp: HopPath = [
+            Asn::from_u32(10),
+            Asn::from_u32(20),
+            Asn::from_u32(u32::from(u16::MAX) + 100)
+        ].into();
+        assert!(hp.to_as_path::<Vec<u8>>().is_ok());
+        assert!(hp.to_two_octet_as_path::<Vec<u8>>().is_err());
+
+    }
+
+    #[test]
+    fn max_size_segments() {
+        let hp: HopPath = [Asn::from_u32(123); 255].into();
+        let asp: AsPath<Vec<u8>> = hp.to_as_path().unwrap();
+        let asp16: AsPath<Vec<u8>> = hp.to_two_octet_as_path().unwrap();
+        assert_eq!(asp.segments().count(), 1);
+        assert_eq!(asp16.segments().count(), 1);
+
+        let hp: HopPath = [Asn::from_u32(123); 256].into();
+        let asp: AsPath<Vec<u8>> = hp.to_as_path().unwrap();
+        let asp16: AsPath<Vec<u8>> = hp.to_two_octet_as_path().unwrap();
+        assert_eq!(asp.segments().count(), 2);
+        assert_eq!(asp16.segments().count(), 2);
+    }
 }

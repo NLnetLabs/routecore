@@ -31,6 +31,10 @@ impl Asn {
         self.0
     }
 
+    pub fn try_into_u16(self) -> Result<u16, LargeAsnError> {
+        self.0.try_into().map_err(|_| LargeAsnError)
+    }
+
     /// Converts an AS number into a network-order byte array.
     pub fn to_raw(self) -> [u8; 4] {
         self.0.to_be_bytes()
@@ -41,6 +45,14 @@ impl Asn {
     ) -> Result<(), Target::AppendError> {
         target.append_slice(&self.to_raw())
     }
+
+    // XXX or do we want this?
+    // possibly returning LargeAsnError in addition to AppendError?
+    //pub fn compose_16<Target: OctetsBuilder>(
+    //    self, target: &mut Target
+    //) -> Result<(), Target::AppendError> {
+    //    todo!()
+    //}
 }
 
 #[cfg(feature = "bcder")]
@@ -621,6 +633,18 @@ impl fmt::Display for ParseAsnError {
 
 impl error::Error for ParseAsnError {}
 
+//------------ LargeAsnError ------------------------------------------------
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LargeAsnError;
+
+impl fmt::Display for LargeAsnError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str("ASN too large")
+    }
+}
+
+impl error::Error for LargeAsnError {}
 
 //------------ LongSegmentError ----------------------------------------------
 
