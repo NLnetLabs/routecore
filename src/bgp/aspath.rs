@@ -178,6 +178,10 @@ impl HopPath {
     }
 
     /// Converts the HopPath into a two-octet based [`AsPath`]. (TODO)
+    // For this one, we need to decide to what extent we actually want to
+    // support legacy paths. Should this do all the AS_TRANS magic and replace
+    // 32bit ASNs? Or should it simply error out on anything that does not fit
+    // in 16 bits?
     pub fn to_two_octet_as_path<Octs>(
         &self
         ) -> Result<AsPath<Octs>,
