@@ -9,6 +9,7 @@
 //! See [`HopPath`] for more details.
 
 use core::ops::{Index, IndexMut};
+use core::hash::Hash;
 use std::slice::SliceIndex;
 use std::{error, fmt};
 
@@ -405,7 +406,7 @@ impl fmt::Display for HopPath {
 //----------- AsPath ---------------------------------------------------------
 
 /// AS Path generic over [`Octets`] in wireformat.
-#[derive(Clone, Debug, Hash)]
+#[derive(Clone, Debug)]
 pub struct AsPath<Octs> {
     /// The octets of the AS_PATH attribute.
     octets: Octs,
@@ -553,6 +554,29 @@ impl<Octs: Octets> PartialEq for AsPath<Octs> {
                         return false
                     }
                 }
+            }
+        }
+    }
+}
+
+//--- Hash
+
+// Because we implement PartialEq to compare two-byte and four-byte based
+// paths, we need to implement Hash instead of deriving it as well.
+// To ensure k1 == k2 ⇒ hash(k1) == hash(k2), we need to hash two-byte paths
+// as if they were four-byte, meaning we need to pad in two 0x00 bytes in
+// every ASN. (Which the Asns iterator already does for us.)
+// For four-byte paths, we could simply hash the octets.
+// However, the hash implementations need to call the exact same methods in
+// order to produce equivalent hashes, so we can not optimize for one case
+// over the other.
+impl<Octs: Octets> Hash for AsPath<Octs> {
+    fn hash<H: core::hash::Hasher>(&self, h: &mut H) {
+        for s in self.segments() {
+            h.write_u8(s.stype.into());
+            h.write_u8(s.asn_count());
+            for a in s.asns() {
+                h.write_u32(a.into());
             }
         }
     }
@@ -1419,6 +1443,8 @@ mod tests {
 
     #[test]
     fn comparing_converting_legacy() {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::Hasher;
 
         fn good_hop_path(hp: impl Into<HopPath>) {
             let hp = hp.into();
@@ -1431,6 +1457,12 @@ mod tests {
             let asp32_2 = hp2.to_as_path().unwrap();
             assert_eq!(asp32, asp32_2);
             assert_eq!(asp32.octets, asp32_2.octets);
+
+            let mut h1 = DefaultHasher::new();
+            let mut h2 = DefaultHasher::new();
+            asp32.hash(&mut h1);
+            asp16.hash(&mut h2);
+            assert_eq!(h1.finish(), h2.finish());
         }
 
         let good_hop_paths: Vec<HopPath> = vec![
@@ -1477,4 +1509,5 @@ mod tests {
         assert_eq!(asp.segments().count(), 2);
         assert_eq!(asp16.segments().count(), 2);
     }
+
 }
