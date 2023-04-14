@@ -14,6 +14,7 @@ use crate::util::hex;
 ///
 /// This is the SHA-1 hash over the public key’s bits.
 #[derive(Clone, Copy, Eq, Hash, Ord, PartialOrd)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct KeyIdentifier([u8; 20]);
 
 impl KeyIdentifier {
