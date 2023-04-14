@@ -22,6 +22,7 @@ use std::str::FromStr;
 /// There is no way of distinguishing between IPv4 and IPv6 from just a value
 /// of this type. This information needs to be carried separately.
 #[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 struct Bits(u128);
 
 impl Bits {
@@ -159,6 +160,7 @@ impl fmt::Debug for Bits {
 /// is a IPv6 prefix with the length encoded by flipping all the bits. The
 /// value of 64 stands in for an IPv6 prefix with length 128.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 struct FamilyAndLen(u8);
 
 impl FamilyAndLen {
@@ -220,6 +222,7 @@ impl FamilyAndLen {
 /// intermediate stage (i.e. ROAs/VRPs for less-specifics making
 /// not-yet-processed more-specifics Invalid).
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct Prefix {
     /// The address family and prefix length all in one.
     family_and_len: FamilyAndLen,
@@ -532,6 +535,7 @@ impl fmt::Display for Prefix {
 /// that, we can safely order 'any max_len' before 'no max_len' for equal
 /// prefixes.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct MaxLenPrefix {
     /// The prefix.
     prefix: Prefix,
