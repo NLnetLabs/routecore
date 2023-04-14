@@ -1,7 +1,8 @@
 use std::borrow::Cow;
 use std::fmt;
 
-use crate::asn::{AsPath, Asn};
+use crate::asn::Asn;
+use crate::bgp::aspath::AsPath;
 use crate::record::MergeUpdate;
 
 use super::PrefixNlri;
@@ -51,7 +52,7 @@ impl<'a> MergeUpdate for BgpNlriMeta<'a> {
 #[derive(Clone, Debug, Hash)]
 pub struct ExampleBgpPathAttributes {
     pub origin: Asn,
-    pub as_path: AsPath<Vec<Asn>>,
+    pub as_path: AsPath<Vec<u8>>,
     pub next_hop: std::net::IpAddr,
     pub med: u32,
     pub local_pref: u32,

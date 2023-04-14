@@ -405,7 +405,7 @@ impl fmt::Display for HopPath {
 //----------- AsPath ---------------------------------------------------------
 
 /// AS Path generic over [`Octets`] in wireformat.
-#[derive(Debug)]
+#[derive(Clone, Debug, Hash)]
 pub struct AsPath<Octs> {
     /// The octets of the AS_PATH attribute.
     octets: Octs,
