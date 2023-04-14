@@ -18,7 +18,11 @@ New
   Attributes or NLRI in a BGP UPDATE PDU), to enable use in high throughput
   scenarios.
 
+* Added new `asn::SmallAsnSet` which, as, the name suggests, is supposed
+  to hold a relatively small set of ASNs. ([#22])
+
 [#14]: https://github.com/NLnetLabs/routecore/pull/14
+[#22]: https://github.com/NLnetLabs/routecore/pull/22
 
 Bug fixes
 
