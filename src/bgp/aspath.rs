@@ -323,51 +323,7 @@ impl HopPath {
     }
 }
 
-// XXX is there a more idiomatic way of introducing another error next to
-// AppendError?
-
-#[derive(Debug)]
-enum ToPathErrorType {
-    AppendError,
-    LargeAsnError,
-}
-#[derive(Debug)]
-pub struct ToPathError {
-    error_type: ToPathErrorType
-}
-
-impl ToPathError {
-    fn append_error() -> Self {
-        ToPathError { error_type: ToPathErrorType::AppendError }
-    }
-
-    // better handled by the From impl + `?`
-    //fn large_asn_error() -> Self {
-    //    ToPathError { error_type: ToPathErrorType::LargeAsnError }
-    //}
-}
-
-impl From<LargeAsnError> for ToPathError {
-    fn from(_: LargeAsnError) -> ToPathError {
-        ToPathError { error_type: ToPathErrorType::LargeAsnError }
-    }
-}
-
-impl From<octseq::ShortBuf> for ToPathError {
-    fn from(_: octseq::ShortBuf) -> ToPathError {
-        ToPathError { error_type: ToPathErrorType::AppendError }
-    }
-}
-
-impl std::error::Error for ToPathError { }
-impl fmt::Display for ToPathError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self.error_type {
-            ToPathErrorType::AppendError => f.write_str("could not append"),
-            ToPathErrorType::LargeAsnError => f.write_str("ASN too large"),
-        }
-    }
-}
+//--- IntoIterator
 
 impl IntoIterator for HopPath {
     type Item = Hop<Vec<u8>>;
@@ -377,6 +333,8 @@ impl IntoIterator for HopPath {
         self.hops.into_iter()
     }
 }
+
+//--- Index / IndexMut
 
 impl<I: SliceIndex<[Hop<Vec<u8>>]>> Index<I> for HopPath {
     type Output = I::Output;
@@ -390,6 +348,8 @@ impl<I: SliceIndex<[Hop<Vec<u8>>]>> IndexMut<I> for HopPath {
         &mut self.hops[i]
     }
 }
+
+//--- From
 
 impl From<Vec<Hop<Vec<u8>>>> for HopPath {
     fn from(hops: Vec<Hop<Vec<u8>>>) -> HopPath {
@@ -424,6 +384,8 @@ impl<const N: usize> From<[Asn; N]> for HopPath {
     }
 }
 
+//--- Display
+
 impl fmt::Display for HopPath {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut first = true;
@@ -438,6 +400,7 @@ impl fmt::Display for HopPath {
         Ok(())
     }
 }
+
 
 //----------- AsPath ---------------------------------------------------------
 
@@ -568,6 +531,8 @@ impl<Octs: Octets> AsPath<Octs> {
 
 }
 
+//--- PartialEq
+
 impl<Octs: Octets> PartialEq for AsPath<Octs> {
     // XXX how can (should?) we get a `OctsB: Octets` in here?
     fn eq(&self, other: &AsPath<Octs>) -> bool {
@@ -593,7 +558,12 @@ impl<Octs: Octets> PartialEq for AsPath<Octs> {
     }
 }
 
+// XXX we need this because deriving Eq on AsPath<_> results in cumbersome
+// up-bubbling trait bounds
+
 impl<Octs: Octets> Eq for AsPath<Octs> { }
+
+//--- Display
 
 impl<Octs: Octets> fmt::Display for AsPath<Octs> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -609,6 +579,7 @@ impl<Octs: Octets> fmt::Display for AsPath<Octs> {
         Ok(())
     }
 }
+
 
 //----------- PathHops -------------------------------------------------------
 
@@ -827,6 +798,8 @@ impl<Octs: AsRef<[u8]>> Segment<Octs> {
 
 }
 
+//--- PartialEq
+
 impl<Octs: Octets> PartialEq for Segment<Octs> {
     fn eq(&self, other: &Segment<Octs>) -> bool {
         if self.stype != other.stype {
@@ -859,6 +832,8 @@ impl<Octs: Octets> PartialEq for Segment<Octs> {
 
 impl<Octs: Octets> Eq for Segment<Octs> { }
 
+//--- OctetsFrom
+
 impl<Source, Octs> OctetsFrom<Segment<Source>> for Segment<Octs>
     where
     Octs: OctetsFrom<Source>
@@ -873,6 +848,18 @@ impl<Source, Octs> OctetsFrom<Segment<Source>> for Segment<Octs>
         ))
     }
 }
+
+//--- IntoIterator
+
+impl<'a, Octs: 'a + Octets> IntoIterator for &'a Segment<Octs> {
+    type Item = Asn;
+    type IntoIter = Asns<'a, Octs>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.asns()
+    }
+}
+
+//--- Display
 
 impl<Octs: Octets> fmt::Display for Segment<Octs> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -889,13 +876,6 @@ impl<Octs: Octets> fmt::Display for Segment<Octs> {
     }
 }
 
-impl<'a, Octs: 'a + Octets> IntoIterator for &'a Segment<Octs> {
-    type Item = Asn;
-    type IntoIter = Asns<'a, Octs>;
-    fn into_iter(self) -> Self::IntoIter {
-        self.asns()
-    }
-}
 
 /// AS_PATH Segment types as defined in RFC4271 and RFC5065.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -907,7 +887,18 @@ pub enum SegmentType {
     ConfedSet,
 }
 
-//--- TryFrom and From
+//--- From and TryFrom
+
+impl From<SegmentType> for u8 {
+    fn from(value: SegmentType) -> u8 {
+        match value {
+            SegmentType::Set => 1,
+            SegmentType::Sequence => 2,
+            SegmentType::ConfedSequence => 3,
+            SegmentType::ConfedSet => 4,
+        }
+    }
+}
 
 impl TryFrom<u8> for SegmentType {
     type Error = InvalidSegmentTypeError;
@@ -923,17 +914,7 @@ impl TryFrom<u8> for SegmentType {
     }
 }
 
-impl From<SegmentType> for u8 {
-    fn from(value: SegmentType) -> u8 {
-        match value {
-            SegmentType::Set => 1,
-            SegmentType::Sequence => 2,
-            SegmentType::ConfedSequence => 3,
-            SegmentType::ConfedSet => 4,
-        }
-    }
-}
-
+//--- Display
 
 impl fmt::Display for SegmentType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -945,7 +926,6 @@ impl fmt::Display for SegmentType {
         })
     }
 }
-
 
 
 //----------- Hop ------------------------------------------------------------
@@ -962,6 +942,16 @@ pub enum Hop<Octs> {
     Segment(Segment<Octs>),
 }
 
+impl<Octs> Hop<Octs> {
+    /// Tries to convert the `Hop` into an [`Asn`]. This returns an error if
+    /// `Hop` is not of the [`Hop::Asn`] variant.
+    pub fn try_into_asn(self) -> Result<Asn, <Self as TryInto<Asn>>::Error> {
+        TryInto::<Asn>::try_into(self)
+    }
+}
+
+//--- PartialEq
+
 impl<Octs: Octets> PartialEq for Hop<Octs> {
     fn eq(&self, other: &Hop<Octs>) -> bool {
         match (self, other) {
@@ -974,13 +964,8 @@ impl<Octs: Octets> PartialEq for Hop<Octs> {
 
 impl<Octs: Octets> Eq for Hop<Octs> { }
 
-impl<Octs> Hop<Octs> {
-    /// Tries to convert the `Hop` into an [`Asn`]. This returns an error if
-    /// `Hop` is not of the [`Hop::Asn`] variant.
-    pub fn try_into_asn(self) -> Result<Asn, <Self as TryInto<Asn>>::Error> {
-        TryInto::<Asn>::try_into(self)
-    }
-}
+//--- From / TryFrom
+
 impl<Octs> From<Asn> for Hop<Octs> {
     fn from(a: Asn) -> Self {
         Hop::Asn(a)
@@ -1003,6 +988,8 @@ impl<Octs> From<Segment<Octs>> for Hop<Octs> {
     }
 }
 
+//--- OctetsFrom
+
 impl<Source, Octs> OctetsFrom<Hop<Source>> for Hop<Octs>
     where
     Octs: OctetsFrom<Source>
@@ -1019,6 +1006,7 @@ impl<Source, Octs> OctetsFrom<Hop<Source>> for Hop<Octs>
     }
 }
 
+//--- Display
 
 impl<Octs: Octets> fmt::Display for Hop<Octs> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -1099,6 +1087,57 @@ impl fmt::Display for InvalidSegmentTypeError {
 }
 
 impl error::Error for InvalidSegmentTypeError { }
+
+
+//------------ ToPathError ---------------------------------------------------
+// XXX is there a more idiomatic way of introducing another error next to
+// AppendError?
+
+#[derive(Debug)]
+pub struct ToPathError {
+    error_type: ToPathErrorType
+}
+
+#[derive(Debug)]
+enum ToPathErrorType {
+    AppendError,
+    LargeAsnError,
+}
+impl ToPathError {
+    fn append_error() -> Self {
+        ToPathError { error_type: ToPathErrorType::AppendError }
+    }
+
+    // better handled by the From impl + `?`
+    //fn large_asn_error() -> Self {
+    //    ToPathError { error_type: ToPathErrorType::LargeAsnError }
+    //}
+}
+
+impl From<LargeAsnError> for ToPathError {
+    fn from(_: LargeAsnError) -> ToPathError {
+        ToPathError { error_type: ToPathErrorType::LargeAsnError }
+    }
+}
+
+// XXX is there überhaupt a way to properly impl From for Target::AppendError?
+//impl From<octseq::ShortBuf> for ToPathError {
+//    fn from(_: octseq::ShortBuf) -> ToPathError {
+//        ToPathError { error_type: ToPathErrorType::AppendError }
+//    }
+//}
+
+impl std::error::Error for ToPathError { }
+
+impl fmt::Display for ToPathError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self.error_type {
+            ToPathErrorType::AppendError => f.write_str("could not append"),
+            ToPathErrorType::LargeAsnError => f.write_str("ASN too large"),
+        }
+    }
+}
+
 
 
 //============ Tests =========================================================
