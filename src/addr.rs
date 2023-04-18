@@ -160,7 +160,6 @@ impl fmt::Debug for Bits {
 /// is a IPv6 prefix with the length encoded by flipping all the bits. The
 /// value of 64 stands in for an IPv6 prefix with length 128.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 struct FamilyAndLen(u8);
 
 impl FamilyAndLen {
@@ -204,6 +203,23 @@ impl FamilyAndLen {
     }
 }
 
+#[cfg(feature = "arbitrary")]
+impl<'a> arbitrary::Arbitrary<'a> for FamilyAndLen {
+    fn arbitrary(
+        u: &mut arbitrary::Unstructured<'a>
+    ) -> arbitrary::Result<Self> {
+        if bool::arbitrary(u)? {
+            Ok(Self(u8::arbitrary(u)? % 33))
+        }
+        else {
+            match u8::arbitrary(u)? % 129 {
+                128 => Ok(Self(0x40)),
+                val => Ok(Self(val ^ 0xFF))
+            }
+        }
+    }
+}
+
 
 //------------ Prefix --------------------------------------------------------
 
@@ -222,7 +238,6 @@ impl FamilyAndLen {
 /// intermediate stage (i.e. ROAs/VRPs for less-specifics making
 /// not-yet-processed more-specifics Invalid).
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct Prefix {
     /// The address family and prefix length all in one.
     family_and_len: FamilyAndLen,
@@ -510,6 +525,26 @@ impl FromStr for Prefix {
 impl fmt::Display for Prefix {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}/{}", self.addr(), self.len())
+    }
+}
+
+
+//--- Arbitrary
+
+#[cfg(feature = "arbitrary")]
+impl<'a> arbitrary::Arbitrary<'a> for Prefix {
+    fn arbitrary(
+        u: &mut arbitrary::Unstructured<'a>
+    ) -> arbitrary::Result<Self> {
+        let fal = FamilyAndLen::arbitrary(u)?;
+        let mut bits = Bits::arbitrary(u)?;
+        if fal.is_v4() {
+            bits.0 <<= 96;
+        }
+        Ok(Self {
+            family_and_len: fal,
+            bits: bits.clear_host(fal.len())
+        })
     }
 }
 
