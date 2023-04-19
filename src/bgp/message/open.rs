@@ -734,6 +734,12 @@ impl<Target: OctetsBuilder + AsMut<[u8]>> OpenBuilder<Target> {
         self.capabilities.push(cap);
     }
 
+    pub fn four_octet_capable(&mut self, asn: Asn) {
+        let mut s = vec![0x41, 0x04];
+        s.extend_from_slice(&asn.to_raw());
+        self.add_capability(Capability::for_slice(s.to_vec()));
+    }
+
     pub fn add_mp(&mut self, afi: AFI, safi:SAFI) {
         // code 1
         // length n
