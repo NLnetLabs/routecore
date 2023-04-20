@@ -21,8 +21,8 @@ New
 * Added new `asn::SmallAsnSet` which, as, the name suggests, is supposed
   to hold a relatively small set of ASNs. ([#22])
 
-[#14]: https://github.com/NLnetLabs/routecore/pull/14
-[#22]: https://github.com/NLnetLabs/routecore/pull/22
+* Added implementations for the `arbitrary::Arbitrary` trait to ASN and IP
+  resource types. ([#24])
 
 Bug fixes
 
@@ -31,6 +31,10 @@ Other changes
 * Changed Rust edition from 2018 to 2021.
 * Changed the the minimal supported Rust version to 1.65, as the parsing of
   BGP and BMP messages relies on GATs.
+
+[#14]: https://github.com/NLnetLabs/routecore/pull/14
+[#22]: https://github.com/NLnetLabs/routecore/pull/22
+[#24]: https://github.com/NLnetLabs/routecore/pull/24
 
 
 ## 0.2.0
