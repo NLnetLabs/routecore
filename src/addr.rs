@@ -22,6 +22,7 @@ use std::str::FromStr;
 /// There is no way of distinguishing between IPv4 and IPv6 from just a value
 /// of this type. This information needs to be carried separately.
 #[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 struct Bits(u128);
 
 impl Bits {
@@ -198,6 +199,23 @@ impl FamilyAndLen {
             0x00 => self.0,
             0x40 => 128,
             _ => self.0 ^ 0xFF
+        }
+    }
+}
+
+#[cfg(feature = "arbitrary")]
+impl<'a> arbitrary::Arbitrary<'a> for FamilyAndLen {
+    fn arbitrary(
+        u: &mut arbitrary::Unstructured<'a>
+    ) -> arbitrary::Result<Self> {
+        if bool::arbitrary(u)? {
+            Ok(Self(u8::arbitrary(u)? % 33))
+        }
+        else {
+            match u8::arbitrary(u)? % 129 {
+                128 => Ok(Self(0x40)),
+                val => Ok(Self(val ^ 0xFF))
+            }
         }
     }
 }
@@ -511,6 +529,26 @@ impl fmt::Display for Prefix {
 }
 
 
+//--- Arbitrary
+
+#[cfg(feature = "arbitrary")]
+impl<'a> arbitrary::Arbitrary<'a> for Prefix {
+    fn arbitrary(
+        u: &mut arbitrary::Unstructured<'a>
+    ) -> arbitrary::Result<Self> {
+        let fal = FamilyAndLen::arbitrary(u)?;
+        let mut bits = Bits::arbitrary(u)?;
+        if fal.is_v4() {
+            bits.0 <<= 96;
+        }
+        Ok(Self {
+            family_and_len: fal,
+            bits: bits.clear_host(fal.len())
+        })
+    }
+}
+
+
 
 //------------ MaxLenPrefix --------------------------------------------------
 
@@ -532,6 +570,7 @@ impl fmt::Display for Prefix {
 /// that, we can safely order 'any max_len' before 'no max_len' for equal
 /// prefixes.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct MaxLenPrefix {
     /// The prefix.
     prefix: Prefix,

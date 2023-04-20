@@ -14,6 +14,7 @@ use bcder::decode::{self, DecodeError, Source};
 
 /// An AS number (ASN).
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct Asn(u32);
 
@@ -285,6 +286,7 @@ impl fmt::Display for Asn {
 /// small as it is represented internally by an ordered vec of ASNs to avoid
 /// memory overhead.
 #[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct SmallAsnSet(Vec<Asn>);
 
 impl SmallAsnSet {
