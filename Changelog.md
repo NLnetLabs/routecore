@@ -4,6 +4,18 @@
 
 Released 2023-04-25
 
+New
+
+* Added implementations for the `arbitrary::Arbitrary` trait for
+  `bgpsec::KeyIdentifier`.  ([#27])
+
+[#27]: https://github.com/NLnetLabs/routecore/pull/27
+
+
+## 0.3.0
+
+Released 2023-04-25
+
 Breaking Changes
 
 * The minimum required Rust version is now 1.63. ([#25])
