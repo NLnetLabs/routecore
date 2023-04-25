@@ -1,8 +1,10 @@
 //! Types for Autonomous Systems Numbers (ASN) and ASN collections
 
-use std::str::FromStr;
+use std::{error, fmt, iter, ops, slice};
+use std::cmp::Ordering;
 use std::convert::{TryFrom, TryInto};
-use std::{error, fmt, ops};
+use std::str::FromStr;
+use std::iter::Peekable;
 
 #[cfg(feature = "bcder")]
 use bcder::decode::{self, DecodeError, Source};
@@ -12,6 +14,7 @@ use bcder::decode::{self, DecodeError, Source};
 
 /// An AS number (ASN).
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct Asn(u32);
 
@@ -27,6 +30,11 @@ impl Asn {
     /// Converts an AS number into a `u32`.
     pub fn into_u32(self) -> u32 {
         self.0
+    }
+
+    /// Converts an AS number into a network-order byte array.
+    pub fn to_raw(self) -> [u8; 4] {
+        self.0.to_be_bytes()
     }
 }
 
@@ -270,6 +278,231 @@ impl fmt::Display for Asn {
 }
 
 
+//------------ SmallAsnSet --------------------------------------------------
+
+/// A relatively small set of ASNs.
+///
+/// This type is only efficient if the amount of ASNs in it is relatively
+/// small as it is represented internally by an ordered vec of ASNs to avoid
+/// memory overhead.
+#[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+pub struct SmallAsnSet(Vec<Asn>);
+
+impl SmallAsnSet {
+    pub fn iter(&self) -> SmallSetIter {
+        self.0.iter().cloned()
+    }
+
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    pub fn difference<'a>(
+        &'a self, other: &'a Self
+    ) -> SmallSetDifference<'a> {
+        SmallSetDifference {
+            left: self.iter().peekable(),
+            right: other.iter().peekable(),
+        }
+    }
+
+    pub fn symmetric_difference<'a>(
+        &'a self, other: &'a Self
+    ) -> SmallSetSymmetricDifference<'a> {
+        SmallSetSymmetricDifference {
+            left: self.iter().peekable(),
+            right: other.iter().peekable(),
+        }
+    }
+
+    pub fn intersection<'a>(
+        &'a self, other: &'a Self
+    ) -> SmallSetIntersection<'a> {
+        SmallSetIntersection {
+            left: self.iter().peekable(),
+            right: other.iter().peekable(),
+        }
+    }
+
+    pub fn union<'a>(&'a self, other: &'a Self) -> SmallSetUnion<'a> {
+        SmallSetUnion {
+            left: self.iter().peekable(),
+            right: other.iter().peekable(),
+        }
+    }
+
+    pub fn contains(&self, asn: Asn) -> bool {
+        self.0.binary_search(&asn).is_ok()
+    }
+
+    // Missing: is_disjoint, is_subset, is_superset, insert, remove,
+}
+
+
+impl iter::FromIterator<Asn> for SmallAsnSet {
+    fn from_iter<T: IntoIterator<Item = Asn>>(iter: T) -> Self {
+        let mut res = Self(iter.into_iter().collect());
+        res.0.sort();
+        res
+    }
+}
+
+impl<'a> IntoIterator for &'a SmallAsnSet {
+    type Item = Asn;
+    type IntoIter = SmallSetIter<'a>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter().cloned()
+    }
+}
+
+
+//------------ SmallSetIter --------------------------------------------------
+
+pub type SmallSetIter<'a> = iter::Cloned<slice::Iter<'a, Asn>>;
+
+
+//------------ SmallSetDifference --------------------------------------------
+
+pub struct SmallSetDifference<'a> {
+    left: Peekable<SmallSetIter<'a>>,
+    right: Peekable<SmallSetIter<'a>>,
+}
+
+impl<'a> Iterator for SmallSetDifference<'a> {
+    type Item = Asn;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            match (self.left.peek(), self.right.peek()) {
+                (None, _) => return None,
+                (Some(_), None) => return self.left.next(),
+                (Some(left), Some(right)) => {
+                    match left.cmp(right) {
+                        Ordering::Less => return self.left.next(),
+                        Ordering::Equal => {
+                            let _ = self.left.next();
+                            let _ = self.right.next();
+                        }
+                        Ordering::Greater => {
+                            let _ = self.right.next();
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+
+//------------ SmallSetSymmetricDifference -----------------------------------
+
+pub struct SmallSetSymmetricDifference<'a> {
+    left: Peekable<SmallSetIter<'a>>,
+    right: Peekable<SmallSetIter<'a>>,
+}
+
+impl<'a> Iterator for SmallSetSymmetricDifference<'a> {
+    type Item = Asn;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            match (self.left.peek(),self. right.peek()) {
+                (None, None) => return None,
+                (Some(_), None) => return self.left.next(),
+                (None, Some(_)) => return self.right.next(),
+                (Some(left), Some(right)) => {
+                    match left.cmp(right) {
+                        Ordering::Equal => {
+                            let _ = self.left.next();
+                            let _ = self.right.next();
+                        }
+                        Ordering::Less => return self.left.next(),
+                        Ordering::Greater => return self.right.next(),
+                    }
+                }
+            }
+        }
+    }
+}
+
+
+//------------ SmallSetIntersection ------------------------------------------
+
+pub struct SmallSetIntersection<'a> {
+    left: Peekable<SmallSetIter<'a>>,
+    right: Peekable<SmallSetIter<'a>>,
+}
+
+impl<'a> Iterator for SmallSetIntersection<'a> {
+    type Item = Asn;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            match (self.left.peek(),self. right.peek()) {
+                (None, _) | (_, None) => return None,
+                (Some(left), Some(right)) => {
+                    match left.cmp(right) {
+                        Ordering::Equal => {
+                            let _ = self.left.next();
+                            return self.right.next()
+                        }
+                        Ordering::Less => {
+                            let _ = self.left.next();
+                        }
+                        Ordering::Greater => {
+                            let _ = self.right.next();
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+
+//------------ SmallSetUnion -------------------------------------------------
+
+pub struct SmallSetUnion<'a> {
+    left: Peekable<SmallSetIter<'a>>,
+    right: Peekable<SmallSetIter<'a>>,
+}
+
+impl<'a> Iterator for SmallSetUnion<'a> {
+    type Item = Asn;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match (self.left.peek(),self. right.peek()) {
+            (None, None) => None,
+            (Some(_), None) => self.left.next(),
+            (None, Some(_)) => self.right.next(),
+            (Some(left), Some(right)) => {
+                match left.cmp(right) {
+                    Ordering::Less => self.left.next(),
+                    Ordering::Equal => {
+                        let _ = self.left.next();
+                        self.right.next()
+                    }
+                    Ordering::Greater => {
+                        self.right.next()
+                    }
+                }
+            }
+        }
+    }
+}
+
+
+//============ AS PATH =======================================================
+//
+// This is being moved to its own module in `bgp` can can be removed here.
+
+
 //------------ PathSegment ---------------------------------------------------
 
 /// A segment of an AS path.
@@ -411,7 +644,7 @@ impl fmt::Display for SegmentType {
 //  So, the first element in the path is a sentinel, followed by as many real
 //  ASNs as is encoded in the sentinel, followed by another sentinel and so
 //  on.
-#[derive(Clone, Debug, Hash)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 #[cfg_attr(
     feature = "serde",
     derive(serde::Serialize, serde::Deserialize)
@@ -425,6 +658,16 @@ impl<T: AsRef<[Asn]>> AsPath<T> {
     /// Returns an iterator over the segments of the path.
     pub fn iter(&self) -> AsPath<&[Asn]> {
         AsPath { segments: self.segments.as_ref() }
+    }
+    
+    /// Returns true if the path contains the given ASN.
+    pub fn contains(&self, asn: Asn) -> bool {
+        for segment in self.iter() {
+            if segment.elements().contains(&asn) {
+                return true
+            }
+        }
+        false
     }
 }
 
@@ -702,6 +945,8 @@ mod test_serde {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashSet;
+    use std::iter::FromIterator;
 
     #[test]
     fn asn() {
@@ -723,6 +968,62 @@ mod tests {
         assert_eq!("".parse::<Asn>(), Err(ParseAsnError));
         assert_eq!("-1234".parse::<Asn>(), Err(ParseAsnError));
         assert_eq!("4294967296".parse::<Asn>(), Err(ParseAsnError));
+    }
+
+
+    //--- SmallAsnSet
+
+    // Checks that our set operation does the same as the same on
+    // HashSet<Asn>.
+    macro_rules! check_set_fn {
+        ( $fn:ident, $left:expr, $right:expr $(,)? ) => {{
+            let left = Vec::from_iter(
+                $left.iter().map(|x| Asn::from_u32(*x))
+            );
+            let right = Vec::from_iter(
+                $right.iter().map(|x| Asn::from_u32(*x))
+            );
+
+            let set_fn = {
+                let left = SmallAsnSet::from_iter(
+                    left.clone().into_iter()
+                );
+                let right = SmallAsnSet::from_iter(
+                    right.clone().into_iter()
+                );
+                left.$fn(&right).collect::<HashSet<Asn>>()
+            };
+            let hash_fn: HashSet<Asn> = {
+                let left: HashSet<Asn> = HashSet::from_iter(
+                    left.clone().into_iter()
+                );
+                let right: HashSet<Asn> = HashSet::from_iter(
+                    right.clone().into_iter()
+                );
+                left.$fn(&right).cloned().collect()
+            };
+            assert_eq!(set_fn, hash_fn);
+        }}
+    }
+
+    macro_rules! check_all_set_fns {
+        ( $left:expr, $right:expr $(,)? ) => {{
+            check_set_fn!(difference, $left, $right);
+            check_set_fn!(symmetric_difference, $left, $right);
+            check_set_fn!(intersection, $left, $right);
+            check_set_fn!(union, $left, $right);
+        }}
+    }
+
+    #[test]
+    fn small_set_operations() {
+        check_all_set_fns!([0, 1, 2, 3], [0, 1, 2, 3]);
+        check_all_set_fns!([0, 1, 2], [0, 1, 2, 3]);
+        check_all_set_fns!([0, 1, 2, 3], [0, 1, 2]);
+        check_all_set_fns!([0, 1, 2, 3], [0, 1, 2]);
+        check_all_set_fns!([], []);
+        check_all_set_fns!([1, 2, 3], []);
+        check_all_set_fns!([], [1, 2, 3]);
     }
 
     #[test]
