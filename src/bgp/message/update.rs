@@ -1671,10 +1671,10 @@ impl<'a> Nlris<'a, [u8]> {
 
         while parser.remaining() > 0 {
             match (afi, safi) {
-                (_, SAFI::MplsVpnUnicast) => { MplsVpnNlri::check(parser, config, afi)?;},
-                (_, SAFI::MplsUnicast) => { MplsNlri::check(parser, config, afi)?;},
                 (_, SAFI::Unicast) => { BasicNlri::check(parser, config, afi)?; }
                 (_, SAFI::Multicast) => { BasicNlri::check(parser, config, afi)?; }
+                (_, SAFI::MplsVpnUnicast) => { MplsVpnNlri::check(parser, config, afi)?;},
+                (_, SAFI::MplsUnicast) => { MplsNlri::check(parser, config, afi)?;},
                 (AFI::L2Vpn, SAFI::Vpls) => { VplsNlri::check(parser)?; }
                 (AFI::Ipv4, SAFI::FlowSpec) => {
                     FlowSpecNlri::check(parser)?;
@@ -1735,10 +1735,10 @@ impl<'a, Octs: Octets> Nlris<'a, Octs> {
 
         while parser.remaining() > 0 {
             match (afi, safi) {
-                (_, SAFI::MplsVpnUnicast) => { MplsVpnNlri::parse(parser, config, afi)?;},
-                (_, SAFI::MplsUnicast) => { MplsNlri::parse(parser, config, afi)?;},
                 (_, SAFI::Unicast) => { BasicNlri::parse(parser, config, afi)?; }
                 (_, SAFI::Multicast) => { BasicNlri::parse(parser, config, afi)?; }
+                (_, SAFI::MplsVpnUnicast) => { MplsVpnNlri::parse(parser, config, afi)?;},
+                (_, SAFI::MplsUnicast) => { MplsNlri::parse(parser, config, afi)?;},
                 (AFI::L2Vpn, SAFI::Vpls) => { VplsNlri::parse(parser)?; }
                 (AFI::Ipv4, SAFI::FlowSpec) => {
                     FlowSpecNlri::parse(parser)?;
@@ -2500,9 +2500,13 @@ mod tests {
         let sc = SessionConfig::modern();
         let upd: UpdateMessage<_> = Message::from_octets(&buf, Some(sc))
             .unwrap().try_into().unwrap();
-        for n in upd.nlris().iter() {
-            println!("{n}");
-        }
-
+        assert_eq!(upd.nlris().afi(), AFI::Ipv4);
+        assert_eq!(upd.nlris().safi(), SAFI::Multicast);
+        assert!(upd.nlris().iter().map(|n| n.prefix().unwrap()).eq([
+              Prefix::from_str("198.51.100.0/26").unwrap(),
+              Prefix::from_str("198.51.100.64/26").unwrap(),
+              Prefix::from_str("198.51.100.128/26").unwrap(),
+              Prefix::from_str("198.51.100.192/26").unwrap(),
+        ]));
     }
 }
