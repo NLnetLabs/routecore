@@ -1483,16 +1483,34 @@ pub struct WithdrawalsIterMp<'a, Ref: ?Sized> {
 impl<'a, Octs: 'a + Octets> WithdrawalsIterMp<'a, Octs> {
     fn get_nlri(&mut self) -> Nlri<Octs::Range<'a>> {
         match (self.afi, self.safi) {
+            (_, SAFI::Unicast | SAFI::Multicast) => {
+                Nlri::Basic(BasicNlri::parse(
+                        &mut self.parser,
+                        self.session_config,
+                        self.afi
+                ).expect("parsed before"))
+            }
             (_, SAFI::MplsVpnUnicast) => {
-                Nlri::MplsVpn(MplsVpnNlri::parse(&mut self.parser, self.session_config, self.afi).expect("parsed before"))
+                Nlri::MplsVpn(MplsVpnNlri::parse(
+                        &mut self.parser,
+                        self.session_config,
+                        self.afi
+                ).expect("parsed before"))
             },
             (_, SAFI::MplsUnicast) => {
-                Nlri::Mpls(MplsNlri::parse(&mut self.parser, self.session_config, self.afi).expect("parsed before"))
+                Nlri::Mpls(MplsNlri::parse(
+                        &mut self.parser,
+                        self.session_config,
+                        self.afi
+                ).expect("parsed before"))
             },
-            (_, SAFI::Unicast) => {
-                Nlri::Basic(BasicNlri::parse(&mut self.parser, self.session_config, self.afi).expect("parsed before"))
+            (_, _) => {
+                error!("trying to iterate over withdrawals \
+                       for unknown AFI/SAFI combination {}/{}",
+                       self.afi, self.safi
+                );
+                panic!("unsupported AFI/SAFI in withdrawals get_nlri()")
             }
-            (_, _) => panic!("should not come here")
         }
     }
 }
@@ -1510,10 +1528,24 @@ impl<'a> Withdrawals<'a, [u8]> {
 
         while parser.remaining() > 0 {
             match (afi, safi) {
-                (_, SAFI::MplsVpnUnicast) => { MplsVpnNlri::check(parser, config, afi)?;},
-                (_, SAFI::MplsUnicast) => { MplsNlri::check(parser, config, afi)?;},
-                (_, SAFI::Unicast) => { BasicNlri::check(parser, config, afi)?; }
-                (_, _) => { /* return Err(FormError("unimplemented")) */ }
+                (_, SAFI::Unicast | SAFI::Multicast) => {
+                    BasicNlri::check(parser, config, afi)?
+                }
+                (_, SAFI::MplsVpnUnicast) => {
+                    MplsVpnNlri::check(parser, config, afi)?
+                }
+                (_, SAFI::MplsUnicast) => {
+                    MplsNlri::check(parser, config, afi)?
+                },
+                (_, _) => { 
+                    debug!(
+                        "unimplemented AFI/SAFI {}/{} for Withdrawals",
+                        afi, safi
+                    );
+                    return Err(ParseError::form_error(
+                        "unimplemented AFI/SAFI for withdrawal"
+                    ))
+                }
             }
         }
 
@@ -1558,10 +1590,24 @@ impl<'a, Octs: Octets> Withdrawals<'a, Octs> {
 
         while parser.remaining() > 0 {
             match (afi, safi) {
-                (_, SAFI::MplsVpnUnicast) => { MplsVpnNlri::parse(parser, config, afi)?;},
-                (_, SAFI::MplsUnicast) => { MplsNlri::parse(parser, config, afi)?;},
-                (_, SAFI::Unicast) => { BasicNlri::parse(parser, config, afi)?; }
-                (_, _) => { /* return Err(FormError("unimplemented")) */ }
+                (_, SAFI::Unicast | SAFI::Multicast) => {
+                    BasicNlri::parse(parser, config, afi)?;
+                }
+                (_, SAFI::MplsVpnUnicast) => {
+                    MplsVpnNlri::parse(parser, config, afi)?;
+                },
+                (_, SAFI::MplsUnicast) => {
+                    MplsNlri::parse(parser, config, afi)?;
+                },
+                (_, _) => {
+                    debug!(
+                        "unimplemented AFI/SAFI {}/{} for Withdrawals",
+                        afi, safi
+                    );
+                    return Err(ParseError::form_error(
+                        "unimplemented AFI/SAFI for withdrawal"
+                    ))
+                }
             }
         }
 
@@ -1633,28 +1679,49 @@ pub struct NlriIterMp<'a, Ref: ?Sized> {
 impl<'a, Octs: Octets> NlriIterMp<'a, Octs> {
     fn get_nlri(&mut self) -> Nlri<Octs::Range<'a>> {
         match (self.afi, self.safi) {
+            (_, SAFI::Unicast | SAFI::Multicast) => {
+                Nlri::Basic(BasicNlri::parse(
+                        &mut self.parser,
+                        self.session_config,
+                        self.afi
+                ).expect("parsed before"))
+            },
             (_, SAFI::MplsVpnUnicast) => {
-                Nlri::MplsVpn(MplsVpnNlri::parse(&mut self.parser, self.session_config, self.afi).expect("parsed before"))
+                Nlri::MplsVpn(MplsVpnNlri::parse(
+                        &mut self.parser,
+                        self.session_config,
+                        self.afi
+                ).expect("parsed before"))
             },
             (_, SAFI::MplsUnicast) => {
-                Nlri::Mpls(MplsNlri::parse(&mut self.parser, self.session_config, self.afi).expect("parsed before"))
-            },
-            (_, SAFI::Unicast) => {
-                Nlri::Basic(BasicNlri::parse(&mut self.parser, self.session_config, self.afi).expect("parsed before"))
-            },
-            (_, SAFI::Multicast) => {
-                Nlri::Basic(BasicNlri::parse(&mut self.parser, self.session_config, self.afi).expect("parsed before"))
+                Nlri::Mpls(MplsNlri::parse(
+                        &mut self.parser,
+                        self.session_config,
+                        self.afi
+                ).expect("parsed before"))
             },
             (AFI::L2Vpn, SAFI::Vpls) => {
-                Nlri::Vpls(VplsNlri::parse(&mut self.parser).expect("parsed before"))
+                Nlri::Vpls(VplsNlri::parse(
+                        &mut self.parser
+                ).expect("parsed before"))
             },
             (AFI::Ipv4, SAFI::FlowSpec) => {
-                Nlri::FlowSpec(FlowSpecNlri::parse(&mut self.parser).expect("parsed before"))
+                Nlri::FlowSpec(FlowSpecNlri::parse(
+                        &mut self.parser
+                ).expect("parsed before"))
             },
             (AFI::Ipv4, SAFI::RouteTarget) => {
-                Nlri::RouteTarget(RouteTargetNlri::parse(&mut self.parser).expect("parsed before"))
+                Nlri::RouteTarget(RouteTargetNlri::parse(
+                        &mut self.parser
+                ).expect("parsed before"))
             },
-            (_, _) => panic!("unsupported AFI/SAFI in get_nlri(), should not come here")
+            (_, _) => {
+                error!("trying to iterate over NLRI \
+                       for unknown AFI/SAFI combination {}/{}",
+                       self.afi, self.safi
+                );
+                panic!("unsupported AFI/SAFI in NLRI get_nlri()")
+            }
         }
     }
 }
@@ -1671,11 +1738,18 @@ impl<'a> Nlris<'a, [u8]> {
 
         while parser.remaining() > 0 {
             match (afi, safi) {
-                (_, SAFI::Unicast) => { BasicNlri::check(parser, config, afi)?; }
-                (_, SAFI::Multicast) => { BasicNlri::check(parser, config, afi)?; }
-                (_, SAFI::MplsVpnUnicast) => { MplsVpnNlri::check(parser, config, afi)?;},
-                (_, SAFI::MplsUnicast) => { MplsNlri::check(parser, config, afi)?;},
-                (AFI::L2Vpn, SAFI::Vpls) => { VplsNlri::check(parser)?; }
+                (_, SAFI::Unicast | SAFI::Multicast) => {
+                    BasicNlri::check(parser, config, afi)?;
+                }
+                (_, SAFI::MplsVpnUnicast) => {
+                    MplsVpnNlri::check(parser, config, afi)?;
+                },
+                (_, SAFI::MplsUnicast) => {
+                    MplsNlri::check(parser, config, afi)?;
+                },
+                (AFI::L2Vpn, SAFI::Vpls) => {
+                    VplsNlri::check(parser)?;
+                }
                 (AFI::Ipv4, SAFI::FlowSpec) => {
                     FlowSpecNlri::check(parser)?;
                 },
@@ -1735,11 +1809,18 @@ impl<'a, Octs: Octets> Nlris<'a, Octs> {
 
         while parser.remaining() > 0 {
             match (afi, safi) {
-                (_, SAFI::Unicast) => { BasicNlri::parse(parser, config, afi)?; }
-                (_, SAFI::Multicast) => { BasicNlri::parse(parser, config, afi)?; }
-                (_, SAFI::MplsVpnUnicast) => { MplsVpnNlri::parse(parser, config, afi)?;},
-                (_, SAFI::MplsUnicast) => { MplsNlri::parse(parser, config, afi)?;},
-                (AFI::L2Vpn, SAFI::Vpls) => { VplsNlri::parse(parser)?; }
+                (_, SAFI::Unicast| SAFI::Multicast) => {
+                    BasicNlri::parse(parser, config, afi)?;
+                }
+                (_, SAFI::MplsVpnUnicast) => {
+                    MplsVpnNlri::parse(parser, config, afi)?;
+                },
+                (_, SAFI::MplsUnicast) => {
+                    MplsNlri::parse(parser, config, afi)?;
+                },
+                (AFI::L2Vpn, SAFI::Vpls) => {
+                    VplsNlri::parse(parser)?;
+                }
                 (AFI::Ipv4, SAFI::FlowSpec) => {
                     FlowSpecNlri::parse(parser)?;
                 },
@@ -1747,7 +1828,7 @@ impl<'a, Octs: Octets> Nlris<'a, Octs> {
                     RouteTargetNlri::parse(parser)?;
                 },
                 (_, _) => {
-                    error!("unknown AFI/SAFI {}/{}", afi, safi);
+                    debug!("unknown AFI/SAFI {}/{}", afi, safi);
                     return Err(
                         ParseError::form_error("unimplemented AFI/SAFI")
                     )
@@ -2509,4 +2590,22 @@ mod tests {
               Prefix::from_str("198.51.100.192/26").unwrap(),
         ]));
     }
+
+    #[test]
+    fn mp_unreach_ipv4_multicast() {
+        let buf = vec![
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0x00, 0x1d+5, 0x02, 0x00, 0x00, 0x00, 0x06+5, 0x80,
+            0x0f, 0x03+5, 0x00, 0x01, 0x02,
+            0x1a, 0xc6, 0x33, 0x64, 0x00
+        ]; 
+        let sc = SessionConfig::modern();
+        let upd: UpdateMessage<_> = Message::from_octets(&buf, Some(sc))
+            .unwrap().try_into().unwrap();
+        assert_eq!(upd.withdrawals().afi(), AFI::Ipv4);
+        assert_eq!(upd.withdrawals().safi(), SAFI::Multicast);
+        assert_eq!(upd.withdrawals().iter().count(), 1);
+    }
+
 }
