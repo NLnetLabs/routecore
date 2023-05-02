@@ -1642,6 +1642,9 @@ impl<'a, Octs: Octets> NlriIterMp<'a, Octs> {
             (_, SAFI::Unicast) => {
                 Nlri::Basic(BasicNlri::parse(&mut self.parser, self.session_config, self.afi).expect("parsed before"))
             },
+            (_, SAFI::Multicast) => {
+                Nlri::Basic(BasicNlri::parse(&mut self.parser, self.session_config, self.afi).expect("parsed before"))
+            },
             (AFI::L2Vpn, SAFI::Vpls) => {
                 Nlri::Vpls(VplsNlri::parse(&mut self.parser).expect("parsed before"))
             },
@@ -1735,6 +1738,7 @@ impl<'a, Octs: Octets> Nlris<'a, Octs> {
                 (_, SAFI::MplsVpnUnicast) => { MplsVpnNlri::parse(parser, config, afi)?;},
                 (_, SAFI::MplsUnicast) => { MplsNlri::parse(parser, config, afi)?;},
                 (_, SAFI::Unicast) => { BasicNlri::parse(parser, config, afi)?; }
+                (_, SAFI::Multicast) => { BasicNlri::parse(parser, config, afi)?; }
                 (AFI::L2Vpn, SAFI::Vpls) => { VplsNlri::parse(parser)?; }
                 (AFI::Ipv4, SAFI::FlowSpec) => {
                     FlowSpecNlri::parse(parser)?;
@@ -2476,5 +2480,29 @@ mod tests {
         //    println!("{}", pa.type_code());
         //    println!("{:#x?}", pa.value());
         //}
+    }
+
+    #[test]
+    fn mp_ipv4_multicast() {
+        let buf = vec![
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0x00, 0x52, 0x02, 0x00, 0x00, 0x00, 0x3b, 0x80,
+            0x0e, 0x1d, 0x00, 0x01, 0x02, 0x04, 0x0a, 0x09,
+            0x0a, 0x09, 0x00, 0x1a, 0xc6, 0x33, 0x64, 0x00,
+            0x1a, 0xc6, 0x33, 0x64, 0x40, 0x1a, 0xc6, 0x33,
+            0x64, 0x80, 0x1a, 0xc6, 0x33, 0x64, 0xc0, 0x40,
+            0x01, 0x01, 0x00, 0x40, 0x02, 0x06, 0x02, 0x01,
+            0x00, 0x00, 0x01, 0xf4, 0x40, 0x03, 0x04, 0x0a,
+            0x09, 0x0a, 0x09, 0x80, 0x04, 0x04, 0x00, 0x00,
+            0x00, 0x00
+        ];
+        let sc = SessionConfig::modern();
+        let upd: UpdateMessage<_> = Message::from_octets(&buf, Some(sc))
+            .unwrap().try_into().unwrap();
+        for n in upd.nlris().iter() {
+            println!("{n}");
+        }
+
     }
 }
