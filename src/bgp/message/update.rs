@@ -1671,6 +1671,7 @@ impl<'a> Nlris<'a, [u8]> {
                 (_, SAFI::MplsVpnUnicast) => { MplsVpnNlri::check(parser, config, afi)?;},
                 (_, SAFI::MplsUnicast) => { MplsNlri::check(parser, config, afi)?;},
                 (_, SAFI::Unicast) => { BasicNlri::check(parser, config, afi)?; }
+                (_, SAFI::Multicast) => { BasicNlri::check(parser, config, afi)?; }
                 (AFI::L2Vpn, SAFI::Vpls) => { VplsNlri::check(parser)?; }
                 (AFI::Ipv4, SAFI::FlowSpec) => {
                     FlowSpecNlri::check(parser)?;
@@ -1679,7 +1680,7 @@ impl<'a> Nlris<'a, [u8]> {
                     RouteTargetNlri::check(parser)?;
                 },
                 (_, _) => {
-                    error!("unknown AFI/SAFI {}/{}", afi, safi);
+                    debug!("unknown AFI/SAFI {}/{}", afi, safi);
                     return Err(
                         ParseError::form_error("unimplemented AFI/SAFI")
                     )
