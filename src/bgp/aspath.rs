@@ -570,18 +570,15 @@ impl<Octs: Octets, Other: Octets> PartialEq<AsPath<Other>> for AsPath<Octs> {
 impl<Octs: Octets> Hash for AsPath<Octs> {
     fn hash<H: core::hash::Hasher>(&self, h: &mut H) {
         for s in self.segments() {
-            h.write_u8(s.stype.into());
-            h.write_u8(s.asn_count());
-            for a in s.asns() {
-                h.write_u32(a.into());
-            }
+            s.hash(h);
         }
     }
 }
 
-// XXX we need this because deriving Eq on AsPath<_> results in cumbersome
-// up-bubbling trait bounds
-
+//--- Eq
+//
+// We need this because deriving Eq on AsPath<_> results in cumbersome
+// up-bubbling trait bounds.
 impl<Octs: Octets> Eq for AsPath<Octs> { }
 
 //--- Display
@@ -851,6 +848,20 @@ impl<Octs: Octets, Other: Octets> PartialEq<Segment<Other>> for Segment<Octs>
         }
     }
 }
+
+//--- Hash
+
+impl <Octs: Octets> Hash for Segment<Octs> {
+    fn hash<H: core::hash::Hasher>(&self, h: &mut H) {
+        h.write_u8(self.stype.into());
+        h.write_u8(self.asn_count());
+        for a in self.asns() {
+            h.write_u32(a.into());
+        }
+    }
+}
+
+//--- Eq
 
 impl<Octs: Octets> Eq for Segment<Octs> { }
 
