@@ -923,7 +923,7 @@ impl From<SegmentType> for u8 {
 }
 
 impl TryFrom<u8> for SegmentType {
-    type Error = InvalidSegmentTypeError;
+    type Error = InvalidSegmentType;
 
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         match value {
@@ -931,7 +931,7 @@ impl TryFrom<u8> for SegmentType {
             2 => Ok(SegmentType::Sequence),
             3 => Ok(SegmentType::ConfedSequence),
             4 => Ok(SegmentType::ConfedSet),
-            _ => Err(InvalidSegmentTypeError)
+            _ => Err(InvalidSegmentType)
         }
     }
 }
@@ -995,11 +995,11 @@ impl<Octs> From<Asn> for Hop<Octs> {
 }
 
 impl<Octs> TryFrom<Hop<Octs>> for Asn {
-    type Error = InvalidSegmentTypeError;
+    type Error = InvalidSegmentType;
     fn try_from(hop: Hop<Octs>) -> Result<Asn, Self::Error> {
         match hop {
             Hop::Asn(asn) => Ok(asn),
-            _ => Err(InvalidSegmentTypeError)
+            _ => Err(InvalidSegmentType)
         }
     }
 }
@@ -1096,19 +1096,19 @@ fn asn_size(four_byte_asns: bool) -> usize {
 
 //============ Error Types ===================================================
 
-//------------ InvalidSegmentTypeError ---------------------------------------
+//------------ InvalidSegmentType --------------------------------------------
 
 /// Error returned from conversions methods.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct InvalidSegmentTypeError;
+pub struct InvalidSegmentType;
 
-impl fmt::Display for InvalidSegmentTypeError {
+impl fmt::Display for InvalidSegmentType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.write_str("invalid segment type")
     }
 }
 
-impl error::Error for InvalidSegmentTypeError { }
+impl error::Error for InvalidSegmentType { }
 
 
 //------------ ToPathError ---------------------------------------------------
