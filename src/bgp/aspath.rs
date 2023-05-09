@@ -183,7 +183,7 @@ impl HopPath {
     /// Note that this method does not replace ASNs with AS_TRANS in case they
     /// do not fit in 16 bits. If such ASNs appear in the path, an error is
     /// returned instead.
-    pub fn to_two_octet_as_path<Octs>(
+    pub fn try_to_asn16_path<Octs>(
         &self
         ) -> Result<AsPath<Octs>,
         //<<Octs as FromBuilder>::Builder as OctetsBuilder>::AppendError
@@ -194,7 +194,7 @@ impl HopPath {
         <Octs as FromBuilder>::Builder: EmptyBuilder
     {
         let mut target = EmptyBuilder::empty();
-        Self::compose_hops_two_octets(&self.hops, &mut target)?;
+        Self::compose_asn16_hops(&self.hops, &mut target)?;
         Ok(unsafe {
             AsPath::new_unchecked(Octs::from_builder(target), false)
         })
@@ -259,7 +259,7 @@ impl HopPath {
     }
 
     // Turn this HopPath into the two-octet based AS_PATH wireformat.
-    fn compose_hops_two_octets<Octs: Octets, Target: OctetsBuilder>(
+    fn compose_asn16_hops<Octs: Octets, Target: OctetsBuilder>(
         mut hops: &[Hop<Octs>], target: &mut Target
     ) -> Result<(), ToPathError> {
         while !hops.is_empty() {
@@ -1427,7 +1427,7 @@ mod tests {
         let mut hp = HopPath::new();
         hp.prepend_arr([10, 20, 30, 40].map(Asn::from_u32));
         let asp: AsPath<Vec<u8>> = hp.to_as_path().unwrap();
-        let asp16: AsPath<Vec<u8>> = hp.to_two_octet_as_path().unwrap();
+        let asp16: AsPath<Vec<u8>> = hp.try_to_asn16_path().unwrap();
         assert_eq!(asp, asp16);
         assert!(asp.octets.len() > asp16.octets.len());
 
@@ -1447,7 +1447,7 @@ mod tests {
         fn good_hop_path(hp: impl Into<HopPath>) {
             let hp = hp.into();
             let asp32: AsPath<Vec<u8>> = hp.to_as_path().unwrap();
-            let asp16: AsPath<Vec<u8>> = hp.to_two_octet_as_path().unwrap();
+            let asp16: AsPath<Vec<u8>> = hp.try_to_asn16_path().unwrap();
             assert_eq!(asp32, asp16);
             assert!(asp32.octets.len() > asp16.octets.len());
 
@@ -1489,7 +1489,7 @@ mod tests {
             Asn::from_u32(u32::from(u16::MAX) + 100)
         ].into();
         assert!(hp.to_as_path::<Vec<u8>>().is_ok());
-        assert!(hp.to_two_octet_as_path::<Vec<u8>>().is_err());
+        assert!(hp.try_to_asn16_path::<Vec<u8>>().is_err());
 
     }
 
@@ -1497,13 +1497,13 @@ mod tests {
     fn max_size_segments() {
         let hp: HopPath = [Asn::from_u32(123); 255].into();
         let asp: AsPath<Vec<u8>> = hp.to_as_path().unwrap();
-        let asp16: AsPath<Vec<u8>> = hp.to_two_octet_as_path().unwrap();
+        let asp16: AsPath<Vec<u8>> = hp.try_to_asn16_path().unwrap();
         assert_eq!(asp.segments().count(), 1);
         assert_eq!(asp16.segments().count(), 1);
 
         let hp: HopPath = [Asn::from_u32(123); 256].into();
         let asp: AsPath<Vec<u8>> = hp.to_as_path().unwrap();
-        let asp16: AsPath<Vec<u8>> = hp.to_two_octet_as_path().unwrap();
+        let asp16: AsPath<Vec<u8>> = hp.try_to_asn16_path().unwrap();
         assert_eq!(asp.segments().count(), 2);
         assert_eq!(asp16.segments().count(), 2);
     }
