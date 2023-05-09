@@ -33,8 +33,14 @@ impl Asn {
         self.0
     }
 
+    /// Try to convert a 4-octet AS number into a `u16`.
     pub fn try_into_u16(self) -> Result<u16, LargeAsnError> {
         self.0.try_into().map_err(|_| LargeAsnError)
+    }
+
+    /// Try to convert a 4-octet AS number into a 2-octet `Asn16`.
+    pub fn try_into_asn16(self) -> Result<Asn16, LargeAsnError> {
+        Ok(Asn16(self.try_into_u16()?))
     }
 
     /// Converts an AS number into a network-order byte array.
@@ -295,6 +301,78 @@ impl fmt::Display for Asn {
         write!(f, "AS{}", self.0)
     }
 }
+
+
+
+//------------ Asn16 ---------------------------------------------------------
+
+/// A 2-octet ASN.
+///
+/// This is only here to facilitate 'legacy' BGP, i.e., BGP messages in a BGP
+/// session for which the FourOctet Capability has not been exchanged. 
+#[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct Asn16(u16);
+
+impl Asn16 {
+    pub fn from_u16(u: u16) -> Self {
+        Self(u)
+    }
+    pub fn to_u16(self) -> u16 {
+        self.0
+    }
+    pub fn into_asn32(self) -> Asn {
+        Asn::from_u32(self.0 as u32)
+    }
+    pub fn to_raw(self) -> [u8; 2] {
+        self.0.to_be_bytes()
+    }
+}
+
+//--- Display
+
+impl fmt::Display for Asn16 {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        write!(f, "AS{}", self.0)
+    }
+}
+
+
+//--- From / FromStr
+
+impl From<u16> for Asn16 {
+    fn from(n: u16) -> Self {
+        Self(n)
+    }
+}
+
+fn strip_as(s: &str) -> &str {
+    s.strip_prefix("AS")
+        .or_else(|| s.strip_prefix("as"))
+        .or_else(|| s.strip_prefix("As"))
+        .or_else(|| s.strip_prefix("aS"))
+        .unwrap_or(s)
+}
+
+impl FromStr for Asn16 {
+    type Err = ParseAsnError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        u16::from_str(strip_as(s)).map_err(|_| ParseAsnError)
+            .map(Asn16::from_u16)
+    
+    // more strict version:
+    /*
+        s.strip_prefix("AS").ok_or_else(|| "missing AS".into())
+            .and_then(|e| u16::from_str(e)
+                      .map_err(|_e| "u16 parsing failed".into())
+                     )
+            .map(Asn16::from_u16)
+    */
+    }
+}
+
+
 
 
 //------------ SmallAsnSet --------------------------------------------------

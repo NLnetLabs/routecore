@@ -2429,7 +2429,7 @@ mod tests {
              ExtendedCommunitySubType::OtherSubType(0x06))
             );
 
-        use crate::bgp::communities::Asn16;
+        use crate::asn::Asn16;
         assert_eq!(ext_comm1.as2(), Some(Asn16::from_u16(0)));
 
         let ext_comm2 = ext_comms.next().unwrap();
