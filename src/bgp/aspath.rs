@@ -108,13 +108,12 @@ impl HopPath {
         self.hops = new;
     }
 
-    /// Prepends a new AS_SET containing the `Asn`s in `set` to this HopPath.
+    /// Prepends a new AS_SET from `set` to this HopPath.
     pub fn prepend_set(&mut self, set: impl IntoIterator<Item = Asn>) {
         self.prepend(Hop::Segment(Segment::new_set(set)))
     }
 
-    /// Prepends a new AS_CONFED_SEQUENCE containing the `Asn`s in `set` to
-    /// this HopPath.
+    /// Prepends a new AS_CONFED_SEQUENCE from `seq` to this HopPath.
     pub fn prepend_confed_sequence(
         &mut self,
         seq: impl IntoIterator<Item = Asn>
@@ -122,8 +121,7 @@ impl HopPath {
         self.prepend(Hop::Segment(Segment::new_confed_sequence(seq)))
     }
 
-    /// Prepends a new AS_CONFED_SET containing the `Asn`s in `set` to this
-    /// HopPath.
+    /// Prepends a new AS_CONFED_SET from `set` to this HopPath.
     pub fn prepend_confed_set(
         &mut self,
         set: impl IntoIterator<Item = Asn>
@@ -489,8 +487,7 @@ impl<Octs: Octets> AsPath<Octs> {
         self.hops().last()
     }
 
-    /// Returns a new AsPath comprised of this AsPath with `asn` prepended
-    /// `n` times.
+    /// Returns a new AsPath with `asn` prepended `n` times to it.
     pub fn prepend(
         &self, asn: Asn, n: usize
     ) -> Result<
@@ -507,8 +504,7 @@ impl<Octs: Octets> AsPath<Octs> {
         hops.to_as_path()
     }
 
-    /// Returns a new AsPath comprised of this AsPath with the [`Asn`]s in
-    /// `arr` prepended as an AS_SEQUENCE.
+    /// Returns a new AsPath with the [`Asn`]s prepended to it as AS_SEQUENCE. 
     pub fn prepend_arr<const N: usize>(
         &self,
         arr: [Asn; N]
