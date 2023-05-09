@@ -19,6 +19,8 @@ use octseq::builder::{infallible, EmptyBuilder, FromBuilder, OctetsBuilder};
 use octseq::octets::{Octets, OctetsFrom, OctetsInto};
 use octseq::parse::{Parser, ShortInput};
 
+pub type HopOcts = Hop<Vec<u8>>;
+
 //------------ HopPath -------------------------------------------------------
 
 /// Represents an AS PATH as a vec of actual network hops. 
@@ -41,7 +43,7 @@ use octseq::parse::{Parser, ShortInput};
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct HopPath {
     /// The hops in this HopPath.
-    hops: Vec<Hop<Vec<u8>>>,
+    hops: Vec<HopOcts>,
 }
 
 impl HopPath {
@@ -54,12 +56,12 @@ impl HopPath {
     ///
     /// Note that this can be a [`Segment`] if the right-most Segment is not a
     /// Sequence.
-    pub fn origin(&self) -> Option<&Hop<Vec<u8>>> {
+    pub fn origin(&self) -> Option<&HopOcts> {
         self.hops.last()
     }
 
     /// Returns true if this HopPath contains `hop`. 
-    pub fn contains(&self, hop: &Hop<Vec<u8>>) -> bool {
+    pub fn contains(&self, hop: &HopOcts) -> bool {
         self.hops.iter().any(|h| h == hop)
     }
 
@@ -72,7 +74,7 @@ impl HopPath {
     }
 
     /// Returns an iterator over the [`Hop`]s.
-    pub fn iter(&self) -> std::slice::Iter<'_, Hop<Vec<u8>>> {
+    pub fn iter(&self) -> std::slice::Iter<'_, HopOcts> {
         self.hops[..].iter()
     }
 
@@ -82,7 +84,7 @@ impl HopPath {
     /// regardless of the type of the current left-most segment in this
     /// HopPath (if any). This means the appended ASN becomes (part of) an
     /// AS_SEQUENCE when converted to wireformat using `to_as_path()`.
-    pub fn prepend(&mut self, hop: impl Into<Hop<Vec<u8>>>) {
+    pub fn prepend(&mut self, hop: impl Into<HopOcts>) {
         self.hops.insert(0, hop.into());
     }
 
@@ -135,7 +137,7 @@ impl HopPath {
     /// regardless of the type of the current right-most segment in this
     /// HopPath (if any). This means the appended ASN becomes (part of) an
     /// AS_SEQUENCE when converted to wireformat using `to_as_path()`.
-    pub fn append(&mut self, hop: impl Into<Hop<Vec<u8>>>) {
+    pub fn append(&mut self, hop: impl Into<HopOcts>) {
         self.hops.push(hop.into());
     }
 
@@ -327,7 +329,7 @@ impl HopPath {
 //--- IntoIterator
 
 impl IntoIterator for HopPath {
-    type Item = Hop<Vec<u8>>;
+    type Item = HopOcts;
     type IntoIter = std::vec::IntoIter<Self::Item>;
 
     fn into_iter(self) -> Self::IntoIter {
@@ -337,14 +339,14 @@ impl IntoIterator for HopPath {
 
 //--- Index / IndexMut
 
-impl<I: SliceIndex<[Hop<Vec<u8>>]>> Index<I> for HopPath {
+impl<I: SliceIndex<[HopOcts]>> Index<I> for HopPath {
     type Output = I::Output;
     fn index(&self, i: I) -> &Self::Output {
         &self.hops[i]
     }
 }
 
-impl<I: SliceIndex<[Hop<Vec<u8>>]>> IndexMut<I> for HopPath {
+impl<I: SliceIndex<[HopOcts]>> IndexMut<I> for HopPath {
     fn index_mut(&mut self, i: I) -> &mut Self::Output {
         &mut self.hops[i]
     }
@@ -352,8 +354,8 @@ impl<I: SliceIndex<[Hop<Vec<u8>>]>> IndexMut<I> for HopPath {
 
 //--- From
 
-impl From<Vec<Hop<Vec<u8>>>> for HopPath {
-    fn from(hops: Vec<Hop<Vec<u8>>>) -> HopPath {
+impl From<Vec<HopOcts>> for HopPath {
+    fn from(hops: Vec<HopOcts>) -> HopPath {
         HopPath { hops }
     }
 }
@@ -362,7 +364,7 @@ impl From<Vec<Segment<Vec<u8>>>> for HopPath {
     fn from(segs: Vec<Segment<Vec<u8>>>) -> HopPath {
         HopPath {
             hops: segs.into_iter().map(Hop::Segment)
-                .collect::<Vec<Hop<Vec<u8>>>>()
+                .collect::<Vec<HopOcts>>()
         }
     }
 }
@@ -1311,7 +1313,7 @@ mod tests {
                 Hop::<Vec<u8>>::Asn(Asn::from_u32(1234)).try_into_asn()
         );
 
-        let hop: Hop<Vec<u8>> = Segment::new_set([Asn::from_u32(10)]).into();
+        let hop: HopOcts = Segment::new_set([Asn::from_u32(10)]).into();
         assert!(TryInto::<Asn>::try_into(hop.clone()).is_err());
         assert!(hop.try_into_asn().is_err());
     }
