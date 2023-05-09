@@ -532,9 +532,8 @@ impl<Octs: Octets> AsPath<Octs> {
 
 //--- PartialEq
 
-impl<Octs: Octets> PartialEq for AsPath<Octs> {
-    // XXX how can (should?) we get a `OctsB: Octets` in here?
-    fn eq(&self, other: &AsPath<Octs>) -> bool {
+impl<Octs: Octets, Other: Octets> PartialEq<AsPath<Other>> for AsPath<Octs> {
+    fn eq(&self, other: &AsPath<Other>) -> bool {
         if self.four_byte_asns == other.four_byte_asns
             && self.octets.as_ref() == other.octets.as_ref()
         {
@@ -822,8 +821,9 @@ impl<Octs: AsRef<[u8]>> Segment<Octs> {
 
 //--- PartialEq
 
-impl<Octs: Octets> PartialEq for Segment<Octs> {
-    fn eq(&self, other: &Segment<Octs>) -> bool {
+impl<Octs: Octets, Other: Octets> PartialEq<Segment<Other>> for Segment<Octs>
+{
+    fn eq(&self, other: &Segment<Other>) -> bool {
         if self.stype != other.stype {
             return false
         }
@@ -1433,7 +1433,7 @@ mod tests {
 
         // back to four octets
         let hp2 = asp16.to_hop_path();
-        let asp2 = hp2.to_as_path().unwrap();
+        let asp2: AsPath<Vec<u8>> = hp2.to_as_path().unwrap();
         assert_eq!(asp, asp2);
         assert!(asp.octets.len() == asp2.octets.len());
 
@@ -1452,7 +1452,7 @@ mod tests {
             assert!(asp32.octets.len() > asp16.octets.len());
 
             let hp2 = asp16.to_hop_path();
-            let asp32_2 = hp2.to_as_path().unwrap();
+            let asp32_2: AsPath<Vec<u8>> = hp2.to_as_path().unwrap();
             assert_eq!(asp32, asp32_2);
             assert_eq!(asp32.octets, asp32_2.octets);
 
