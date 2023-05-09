@@ -276,13 +276,13 @@ impl HopPath {
                             SegmentType::Sequence.into(),
                             u8::try_from(head.len()).expect("long sequence")
                         ]
-                    ).map_err(|_| ToPathError::append_error())?;
+                    ).map_err(|_| ToPathError::ShortBuf)?;
                     head.iter().try_for_each(|h| {
                         match h {
                             Hop::Asn(asn) => { 
                                 let asn16 = asn.try_into_u16()?;
                                 target.append_slice(&asn16.to_be_bytes())
-                                    .map_err(|_| ToPathError::append_error())
+                                    .map_err(|_| ToPathError::ShortBuf)
                             }
                             _ => unreachable!()
                         }
@@ -295,13 +295,13 @@ impl HopPath {
                             SegmentType::Sequence.into(),
                             u8::try_from(c.len()).expect("long sequence")
                         ]
-                    ).map_err(|_| ToPathError::append_error())?;
+                    ).map_err(|_| ToPathError::ShortBuf)?;
                     c.iter().try_for_each(|h| {
                         match h {
                             Hop::Asn(asn) => {
                                 let asn16 = asn.try_into_u16()?;
                                 target.append_slice(&asn16.to_be_bytes())
-                                    .map_err(|_| ToPathError::append_error())
+                                    .map_err(|_| ToPathError::ShortBuf)
                             }
                             _ => unreachable!()
                         }
@@ -797,17 +797,17 @@ impl<Octs: AsRef<[u8]>> Segment<Octs> {
                 self.stype.into(),
                 self.asn_count(),
             ]
-        ).map_err(|_| ToPathError::append_error())?;
+        ).map_err(|_| ToPathError::ShortBuf)?;
         if !self.four_byte_asns {
             target.append_slice(self.octets.as_ref())
-                .map_err(|_| ToPathError::append_error())?;
+                .map_err(|_| ToPathError::ShortBuf)?;
         }
         else {
             self.asns().try_for_each(|asn| {
                 let asn16 = asn.try_into_u16()?;
                 target.append_slice(
                     &asn16.to_be_bytes()
-                ).map_err(|_| ToPathError::append_error())
+                ).map_err(|_| ToPathError::ShortBuf)
             })?;
         }
         Ok(())
@@ -1121,57 +1121,36 @@ impl fmt::Display for InvalidSegmentType {
 
 impl error::Error for InvalidSegmentType { }
 
-
 //------------ ToPathError ---------------------------------------------------
-// XXX is there a more idiomatic way of introducing another error next to
-// AppendError?
 
 #[derive(Debug)]
-pub struct ToPathError {
-    error_type: ToPathErrorType
-}
-
-#[derive(Debug)]
-enum ToPathErrorType {
-    AppendError,
+pub enum ToPathError {
+    ShortBuf,
     LargeAsnError,
 }
-impl ToPathError {
-    fn append_error() -> Self {
-        ToPathError { error_type: ToPathErrorType::AppendError }
+
+impl From<octseq::ShortBuf> for ToPathError {
+    fn from(_: octseq::ShortBuf) -> ToPathError {
+        ToPathError::ShortBuf
     }
-
-    // better handled by the From impl + `?`
-    //fn large_asn_error() -> Self {
-    //    ToPathError { error_type: ToPathErrorType::LargeAsnError }
-    //}
 }
-
 impl From<LargeAsnError> for ToPathError {
     fn from(_: LargeAsnError) -> ToPathError {
-        ToPathError { error_type: ToPathErrorType::LargeAsnError }
+        ToPathError::LargeAsnError
     }
 }
-
-// XXX is there überhaupt a way to properly impl From for Target::AppendError?
-//impl From<octseq::ShortBuf> for ToPathError {
-//    fn from(_: octseq::ShortBuf) -> ToPathError {
-//        ToPathError { error_type: ToPathErrorType::AppendError }
-//    }
-//}
-
-impl std::error::Error for ToPathError { }
 
 impl fmt::Display for ToPathError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self.error_type {
-            ToPathErrorType::AppendError => f.write_str("could not append"),
-            ToPathErrorType::LargeAsnError => f.write_str("ASN too large"),
+        match self {
+            ToPathError::ShortBuf => octseq::ShortBuf.fmt(f),
+            ToPathError::LargeAsnError => f.write_str("ASN too large"),
         }
     }
 }
 
-
+impl std::error::Error for ToPathError {}
+    
 
 //============ Tests =========================================================
 
