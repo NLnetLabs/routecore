@@ -1,3 +1,3 @@
-//! Types and parsing for BMP packets.
+//! Types and parsing for BMP messages.
 
 pub mod message;
