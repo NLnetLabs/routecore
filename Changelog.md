@@ -24,6 +24,17 @@ New
 * Added implementations for the `arbitrary::Arbitrary` trait to ASN and IP
   resource types. ([#24])
 
+* Reworked AsPath
+
+  Most of the code related to the BGP path attribute AS_PATH has been overhauled
+  and moved away from `asn` into `bgp::aspath`. The main struct is now generic
+  over `Octets` that represent the wireformat of the path attribute, moving away
+  from the 'sentinel ASN'-approach.
+  It also introduces `HopPath`, a representation that is more convenient to
+  reason about than the wireformat. `HopPath` replaces `AsPathBuilder`.
+  ([#23])
+
+
 Bug fixes
 
 Other changes
@@ -34,6 +45,7 @@ Other changes
 
 [#14]: https://github.com/NLnetLabs/routecore/pull/14
 [#22]: https://github.com/NLnetLabs/routecore/pull/22
+[#23]: https://github.com/NLnetLabs/routecore/pull/23
 [#24]: https://github.com/NLnetLabs/routecore/pull/24
 
 
