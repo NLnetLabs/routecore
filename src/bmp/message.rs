@@ -622,10 +622,10 @@ impl<Octs: Octets> StatisticsReport<Octs> {
         CommonHeader::<Octs>::check(&mut parser)?;
         PerPeerHeader::<Octs>::check(&mut parser)?;
 
-        let count = parser.parse_u32()?;
+        let count = parser.parse_u32_be()?;
         for _ in 0..count {
             parser.advance(2)?; // u16
-            let len = parser.parse_u16()?;
+            let len = parser.parse_u16_be()?;
             parser.advance(len.into())?;
         }
         Ok(())
@@ -918,11 +918,11 @@ impl<Octs: Octets> PeerUpNotification<Octs> {
         // optional Information
         if parser.remaining() > 0 { 
             // Information TLVs of type 0 (String)
-            let info_type = parser.parse_u16()?;
+            let info_type = parser.parse_u16_be()?;
             if info_type != 0 {
                 warn!("TLV in PeerUpNotification of type other than 0");
             }
-            let info_len = parser.parse_u16()?;
+            let info_len = parser.parse_u16_be()?;
             parser.advance(info_len.into())?;
         }
 
@@ -962,7 +962,7 @@ impl<Octs: Octets> InitiationMessage<Octs> {
         CommonHeader::<Octs>::check(&mut parser)?;
         while parser.remaining() > 0 {
             parser.advance(2)?; // type u16
-            let info_len = parser.parse_u16()?;
+            let info_len = parser.parse_u16_be()?;
             parser.advance(info_len.into())?;
         }
         Ok(())
@@ -1003,7 +1003,7 @@ impl<Octs: Octets> TerminationMessage<Octs> {
 
         while parser.remaining() > 0 {
             parser.advance(2)?; // type u16
-            let info_len = parser.parse_u16()?;
+            let info_len = parser.parse_u16_be()?;
             parser.advance(info_len.into())?;
         }
 

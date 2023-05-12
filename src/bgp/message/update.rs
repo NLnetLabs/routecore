@@ -285,7 +285,7 @@ impl<Octs: Octets> UpdateMessage<Octs> {
             // TODO value_into_parser ?
             let v = pa.value();
             let mut parser = Parser::from_ref(&v);
-            let afi: AFI = parser.parse_u16().expect("parsed before").into();
+            let afi: AFI = parser.parse_u16_be().expect("parsed before").into();
             let safi: SAFI = parser.parse_u8().expect("parsed before").into();
 
             return Some(NextHop::parse(&mut parser, afi, safi).expect("parsed before"));
@@ -436,7 +436,7 @@ impl<Octs: Octets> UpdateMessage<Octs> {
         let mut parser = Parser::from_ref(octets);
         Header::check(&mut parser)?;
 
-        let withdrawals_len = parser.parse_u16()?;
+        let withdrawals_len = parser.parse_u16_be()?;
         if withdrawals_len > 0 {
             let mut wdraw_parser = parser.parse_parser(
                 withdrawals_len.into()
@@ -447,7 +447,7 @@ impl<Octs: Octets> UpdateMessage<Octs> {
             }
         }
 
-        let path_attributes_len = parser.parse_u16()?;
+        let path_attributes_len = parser.parse_u16_be()?;
         if path_attributes_len > 0 {
             let mut pas_parser = parser.parse_parser(
                 path_attributes_len.into()
@@ -473,7 +473,7 @@ impl<Octs: Octets> UpdateMessage<Octs> {
         let pos = parser.pos();
         let hdr = Header::parse(parser)?;
 
-        let withdrawn_len = parser.parse_u16()?;
+        let withdrawn_len = parser.parse_u16_be()?;
         if withdrawn_len > 0 {
             let mut wdraw_parser = parser.parse_parser(withdrawn_len.into())?;
             while wdraw_parser.remaining() > 0 {
@@ -481,7 +481,7 @@ impl<Octs: Octets> UpdateMessage<Octs> {
                 BasicNlri::parse(&mut wdraw_parser, config, AFI::Ipv4)?;
             }
         }
-        let total_path_attributes_len = parser.parse_u16()?;
+        let total_path_attributes_len = parser.parse_u16_be()?;
         if total_path_attributes_len > 0 {
             let mut pas_parser = parser.parse_parser(total_path_attributes_len.into())?;
             PathAttributes::parse(&mut pas_parser, config)?;
@@ -753,7 +753,7 @@ impl<'a> PathAttribute<'a, [u8]> {
         let typecode = parser.parse_u8()?;
         let len = match flags & 0x10 == 0x10 {
             true => {
-                parser.parse_u16()? as usize
+                parser.parse_u16_be()? as usize
             },
             false => parser.parse_u8()? as usize, 
         };
@@ -873,7 +873,7 @@ impl<'a> PathAttribute<'a, [u8]> {
                 let _flags = parser.parse_u8()?;
                 let _tunnel_type = parser.parse_u8()?;
                 let _mpls_label_1 = parser.parse_u8()?;
-                let _mpls_label_2 = parser.parse_u16()?;
+                let _mpls_label_2 = parser.parse_u16_be()?;
                 let tunnel_id_len = len - 5;
                 parser.advance(tunnel_id_len)?;
             },
@@ -903,7 +903,7 @@ impl<'a> PathAttribute<'a, [u8]> {
                 //    [1byte pCount (prependCount?), 1 byte flags, 4byte ASN]
                 //)+
 
-                let len_path = pp.parse_u16()?;
+                let len_path = pp.parse_u16_be()?;
                 if (len_path - 2) % 6 != 0 {
                     warn!("BGPsec_Path Path Segments not a multiple of 6 bytes")
                 }
@@ -916,7 +916,7 @@ impl<'a> PathAttribute<'a, [u8]> {
                 //    [20 bytes SKI, 2 bytes sig length, sig]
                 //)+
 
-                let len_sigs = pp.parse_u16()?;
+                let len_sigs = pp.parse_u16_be()?;
                 let algo_id = pp.parse_u8()?;
                 if algo_id != 0x01 {
                     warn!("BGPsec_Path Signature Block containing unknown\
@@ -927,7 +927,7 @@ impl<'a> PathAttribute<'a, [u8]> {
                 while sb1_parser.remaining() > 0 {
                     // SKI
                     sb1_parser.advance(20)?;
-                    let sig_len = sb1_parser.parse_u16()?;
+                    let sig_len = sb1_parser.parse_u16_be()?;
                     sb1_parser.advance(sig_len as usize)?;
                 }
 
@@ -942,7 +942,7 @@ impl<'a> PathAttribute<'a, [u8]> {
                     while sb2_parser.remaining() > 0 {
                         // SKI
                         sb2_parser.advance(20)?;
-                        let sig_len = sb2_parser.parse_u16()?;
+                        let sig_len = sb2_parser.parse_u16_be()?;
                         sb2_parser.advance(sig_len as usize)?;
                     }
                 }
@@ -992,7 +992,7 @@ impl<'a, Octs: Octets> PathAttribute<'a, Octs> {
         let len = match flags & 0x10 == 0x10 {
             true => {
                 headerlen += 1;
-                parser.parse_u16()? as usize
+                parser.parse_u16_be()? as usize
             },
             false => parser.parse_u8()? as usize, 
         };
@@ -1018,8 +1018,8 @@ impl<'a, Octs: Octets> PathAttribute<'a, Octs> {
                     let slen = p.parse_u8()?;
                     for _ in 0..slen {
                         match config.four_octet_asn {
-                            FourOctetAsn::Enabled => { p.parse_u32()?; }
-                            FourOctetAsn::Disabled => { p.parse_u16()?; }
+                            FourOctetAsn::Enabled => { p.parse_u32_be()?; }
+                            FourOctetAsn::Disabled => { p.parse_u16_be()?; }
                         }
                     }
                 }
@@ -1039,7 +1039,7 @@ impl<'a, Octs: Octets> PathAttribute<'a, Octs> {
                         ParseError::form_error("expected len 4 for MULTI_EXIT_DISC pa")
                     );
                 }
-                let _med = parser.parse_u32()?;
+                let _med = parser.parse_u32_be()?;
             }
             PathAttributeType::LocalPref => {
                 if len != 4 {
@@ -1047,7 +1047,7 @@ impl<'a, Octs: Octets> PathAttribute<'a, Octs> {
                         ParseError::form_error("expected len 4 for LOCAL_PREF pa")
                     );
                 }
-                let _localpref = parser.parse_u32()?;
+                let _localpref = parser.parse_u32_be()?;
             },
             PathAttributeType::AtomicAggregate => {
                 if len != 0 {
@@ -1068,12 +1068,12 @@ impl<'a, Octs: Octets> PathAttribute<'a, Octs> {
                 }
             },
             PathAttributeType::OriginatorId => {
-                let _bgp_id = parser.parse_u32()?;
+                let _bgp_id = parser.parse_u32_be()?;
             },
             PathAttributeType::ClusterList => {
                 let pos = parser.pos();
                 while parser.pos() < pos + len {
-                    parser.parse_u32()?;
+                    parser.parse_u32_be()?;
                 }
             },
             PathAttributeType::MpReachNlri => {
@@ -1097,12 +1097,12 @@ impl<'a, Octs: Octets> PathAttribute<'a, Octs> {
                     // segment length describes the number of ASNs
                     let slen = pa_parser.parse_u8()?;
                     for _ in 0..slen {
-                         pa_parser.parse_u32()?;
+                         pa_parser.parse_u32_be()?;
                     }
                 }
             }
             PathAttributeType::As4Aggregator => {
-                let _asn = parser.parse_u32()?;
+                let _asn = parser.parse_u32_be()?;
                 let _addr = parse_ipv4addr(parser)?;
             }
             PathAttributeType::Connector => {
@@ -1115,13 +1115,13 @@ impl<'a, Octs: Octets> PathAttribute<'a, Octs> {
             },
             PathAttributeType::AsPathLimit => {
                 let _limit = parser.parse_u8()?;
-                let _asn = parser.parse_u32()?;
+                let _asn = parser.parse_u32_be()?;
             },
             PathAttributeType::PmsiTunnel => {
                 let _flags = parser.parse_u8()?;
                 let _tunnel_type = parser.parse_u8()?;
                 let _mpls_label_1 = parser.parse_u8()?;
-                let _mpls_label_2 = parser.parse_u16()?;
+                let _mpls_label_2 = parser.parse_u16_be()?;
                 let tunnel_id_len = len - 5;
                 parser.advance(tunnel_id_len)?;
             },
@@ -1151,7 +1151,7 @@ impl<'a, Octs: Octets> PathAttribute<'a, Octs> {
                 //    [1byte pCount (prependCount?), 1 byte flags, 4byte ASN]
                 //)+
 
-                let len_path = pp.parse_u16()?;
+                let len_path = pp.parse_u16_be()?;
                 if (len_path - 2) % 6 != 0 {
                     warn!("BGPsec_Path Path Segments not a multiple of 6 bytes")
                 }
@@ -1164,7 +1164,7 @@ impl<'a, Octs: Octets> PathAttribute<'a, Octs> {
                 //    [20 bytes SKI, 2 bytes sig length, sig]
                 //)+
 
-                let len_sigs = pp.parse_u16()?;
+                let len_sigs = pp.parse_u16_be()?;
                 let algo_id = pp.parse_u8()?;
                 if algo_id != 0x01 {
                     warn!("BGPsec_Path Signature Block containing unknown\
@@ -1175,7 +1175,7 @@ impl<'a, Octs: Octets> PathAttribute<'a, Octs> {
                 while sb1_parser.remaining() > 0 {
                     // SKI
                     sb1_parser.advance(20)?;
-                    let sig_len = sb1_parser.parse_u16()?;
+                    let sig_len = sb1_parser.parse_u16_be()?;
                     sb1_parser.advance(sig_len as usize)?;
                 }
 
@@ -1190,7 +1190,7 @@ impl<'a, Octs: Octets> PathAttribute<'a, Octs> {
                     while sb2_parser.remaining() > 0 {
                         // SKI
                         sb2_parser.advance(20)?;
-                        let sig_len = sb2_parser.parse_u16()?;
+                        let sig_len = sb2_parser.parse_u16_be()?;
                         sb2_parser.advance(sig_len as usize)?;
                     }
                 }
@@ -1202,7 +1202,7 @@ impl<'a, Octs: Octets> PathAttribute<'a, Octs> {
                 }
             },
             PathAttributeType::AttrSet => {
-                let _origin_as = parser.parse_u32()?;
+                let _origin_as = parser.parse_u32_be()?;
                 let mut set_parser = parser.parse_parser(len - 4)?;
                 //while set_parser.remaining() > 0 {
                 //    PathAttribute::parse(&mut set_parser)?;
@@ -1417,12 +1417,12 @@ impl Aggregator {
         let len = parser.remaining(); // XXX is this always correct?
         match (len, config.four_octet_asn) {
             (8, FourOctetAsn::Enabled) => {
-                let asn = Asn::from_u32(parser.parse_u32()?);
+                let asn = Asn::from_u32(parser.parse_u32_be()?);
                 let addr = parse_ipv4addr(parser)?;
                 Ok(Self::new(asn, addr))
             },
             (6, FourOctetAsn::Disabled) => {
-                let asn = Asn::from_u32(parser.parse_u16()?.into());
+                let asn = Asn::from_u32(parser.parse_u16_be()?.into());
                 let addr = parse_ipv4addr(parser)?;
                 Ok(Self::new(asn, addr))
             },
@@ -1523,7 +1523,7 @@ impl<'a> Withdrawals<'a, [u8]> {
         // Length is given in the Path Attribute length field.
         // AFI, SAFI, are also in this Path Attribute.
 
-        let afi: AFI = parser.parse_u16()?.into();
+        let afi: AFI = parser.parse_u16_be()?.into();
         let safi: SAFI = parser.parse_u8()?.into();
 
         while parser.remaining() > 0 {
@@ -1584,7 +1584,7 @@ impl<'a, Octs: Octets> Withdrawals<'a, Octs> {
         // Length is given in the Path Attribute length field.
         // AFI, SAFI, are also in this Path Attribute.
 
-        let afi: AFI = parser.parse_u16()?.into();
+        let afi: AFI = parser.parse_u16_be()?.into();
         let safi: SAFI = parser.parse_u8()?.into();
         let pos = parser.pos();
 
@@ -1730,7 +1730,7 @@ impl<'a> Nlris<'a, [u8]> {
     fn check(parser: &mut Parser<'a, [u8]>, config: SessionConfig)
         -> Result<(), ParseError>
     {
-        let afi: AFI = parser.parse_u16()?.into();
+        let afi: AFI = parser.parse_u16_be()?.into();
         let safi: SAFI = parser.parse_u8()?.into();
 
         NextHop::check(parser, afi, safi)?;
@@ -1799,7 +1799,7 @@ impl<'a, Octs: Octets> Nlris<'a, Octs> {
         // Length is given in the Path Attribute length field.
         // AFI, SAFI, Nexthop are also in this Path Attribute.
 
-        let afi: AFI = parser.parse_u16()?.into();
+        let afi: AFI = parser.parse_u16_be()?.into();
         let safi: SAFI = parser.parse_u8()?.into();
 
         NextHop::skip(parser)?;

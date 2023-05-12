@@ -125,7 +125,7 @@ impl PathId {
     pub fn parse<R: Octets>(parser: &mut Parser<'_, R>)
         -> Result<Self, ParseError> 
     {
-        Ok(PathId(parser.parse_u32()?))
+        Ok(PathId(parser.parse_u32_be()?))
     }
 }
 
@@ -694,13 +694,13 @@ impl VplsNlri {
     pub fn parse<R: Octets>(parser: &mut Parser<'_, R>)
         -> Result<Self, ParseError>
     {
-        let _len = parser.parse_u16()?;
+        let _len = parser.parse_u16_be()?;
         let rd = RouteDistinguisher::parse(parser)?; 
-        let ve_id = parser.parse_u16()?;
-        let ve_block_offset = parser.parse_u16()?;
-        let ve_block_size = parser.parse_u16()?;
+        let ve_id = parser.parse_u16_be()?;
+        let ve_block_offset = parser.parse_u16_be()?;
+        let ve_block_size = parser.parse_u16_be()?;
         let label_base_1 = parser.parse_u8()? as u32;
-        let label_base_2 = parser.parse_u16()? as u32;
+        let label_base_2 = parser.parse_u16_be()? as u32;
 
         Ok(
             VplsNlri {

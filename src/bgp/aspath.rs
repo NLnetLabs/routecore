@@ -1084,10 +1084,10 @@ impl<'a, Octs: Octets> Iterator for Asns<'a, Octs> {
             return None
         }
         let n = if self.four_byte_asns {
-            self.parser.parse_u32().expect("parsed before")
+            self.parser.parse_u32_be().expect("parsed before")
         }
         else {
-            u32::from(self.parser.parse_u16().expect("parsed before"))
+            u32::from(self.parser.parse_u16_be().expect("parsed before"))
         };
         Some(Asn::from(n))
     }

@@ -236,9 +236,9 @@ impl<Octs: Octets> OpenMessage<Octs> {
         let hdr = Header::parse(parser)?;
 
         let _version = parser.parse_u8()?;
-        let _my_as = parser.parse_u16()?;
-        let _hold_timer = parser.parse_u16()?;
-        let _bgp_id = parser.parse_u32()?;
+        let _my_as = parser.parse_u16_be()?;
+        let _hold_timer = parser.parse_u16_be()?;
+        let _bgp_id = parser.parse_u32_be()?;
 
         let mut opt_param_len = parser.parse_u8()? as usize;
         if opt_param_len > parser.remaining() {
@@ -338,7 +338,7 @@ impl<Octs: Octets> Capability<Octs> {
                 warn!("Capability type Reserved");
             },
             CapabilityType::MultiProtocol => {
-                let _afi = parser.parse_u16()?;
+                let _afi = parser.parse_u16_be()?;
                 let _rsvd = parser.parse_u8()?;
                 let _safi = parser.parse_u8()?;
             },
@@ -350,7 +350,7 @@ impl<Octs: Octets> Capability<Octs> {
                 }
             },
             CapabilityType::OutboundRouteFiltering => {
-                let _afi = parser.parse_u16()?;
+                let _afi = parser.parse_u16_be()?;
                 let _rsvd = parser.parse_u8()?;
                 let _safi = parser.parse_u8()?;
 
@@ -362,10 +362,10 @@ impl<Octs: Octets> Capability<Octs> {
             },
             CapabilityType::ExtendedNextHop => {
                 while parser.pos() < pos + len {
-                    let _afi = parser.parse_u16()?;
+                    let _afi = parser.parse_u16_be()?;
                     // Note that SAFI is 2 bytes for this Capability.
-                    let _safi = parser.parse_u16()?;
-                    let _nexthop_afi = parser.parse_u16()?;
+                    let _safi = parser.parse_u16_be()?;
+                    let _nexthop_afi = parser.parse_u16_be()?;
                 }
             },
             CapabilityType::ExtendedMessage => {
@@ -377,7 +377,7 @@ impl<Octs: Octets> Capability<Octs> {
             },
             CapabilityType::MultipleLabels => {
                 while parser.pos() < pos + len {
-                    let _afi = parser.parse_u16()?;
+                    let _afi = parser.parse_u16_be()?;
                     let _safi = parser.parse_u8()?;
                     let _count = parser.parse_u8()?;
                 }
@@ -391,15 +391,15 @@ impl<Octs: Octets> Capability<Octs> {
                 let _role = parser.parse_u8()?;
             },
             CapabilityType::GracefulRestart => {
-                let _restart_flags_and_time = parser.parse_u16()?;
+                let _restart_flags_and_time = parser.parse_u16_be()?;
                 while parser.pos() < pos + len {
-                    let _afi = parser.parse_u16()?;
+                    let _afi = parser.parse_u16_be()?;
                     let _safi = parser.parse_u8()?;
                     let _flags = parser.parse_u8()?;
                 }
             },
             CapabilityType::FourOctetAsn => {
-                let _asn = parser.parse_u32()?;
+                let _asn = parser.parse_u32_be()?;
             },
             CapabilityType::DeprecatedDynamicCapability 
             | CapabilityType::DynamicCapability => {
@@ -414,7 +414,7 @@ impl<Octs: Octets> Capability<Octs> {
                 }
             },
             CapabilityType::AddPath => {
-                let _afi = parser.parse_u16()?;
+                let _afi = parser.parse_u16_be()?;
                 let _safi = parser.parse_u8()?;
                 let send_receive = parser.parse_u8()?;
                 if send_receive > 3 {
@@ -432,11 +432,11 @@ impl<Octs: Octets> Capability<Octs> {
             },
             CapabilityType::LongLivedGracefulRestart => {
                 while parser.pos() < pos + len {
-                    let _afi = parser.parse_u16()?;
+                    let _afi = parser.parse_u16_be()?;
                     let _safi = parser.parse_u8()?;
                     let _flags = parser.parse_u8()?;
                     // 24 bits of staletime
-                    let _ll_staletime_1 = parser.parse_u16()?;
+                    let _ll_staletime_1 = parser.parse_u16_be()?;
                     let _ll_staletime_2 = parser.parse_u8()?;
                 }
             },
@@ -454,13 +454,13 @@ impl<Octs: Octets> Capability<Octs> {
                     ));
                 }
                 while parser.pos() < pos + len {
-                    let _afi = parser.parse_u16()?;
+                    let _afi = parser.parse_u16_be()?;
                     let _safi = parser.parse_u8()?;
                     let _flags = parser.parse_u8()?;
                 }
             },
             CapabilityType::PrestandardOutboundRouteFiltering => {
-                let _afi = parser.parse_u16()?;
+                let _afi = parser.parse_u16_be()?;
                 let _rsvd = parser.parse_u8()?;
                 let _safi = parser.parse_u8()?;
 

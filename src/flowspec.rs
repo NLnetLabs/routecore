@@ -62,9 +62,9 @@ impl NumericOp {
         let op = parser.parse_u8()?;
         let value = match op_to_len(op) {
             1 => parser.parse_u8()? as u64,
-            2 => parser.parse_u16()? as u64,
-            4 => parser.parse_u32()? as u64,
-            8 => parser.parse_u64()?,
+            2 => parser.parse_u16_be()? as u64,
+            4 => parser.parse_u32_be()? as u64,
+            8 => parser.parse_u64_be()?,
             _ => panic!("illegal case"),
         };
         Ok(Self(op, value))
@@ -78,9 +78,9 @@ impl BitmaskOp {
         let op = parser.parse_u8()?;
         let value = match op_to_len(op) {
             1 => parser.parse_u8()? as u64,
-            2 => parser.parse_u16()? as u64,
-            4 => parser.parse_u32()? as u64,
-            8 => parser.parse_u64()?,
+            2 => parser.parse_u16_be()? as u64,
+            4 => parser.parse_u32_be()? as u64,
+            8 => parser.parse_u64_be()?,
             _ => panic!("illegal case"),
         };
         Ok(Self(op, value))

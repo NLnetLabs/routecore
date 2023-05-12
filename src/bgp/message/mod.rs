@@ -247,7 +247,7 @@ impl<Octs: Octets> Header<Octs> {
     {
         let pos = parser.pos();
         Marker::check(parser)?;
-        let _len = parser.parse_u16()?;
+        let _len = parser.parse_u16_be()?;
         let _typ = parser.parse_u8()?;
         parser.seek(pos)?;
         let res = parser.parse_octets(19)?;
@@ -258,7 +258,7 @@ impl<Octs: Octets> Header<Octs> {
 impl Header<()> {
     pub fn check(parser: &mut Parser<[u8]>) -> Result<(), ParseError> {
         Marker::check(parser)?;
-        let len = parser.parse_u16()? as usize;
+        let len = parser.parse_u16_be()? as usize;
         if len != parser.len() {
             return Err(ParseError::form_error("invalid length"));
         }
