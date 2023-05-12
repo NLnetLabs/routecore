@@ -172,7 +172,7 @@ impl HopPath {
         <Octs as FromBuilder>::Builder: EmptyBuilder
     {
         let mut target = EmptyBuilder::empty();
-        Self::compose_hops(&self.hops, &mut target)?;
+        Self::compose_as_path(&self.hops, &mut target)?;
         Ok(unsafe {
             AsPath::new_unchecked(Octs::from_builder(target), true)
         })
@@ -194,7 +194,7 @@ impl HopPath {
         <Octs as FromBuilder>::Builder: EmptyBuilder
     {
         let mut target = EmptyBuilder::empty();
-        Self::compose_asn16_hops(&self.hops, &mut target)?;
+        Self::compose_as16_path(&self.hops, &mut target)?;
         Ok(unsafe {
             AsPath::new_unchecked(Octs::from_builder(target), false)
         })
@@ -202,7 +202,7 @@ impl HopPath {
 
 
     // Turn this HopPath into the four-octet based AS_PATH wireformat.
-    fn compose_hops<Octs: Octets, Target: OctetsBuilder>(
+    fn compose_as_path<Octs: Octets, Target: OctetsBuilder>(
         mut hops: &[Hop<Octs>], target: &mut Target
     ) -> Result<(), Target::AppendError> {
         while !hops.is_empty() {
@@ -259,7 +259,7 @@ impl HopPath {
     }
 
     // Turn this HopPath into the two-octet based AS_PATH wireformat.
-    fn compose_asn16_hops<Octs: Octets, Target: OctetsBuilder>(
+    fn compose_as16_path<Octs: Octets, Target: OctetsBuilder>(
         mut hops: &[Hop<Octs>], target: &mut Target
     ) -> Result<(), ToPathError> {
         while !hops.is_empty() {
