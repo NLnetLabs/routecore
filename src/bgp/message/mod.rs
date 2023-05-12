@@ -3,6 +3,7 @@ pub mod update;
 pub mod nlri;
 pub mod notification;
 pub mod keepalive;
+pub mod attr_change_set;
 
 use octseq::{Octets, Parser};
 use crate::util::parser::ParseError;
@@ -187,7 +188,7 @@ impl<Octs: Octets> TryFrom<Message<Octs>> for NotificationMessage<Octs> {
         
 /// BGP Message header.
 #[derive(Clone, Copy, Default)]
-pub struct Header<Octs: Octets>(Octs);
+pub struct Header<Octs>(Octs);
 
 impl<Octs: Octets + AsMut<[u8]>> Header<Octs> {
     pub fn set_type(&mut self, typ: MsgType) {
@@ -246,18 +247,18 @@ impl<Octs: Octets> Header<Octs> {
     {
         let pos = parser.pos();
         Marker::check(parser)?;
-        let _len = parser.parse_u16()?;
+        let _len = parser.parse_u16_be()?;
         let _typ = parser.parse_u8()?;
         parser.seek(pos)?;
         let res = parser.parse_octets(19)?;
         Ok(Header(res))
     }
+}
 
-    pub fn check<R: Octets>(parser: &mut Parser<'_, R>)
-        -> Result<(), ParseError>
-    {
+impl Header<()> {
+    pub fn check(parser: &mut Parser<[u8]>) -> Result<(), ParseError> {
         Marker::check(parser)?;
-        let len = parser.parse_u16()? as usize;
+        let len = parser.parse_u16_be()? as usize;
         if len != parser.len() {
             return Err(ParseError::form_error("invalid length"));
         }
@@ -270,7 +271,7 @@ impl<Octs: Octets> Header<Octs> {
 
 struct Marker;
 impl Marker {
-    fn check<R: Octets>(parser: &mut Parser<'_, R>)
+    fn check<R: Octets + ?Sized>(parser: &mut Parser<'_, R>)
         -> Result<(), ParseError>
     {
         let mut buf = [0u8; 16];

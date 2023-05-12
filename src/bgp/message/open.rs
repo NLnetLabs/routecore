@@ -199,20 +199,22 @@ impl<Octs: Octets> OpenMessage<Octs> {
 impl<Octs: Octets> OpenMessage<Octs> {
     /// Create an OpenMessage from an octets sequence.
     pub fn from_octets(octets: Octs) -> Result<Self, ParseError> {
-        Self::check(&octets)?;
+        OpenMessage::check(octets.as_ref())?;
         Ok( OpenMessage { octets } )
     }
+}
 
-    fn check(octets: &Octs) -> Result<(), ParseError> {
+impl OpenMessage<()> {
+    fn check(octets: &[u8]) -> Result<(), ParseError> {
         let mut parser = Parser::from_ref(octets);
-        Header::<Octs>::check(&mut parser)?;
+        Header::check(&mut parser)?;
         // jump over version, 2-octet ASN, Hold timer and BGP ID
         parser.advance(1 + 2 + 2 + 4)?;
         let opt_param_len = parser.parse_u8()? as usize;
         let mut param_parser = parser.parse_parser(opt_param_len)?;
 
         while param_parser.remaining() > 0 {
-            Parameter::<Octs>::check(&mut param_parser)?;
+            Parameter::check(&mut param_parser)?;
         }
 
         if parser.remaining() > 0 {
@@ -222,7 +224,9 @@ impl<Octs: Octets> OpenMessage<Octs> {
         Ok(())
 
     }
+}
 
+impl<Octs: Octets> OpenMessage<Octs> {
     // used in bmp/message.rs still
     pub fn parse<'a>(parser: &mut Parser<'a, Octs>)
         -> Result<OpenMessage<Octs::Range<'a>>, ParseError>
@@ -232,9 +236,9 @@ impl<Octs: Octets> OpenMessage<Octs> {
         let hdr = Header::parse(parser)?;
 
         let _version = parser.parse_u8()?;
-        let _my_as = parser.parse_u16()?;
-        let _hold_timer = parser.parse_u16()?;
-        let _bgp_id = parser.parse_u32()?;
+        let _my_as = parser.parse_u16_be()?;
+        let _hold_timer = parser.parse_u16_be()?;
+        let _bgp_id = parser.parse_u32_be()?;
 
         let mut opt_param_len = parser.parse_u8()? as usize;
         if opt_param_len > parser.remaining() {
@@ -289,10 +293,10 @@ impl<Octs: Octets> Parameter<Octs> {
             )
         )
     }
+}
 
-    fn check<R: Octets>(parser: &mut Parser<'_, R>)
-        -> Result<(), ParseError>
-    {
+impl Parameter<()> {
+    fn check(parser: &mut Parser<[u8]>) -> Result<(), ParseError> {
         let typ = parser.parse_u8()?;
         let len = parser.parse_u8()? as usize;
         if typ == 2 {
@@ -300,7 +304,7 @@ impl<Octs: Octets> Parameter<Octs> {
             // Parameter, so we need to loop.
             let mut caps_parser = parser.parse_parser(len)?;
             while caps_parser.remaining() > 0 {
-                Capability::<Octs>::check(&mut caps_parser)?;
+                Capability::check(&mut caps_parser)?;
             }
         } else {
             warn!("Optional Parameter in BGP OPEN other than Capability: {}",
@@ -311,16 +315,16 @@ impl<Octs: Octets> Parameter<Octs> {
     }
 }
 
-impl<Octs: Octets> Capability<Octs> {
-    fn check<R: Octets>(parser: &mut Parser<'_, R>)
-        -> Result<(), ParseError>
-    {
+impl Capability<()> {
+    fn check(parser: &mut Parser<[u8]>) -> Result<(), ParseError> {
         let _typ = parser.parse_u8()?;
         let len = parser.parse_u8()? as usize;
         parser.advance(len)?;
         Ok(())
     }
+}
 
+impl<Octs: Octets> Capability<Octs> {
     fn parse<'a, Ref>(parser: &mut Parser<'a, Ref>)
         -> Result<Self, ParseError>
     where
@@ -334,7 +338,7 @@ impl<Octs: Octets> Capability<Octs> {
                 warn!("Capability type Reserved");
             },
             CapabilityType::MultiProtocol => {
-                let _afi = parser.parse_u16()?;
+                let _afi = parser.parse_u16_be()?;
                 let _rsvd = parser.parse_u8()?;
                 let _safi = parser.parse_u8()?;
             },
@@ -346,7 +350,7 @@ impl<Octs: Octets> Capability<Octs> {
                 }
             },
             CapabilityType::OutboundRouteFiltering => {
-                let _afi = parser.parse_u16()?;
+                let _afi = parser.parse_u16_be()?;
                 let _rsvd = parser.parse_u8()?;
                 let _safi = parser.parse_u8()?;
 
@@ -358,10 +362,10 @@ impl<Octs: Octets> Capability<Octs> {
             },
             CapabilityType::ExtendedNextHop => {
                 while parser.pos() < pos + len {
-                    let _afi = parser.parse_u16()?;
+                    let _afi = parser.parse_u16_be()?;
                     // Note that SAFI is 2 bytes for this Capability.
-                    let _safi = parser.parse_u16()?;
-                    let _nexthop_afi = parser.parse_u16()?;
+                    let _safi = parser.parse_u16_be()?;
+                    let _nexthop_afi = parser.parse_u16_be()?;
                 }
             },
             CapabilityType::ExtendedMessage => {
@@ -373,7 +377,7 @@ impl<Octs: Octets> Capability<Octs> {
             },
             CapabilityType::MultipleLabels => {
                 while parser.pos() < pos + len {
-                    let _afi = parser.parse_u16()?;
+                    let _afi = parser.parse_u16_be()?;
                     let _safi = parser.parse_u8()?;
                     let _count = parser.parse_u8()?;
                 }
@@ -387,15 +391,15 @@ impl<Octs: Octets> Capability<Octs> {
                 let _role = parser.parse_u8()?;
             },
             CapabilityType::GracefulRestart => {
-                let _restart_flags_and_time = parser.parse_u16()?;
+                let _restart_flags_and_time = parser.parse_u16_be()?;
                 while parser.pos() < pos + len {
-                    let _afi = parser.parse_u16()?;
+                    let _afi = parser.parse_u16_be()?;
                     let _safi = parser.parse_u8()?;
                     let _flags = parser.parse_u8()?;
                 }
             },
             CapabilityType::FourOctetAsn => {
-                let _asn = parser.parse_u32()?;
+                let _asn = parser.parse_u32_be()?;
             },
             CapabilityType::DeprecatedDynamicCapability 
             | CapabilityType::DynamicCapability => {
@@ -410,7 +414,7 @@ impl<Octs: Octets> Capability<Octs> {
                 }
             },
             CapabilityType::AddPath => {
-                let _afi = parser.parse_u16()?;
+                let _afi = parser.parse_u16_be()?;
                 let _safi = parser.parse_u8()?;
                 let send_receive = parser.parse_u8()?;
                 if send_receive > 3 {
@@ -428,11 +432,11 @@ impl<Octs: Octets> Capability<Octs> {
             },
             CapabilityType::LongLivedGracefulRestart => {
                 while parser.pos() < pos + len {
-                    let _afi = parser.parse_u16()?;
+                    let _afi = parser.parse_u16_be()?;
                     let _safi = parser.parse_u8()?;
                     let _flags = parser.parse_u8()?;
                     // 24 bits of staletime
-                    let _ll_staletime_1 = parser.parse_u16()?;
+                    let _ll_staletime_1 = parser.parse_u16_be()?;
                     let _ll_staletime_2 = parser.parse_u8()?;
                 }
             },
@@ -450,13 +454,13 @@ impl<Octs: Octets> Capability<Octs> {
                     ));
                 }
                 while parser.pos() < pos + len {
-                    let _afi = parser.parse_u16()?;
+                    let _afi = parser.parse_u16_be()?;
                     let _safi = parser.parse_u8()?;
                     let _flags = parser.parse_u8()?;
                 }
             },
             CapabilityType::PrestandardOutboundRouteFiltering => {
-                let _afi = parser.parse_u16()?;
+                let _afi = parser.parse_u16_be()?;
                 let _rsvd = parser.parse_u8()?;
                 let _safi = parser.parse_u8()?;
 
@@ -504,7 +508,7 @@ impl<Octs: Octets> Capability<Octs> {
 // <https://www.iana.org/assignments/capability-codes/capability-codes.xhtml>
 
 #[derive(Debug)]
-pub struct Capability<Octs: Octets> {
+pub struct Capability<Octs> {
     octets: Octs,
 }
 
@@ -728,6 +732,12 @@ impl<Target: OctetsBuilder + AsMut<[u8]>> OpenBuilder<Target> {
         // update opt param len
         // wrap it in a single opt param on build()
         self.capabilities.push(cap);
+    }
+
+    pub fn four_octet_capable(&mut self, asn: Asn) {
+        let mut s = vec![0x41, 0x04];
+        s.extend_from_slice(&asn.to_raw());
+        self.add_capability(Capability::for_slice(s.to_vec()));
     }
 
     pub fn add_mp(&mut self, afi: AFI, safi:SAFI) {

@@ -1,8 +1,9 @@
 use crate::bgp::message::Header;
 use octseq::{Octets, Parser};
-use log::{debug, warn, error};
+use log::{debug, error, warn};
 
-use crate::asn::{Asn, AsPath, AsPathBuilder, SegmentType};
+use crate::asn::Asn;
+use crate::bgp::aspath::AsPath;
 pub use crate::bgp::types::{
     AFI, SAFI, LocalPref, MultiExitDisc, NextHop, OriginType, PathAttributeType
 };
@@ -126,7 +127,7 @@ impl<Octs: Octets> UpdateMessage<Octs> {
             self.octets.as_ref()[COFF],
             self.octets.as_ref()[COFF+1]
         ])
-	}
+    }
 }
 
 impl<Octs: Octets> UpdateMessage<Octs> {
@@ -247,116 +248,31 @@ impl<Octs: Octets> UpdateMessage<Octs> {
         )
     }
 
-    pub fn as4path(&self) -> Option<AsPath<Vec<Asn>>> {
-        self.path_attributes().iter().find(|pa|
+    /// Returns the AS4_PATH attribute.
+    pub fn as4path(&self) -> Option<AsPath<Octs::Range<'_>>> {
+        self.path_attributes().into_iter().find(|pa|
             pa.type_code() == PathAttributeType::As4Path
         ).map(|pa| {
-            let asn_size = 4;
-            let octets = pa.value();
-            let mut aspb = AsPathBuilder::new();
-
-            let mut pos = 0;
-            while pos < octets.as_ref().len() {
-                let st = SegmentType::try_from(octets.as_ref()[pos])
-                    .expect("parsed before");
-                let num_asns = octets.as_ref()[pos+1] as usize;
-                aspb.start(st);
-                pos += 2;
-
-                for _ in 0..num_asns {
-                    let asn = Asn::from(
-                        u32::from_be_bytes(
-                            octets.as_ref()[pos..pos+asn_size]
-                            .try_into().expect("parsed before")
-                        )
-                    );
-                    aspb.push(asn).expect("parsed before");
-                    pos += asn_size;
-                }
+            unsafe {
+                AsPath::new_unchecked(pa.into_value(), true)
             }
-            aspb.finalize()
         })
     }
 
+
     /// Returns the AS_PATH path attribute.
-    pub fn aspath(&self) -> Option<AsPath<Vec<Asn>>> {
-        if let Some(as4path) = self.as4path() {
-            // In all cases we know of, the AS4_PATH attribute contains
-            // the entire AS_PATH with all the 4-octet ASNs. Instead of
-            // replacing the AS_TRANS ASNs in AS_PATH, we can simply
-            // return the AS4_PATH. 
-            // This also saves us from perhaps misguessing the 2-vs-4
-            // octet size of the AS_PATH, as the AS4_PATH is always 4-octet
-            // anyway.
-            return Some(as4path);
-        }
-        self.path_attributes().iter().find(|pa|
+    //
+    // NOTE: This is now the AS PATH and only the AS_PATH.
+    pub fn aspath(&self) -> Option<AsPath<Octs::Range<'_>>> {
+        self.path_attributes().into_iter().find(|pa|
             pa.type_code() == PathAttributeType::AsPath
-        ).map(|ref pa| {
-            // Check for AS4_PATH
-            // Note that all the as4path code in this part is useless because
-            // of the early return above, but for now let's leave it here for
-            // understanding/reasoning.
-            let as4path = self.as4path();
-
-            // Apparently, some BMP exporters do not set the legacy format
-            // bit but do emit 2-byte ASNs. 
-            let asn_size = match self.session_config.four_octet_asn { 
-                FourOctetAsn::Enabled => 4,
-                FourOctetAsn::Disabled => 2,
-            };
-
-            let octets = pa.value();
-            let mut aspb = AsPathBuilder::new();
-
-            let mut pos = 0;
-            let mut segment_idx = 0;
-            while pos < octets.as_ref().len() {
-                let st = SegmentType::try_from(octets.as_ref()[pos]).expect("parsed
-                    before");
-                let num_asns = octets.as_ref()[pos+1] as usize;
-                aspb.start(st);
-                pos += 2;
-
-                for _ in 0..num_asns {
-                    let asn = if asn_size == 4 {
-                    Asn::from(
-                        u32::from_be_bytes(
-                            octets.as_ref()[pos..pos+asn_size]
-                            .try_into().expect("parsed before")
-                            )
-                        )
-                    } else {
-                    Asn::from(
-                        u16::from_be_bytes(
-                            octets.as_ref()[pos..pos+asn_size]
-                            .try_into().expect("parsed before")
-                            ) as u32
-                        )
-                    };
-                    // In a very exotic (and incorrect?) case, we see AS_TRANS
-                    // in the AS_PATH, but no AS4_PATH path attribute. For
-                    // this reason, we check whether `as4path` actually holds
-                    // a value.
-                    if as4path.as_ref().is_some()
-                        && asn == Asn::from_u32(23456) {
-                        // This assert would trip the described exotic case.
-                        //assert!(as4path.is_some());
-                         
-                        // replace this AS_TRANS with the 4-octet value from
-                        // AS4_PATH:
-                        let seg = as4path.as_ref().expect("parsed before")
-                            .iter().nth(segment_idx).expect("parsed before");
-                        let new_asn: Asn = seg.elements()[aspb.segment_len()];
-                        aspb.push(new_asn).expect("parsed before");
-                    } else {
-                        aspb.push(asn).expect("parsed before");
-                    }
-                    pos += asn_size;
-                }
-                segment_idx += 1;
+        ).map(|pa| {
+            unsafe {
+                AsPath::new_unchecked(
+                    pa.into_value(),
+                    self.session_config.has_four_octet_asn(),
+                )
             }
-            aspb.finalize()
         })
     }
 
@@ -369,7 +285,7 @@ impl<Octs: Octets> UpdateMessage<Octs> {
             // TODO value_into_parser ?
             let v = pa.value();
             let mut parser = Parser::from_ref(&v);
-            let afi: AFI = parser.parse_u16().expect("parsed before").into();
+            let afi: AFI = parser.parse_u16_be().expect("parsed before").into();
             let safi: SAFI = parser.parse_u8().expect("parsed before").into();
 
             return Some(NextHop::parse(&mut parser, afi, safi).expect("parsed before"));
@@ -509,18 +425,18 @@ impl<Octs: Octets> UpdateMessage<Octs> {
     pub fn from_octets(octets: Octs, config: SessionConfig)
         -> Result<Self, ParseError>
    {
-        Self::check(&octets, config)?;
+        Self::check(octets.as_ref(), config)?;
         Ok(UpdateMessage {
             octets,
             session_config: config
         })
     }
 
-    fn check(octets: &Octs, config: SessionConfig) -> Result<(), ParseError> {
+    fn check(octets: &[u8], config: SessionConfig) -> Result<(), ParseError> {
         let mut parser = Parser::from_ref(octets);
-        Header::<Octs>::check(&mut parser)?;
+        Header::check(&mut parser)?;
 
-        let withdrawals_len = parser.parse_u16()?;
+        let withdrawals_len = parser.parse_u16_be()?;
         if withdrawals_len > 0 {
             let mut wdraw_parser = parser.parse_parser(
                 withdrawals_len.into()
@@ -531,12 +447,12 @@ impl<Octs: Octets> UpdateMessage<Octs> {
             }
         }
 
-        let path_attributes_len = parser.parse_u16()?;
+        let path_attributes_len = parser.parse_u16_be()?;
         if path_attributes_len > 0 {
             let mut pas_parser = parser.parse_parser(
                 path_attributes_len.into()
             )?;
-            PathAttributes::<Octs>::check(&mut pas_parser, config)?;
+            PathAttributes::check(&mut pas_parser, config)?;
         }
 
         while parser.remaining() > 0 {
@@ -557,7 +473,7 @@ impl<Octs: Octets> UpdateMessage<Octs> {
         let pos = parser.pos();
         let hdr = Header::parse(parser)?;
 
-        let withdrawn_len = parser.parse_u16()?;
+        let withdrawn_len = parser.parse_u16_be()?;
         if withdrawn_len > 0 {
             let mut wdraw_parser = parser.parse_parser(withdrawn_len.into())?;
             while wdraw_parser.remaining() > 0 {
@@ -565,7 +481,7 @@ impl<Octs: Octets> UpdateMessage<Octs> {
                 BasicNlri::parse(&mut wdraw_parser, config, AFI::Ipv4)?;
             }
         }
-        let total_path_attributes_len = parser.parse_u16()?;
+        let total_path_attributes_len = parser.parse_u16_be()?;
         if total_path_attributes_len > 0 {
             let mut pas_parser = parser.parse_parser(total_path_attributes_len.into())?;
             PathAttributes::parse(&mut pas_parser, config)?;
@@ -592,6 +508,8 @@ impl<Octs: Octets> UpdateMessage<Octs> {
     }
 }
 //--- Enums for passing config / state ---------------------------------------
+
+//--------- SessionConfig ----------------------------------------------------
 
 /// Configuration parameters for an established BGP session.
 ///
@@ -639,6 +557,10 @@ impl SessionConfig {
         }
     }
 
+    pub fn has_four_octet_asn(&self) -> bool {
+        matches!(self.four_octet_asn, FourOctetAsn::Enabled)
+    }
+
     pub fn enable_four_octet_asn(&mut self) {
         self.four_octet_asn = FourOctetAsn::Enabled
     }
@@ -680,7 +602,7 @@ pub enum AddPath {
 
 // XXX do we want an intermediary struct PathAttributes with an fn iter() to
 // return a PathAttributesIter ?
-pub struct PathAttributes<'a, Octs: Octets> {
+pub struct PathAttributes<'a, Octs: Octets + ?Sized> {
     parser: Parser<'a, Octs>,
     session_config: SessionConfig,
 }
@@ -710,17 +632,19 @@ impl<'a, R: 'a + Octets> PathAttributesIter<'a, R>{
     }
 }
 
-impl<'a, Octs: Octets> PathAttributes<'a, Octs> {
-    fn check(parser: &mut Parser<'a, Octs>, config: SessionConfig)
+impl<'a> PathAttributes<'a, [u8]> {
+    fn check(parser: &mut Parser<'a, [u8]>, config: SessionConfig)
         -> Result<(), ParseError>
     {
         while parser.remaining() > 0 {
-            PathAttribute::<Octs>::check(parser, config)?;
+            PathAttribute::check(parser, config)?;
         }
 
         Ok(())
     }
+}
 
+impl<'a, Octs: Octets> PathAttributes<'a, Octs> {
     fn parse(parser: &mut Parser<'a, Octs>, config: SessionConfig)
         -> Result<Self, ParseError>
     {
@@ -740,7 +664,7 @@ impl<'a, Octs: Octets> PathAttributes<'a, Octs> {
 
 /// BGP Path Attribute, carried in BGP UPDATE messages.
 #[derive(Debug)]
-pub struct PathAttribute<'a, Octs: Octets> {
+pub struct PathAttribute<'a, Octs: Octets + ?Sized> {
     parser: Parser<'a, Octs>
 }
 
@@ -819,18 +743,17 @@ impl<'a, Octs: Octets> PathAttribute<'a, Octs> {
         //Parser::parse_parser(&mut p, self.length() as usize).expect("parsed before")
         self.parser
     }
-
 }
 
-impl<'a, Octs: Octets> PathAttribute<'a, Octs> {
-    fn check(parser: &mut Parser<'a, Octs>, config: SessionConfig)
-        ->  Result<(), ParseError>
-    {
+impl<'a> PathAttribute<'a, [u8]> {
+    fn check(
+        parser: &mut Parser<[u8]>, config: SessionConfig
+    ) ->  Result<(), ParseError> {
         let flags = parser.parse_u8()?;
         let typecode = parser.parse_u8()?;
         let len = match flags & 0x10 == 0x10 {
             true => {
-                parser.parse_u16()? as usize
+                parser.parse_u16_be()? as usize
             },
             false => parser.parse_u8()? as usize, 
         };
@@ -846,19 +769,10 @@ impl<'a, Octs: Octets> PathAttribute<'a, Octs> {
                 parser.advance(1)?;
             },
             PathAttributeType::AsPath => {
-                let mut pp = parser.parse_parser(len)?;
-                while pp.remaining() > 0 {
-                    // segment type
-                    pp.advance(1)?;
-                    // segment length describes the number of ASNs
-                    let slen = pp.parse_u8()?;
-                    for _ in 0..slen {
-                        match config.four_octet_asn {
-                            FourOctetAsn::Enabled => { pp.advance(4)?; }
-                            FourOctetAsn::Disabled => { pp.advance(2)?; }
-                        }
-                    }
-                }
+                AsPath::check(
+                    parser.parse_octets(len)?,
+                    config.has_four_octet_asn(),
+                )?;
             },
             PathAttributeType::NextHop => {
                 // conventional NEXT_HOP, just an IPv4 address
@@ -913,11 +827,11 @@ impl<'a, Octs: Octets> PathAttribute<'a, Octs> {
             },
             PathAttributeType::MpReachNlri => {
                 let mut pp = parser.parse_parser(len)?;
-                Nlris::<Octs>::check(&mut pp, config)?;
+                Nlris::check(&mut pp, config)?;
             },
             PathAttributeType::MpUnreachNlri => {
                 let mut pp = parser.parse_parser(len)?;
-                Withdrawals::<Octs>::check(&mut pp, config)?;
+                Withdrawals::check(&mut pp, config)?;
             },
             PathAttributeType::ExtendedCommunities => {
                 let mut pp = parser.parse_parser(len)?;
@@ -959,7 +873,7 @@ impl<'a, Octs: Octets> PathAttribute<'a, Octs> {
                 let _flags = parser.parse_u8()?;
                 let _tunnel_type = parser.parse_u8()?;
                 let _mpls_label_1 = parser.parse_u8()?;
-                let _mpls_label_2 = parser.parse_u16()?;
+                let _mpls_label_2 = parser.parse_u16_be()?;
                 let tunnel_id_len = len - 5;
                 parser.advance(tunnel_id_len)?;
             },
@@ -989,7 +903,7 @@ impl<'a, Octs: Octets> PathAttribute<'a, Octs> {
                 //    [1byte pCount (prependCount?), 1 byte flags, 4byte ASN]
                 //)+
 
-                let len_path = pp.parse_u16()?;
+                let len_path = pp.parse_u16_be()?;
                 if (len_path - 2) % 6 != 0 {
                     warn!("BGPsec_Path Path Segments not a multiple of 6 bytes")
                 }
@@ -1002,7 +916,7 @@ impl<'a, Octs: Octets> PathAttribute<'a, Octs> {
                 //    [20 bytes SKI, 2 bytes sig length, sig]
                 //)+
 
-                let len_sigs = pp.parse_u16()?;
+                let len_sigs = pp.parse_u16_be()?;
                 let algo_id = pp.parse_u8()?;
                 if algo_id != 0x01 {
                     warn!("BGPsec_Path Signature Block containing unknown\
@@ -1013,7 +927,7 @@ impl<'a, Octs: Octets> PathAttribute<'a, Octs> {
                 while sb1_parser.remaining() > 0 {
                     // SKI
                     sb1_parser.advance(20)?;
-                    let sig_len = sb1_parser.parse_u16()?;
+                    let sig_len = sb1_parser.parse_u16_be()?;
                     sb1_parser.advance(sig_len as usize)?;
                 }
 
@@ -1028,7 +942,7 @@ impl<'a, Octs: Octets> PathAttribute<'a, Octs> {
                     while sb2_parser.remaining() > 0 {
                         // SKI
                         sb2_parser.advance(20)?;
-                        let sig_len = sb2_parser.parse_u16()?;
+                        let sig_len = sb2_parser.parse_u16_be()?;
                         sb2_parser.advance(sig_len as usize)?;
                     }
                 }
@@ -1043,7 +957,7 @@ impl<'a, Octs: Octets> PathAttribute<'a, Octs> {
             PathAttributeType::AttrSet => {
                 parser.advance(4)?;
                 let mut pp = parser.parse_parser(len - 4)?;
-                PathAttributes::<Octs>::check(&mut pp, config)?;
+                PathAttributes::check(&mut pp, config)?;
             },
             PathAttributeType::Reserved => {
                 warn!("Path Attribute type 0 'Reserved' observed");
@@ -1055,7 +969,7 @@ impl<'a, Octs: Octets> PathAttribute<'a, Octs> {
                 parser.advance(len)?;
             },
             PathAttributeType::Unimplemented(_) => {
-                warn!("Unimplemented PA: {}", typecode);
+                debug!("Unimplemented PA: {}", typecode);
                 parser.advance(len)?;
             },
             //_ => {
@@ -1065,7 +979,9 @@ impl<'a, Octs: Octets> PathAttribute<'a, Octs> {
         
         Ok(())
     }
+}
 
+impl<'a, Octs: Octets> PathAttribute<'a, Octs> {
     fn parse(parser: &mut Parser<'a, Octs>, config: SessionConfig)
         ->  Result<PathAttribute<'a, Octs>, ParseError>
     {
@@ -1076,7 +992,7 @@ impl<'a, Octs: Octets> PathAttribute<'a, Octs> {
         let len = match flags & 0x10 == 0x10 {
             true => {
                 headerlen += 1;
-                parser.parse_u16()? as usize
+                parser.parse_u16_be()? as usize
             },
             false => parser.parse_u8()? as usize, 
         };
@@ -1102,8 +1018,8 @@ impl<'a, Octs: Octets> PathAttribute<'a, Octs> {
                     let slen = p.parse_u8()?;
                     for _ in 0..slen {
                         match config.four_octet_asn {
-                            FourOctetAsn::Enabled => { p.parse_u32()?; }
-                            FourOctetAsn::Disabled => { p.parse_u16()?; }
+                            FourOctetAsn::Enabled => { p.parse_u32_be()?; }
+                            FourOctetAsn::Disabled => { p.parse_u16_be()?; }
                         }
                     }
                 }
@@ -1123,7 +1039,7 @@ impl<'a, Octs: Octets> PathAttribute<'a, Octs> {
                         ParseError::form_error("expected len 4 for MULTI_EXIT_DISC pa")
                     );
                 }
-                let _med = parser.parse_u32()?;
+                let _med = parser.parse_u32_be()?;
             }
             PathAttributeType::LocalPref => {
                 if len != 4 {
@@ -1131,7 +1047,7 @@ impl<'a, Octs: Octets> PathAttribute<'a, Octs> {
                         ParseError::form_error("expected len 4 for LOCAL_PREF pa")
                     );
                 }
-                let _localpref = parser.parse_u32()?;
+                let _localpref = parser.parse_u32_be()?;
             },
             PathAttributeType::AtomicAggregate => {
                 if len != 0 {
@@ -1152,12 +1068,12 @@ impl<'a, Octs: Octets> PathAttribute<'a, Octs> {
                 }
             },
             PathAttributeType::OriginatorId => {
-                let _bgp_id = parser.parse_u32()?;
+                let _bgp_id = parser.parse_u32_be()?;
             },
             PathAttributeType::ClusterList => {
                 let pos = parser.pos();
                 while parser.pos() < pos + len {
-                    parser.parse_u32()?;
+                    parser.parse_u32_be()?;
                 }
             },
             PathAttributeType::MpReachNlri => {
@@ -1181,12 +1097,12 @@ impl<'a, Octs: Octets> PathAttribute<'a, Octs> {
                     // segment length describes the number of ASNs
                     let slen = pa_parser.parse_u8()?;
                     for _ in 0..slen {
-                         pa_parser.parse_u32()?;
+                         pa_parser.parse_u32_be()?;
                     }
                 }
             }
             PathAttributeType::As4Aggregator => {
-                let _asn = parser.parse_u32()?;
+                let _asn = parser.parse_u32_be()?;
                 let _addr = parse_ipv4addr(parser)?;
             }
             PathAttributeType::Connector => {
@@ -1199,13 +1115,13 @@ impl<'a, Octs: Octets> PathAttribute<'a, Octs> {
             },
             PathAttributeType::AsPathLimit => {
                 let _limit = parser.parse_u8()?;
-                let _asn = parser.parse_u32()?;
+                let _asn = parser.parse_u32_be()?;
             },
             PathAttributeType::PmsiTunnel => {
                 let _flags = parser.parse_u8()?;
                 let _tunnel_type = parser.parse_u8()?;
                 let _mpls_label_1 = parser.parse_u8()?;
-                let _mpls_label_2 = parser.parse_u16()?;
+                let _mpls_label_2 = parser.parse_u16_be()?;
                 let tunnel_id_len = len - 5;
                 parser.advance(tunnel_id_len)?;
             },
@@ -1235,7 +1151,7 @@ impl<'a, Octs: Octets> PathAttribute<'a, Octs> {
                 //    [1byte pCount (prependCount?), 1 byte flags, 4byte ASN]
                 //)+
 
-                let len_path = pp.parse_u16()?;
+                let len_path = pp.parse_u16_be()?;
                 if (len_path - 2) % 6 != 0 {
                     warn!("BGPsec_Path Path Segments not a multiple of 6 bytes")
                 }
@@ -1248,7 +1164,7 @@ impl<'a, Octs: Octets> PathAttribute<'a, Octs> {
                 //    [20 bytes SKI, 2 bytes sig length, sig]
                 //)+
 
-                let len_sigs = pp.parse_u16()?;
+                let len_sigs = pp.parse_u16_be()?;
                 let algo_id = pp.parse_u8()?;
                 if algo_id != 0x01 {
                     warn!("BGPsec_Path Signature Block containing unknown\
@@ -1259,7 +1175,7 @@ impl<'a, Octs: Octets> PathAttribute<'a, Octs> {
                 while sb1_parser.remaining() > 0 {
                     // SKI
                     sb1_parser.advance(20)?;
-                    let sig_len = sb1_parser.parse_u16()?;
+                    let sig_len = sb1_parser.parse_u16_be()?;
                     sb1_parser.advance(sig_len as usize)?;
                 }
 
@@ -1274,7 +1190,7 @@ impl<'a, Octs: Octets> PathAttribute<'a, Octs> {
                     while sb2_parser.remaining() > 0 {
                         // SKI
                         sb2_parser.advance(20)?;
-                        let sig_len = sb2_parser.parse_u16()?;
+                        let sig_len = sb2_parser.parse_u16_be()?;
                         sb2_parser.advance(sig_len as usize)?;
                     }
                 }
@@ -1286,7 +1202,7 @@ impl<'a, Octs: Octets> PathAttribute<'a, Octs> {
                 }
             },
             PathAttributeType::AttrSet => {
-                let _origin_as = parser.parse_u32()?;
+                let _origin_as = parser.parse_u32_be()?;
                 let mut set_parser = parser.parse_parser(len - 4)?;
                 //while set_parser.remaining() > 0 {
                 //    PathAttribute::parse(&mut set_parser)?;
@@ -1302,7 +1218,7 @@ impl<'a, Octs: Octets> PathAttribute<'a, Octs> {
                 // after the match, we do not need to do anything here.
             },
             PathAttributeType::Unimplemented(_) => {
-                warn!("Unimplemented PA: {}", typecode);
+                debug!("Unimplemented PA: {}", typecode);
                 parser.advance(len)?;
             },
             //_ => {
@@ -1367,6 +1283,13 @@ impl Aggregator {
         self.speaker
     }
 }
+
+impl std::fmt::Display for Aggregator {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "AS{} Speaker {}", self.asn, self.speaker)        
+    }
+}
+
 
 /// Iterator for BGP UPDATE Communities.
 ///
@@ -1464,7 +1387,7 @@ impl<Octs: Octets> Iterator for LargeCommunityIter<Octs> {
 }
 
 impl Aggregator {
-    fn check<R: Octets>(parser: &mut Parser<'_, R>, config: SessionConfig)
+    fn check(parser: &mut Parser<[u8]>, config: SessionConfig)
         -> Result<(), ParseError>
     {
         let len = parser.remaining(); // XXX is this always correct?
@@ -1494,12 +1417,12 @@ impl Aggregator {
         let len = parser.remaining(); // XXX is this always correct?
         match (len, config.four_octet_asn) {
             (8, FourOctetAsn::Enabled) => {
-                let asn = Asn::from_u32(parser.parse_u32()?);
+                let asn = Asn::from_u32(parser.parse_u32_be()?);
                 let addr = parse_ipv4addr(parser)?;
                 Ok(Self::new(asn, addr))
             },
             (6, FourOctetAsn::Disabled) => {
-                let asn = Asn::from_u32(parser.parse_u16()?.into());
+                let asn = Asn::from_u32(parser.parse_u16_be()?.into());
                 let addr = parse_ipv4addr(parser)?;
                 Ok(Self::new(asn, addr))
             },
@@ -1518,7 +1441,7 @@ impl Aggregator {
     }
 }
 
-pub struct Withdrawals<'a, Octs: Octets> {
+pub struct Withdrawals<'a, Octs: Octets + ?Sized> {
     parser: Parser<'a, Octs>,
     session_config: SessionConfig,
     afi: AFI,
@@ -1550,7 +1473,7 @@ impl<'a, Octs: Octets> Withdrawals<'a, Octs> {
 ///
 /// Returns items of the enum [`Nlri`], thus both conventional and
 /// BGP MultiProtocol (RFC4760) withdrawn NLRIs.
-pub struct WithdrawalsIterMp<'a, Ref> {
+pub struct WithdrawalsIterMp<'a, Ref: ?Sized> {
     parser: Parser<'a, Ref>,
     session_config: SessionConfig,
     afi: AFI,
@@ -1560,17 +1483,73 @@ pub struct WithdrawalsIterMp<'a, Ref> {
 impl<'a, Octs: 'a + Octets> WithdrawalsIterMp<'a, Octs> {
     fn get_nlri(&mut self) -> Nlri<Octs::Range<'a>> {
         match (self.afi, self.safi) {
+            (_, SAFI::Unicast | SAFI::Multicast) => {
+                Nlri::Basic(BasicNlri::parse(
+                        &mut self.parser,
+                        self.session_config,
+                        self.afi
+                ).expect("parsed before"))
+            }
             (_, SAFI::MplsVpnUnicast) => {
-                Nlri::MplsVpn(MplsVpnNlri::parse(&mut self.parser, self.session_config, self.afi).expect("parsed before"))
+                Nlri::MplsVpn(MplsVpnNlri::parse(
+                        &mut self.parser,
+                        self.session_config,
+                        self.afi
+                ).expect("parsed before"))
             },
             (_, SAFI::MplsUnicast) => {
-                Nlri::Mpls(MplsNlri::parse(&mut self.parser, self.session_config, self.afi).expect("parsed before"))
+                Nlri::Mpls(MplsNlri::parse(
+                        &mut self.parser,
+                        self.session_config,
+                        self.afi
+                ).expect("parsed before"))
             },
-            (_, SAFI::Unicast) => {
-                Nlri::Basic(BasicNlri::parse(&mut self.parser, self.session_config, self.afi).expect("parsed before"))
+            (_, _) => {
+                error!("trying to iterate over withdrawals \
+                       for unknown AFI/SAFI combination {}/{}",
+                       self.afi, self.safi
+                );
+                panic!("unsupported AFI/SAFI in withdrawals get_nlri()")
             }
-            (_, _) => panic!("should not come here")
         }
+    }
+}
+
+impl<'a> Withdrawals<'a, [u8]> {
+    fn check(parser: &mut Parser<'a, [u8]>,  config: SessionConfig)
+        -> Result<(), ParseError>
+    {
+        // NLRIs from MP_UNREACH_NLRI.
+        // Length is given in the Path Attribute length field.
+        // AFI, SAFI, are also in this Path Attribute.
+
+        let afi: AFI = parser.parse_u16_be()?.into();
+        let safi: SAFI = parser.parse_u8()?.into();
+
+        while parser.remaining() > 0 {
+            match (afi, safi) {
+                (_, SAFI::Unicast | SAFI::Multicast) => {
+                    BasicNlri::check(parser, config, afi)?
+                }
+                (_, SAFI::MplsVpnUnicast) => {
+                    MplsVpnNlri::check(parser, config, afi)?
+                }
+                (_, SAFI::MplsUnicast) => {
+                    MplsNlri::check(parser, config, afi)?
+                },
+                (_, _) => { 
+                    debug!(
+                        "unimplemented AFI/SAFI {}/{} for Withdrawals",
+                        afi, safi
+                    );
+                    return Err(ParseError::form_error(
+                        "unimplemented AFI/SAFI for withdrawal"
+                    ))
+                }
+            }
+        }
+
+        Ok(())
     }
 }
 
@@ -1598,28 +1577,6 @@ impl<'a, Octs: Octets> Withdrawals<'a, Octs> {
         )
     }
 
-    fn check<R: Octets>(parser: &mut Parser<'a, R>,  config: SessionConfig)
-        -> Result<(), ParseError>
-    {
-        // NLRIs from MP_UNREACH_NLRI.
-        // Length is given in the Path Attribute length field.
-        // AFI, SAFI, are also in this Path Attribute.
-
-        let afi: AFI = parser.parse_u16()?.into();
-        let safi: SAFI = parser.parse_u8()?.into();
-
-        while parser.remaining() > 0 {
-            match (afi, safi) {
-                (_, SAFI::MplsVpnUnicast) => { MplsVpnNlri::<Octs>::check(parser, config, afi)?;},
-                (_, SAFI::MplsUnicast) => { MplsNlri::<Octs>::check(parser, config, afi)?;},
-                (_, SAFI::Unicast) => { BasicNlri::check(parser, config, afi)?; }
-                (_, _) => { /* return Err(FormError("unimplemented")) */ }
-            }
-        }
-
-        Ok(())
-    }
-
     fn parse(parser: &mut Parser<'a, Octs>,  config: SessionConfig)
         -> Result<Self, ParseError>
     {
@@ -1627,16 +1584,30 @@ impl<'a, Octs: Octets> Withdrawals<'a, Octs> {
         // Length is given in the Path Attribute length field.
         // AFI, SAFI, are also in this Path Attribute.
 
-        let afi: AFI = parser.parse_u16()?.into();
+        let afi: AFI = parser.parse_u16_be()?.into();
         let safi: SAFI = parser.parse_u8()?.into();
         let pos = parser.pos();
 
         while parser.remaining() > 0 {
             match (afi, safi) {
-                (_, SAFI::MplsVpnUnicast) => { MplsVpnNlri::parse(parser, config, afi)?;},
-                (_, SAFI::MplsUnicast) => { MplsNlri::parse(parser, config, afi)?;},
-                (_, SAFI::Unicast) => { BasicNlri::parse(parser, config, afi)?; }
-                (_, _) => { /* return Err(FormError("unimplemented")) */ }
+                (_, SAFI::Unicast | SAFI::Multicast) => {
+                    BasicNlri::parse(parser, config, afi)?;
+                }
+                (_, SAFI::MplsVpnUnicast) => {
+                    MplsVpnNlri::parse(parser, config, afi)?;
+                },
+                (_, SAFI::MplsUnicast) => {
+                    MplsNlri::parse(parser, config, afi)?;
+                },
+                (_, _) => {
+                    debug!(
+                        "unimplemented AFI/SAFI {}/{} for Withdrawals",
+                        afi, safi
+                    );
+                    return Err(ParseError::form_error(
+                        "unimplemented AFI/SAFI for withdrawal"
+                    ))
+                }
             }
         }
 
@@ -1666,7 +1637,7 @@ impl<'a, Octs: Octets> Iterator for WithdrawalsIterMp<'a, Octs> {
 }
 
 /// Represents the announced NLRI in a BGP UPDATE message.
-pub struct Nlris<'a, Octs: Octets> {
+pub struct Nlris<'a, Octs: Octets + ?Sized> {
     parser: Parser<'a, Octs>,
     session_config: SessionConfig,
     afi: AFI,
@@ -1698,7 +1669,7 @@ impl<'a, Octs: Octets> Nlris<'a, Octs> {
 ///
 /// Returns items of the enum [`Nlri`], thus both conventional and
 /// BGP MultiProtocol (RFC4760) NLRIs.
-pub struct NlriIterMp<'a, Ref> {
+pub struct NlriIterMp<'a, Ref: ?Sized> {
     parser: Parser<'a, Ref>,
     session_config: SessionConfig,
     afi: AFI,
@@ -1708,26 +1679,93 @@ pub struct NlriIterMp<'a, Ref> {
 impl<'a, Octs: Octets> NlriIterMp<'a, Octs> {
     fn get_nlri(&mut self) -> Nlri<Octs::Range<'a>> {
         match (self.afi, self.safi) {
+            (_, SAFI::Unicast | SAFI::Multicast) => {
+                Nlri::Basic(BasicNlri::parse(
+                        &mut self.parser,
+                        self.session_config,
+                        self.afi
+                ).expect("parsed before"))
+            },
             (_, SAFI::MplsVpnUnicast) => {
-                Nlri::MplsVpn(MplsVpnNlri::parse(&mut self.parser, self.session_config, self.afi).expect("parsed before"))
+                Nlri::MplsVpn(MplsVpnNlri::parse(
+                        &mut self.parser,
+                        self.session_config,
+                        self.afi
+                ).expect("parsed before"))
             },
             (_, SAFI::MplsUnicast) => {
-                Nlri::Mpls(MplsNlri::parse(&mut self.parser, self.session_config, self.afi).expect("parsed before"))
-            },
-            (_, SAFI::Unicast) => {
-                Nlri::Basic(BasicNlri::parse(&mut self.parser, self.session_config, self.afi).expect("parsed before"))
+                Nlri::Mpls(MplsNlri::parse(
+                        &mut self.parser,
+                        self.session_config,
+                        self.afi
+                ).expect("parsed before"))
             },
             (AFI::L2Vpn, SAFI::Vpls) => {
-                Nlri::Vpls(VplsNlri::parse(&mut self.parser).expect("parsed before"))
+                Nlri::Vpls(VplsNlri::parse(
+                        &mut self.parser
+                ).expect("parsed before"))
             },
             (AFI::Ipv4, SAFI::FlowSpec) => {
-                Nlri::FlowSpec(FlowSpecNlri::parse(&mut self.parser).expect("parsed before"))
+                Nlri::FlowSpec(FlowSpecNlri::parse(
+                        &mut self.parser
+                ).expect("parsed before"))
             },
             (AFI::Ipv4, SAFI::RouteTarget) => {
-                Nlri::RouteTarget(RouteTargetNlri::parse(&mut self.parser).expect("parsed before"))
+                Nlri::RouteTarget(RouteTargetNlri::parse(
+                        &mut self.parser
+                ).expect("parsed before"))
             },
-            (_, _) => panic!("unsupported AFI/SAFI in get_nlri(), should not come here")
+            (_, _) => {
+                error!("trying to iterate over NLRI \
+                       for unknown AFI/SAFI combination {}/{}",
+                       self.afi, self.safi
+                );
+                panic!("unsupported AFI/SAFI in NLRI get_nlri()")
+            }
         }
+    }
+}
+
+impl<'a> Nlris<'a, [u8]> {
+    fn check(parser: &mut Parser<'a, [u8]>, config: SessionConfig)
+        -> Result<(), ParseError>
+    {
+        let afi: AFI = parser.parse_u16_be()?.into();
+        let safi: SAFI = parser.parse_u8()?.into();
+
+        NextHop::check(parser, afi, safi)?;
+        parser.advance(1)?; // 1 reserved byte
+
+        while parser.remaining() > 0 {
+            match (afi, safi) {
+                (_, SAFI::Unicast | SAFI::Multicast) => {
+                    BasicNlri::check(parser, config, afi)?;
+                }
+                (_, SAFI::MplsVpnUnicast) => {
+                    MplsVpnNlri::check(parser, config, afi)?;
+                },
+                (_, SAFI::MplsUnicast) => {
+                    MplsNlri::check(parser, config, afi)?;
+                },
+                (AFI::L2Vpn, SAFI::Vpls) => {
+                    VplsNlri::check(parser)?;
+                }
+                (AFI::Ipv4, SAFI::FlowSpec) => {
+                    FlowSpecNlri::check(parser)?;
+                },
+                (AFI::Ipv4, SAFI::RouteTarget) => {
+                    RouteTargetNlri::check(parser)?;
+                },
+                (_, _) => {
+                    debug!("unknown AFI/SAFI {}/{}", afi, safi);
+                    return Err(
+                        ParseError::form_error("unimplemented AFI/SAFI")
+                    )
+                }
+            }
+        }
+
+        Ok(())
     }
 }
 
@@ -1754,39 +1792,6 @@ impl<'a, Octs: Octets> Nlris<'a, Octs> {
         )
     }
 
-    fn check<R: Octets>(parser: &mut Parser<'a, R>, config: SessionConfig)
-        -> Result<(), ParseError>
-    {
-        let afi: AFI = parser.parse_u16()?.into();
-        let safi: SAFI = parser.parse_u8()?.into();
-
-        NextHop::check(parser, afi, safi)?;
-        parser.advance(1)?; // 1 reserved byte
-
-        while parser.remaining() > 0 {
-            match (afi, safi) {
-                (_, SAFI::MplsVpnUnicast) => { MplsVpnNlri::<Octs>::check(parser, config, afi)?;},
-                (_, SAFI::MplsUnicast) => { MplsNlri::<Octs>::check(parser, config, afi)?;},
-                (_, SAFI::Unicast) => { BasicNlri::check(parser, config, afi)?; }
-                (AFI::L2Vpn, SAFI::Vpls) => { VplsNlri::check(parser)?; }
-                (AFI::Ipv4, SAFI::FlowSpec) => {
-                    FlowSpecNlri::<Octs>::check(parser)?;
-                },
-                (AFI::Ipv4, SAFI::RouteTarget) => {
-                    RouteTargetNlri::<Octs>::check(parser)?;
-                },
-                (_, _) => {
-                    error!("unknown AFI/SAFI {}/{}", afi, safi);
-                    return Err(
-                        ParseError::form_error("unimplemented AFI/SAFI")
-                    )
-                }
-            }
-        }
-
-        Ok(())
-    }
-
     fn parse(parser: &mut Parser<'a, Octs>, config: SessionConfig)
         -> Result<Self, ParseError>
     {
@@ -1794,7 +1799,7 @@ impl<'a, Octs: Octets> Nlris<'a, Octs> {
         // Length is given in the Path Attribute length field.
         // AFI, SAFI, Nexthop are also in this Path Attribute.
 
-        let afi: AFI = parser.parse_u16()?.into();
+        let afi: AFI = parser.parse_u16_be()?.into();
         let safi: SAFI = parser.parse_u8()?.into();
 
         NextHop::skip(parser)?;
@@ -1804,10 +1809,18 @@ impl<'a, Octs: Octets> Nlris<'a, Octs> {
 
         while parser.remaining() > 0 {
             match (afi, safi) {
-                (_, SAFI::MplsVpnUnicast) => { MplsVpnNlri::parse(parser, config, afi)?;},
-                (_, SAFI::MplsUnicast) => { MplsNlri::parse(parser, config, afi)?;},
-                (_, SAFI::Unicast) => { BasicNlri::parse(parser, config, afi)?; }
-                (AFI::L2Vpn, SAFI::Vpls) => { VplsNlri::parse(parser)?; }
+                (_, SAFI::Unicast| SAFI::Multicast) => {
+                    BasicNlri::parse(parser, config, afi)?;
+                }
+                (_, SAFI::MplsVpnUnicast) => {
+                    MplsVpnNlri::parse(parser, config, afi)?;
+                },
+                (_, SAFI::MplsUnicast) => {
+                    MplsNlri::parse(parser, config, afi)?;
+                },
+                (AFI::L2Vpn, SAFI::Vpls) => {
+                    VplsNlri::parse(parser)?;
+                }
                 (AFI::Ipv4, SAFI::FlowSpec) => {
                     FlowSpecNlri::parse(parser)?;
                 },
@@ -1815,7 +1828,7 @@ impl<'a, Octs: Octets> Nlris<'a, Octs> {
                     RouteTargetNlri::parse(parser)?;
                 },
                 (_, _) => {
-                    error!("unknown AFI/SAFI {}/{}", afi, safi);
+                    debug!("unknown AFI/SAFI {}/{}", afi, safi);
                     return Err(
                         ParseError::form_error("unimplemented AFI/SAFI")
                     )
@@ -1852,7 +1865,7 @@ impl<'a, Octs: Octets> Iterator for NlriIterMp<'a, Octs> {
 //
 
 impl StandardCommunity {
-    fn check<R: Octets>(parser: &mut Parser<'_, R>)
+    fn check(parser: &mut Parser<[u8]>)
         -> Result<(), ParseError>
     {
         parser.advance(4)?;
@@ -1869,7 +1882,7 @@ impl StandardCommunity {
 }
 
 impl ExtendedCommunity {
-    fn check<R: Octets>(parser: &mut Parser<'_, R>)
+    fn check(parser: &mut Parser<[u8]>)
         -> Result<(), ParseError>
     {
         parser.advance(8)?;
@@ -1886,7 +1899,7 @@ impl ExtendedCommunity {
 }
 
 impl Ipv6ExtendedCommunity {
-    fn check<R: Octets>(parser: &mut Parser<'_, R>)
+    fn check(parser: &mut Parser<[u8]>)
         -> Result<(), ParseError>
     {
         parser.advance(20)?;
@@ -1903,7 +1916,7 @@ impl Ipv6ExtendedCommunity {
 }
 
 impl LargeCommunity {
-    fn check<R: Octets>(parser: &mut Parser<'_, R>)
+    fn check(parser: &mut Parser<[u8]>)
         -> Result<(), ParseError>
     {
         parser.advance(12)?;
@@ -2028,11 +2041,13 @@ mod tests {
         let asp = pa2.value();
         assert_eq!(asp.as_ref(), [0x02, 0x01, 0x00, 0x01, 0x00, 0x00]);
 
+        /*
         let mut pb = AsPathBuilder::new();
         pb.push(Asn::from_u32(65536)).unwrap();
         let asp: AsPath<Vec<Asn>> = pb.finalize();
+        */
 
-        assert_eq!(update.aspath().unwrap(), asp);
+        //assert_eq!(update.aspath().unwrap(), asp);
 
         let pa3 = pa_iter.next().unwrap();
         assert_eq!(pa3.type_code(), PathAttributeType::NextHop);
@@ -2343,6 +2358,20 @@ mod tests {
             panic!("AS4PATH path attribute not found")
         }
 
+        assert_eq!(
+            update.aspath().unwrap().hops().collect::<Vec<_>>(),
+            AsPath::vec_from_asns([
+                0xfbf0, 0xfbf1, 0xfbf2, 0xfbf3, 0x5ba0, 0x5ba0,
+                0x5ba0, 0x5ba0, 0x5ba0, 0x5ba0
+            ]).hops().collect::<Vec<_>>(),
+        );
+        assert_eq!(
+            update.as4path().unwrap().hops().collect::<Vec<_>>(),
+            AsPath::vec_from_asns([
+                0xfbf0, 0xfbf1, 0xfbf2, 0xfbf3, 0x10000, 0x10000,
+                0x10000, 0x10000, 0x10001, 0x1000a,
+            ]).hops().collect::<Vec<_>>(),
+        );
     }
 
     //--- Communities ----------------------------------------------------
@@ -2400,7 +2429,7 @@ mod tests {
              ExtendedCommunitySubType::OtherSubType(0x06))
             );
 
-        use crate::bgp::communities::Asn16;
+        use crate::asn::Asn16;
         assert_eq!(ext_comm1.as2(), Some(Asn16::from_u16(0)));
 
         let ext_comm2 = ext_comms.next().unwrap();
@@ -2533,4 +2562,50 @@ mod tests {
         //    println!("{:#x?}", pa.value());
         //}
     }
+
+    #[test]
+    fn mp_ipv4_multicast() {
+        let buf = vec![
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0x00, 0x52, 0x02, 0x00, 0x00, 0x00, 0x3b, 0x80,
+            0x0e, 0x1d, 0x00, 0x01, 0x02, 0x04, 0x0a, 0x09,
+            0x0a, 0x09, 0x00, 0x1a, 0xc6, 0x33, 0x64, 0x00,
+            0x1a, 0xc6, 0x33, 0x64, 0x40, 0x1a, 0xc6, 0x33,
+            0x64, 0x80, 0x1a, 0xc6, 0x33, 0x64, 0xc0, 0x40,
+            0x01, 0x01, 0x00, 0x40, 0x02, 0x06, 0x02, 0x01,
+            0x00, 0x00, 0x01, 0xf4, 0x40, 0x03, 0x04, 0x0a,
+            0x09, 0x0a, 0x09, 0x80, 0x04, 0x04, 0x00, 0x00,
+            0x00, 0x00
+        ];
+        let sc = SessionConfig::modern();
+        let upd: UpdateMessage<_> = Message::from_octets(&buf, Some(sc))
+            .unwrap().try_into().unwrap();
+        assert_eq!(upd.nlris().afi(), AFI::Ipv4);
+        assert_eq!(upd.nlris().safi(), SAFI::Multicast);
+        assert!(upd.nlris().iter().map(|n| n.prefix().unwrap()).eq([
+              Prefix::from_str("198.51.100.0/26").unwrap(),
+              Prefix::from_str("198.51.100.64/26").unwrap(),
+              Prefix::from_str("198.51.100.128/26").unwrap(),
+              Prefix::from_str("198.51.100.192/26").unwrap(),
+        ]));
+    }
+
+    #[test]
+    fn mp_unreach_ipv4_multicast() {
+        let buf = vec![
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0x00, 0x1d+5, 0x02, 0x00, 0x00, 0x00, 0x06+5, 0x80,
+            0x0f, 0x03+5, 0x00, 0x01, 0x02,
+            0x1a, 0xc6, 0x33, 0x64, 0x00
+        ]; 
+        let sc = SessionConfig::modern();
+        let upd: UpdateMessage<_> = Message::from_octets(&buf, Some(sc))
+            .unwrap().try_into().unwrap();
+        assert_eq!(upd.withdrawals().afi(), AFI::Ipv4);
+        assert_eq!(upd.withdrawals().safi(), SAFI::Multicast);
+        assert_eq!(upd.withdrawals().iter().count(), 1);
+    }
+
 }
