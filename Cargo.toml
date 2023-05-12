@@ -34,7 +34,3 @@ default = ["octseq"]
 bgp = ["bytes", "log", "octseq", "const-str"]
 bmp = ["bgp", "bytes", "chrono", "log", "octseq"]
 std = []
-
-[[example]]
-name = "bgp_updates_from_file"
-required-features = ["bgp"]
