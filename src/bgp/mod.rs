@@ -28,17 +28,9 @@
 //! | 6 | { key: MP_REACH_NLRI_Prefix#2; meta: BgpExtAttributes } |
 //! | 4 | { key: MP_UNREACH_NLRI_Prefix#1; meta: NoMeta } |
 
-mod meta;
-mod prefix_record;
-mod route;
-
 pub mod aspath;
 pub mod communities;
 pub mod types;
 
 pub mod message;
 pub use crate::util::parser::ParseError;
-
-pub use self::meta::*;
-pub use self::prefix_record::*;
-pub use self::route::*;
