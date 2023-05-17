@@ -2007,6 +2007,30 @@ impl<Target: OctetsBuilder + AsMut<[u8]>> UpdateBuilder<Target> {
             total_pa_len += 2 + 2 + attr_len;
         }
 
+
+        // XXX the next_hop is either a (conventional, for v4/unicast) path
+        // attribute, or, it is part of MP_REACH_NLRI.
+        // Should/must v4/unicast always go in MP_REACH_NLRI when both peers
+        // sent such capability though?
+        if let Some(next_hop) = acs.next_hop.into_opt() {
+            match next_hop {
+                NextHop::Ipv4(v4addr) => {
+                    let attr_flags = 0b0100_0000;
+                    let attr_typecode = PathAttributeType::NextHop.into();
+                    let attr_len = 4_u8; 
+
+                    self.target.append_slice(
+                        &[attr_flags, attr_typecode, attr_len]
+                    );
+                    self.target.append_slice(&v4addr.octets());
+
+                    total_pa_len += 2 + 1 + usize::from(attr_len);
+                }
+                _ => todo!() // this is MP_REACH_NLRI territory
+            }
+        }
+
+
         if u16::try_from(total_pa_len).is_err() {
             todo!()
         }
@@ -2800,6 +2824,9 @@ mod tests {
         hp.prepend(Asn::from_u32(100));
         hp.prepend(Asn::from_u32(101));
         acs.as_path.set(hp.to_as_path().unwrap());
+
+        // NEXT_HOP
+        acs.next_hop.set(NextHop::Ipv4(Ipv4Addr::from_str("192.0.2.1").unwrap()));
 
         let msg = builder.build_acs(acs);
         print_pcap(&msg);
