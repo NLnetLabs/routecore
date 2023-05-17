@@ -1973,31 +1973,38 @@ impl<Target: OctetsBuilder + AsMut<[u8]>> UpdateBuilder<Target> {
 
 
         // Path Attributes
-        let mut total_pa_len = 0_usize;
-        // Total Path Attribute len place holder:
-        let _ = self.target.append_slice(&[0x00, 0x00]);
-
-        if let Some(origin) = acs.origin_type.into_opt() {
-        }
-
-        if let Some(as_path) = acs.as_path.into_opt() {
             // flags (from msb to lsb):
             // optional
             // transitive
             // partial
             // extended_length (2 octet length)
+        
+        let mut total_pa_len = 0_usize;
+        // Total Path Attribute len place holder:
+        let _ = self.target.append_slice(&[0x00, 0x00]);
+
+        if let Some(origin) = acs.origin_type.into_opt() {
+            let attr_flags = 0b0100_0000;
+            let attr_typecode = PathAttributeType::Origin.into();
+            let attr_len = 1_u8; 
+            self.target.append_slice(
+                &[attr_flags, attr_typecode, attr_len, origin.into()]);
+            total_pa_len += 2 + 1 + usize::from(attr_len);
+        }
+
+        if let Some(as_path) = acs.as_path.into_opt() {
             let attr_flags = 0b0101_0000;
             let attr_typecode = PathAttributeType::AsPath.into();
             let asp = as_path.into_inner();
-            let asp_len = asp.len();
-            if u16::try_from(asp_len).is_err() {
+            let attr_len = asp.len();
+            if u16::try_from(attr_len).is_err() {
                 todo!()
             }
             self.target.append_slice(&[attr_flags, attr_typecode]);
-            self.target.append_slice(&(asp_len as u16).to_be_bytes());
+            self.target.append_slice(&(attr_len as u16).to_be_bytes());
             self.target.append_slice(&asp);
 
-            total_pa_len += 2 + 2 + asp_len;
+            total_pa_len += 2 + 2 + attr_len;
         }
 
         if u16::try_from(total_pa_len).is_err() {
@@ -2784,6 +2791,9 @@ mod tests {
 
         let mut builder = UpdateBuilder::new_vec();
         let mut acs = AttrChangeSet::empty();
+
+        // ORIGIN
+        acs.origin_type.set(OriginType::Igp);
 
         // AS_PATH
         let mut hp = HopPath::new();
