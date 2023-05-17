@@ -1961,6 +1961,7 @@ impl<Target: OctetsBuilder> UpdateBuilder<Target> {
 }
 
 impl<Target: OctetsBuilder + AsMut<[u8]>> UpdateBuilder<Target> {
+    //TODO turn the return type into a proper Result
     pub fn build_acs(mut self, acs: AttrChangeSet) -> Target {
         // Withdrawals
         let mut withdraw_len = 0_usize;
@@ -2062,14 +2063,25 @@ impl<Target: OctetsBuilder + AsMut<[u8]>> UpdateBuilder<Target> {
 
 
         // NLRI
-        // TODO
+        // TODO this all needs to be a lot more sophisticated:
+        //  - prefixes can not occur in both withdrawals and nlris, so check
+        //  for that;
+        //  - non v4/unicast NLRI should go in MP_REACH_NLRI, not here (at the
+        //  end of the PDU);
+        //  - we should be able to put multiple NLRI in one UPDATE, though
+        //  currently the AttrChangeSet only holds one;
+        //  - probably more
+        
         let mut nlri_len = 0;
 
-        // XXX note that ACS currently only keeps a single NLRI
         if let Some(nlri) = acs.nlri.into_opt() {
             match nlri {
                 Nlri::Basic(b) => {
                     if let Some(p) = nlri.prefix() {
+                        if let Some(id) = nlri.path_id() {
+                            self.target.append_slice(&id.to_raw());
+                            nlri_len += 4;
+                        }
                         match p.addr_and_len() {
                             (std::net::IpAddr::V4(addr), len) => {
                                 self.target.append_slice(&[len]);
@@ -2853,6 +2865,7 @@ mod tests {
     #[test]
     fn build_acs() {
         use crate::bgp::aspath::HopPath;
+        use crate::bgp::message::nlri::PathId;
 
         let mut builder = UpdateBuilder::new_vec();
         let mut acs = AttrChangeSet::empty();
@@ -2874,7 +2887,7 @@ mod tests {
         // XXX currently ACS only holds one single Nlri
         acs.nlri.set(Nlri::Basic(BasicNlri{
             prefix: Prefix::from_str("1.2.0.0/25").unwrap(),
-            path_id: None
+            path_id: Some(PathId::from_u32(123))
         }));
 
         acs.standard_communities.set(vec![

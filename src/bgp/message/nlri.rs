@@ -127,6 +127,14 @@ impl PathId {
     {
         Ok(PathId(parser.parse_u32_be()?))
     }
+
+    pub fn from_u32(id: u32) -> Self {
+        PathId(id)
+    }
+
+    pub fn to_raw(self) -> [u8; 4] {
+        self.0.to_be_bytes()
+    }
 }
 
 /// MPLS labels, part of [`MplsNlri`] and [`MplsVpnNlri`].
