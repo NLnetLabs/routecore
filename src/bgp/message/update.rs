@@ -2044,7 +2044,29 @@ impl<Target: OctetsBuilder + AsMut<[u8]>> UpdateBuilder<Target> {
 
         // NLRI
         // TODO
-        let nlri_len = 0;
+        let mut nlri_len = 0;
+
+        // XXX note that ACS currently only keeps a single NLRI
+        if let Some(nlri) = acs.nlri.into_opt() {
+            match nlri {
+                Nlri::Basic(b) => {
+                    if let Some(p) = nlri.prefix() {
+                        match p.addr_and_len() {
+                            (std::net::IpAddr::V4(addr), len) => {
+                                self.target.append_slice(&[len]);
+                                let len_bytes = ((usize::from(len)-1) / 8 + 1);
+                                self.target.append_slice(
+                                    &addr.octets()[0..len_bytes]
+                                );
+                                nlri_len += 1 + len_bytes;
+                            }
+                            _ => todo!()
+                        }
+                    }
+                }
+                _ => todo!()
+            }
+        }
 
         // update pdu len
         let msg_len = 19 
@@ -2827,6 +2849,15 @@ mod tests {
 
         // NEXT_HOP
         acs.next_hop.set(NextHop::Ipv4(Ipv4Addr::from_str("192.0.2.1").unwrap()));
+
+
+        // now for some NLRI
+        // XXX currently ACS only holds one single Nlri
+        acs.nlri.set(Nlri::Basic(BasicNlri{
+            prefix: Prefix::from_str("1.2.0.0/25").unwrap(),
+            path_id: None
+        }));
+
 
         let msg = builder.build_acs(acs);
         print_pcap(&msg);

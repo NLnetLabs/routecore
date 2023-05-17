@@ -275,8 +275,8 @@ pub enum RouteDistinguisherType {
 /// The `BasicNlri` is extended in [`MplsNlri`] and [`MplsVpnNlri`].
 #[derive(Copy, Clone, Debug)]
 pub struct BasicNlri {
-    prefix: Prefix,
-    path_id: Option<PathId>,
+    pub prefix: Prefix,
+    pub path_id: Option<PathId>,
 }
 
 /// NLRI comprised of a [`BasicNlri`] and MPLS `Labels`.
