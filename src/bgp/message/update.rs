@@ -238,14 +238,7 @@ impl<Octs: Octets> UpdateMessage<Octs> {
     pub fn origin(&self) -> Option<OriginType> {
         self.path_attributes().iter().find(|pa|
             pa.type_code() == PathAttributeType::Origin
-        ).map(|pa|
-            match pa.value().as_ref()[0] {
-                0 => OriginType::Igp,
-                1 => OriginType::Egp,
-                2 => OriginType::Incomplete,
-                n => OriginType::Unknown(n),
-            }
-        )
+        ).map(|pa| pa.value().as_ref()[0].into() )
     }
 
     /// Returns the AS4_PATH attribute.

@@ -28,25 +28,13 @@ typeenum!(
     134 => FlowSpecVpn,
 );
 
+typeenum!(
 /// BGP Origin types as used in BGP UPDATE messages.
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
-pub enum OriginType {
-    Igp,
-    Egp,
-    Incomplete,
-    Unknown(u8),
-}
-
-impl std::fmt::Display for OriginType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            OriginType::Igp => write!(f, "IGP"),
-            OriginType::Egp => write!(f, "EGP"),
-            OriginType::Incomplete => write!(f, "Incomplete"),
-            OriginType::Unknown(val) => write!(f, "Unknown: {}", val),
-        }
-    }
-}
+    OriginType, u8,
+    0 => Igp,
+    1 => Egp,
+    2 => Incomplete,
+);
 
 typeenum!(
 /// PathAttributeType
