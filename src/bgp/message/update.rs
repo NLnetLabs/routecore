@@ -1988,7 +1988,7 @@ impl<Target: OctetsBuilder + AsMut<[u8]>> UpdateBuilder<Target> {
             let attr_flags = 0b0100_0000;
             let attr_typecode = PathAttributeType::Origin.into();
             let attr_len = 1_u8; 
-            self.target.append_slice(
+            let _ = self.target.append_slice(
                 &[attr_flags, attr_typecode, attr_len, origin.into()]);
             total_pa_len += 2 + 1 + usize::from(attr_len);
         }
@@ -2001,9 +2001,9 @@ impl<Target: OctetsBuilder + AsMut<[u8]>> UpdateBuilder<Target> {
             if u16::try_from(attr_len).is_err() {
                 todo!()
             }
-            self.target.append_slice(&[attr_flags, attr_typecode]);
-            self.target.append_slice(&(attr_len as u16).to_be_bytes());
-            self.target.append_slice(&asp);
+            let _ = self.target.append_slice(&[attr_flags, attr_typecode]);
+            let _ = self.target.append_slice(&(attr_len as u16).to_be_bytes());
+            let _ = self.target.append_slice(&asp);
 
             total_pa_len += 2 + 2 + attr_len;
         }
@@ -2020,10 +2020,10 @@ impl<Target: OctetsBuilder + AsMut<[u8]>> UpdateBuilder<Target> {
                     let attr_typecode = PathAttributeType::NextHop.into();
                     let attr_len = 4_u8; 
 
-                    self.target.append_slice(
+                    let _ = self.target.append_slice(
                         &[attr_flags, attr_typecode, attr_len]
                     );
-                    self.target.append_slice(&v4addr.octets());
+                    let _ = self.target.append_slice(&v4addr.octets());
 
                     total_pa_len += 2 + 1 + usize::from(attr_len);
                 }
@@ -2040,12 +2040,12 @@ impl<Target: OctetsBuilder + AsMut<[u8]>> UpdateBuilder<Target> {
                 Err(_) => todo!()
             };
 
-            self.target.append_slice(
+            let _ = self.target.append_slice(
                 &[attr_flags, attr_typecode, attr_len]
             );
 
             for c in comms {
-                self.target.append_slice(&c.to_raw());
+                let _ = self.target.append_slice(&c.to_raw());
             }
             total_pa_len += 2 + 1 + usize::from(attr_len);
         }
@@ -2079,14 +2079,14 @@ impl<Target: OctetsBuilder + AsMut<[u8]>> UpdateBuilder<Target> {
                 Nlri::Basic(b) => {
                     if let Some(p) = nlri.prefix() {
                         if let Some(id) = nlri.path_id() {
-                            self.target.append_slice(&id.to_raw());
+                            let _ = self.target.append_slice(&id.to_raw());
                             nlri_len += 4;
                         }
                         match p.addr_and_len() {
                             (std::net::IpAddr::V4(addr), len) => {
-                                self.target.append_slice(&[len]);
+                                let _ = self.target.append_slice(&[len]);
                                 let len_bytes = (usize::from(len)-1) / 8 + 1;
-                                self.target.append_slice(
+                                let _ = self.target.append_slice(
                                     &addr.octets()[0..len_bytes]
                                 );
                                 nlri_len += 1 + len_bytes;
@@ -2856,7 +2856,7 @@ mod tests {
 
     #[test]
     fn build_empty() {
-        let mut builder = UpdateBuilder::new_vec();
+        let builder = UpdateBuilder::new_vec();
         let msg = builder.finish();
         print_pcap(&msg);
     }
@@ -2867,7 +2867,7 @@ mod tests {
         use crate::bgp::aspath::HopPath;
         use crate::bgp::message::nlri::PathId;
 
-        let mut builder = UpdateBuilder::new_vec();
+        let builder = UpdateBuilder::new_vec();
         let mut acs = AttrChangeSet::empty();
 
         // ORIGIN
