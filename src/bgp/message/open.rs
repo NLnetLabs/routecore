@@ -693,6 +693,8 @@ where
 
         // BGP version
         let _ =target.append_slice(&[4]);
+
+         // Prepare space for the mandatory ASN, holdtime, bgp_id.
         let _ =target.append_slice(&[0; 8]);
 
         // opt param len is set in finish()

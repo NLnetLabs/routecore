@@ -1932,6 +1932,96 @@ impl LargeCommunity {
     }
 }
 
+
+//------------ UpdateBuilder -------------------------------------------------
+
+use octseq::{FreezeBuilder, OctetsBuilder, ShortBuf};
+use crate::addr::Prefix;
+use crate::bgp::message::MsgType;
+
+#[derive(Debug)]
+pub struct UpdateBuilder<Target> {
+    target: Target,
+    announcements: Vec<Prefix>,
+    withdrawals: Vec<Prefix>,
+    //attributes: Vec<PathAttribute<'a, Vec<u8>>>, // XXX this lifetime is..
+    //not nice
+}
+
+impl<Target: OctetsBuilder> UpdateBuilder<Target> {
+    pub fn from_target(mut target: Target) -> Result<Self, ShortBuf> {
+        //target.truncate(0);
+        let mut h = Header::<&[u8]>::new();
+        h.set_length(19);
+        h.set_type(MsgType::Update);
+        let _ =target.append_slice(h.as_ref());
+
+
+        Ok(UpdateBuilder {
+            target,
+            announcements: Vec::new(),
+            withdrawals: Vec::new(),
+            //attributes: ?
+        })
+    }
+}
+
+impl<Target: OctetsBuilder + AsMut<[u8]>> UpdateBuilder<Target> {
+
+}
+
+impl<Target: OctetsBuilder + AsMut<[u8]>> UpdateBuilder<Target> {
+    pub fn finish(mut self) -> Target {
+        let withdraw_len = 0_usize;
+        let total_pa_len = 0_usize;
+        let nlri_len = 0_usize;
+        // TODO self.header_mut().set_length( ... );
+        let msg_len = 19 
+            + 2 + withdraw_len 
+            + 2 + total_pa_len
+            + nlri_len
+        ;
+
+        if msg_len > 4096 {
+            // do we just create a larger PDU and let the user decide what to
+            // do with it? Perhaps we need an enum
+            // see rfc8654, which raises the max size to 65535.
+            todo!()
+        }
+
+        // XXX we can do these unwraps because of the if+todo!() above, for
+        // now
+        let msg_len = u16::try_from(msg_len).unwrap();
+        let withdraw_len = u16::try_from(withdraw_len).unwrap();
+        let total_pa_len = u16::try_from(total_pa_len).unwrap();
+
+        // update pdu len
+        self.target.as_mut()[16..=17].copy_from_slice( &(msg_len.to_be_bytes()) );
+
+        self.target.append_slice(&(withdraw_len.to_be_bytes()));
+        // TODO write withdrawals, if any
+
+        self.target.append_slice(&(total_pa_len.to_be_bytes()));
+        // TODO write path attributes, if any
+
+        // TODO write conventional NLRI, if any
+
+        self.target
+    }
+
+    //pub fn into_message(self)
+    //    -> UpdateMessage<<Target as FreezeBuilder>::Octets>
+    //where Target: FreezeBuilder {
+    //    UpdateMessage { octets: self.finish().freeze() }
+    //}
+}
+
+impl UpdateBuilder<Vec<u8>> {
+    pub fn new_vec() -> Self {
+        Self::from_target(Vec::with_capacity(23)).unwrap()
+    }
+}
+
 //--- Tests ------------------------------------------------------------------
 
 #[cfg(test)]
@@ -2606,6 +2696,21 @@ mod tests {
         assert_eq!(upd.withdrawals().afi(), AFI::Ipv4);
         assert_eq!(upd.withdrawals().safi(), SAFI::Multicast);
         assert_eq!(upd.withdrawals().iter().count(), 1);
+    }
+
+    fn print_pcap<T: AsRef<[u8]>>(buf: T) {
+        print!("000000 ");
+        for b in buf.as_ref() {
+            print!("{:02x} ", b);
+        }
+        println!();
+    }
+
+    #[test]
+    fn build_empty() {
+        let mut builder = UpdateBuilder::new_vec();
+        let msg = builder.finish();
+        print_pcap(&msg);
     }
 
 }
