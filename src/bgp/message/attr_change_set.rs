@@ -95,3 +95,37 @@ pub struct AttrChangeSet {
     pub attr_set: Todo,
     pub rsrvd_development: Todo,
 }
+
+impl AttrChangeSet {
+    pub fn empty() -> Self {
+        AttrChangeSet {
+            nlri: ChangedOption::new(),
+            withdrawals: ChangedOption::new(),
+
+            as_path: ChangedOption::new(),
+            as4_path: ChangedOption::new(),
+
+            standard_communities: ChangedOption::new(),
+            extended_communities: ChangedOption::new(),
+            ipv6_extended_communities: ChangedOption::new(),
+            large_communities: ChangedOption::new(),
+
+            origin_type: ChangedOption::new(),
+            next_hop: ChangedOption::new(),
+            multi_exit_discriminator: ChangedOption::new(),
+            local_pref: ChangedOption::new(),
+            atomic_aggregate: ChangedOption::new(),
+            aggregator: ChangedOption::new(),
+
+            originator_id: (),
+            cluster_list: (),
+            as4_aggregator: (),
+            connector: (),
+            as_path_limit: (),
+            pmsi_tunnel: (),
+            bgpsec_as_path: (),
+            attr_set: (),
+            rsrvd_development: (),
+        }
+    }
+}
