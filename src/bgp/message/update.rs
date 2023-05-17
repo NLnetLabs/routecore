@@ -2031,6 +2031,25 @@ impl<Target: OctetsBuilder + AsMut<[u8]>> UpdateBuilder<Target> {
         }
 
 
+        if let Some(comms) = acs.standard_communities.into_opt() {
+            let attr_flags = 0b0100_0000;
+            let attr_typecode = PathAttributeType::Communities.into();
+            let attr_len = match u8::try_from(4 * comms.len()) {
+                Ok(n) => n,
+                Err(_) => todo!()
+            };
+
+            self.target.append_slice(
+                &[attr_flags, attr_typecode, attr_len]
+            );
+
+            for c in comms {
+                self.target.append_slice(&c.to_raw());
+            }
+            total_pa_len += 2 + 1 + usize::from(attr_len);
+        }
+
+
         if u16::try_from(total_pa_len).is_err() {
             todo!()
         }
@@ -2054,7 +2073,7 @@ impl<Target: OctetsBuilder + AsMut<[u8]>> UpdateBuilder<Target> {
                         match p.addr_and_len() {
                             (std::net::IpAddr::V4(addr), len) => {
                                 self.target.append_slice(&[len]);
-                                let len_bytes = ((usize::from(len)-1) / 8 + 1);
+                                let len_bytes = (usize::from(len)-1) / 8 + 1;
                                 self.target.append_slice(
                                     &addr.octets()[0..len_bytes]
                                 );
@@ -2858,6 +2877,10 @@ mod tests {
             path_id: None
         }));
 
+        acs.standard_communities.set(vec![
+            Wellknown::NoExport.into(),
+            Wellknown::Blackhole.into(),
+        ]);
 
         let msg = builder.build_acs(acs);
         print_pcap(&msg);
