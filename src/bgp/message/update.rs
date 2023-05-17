@@ -14,6 +14,7 @@ use crate::bgp::message::nlri::{
 };
 
 use std::net::Ipv4Addr;
+use std::fmt;
 use crate::util::parser::{parse_ipv4addr, ParseError};
 
 
@@ -1277,8 +1278,8 @@ impl Aggregator {
     }
 }
 
-impl std::fmt::Display for Aggregator {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Display for Aggregator {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "AS{} Speaker {}", self.asn, self.speaker)        
     }
 }
@@ -1960,9 +1961,40 @@ impl<Target: OctetsBuilder> UpdateBuilder<Target> {
     }
 }
 
-impl<Target: OctetsBuilder + AsMut<[u8]>> UpdateBuilder<Target> {
-    //TODO turn the return type into a proper Result
-    pub fn build_acs(mut self, acs: AttrChangeSet) -> Target {
+#[derive(Debug)]
+pub enum ComposeError{
+    PduTooLarge(usize),
+    AttributeTooLarge(PathAttributeType, usize),
+    AttributesTooLarge(usize),
+    IllegalCombination,
+}
+impl std::error::Error for ComposeError { }
+impl fmt::Display for ComposeError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            ComposeError::PduTooLarge(n) => {
+                write!(f, "oversized PDU: {n} bytes")
+            }
+            ComposeError::AttributeTooLarge(attr, n) => {
+                write!(f, "oversized attribute {attr}: {n} bytes")
+            }
+            ComposeError::AttributesTooLarge(n) => {
+                write!(f, "total path attributes too large: {n} bytes")
+            }
+            ComposeError::IllegalCombination => {
+                write!(f, "illegal combination of prefixes/attributes")
+            }
+        }
+    }
+}
+
+use core::convert::Infallible;
+impl<Target: OctetsBuilder + AsMut<[u8]>> UpdateBuilder<Target>
+where Infallible: From<<Target as OctetsBuilder>::AppendError>
+{
+    pub fn build_acs(mut self, acs: AttrChangeSet)
+        -> Result<Target, ComposeError>
+    {
         // Withdrawals
         let mut withdraw_len = 0_usize;
         // placeholder
@@ -1999,7 +2031,10 @@ impl<Target: OctetsBuilder + AsMut<[u8]>> UpdateBuilder<Target> {
             let asp = as_path.into_inner();
             let attr_len = asp.len();
             if u16::try_from(attr_len).is_err() {
-                todo!()
+                return Err(ComposeError::AttributeTooLarge(
+                    PathAttributeType::AsPath,
+                    attr_len
+                ));
             }
             let _ = self.target.append_slice(&[attr_flags, attr_typecode]);
             let _ = self.target.append_slice(&(attr_len as u16).to_be_bytes());
@@ -2037,7 +2072,12 @@ impl<Target: OctetsBuilder + AsMut<[u8]>> UpdateBuilder<Target> {
             let attr_typecode = PathAttributeType::Communities.into();
             let attr_len = match u8::try_from(4 * comms.len()) {
                 Ok(n) => n,
-                Err(_) => todo!()
+                Err(..) => {
+                    return Err(ComposeError::AttributeTooLarge(
+                        PathAttributeType::Communities,
+                        4 * comms.len()
+                    ));
+                }
             };
 
             let _ = self.target.append_slice(
@@ -2052,7 +2092,7 @@ impl<Target: OctetsBuilder + AsMut<[u8]>> UpdateBuilder<Target> {
 
 
         if u16::try_from(total_pa_len).is_err() {
-            todo!()
+            return Err(ComposeError::AttributesTooLarge(total_pa_len));
         }
 
         println!("total pa len: {total_pa_len}");
@@ -2106,15 +2146,20 @@ impl<Target: OctetsBuilder + AsMut<[u8]>> UpdateBuilder<Target> {
             + nlri_len
         ;
 
-        if u16::try_from(msg_len).is_err() {
-            todo!()
+        if msg_len > 4096 {
+            // TODO handle Extended Messages (max pdu size 65535)
+            return Err(ComposeError::PduTooLarge(msg_len));
         }
+
+        //if u16::try_from(msg_len).is_err() {
+        //    return Err(ComposeError::PduTooLarge(msg_len));
+        //}
 
         self.target.as_mut()[16..=17].copy_from_slice(
             &(msg_len as u16).to_be_bytes()
         );
 
-        self.target
+        Ok(self.target)
     }
 }
 
@@ -2895,7 +2940,7 @@ mod tests {
             Wellknown::Blackhole.into(),
         ]);
 
-        let msg = builder.build_acs(acs);
+        let msg = builder.build_acs(acs).unwrap();
         print_pcap(&msg);
     }
 
