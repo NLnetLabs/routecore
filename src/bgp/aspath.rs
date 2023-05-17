@@ -440,6 +440,10 @@ impl<Octs: AsRef<[u8]>> AsPath<Octs> {
     ) -> Self {
         AsPath { octets, four_byte_asns }
     }
+
+    pub fn into_inner(self) -> Octs {
+        self.octets
+    }
 }
 
 impl AsPath<Vec<u8>> {

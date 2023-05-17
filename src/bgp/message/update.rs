@@ -1937,6 +1937,7 @@ impl LargeCommunity {
 
 use octseq::{FreezeBuilder, OctetsBuilder, ShortBuf};
 use crate::addr::Prefix;
+use crate::bgp::message::attr_change_set::AttrChangeSet;
 use crate::bgp::message::MsgType;
 
 #[derive(Debug)]
@@ -1967,7 +1968,77 @@ impl<Target: OctetsBuilder> UpdateBuilder<Target> {
 }
 
 impl<Target: OctetsBuilder + AsMut<[u8]>> UpdateBuilder<Target> {
+    pub fn build_acs(mut self, acs: AttrChangeSet) -> Target {
+        // Withdrawals
+        let mut withdraw_len = 0_usize;
+        // placeholder
+        let _ = self.target.append_slice(&(withdraw_len as u16).to_be_bytes());
+        //self.target.as_mut()[19..=20].copy_from_slice(
+        //    &(withdraw_len as u16).to_be_bytes()
+        //);
+        // TODO actual withdrawals
 
+
+        // Path Attributes
+        let mut total_pa_len = 0_usize;
+        // Total Path Attribute len place holder:
+        let _ = self.target.append_slice(&[0x00, 0x00]);
+
+        if let Some(origin) = acs.origin_type.into_opt() {
+        }
+
+        if let Some(as_path) = acs.as_path.into_opt() {
+            // flags (from msb to lsb):
+            // optional
+            // transitive
+            // partial
+            // extended_length (2 octet length)
+            let attr_flags = 0b0101_0000;
+            let attr_typecode = PathAttributeType::AsPath.into();
+            let asp = as_path.into_inner();
+            let asp_len = asp.len();
+            if u16::try_from(asp_len).is_err() {
+                todo!()
+            }
+            self.target.append_slice(&[attr_flags, attr_typecode]);
+            self.target.append_slice(&(asp_len as u16).to_be_bytes());
+            self.target.append_slice(&asp);
+
+            total_pa_len += 2 + 2 + asp_len;
+        }
+
+        if u16::try_from(total_pa_len).is_err() {
+            todo!()
+        }
+
+        println!("total pa len: {total_pa_len}");
+
+        // update total path attribute len:
+        self.target.as_mut()[21+withdraw_len..21+withdraw_len+2]
+            .copy_from_slice(&(total_pa_len as u16).to_be_bytes());
+
+
+        // NLRI
+        // TODO
+        let nlri_len = 0;
+
+        // update pdu len
+        let msg_len = 19 
+            + 2 + withdraw_len 
+            + 2 + total_pa_len
+            + nlri_len
+        ;
+
+        if u16::try_from(msg_len).is_err() {
+            todo!()
+        }
+
+        self.target.as_mut()[16..=17].copy_from_slice(
+            &(msg_len as u16).to_be_bytes()
+        );
+
+        self.target
+    }
 }
 
 impl<Target: OctetsBuilder + AsMut<[u8]>> UpdateBuilder<Target> {
@@ -1998,10 +2069,10 @@ impl<Target: OctetsBuilder + AsMut<[u8]>> UpdateBuilder<Target> {
         // update pdu len
         self.target.as_mut()[16..=17].copy_from_slice( &(msg_len.to_be_bytes()) );
 
-        self.target.append_slice(&(withdraw_len.to_be_bytes()));
+        let _ = self.target.append_slice(&(withdraw_len.to_be_bytes()));
         // TODO write withdrawals, if any
 
-        self.target.append_slice(&(total_pa_len.to_be_bytes()));
+        let _ = self.target.append_slice(&(total_pa_len.to_be_bytes()));
         // TODO write path attributes, if any
 
         // TODO write conventional NLRI, if any
@@ -2710,6 +2781,24 @@ mod tests {
     fn build_empty() {
         let mut builder = UpdateBuilder::new_vec();
         let msg = builder.finish();
+        print_pcap(&msg);
+    }
+
+
+    #[test]
+    fn build_acs() {
+        use crate::bgp::aspath::HopPath;
+
+        let mut builder = UpdateBuilder::new_vec();
+        let mut acs = AttrChangeSet::empty();
+
+        // AS_PATH
+        let mut hp = HopPath::new();
+        hp.prepend(Asn::from_u32(100));
+        hp.prepend(Asn::from_u32(101));
+        acs.as_path.set(hp.to_as_path().unwrap());
+
+        let msg = builder.build_acs(acs);
         print_pcap(&msg);
     }
 
