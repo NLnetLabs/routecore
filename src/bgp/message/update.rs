@@ -519,7 +519,7 @@ impl<Octs: Octets> UpdateMessage<Octs> {
 /// available in the UPDATE messages themselves, but are only exchanged in the
 /// BGP OPEN messages when the session was established.
 ///
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct SessionConfig {
     pub four_octet_asn: FourOctetAsn,
     pub add_path: AddPath,
