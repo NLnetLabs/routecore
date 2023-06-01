@@ -9,7 +9,6 @@ pub mod bgpsec;
 pub mod bmp;
 #[cfg(feature = "bgp")]
 pub mod flowspec;
-pub mod record;
 
 #[cfg(feature = "bmp")]
 pub use octseq::Octets;
