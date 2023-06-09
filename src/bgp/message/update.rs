@@ -2095,8 +2095,6 @@ where Infallible: From<<Target as OctetsBuilder>::AppendError>
             return Err(ComposeError::AttributesTooLarge(total_pa_len));
         }
 
-        println!("total pa len: {total_pa_len}");
-
         // update total path attribute len:
         self.target.as_mut()[21+withdraw_len..21+withdraw_len+2]
             .copy_from_slice(&(total_pa_len as u16).to_be_bytes());
