@@ -26,7 +26,7 @@ use crate::bgp::communities::{
 const COFF: usize = 19; // XXX replace this with .skip()'s?
 
 /// BGP UPDATE message, variant of the [`Message`] enum.
-#[derive(Debug, Clone, Eq, Hash, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct UpdateMessage<Octs: Octets> {
     octets: Octs,
     session_config: SessionConfig,
@@ -519,7 +519,7 @@ impl<Octs: Octets> UpdateMessage<Octs> {
 /// available in the UPDATE messages themselves, but are only exchanged in the
 /// BGP OPEN messages when the session was established.
 ///
-#[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct SessionConfig {
     pub four_octet_asn: FourOctetAsn,
     pub add_path: AddPath,
@@ -587,14 +587,14 @@ impl SessionConfig {
 }
 
 /// Indicates whether this session is Four Octet capable.
-#[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum FourOctetAsn {
     Enabled,
     Disabled,
 }
 
 /// Indicates whether AddPath is enabled for this session.
-#[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum AddPath {
     Enabled,
     Disabled,
