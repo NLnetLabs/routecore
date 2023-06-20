@@ -83,6 +83,7 @@ typeenum!(
 
 /// Wrapper for the 4 byte Multi-Exit Discriminator in path attributes.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct MultiExitDisc(pub u32);
 
 impl std::fmt::Display for MultiExitDisc {
