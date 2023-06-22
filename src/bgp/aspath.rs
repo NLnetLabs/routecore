@@ -41,6 +41,7 @@ pub type OwnedHop = Hop<Vec<u8>>;
 /// ```Hop(AS10), Hop(AS20), Hop(AS30), Hop(Set(AS40, AS50))```
 ///
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct HopPath {
     /// The hops in this HopPath.
     hops: Vec<OwnedHop>,
@@ -691,6 +692,7 @@ impl<'a, Octs: Octets> Iterator for PathSegments<'a, Octs> {
 
 /// AS_PATH Segment generic over [`Octets`].
 #[derive(Copy, Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct Segment<Octs> {
     stype: SegmentType,
     four_byte_asns: bool,
@@ -970,6 +972,7 @@ impl fmt::Display for SegmentType {
 /// variant `Segment`, which contain the entire segment and thus (possibly)
 /// multiple ASNs.
 #[derive(Copy, Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub enum Hop<Octs> {
     Asn(Asn),
     Segment(Segment<Octs>),
