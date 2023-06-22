@@ -26,7 +26,7 @@ use crate::bgp::communities::{
 const COFF: usize = 19; // XXX replace this with .skip()'s?
 
 /// BGP UPDATE message, variant of the [`Message`] enum.
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct UpdateMessage<Octs: Octets> {
     octets: Octs,
@@ -520,7 +520,7 @@ impl<Octs: Octets> UpdateMessage<Octs> {
 /// available in the UPDATE messages themselves, but are only exchanged in the
 /// BGP OPEN messages when the session was established.
 ///
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct SessionConfig {
     pub four_octet_asn: FourOctetAsn,
@@ -589,7 +589,7 @@ impl SessionConfig {
 }
 
 /// Indicates whether this session is Four Octet capable.
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub enum FourOctetAsn {
     Enabled,
@@ -597,7 +597,7 @@ pub enum FourOctetAsn {
 }
 
 /// Indicates whether AddPath is enabled for this session.
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub enum AddPath {
     Enabled,
