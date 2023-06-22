@@ -975,15 +975,18 @@ pub enum Hop<Octs> {
     Segment(Segment<Octs>),
 }
 
-impl<Octs> Hash for Hop<Octs> {
+impl<Octs: Octets> Hash for Hop<Octs> {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        todo!()
-    }
-
-    fn hash_slice<H: std::hash::Hasher>(data: &[Self], state: &mut H)
-        where
-            Self: Sized, {
-        todo!()
+        match self {
+            Hop::Asn(asn) => {
+                state.write_u8(0);
+                asn.hash(state);
+            }
+            Hop::Segment(segment) => {
+                state.write_u8(1);
+                segment.hash(state);
+            }
+        }
     }
 }
 
