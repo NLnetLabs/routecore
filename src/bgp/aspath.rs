@@ -40,7 +40,7 @@ pub type OwnedHop = Hop<Vec<u8>>;
 ///     
 /// ```Hop(AS10), Hop(AS20), Hop(AS30), Hop(Set(AS40, AS50))```
 ///
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Hash)]
 pub struct HopPath {
     /// The hops in this HopPath.
     hops: Vec<OwnedHop>,
@@ -973,6 +973,18 @@ impl fmt::Display for SegmentType {
 pub enum Hop<Octs> {
     Asn(Asn),
     Segment(Segment<Octs>),
+}
+
+impl<Octs> Hash for Hop<Octs> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        todo!()
+    }
+
+    fn hash_slice<H: std::hash::Hasher>(data: &[Self], state: &mut H)
+        where
+            Self: Sized, {
+        todo!()
+    }
 }
 
 impl<Octs> Hop<Octs> {

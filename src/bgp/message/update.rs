@@ -1261,7 +1261,7 @@ impl<'a, Ref: Octets> IntoIterator for PathAttributes<'a, Ref> {
 
 //--- Aggregator -------------------------------------------------------------
 /// Path Attribute (7).
-#[derive(Debug, Eq, PartialEq, Copy, Clone)]
+#[derive(Debug, Eq, PartialEq, Copy, Clone, Hash)]
 pub struct Aggregator {
     asn: Asn,
     speaker: Ipv4Addr,
