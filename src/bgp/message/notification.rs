@@ -1,3 +1,4 @@
+use log::warn;
 use octseq::{Octets, OctetsBuilder, Parser, ShortBuf};
 #[cfg(feature = "serde")]
 use serde::{Serialize, Deserialize}; // for typeenum! macro
@@ -52,12 +53,35 @@ impl<Octs: Octets> NotificationMessage<Octs> {
         self.octets.as_ref()[COFF].into()
     }
 
-    pub fn subcode(&self) -> SubCode {
-        let raw = self.octets.as_ref()[COFF+1];
+    //pub fn subcode(&self) -> Subcode {
+    //    let raw = self.octets.as_ref()[COFF+1];
+    //    match self.code() {
+    //        ErrorCode::Cease => SubCode::Cease(raw.into()),
+    //        _ => SubCode::Todo(raw),
+    //    }
+    //}
+
+    pub fn details(&self) -> Details {
+        let subraw = self.octets.as_ref()[COFF+1];
+        //let data = self.data();
+        use ErrorCode as E;
+        use Details as S;
         match self.code() {
-            ErrorCode::Cease => SubCode::Cease(raw.into()),
-            _ => SubCode::Todo(raw),
+            E::Reserved => S::Reserved,
+            E::MessageHeaderError => S::MessageHeaderError(subraw.into()),
+            E::OpenMessageError => S::OpenMessageError(subraw.into()),
+            E::UpdateMessageError => S::UpdateMessageError(subraw.into()),
+            E::HoldTimerExpired => S::HoldTimerExpired,
+            E::FiniteStateMachineError => {
+                S::FiniteStateMachineError(subraw.into())
+            }
+            E::Cease => S::Cease(subraw.into()),
+            E::RouteRefreshMessageError => {
+                S::RouteRefreshMessageError(subraw.into())
+            }
+            E::Unimplemented(code) => S::Unimplemented(code, subraw)
         }
+
     }
 
     pub fn data(&self) -> Option<&[u8]> {
@@ -113,8 +137,8 @@ impl<Target: OctetsBuilder> NotificationBuilder<Target>
 where Infallible: From<<Target as OctetsBuilder>::AppendError> {
     pub fn from_target<D: AsRef<[u8]>>(
         mut target: Target,
-        code: ErrorCode,
-        subcode: SubCode,
+        //code: ErrorCode,
+        subcode: Details,
         data: Option<D>
     ) -> Result<Target, NotificationBuildError> {
         let mut h = Header::<&[u8]>::new();
@@ -130,7 +154,8 @@ where Infallible: From<<Target as OctetsBuilder>::AppendError> {
         //target.append_slice(h.as_ref()).map_err(|_| NotificationBuildError::ShortBuf)?;
 
         // code + subcode
-        let _ = target.append_slice(&[code.into(), subcode.into()]);
+        //let _ = target.append_slice(&[subcode.code().into(), subcode.into()]);
+        let _ = target.append_slice(&subcode.raw());
 
         if let Some(data) = data {
             let _ = target.append_slice(&data.as_ref());
@@ -143,11 +168,11 @@ where Infallible: From<<Target as OctetsBuilder>::AppendError> {
 
 impl NotificationBuilder<Vec<u8>> {
     pub fn new_vec<D: AsRef<[u8]>>(
-        code: ErrorCode,
-        subcode: SubCode,
+        //code: ErrorCode,
+        subcode: Details,
         data: Option<D>
     ) -> Result<Vec<u8>, NotificationBuildError> {
-        Ok(Self::from_target(Vec::with_capacity(21), code, subcode, data)?)
+        Ok(Self::from_target(Vec::with_capacity(21), /*code,*/ subcode, data)?)
     }
 }
 
@@ -194,7 +219,7 @@ typeenum!(ErrorCode, u8,
     7 => RouteRefreshMessageError,
 );
 
-typeenum!(CeaseSubCode, u8,
+typeenum!(CeaseSubcode, u8,
     0 => Reserved,
     1 => MaximumPrefixesReached,
     2 => AdministrativeShutdown,
@@ -208,20 +233,132 @@ typeenum!(CeaseSubCode, u8,
     10 => BfdDown,
 );
 
-#[derive(Debug, Eq, PartialEq)]
-pub enum SubCode {
-    Cease(CeaseSubCode),
-    Todo(u8),
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum Details {
+    Reserved,
+    MessageHeaderError(MessageHeaderSubcode),
+    OpenMessageError(OpenMessageSubcode),
+    UpdateMessageError(UpdateMessageSubcode),
+    HoldTimerExpired, // no subcodes, should be 0
+    FiniteStateMachineError(FiniteStateMachineSubcode),
+    Cease(CeaseSubcode),
+    RouteRefreshMessageError(RouteRefreshMessageSubcode),
+    Unimplemented(u8, u8),
 }
 
-impl From<SubCode> for u8 {
-    fn from(s: SubCode) -> u8 {
-        match s {
-            SubCode::Cease(csc) => csc.into(),
-            SubCode::Todo(u) => u,
+impl Details {
+    //pub fn code(self) -> ErrorCode {
+    //    match self {
+    //        Details::MessageHeaderError(_) => ErrorCode::MessageHeaderError,
+    //        _ => todo!()
+    //    }
+    //}
+    pub fn raw(&self) -> [u8; 2] {
+        use Details as S;
+        use ErrorCode as E;
+        match self {
+            S::Reserved => [0, 0],
+            S::MessageHeaderError(sub) => [E::MessageHeaderError.into(), (*sub).into()],
+            S::OpenMessageError(sub) => [E::OpenMessageError.into(), (*sub).into()],
+            S::UpdateMessageError(sub) => [E::UpdateMessageError.into(), (*sub).into()],
+            S::HoldTimerExpired => [E::HoldTimerExpired.into(), 0],
+            S::FiniteStateMachineError(sub) => [E::FiniteStateMachineError.into(), (*sub).into()],
+            S::Cease(sub) => [E::Cease.into(), (*sub).into()],
+            S::RouteRefreshMessageError(sub) => [E::RouteRefreshMessageError.into(), (*sub).into()],
+            S::Unimplemented(code, subcode) => {
+                warn!("serializing unimplemented \
+                      Notification code/subcode {}/{}",
+                      code, subcode);
+                [*code, *subcode]
+            }
         }
     }
+
 }
+
+// TODO what we actually want from an API point of view:
+// send_notification(OpenMessageSubcode::BadPeerAs())
+// or something
+// not
+// self.send_notification(Details::OpenMessageError(OpenMessageSubcode::BadPeerAs));
+//
+
+typeenum!(MessageHeaderSubcode, u8,
+    0 => Unspecific,
+    1 => ConnectionNotSynchronized,
+    2 => BadMessageLength, // data: u16 bad length
+    3 => BadMessageType, // data: u16 bad type
+);
+
+typeenum!(OpenMessageSubcode, u8, 
+    0 => Unspecific,
+    1 => UnsupportedVersionNumber, // only one with data: u16 version number
+    2 => BadPeerAs,
+    3 => BadBgpIdentifier,
+    4 => UnsupportedOptionalParameter,
+    5 => Deprecated5, // was: authentication failure
+    6 => UnacceptableHoldTime,
+    7 => UnsupportedCapability,
+    8 => Deprecated8, // 8-10 deprecated because of 'improper use', rfc9234
+    9 => Deprecated9,
+    10 => Deprecated10,
+    11 => RoleMismatch,
+);
+
+//impl MessageHeaderSubcode {
+//    pub fn code(self) -> ErrorCode {
+//        ErrorCode::MessageHeaderError
+//    }
+//}
+//
+//impl OpenMessageSubcode {
+//    pub fn code(self) -> ErrorCode {
+//        ErrorCode::OpenMessageError
+//    }
+//}
+
+typeenum!(UpdateMessageSubcode, u8,
+    0 => Unspecific,
+    1 => MalformedAttributeList, // no data
+    2 => UnrecognizedWellknownAttribute, // data: unrecognized attribute (t,l,v)
+    3 => MissingWellknownAttribute, // data: typecode of missing attribute
+    4 => AttributeFlagsError, // data: erroneous attribute (t, l, v)
+    5 => AttributeLengthError, // data: erroneous attribute (t, l, v)
+    6 => InvalidOriginAttribute, // data: erroneous attribute (t, l, v)
+    7 => Deprecated7, // was: AS routing loop, rfc1771
+    8 => InvalidNextHopAttribute, // data: erroneous attribute (t, l, v)
+    9 => OptionalAttributeError, // data: erroneous attribute (t, l, v)
+    10 => InvalidNetworkField, // no data
+    11 => MalformedAsPath, // no data
+);
+
+typeenum!(FiniteStateMachineSubcode, u8, 
+    0 => UnspecifiedError,
+    1 => UnexpectedMessageInOpenSentState, // data: u8 of message type
+    2 => UnexpectedMessageInOpenConfirmState, // data: u8 of message type
+    3 => UnexpectedMessageInEstablishedState, // data: u8 of message type
+);
+
+typeenum!(RouteRefreshMessageSubcode, u8, 
+    0 => Reserved,
+    1 => InvalidMessageLength, // data: complete RouteRefresh message
+);
+
+
+//#[derive(Debug, Eq, PartialEq)]
+//pub enum SubCode {
+//    Cease(CeaseSubCode),
+//    Todo(u8),
+//}
+//
+//impl From<SubCode> for u8 {
+//    fn from(s: SubCode) -> u8 {
+//        match s {
+//            SubCode::Cease(csc) => csc.into(),
+//            SubCode::Todo(u) => u,
+//        }
+//    }
+//}
 
 //--- Tests ------------------------------------------------------------------
 
@@ -243,8 +380,8 @@ mod tests {
 
         assert_eq!(notification.code(), ErrorCode::Cease);
         assert_eq!(
-            notification.subcode(),
-            SubCode::Cease(CeaseSubCode::AdministrativeReset)
+            notification.details(),
+            Details::Cease(CeaseSubcode::AdministrativeReset)
         );
         assert_eq!(notification.data(), None);
 
@@ -253,18 +390,20 @@ mod tests {
     #[test]
     fn build() {
         let msg = NotificationBuilder::new_vec(
-            ErrorCode::Cease,
-            SubCode::Cease(CeaseSubCode::OtherConfigurationChange),
+            //ErrorCode::Cease,
+            Details::Cease(CeaseSubcode::OtherConfigurationChange),
             Some(Vec::new())
         ).unwrap();
 
         let parsed = NotificationMessage::from_octets(&msg).unwrap();
         assert_eq!(parsed.code(), ErrorCode::Cease);
         assert_eq!(
-            parsed.subcode(),
-            SubCode::Cease(CeaseSubCode::OtherConfigurationChange)
+            parsed.details(),
+            Details::Cease(CeaseSubcode::OtherConfigurationChange)
         );
         assert_eq!(parsed.length(), 21);
         assert_eq!(parsed.as_ref().len(), 21);
+
+        let foo = MessageHeaderSubcode::Unspecific;
     }
 }

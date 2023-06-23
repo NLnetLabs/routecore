@@ -507,7 +507,7 @@ impl<Octs: Octets> Capability<Octs> {
 // Also see
 // <https://www.iana.org/assignments/capability-codes/capability-codes.xhtml>
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Capability<Octs> {
     octets: Octs,
 }
