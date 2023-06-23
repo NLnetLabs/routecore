@@ -29,7 +29,8 @@ typeenum!(
 );
 
 /// BGP Origin types as used in BGP UPDATE messages.
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub enum OriginType {
     Igp,
     Egp,
@@ -81,7 +82,7 @@ typeenum!(
 );
 
 /// Wrapper for the 4 byte Multi-Exit Discriminator in path attributes.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub struct MultiExitDisc(pub u32);
 
 impl std::fmt::Display for MultiExitDisc {
@@ -91,7 +92,7 @@ impl std::fmt::Display for MultiExitDisc {
 }
 
 /// Wrapper for the 4 byte Local Preference value in path attributes.
-#[derive(Debug, Eq, PartialEq, Clone, Copy)]
+#[derive(Debug, Eq, PartialEq, Clone, Copy, Hash)]
 pub struct LocalPref(pub u32);
 
 impl std::fmt::Display for LocalPref {
