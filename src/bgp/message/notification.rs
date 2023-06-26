@@ -53,17 +53,9 @@ impl<Octs: Octets> NotificationMessage<Octs> {
         self.octets.as_ref()[COFF].into()
     }
 
-    //pub fn subcode(&self) -> Subcode {
-    //    let raw = self.octets.as_ref()[COFF+1];
-    //    match self.code() {
-    //        ErrorCode::Cease => SubCode::Cease(raw.into()),
-    //        _ => SubCode::Todo(raw),
-    //    }
-    //}
-
+    /// Get the (sub)code and optional data for this Notification message.
     pub fn details(&self) -> Details {
         let subraw = self.octets.as_ref()[COFF+1];
-        //let data = self.data();
         use ErrorCode as E;
         use Details as S;
         match self.code() {
@@ -109,10 +101,8 @@ impl<Octs: Octets> NotificationMessage<Octs> {
         let pos = parser.pos();
         let hdr = Header::parse(parser)?;
 
-        // TODO implement enums for codes/subcodes
         let _code = parser.parse_u8()?;
         let _subcode = parser.parse_u8()?;
-
 
         // Now, their might be variable length data from the current position
         // to the end of the message. There is no length field.
@@ -126,7 +116,7 @@ impl<Octs: Octets> NotificationMessage<Octs> {
     }
 }
 
-//------------ Builder --------------------------------------------------------
+//------------ Builder -------------------------------------------------------
 
 pub struct NotificationBuilder<Target> {
     _target: Target,
@@ -134,13 +124,16 @@ pub struct NotificationBuilder<Target> {
 
 use core::convert::Infallible;
 impl<Target: OctetsBuilder> NotificationBuilder<Target>
-where Infallible: From<<Target as OctetsBuilder>::AppendError> {
-    pub fn from_target<D: AsRef<[u8]>>(
+where
+    Infallible: From<<Target as OctetsBuilder>::AppendError>,
+{
+    pub fn from_target<S, D: AsRef<[u8]>>(
         mut target: Target,
-        //code: ErrorCode,
-        subcode: Details,
+        subcode: S,
         data: Option<D>
-    ) -> Result<Target, NotificationBuildError> {
+    ) -> Result<Target, NotificationBuildError>
+        where S: Into<Details>
+    {
         let mut h = Header::<&[u8]>::new();
         h.set_length(21 +
             u16::try_from(
@@ -151,11 +144,10 @@ where Infallible: From<<Target as OctetsBuilder>::AppendError> {
 
         let _ = target.append_slice(h.as_ref());
         // XXX or do we want
-        //target.append_slice(h.as_ref()).map_err(|_| NotificationBuildError::ShortBuf)?;
+        // target.append_slice(
+        //     h.as_ref()).map_err(|_| NotificationBuildError::ShortBuf)?;
 
-        // code + subcode
-        //let _ = target.append_slice(&[subcode.code().into(), subcode.into()]);
-        let _ = target.append_slice(&subcode.raw());
+        let _ = target.append_slice(&subcode.into().raw());
 
         if let Some(data) = data {
             let _ = target.append_slice(data.as_ref());
@@ -167,12 +159,25 @@ where Infallible: From<<Target as OctetsBuilder>::AppendError> {
 }
 
 impl NotificationBuilder<Vec<u8>> {
-    pub fn new_vec<D: AsRef<[u8]>>(
-        //code: ErrorCode,
-        subcode: Details,
+    pub fn new_vec<S, D: AsRef<[u8]>>(
+        subcode: S,
         data: Option<D>
-    ) -> Result<Vec<u8>, NotificationBuildError> {
+    ) -> Result<Vec<u8>, NotificationBuildError>
+        where S: Into<Details>
+    {
         Self::from_target(Vec::with_capacity(21), /*code,*/ subcode, data)
+    }
+
+    pub fn new_vec_nodata<S>(subcode: S) -> Vec<u8>
+        where S: Into<Details>
+    {
+        // Without data (of arbitrary length) this is infallible for Vecs
+        // so we simply unwrap
+        Self::from_target(
+            Vec::with_capacity(21),
+            subcode,
+            Option::<Vec<u8>>::None
+        ).unwrap()
     }
 }
 
@@ -201,38 +206,6 @@ impl fmt::Display for NotificationBuildError {
 
 
 
-// to properly enumify the codes, check:
-// RFCs
-//  4271
-//  4486
-//  8203
-//  9003
-
-typeenum!(ErrorCode, u8, 
-    0 => Reserved,
-    1 => MessageHeaderError,
-    2 => OpenMessageError,
-    3 => UpdateMessageError,
-    4 => HoldTimerExpired,
-    5 => FiniteStateMachineError,
-    6 => Cease,
-    7 => RouteRefreshMessageError,
-);
-
-typeenum!(CeaseSubcode, u8,
-    0 => Reserved,
-    1 => MaximumPrefixesReached,
-    2 => AdministrativeShutdown,
-    3 => PeerDeconfigured,
-    4 => AdministrativeReset,
-    5 => ConnectionRejected,
-    6 => OtherConfigurationChange,
-    7 => ConnectionCollisionResolution,
-    8 => OutOfResources,
-    9 => HardReset,
-    10 => BfdDown,
-);
-
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum Details {
     Reserved,
@@ -247,24 +220,32 @@ pub enum Details {
 }
 
 impl Details {
-    //pub fn code(self) -> ErrorCode {
-    //    match self {
-    //        Details::MessageHeaderError(_) => ErrorCode::MessageHeaderError,
-    //        _ => todo!()
-    //    }
-    //}
     pub fn raw(&self) -> [u8; 2] {
         use Details as S;
         use ErrorCode as E;
         match self {
             S::Reserved => [0, 0],
-            S::MessageHeaderError(sub) => [E::MessageHeaderError.into(), (*sub).into()],
-            S::OpenMessageError(sub) => [E::OpenMessageError.into(), (*sub).into()],
-            S::UpdateMessageError(sub) => [E::UpdateMessageError.into(), (*sub).into()],
-            S::HoldTimerExpired => [E::HoldTimerExpired.into(), 0],
-            S::FiniteStateMachineError(sub) => [E::FiniteStateMachineError.into(), (*sub).into()],
-            S::Cease(sub) => [E::Cease.into(), (*sub).into()],
-            S::RouteRefreshMessageError(sub) => [E::RouteRefreshMessageError.into(), (*sub).into()],
+            S::MessageHeaderError(sub) => {
+                [E::MessageHeaderError.into(), (*sub).into()]
+            }
+            S::OpenMessageError(sub) => {
+                [E::OpenMessageError.into(), (*sub).into()]
+            }
+            S::UpdateMessageError(sub) => {
+                [E::UpdateMessageError.into(), (*sub).into()]
+            }
+            S::HoldTimerExpired => { 
+                [E::HoldTimerExpired.into(), 0]
+            }
+            S::FiniteStateMachineError(sub) => {
+                [E::FiniteStateMachineError.into(), (*sub).into()]
+            }
+            S::Cease(sub) => {
+                [E::Cease.into(), (*sub).into()]
+            }
+            S::RouteRefreshMessageError(sub) => {
+                [E::RouteRefreshMessageError.into(), (*sub).into()]
+            }
             S::Unimplemented(code, subcode) => {
                 warn!("serializing unimplemented \
                       Notification code/subcode {}/{}",
@@ -276,19 +257,33 @@ impl Details {
 
 }
 
-// TODO what we actually want from an API point of view:
-// send_notification(OpenMessageSubcode::BadPeerAs())
-// or something
-// not
-// self.send_notification(Details::OpenMessageError(OpenMessageSubcode::BadPeerAs));
-//
+//------------ Codes and Subcodes --------------------------------------------
+
+// See RFCs 4271 4486 8203 9003
+
+typeenum!(ErrorCode, u8, 
+    0 => Reserved,
+    1 => MessageHeaderError,
+    2 => OpenMessageError,
+    3 => UpdateMessageError,
+    4 => HoldTimerExpired,
+    5 => FiniteStateMachineError,
+    6 => Cease,
+    7 => RouteRefreshMessageError,
+);
 
 typeenum!(MessageHeaderSubcode, u8,
     0 => Unspecific,
     1 => ConnectionNotSynchronized,
     2 => BadMessageLength, // data: u16 bad length
-    3 => BadMessageType, // data: u16 bad type
+    3 => BadMessageType, // data: u8 bad type
 );
+
+impl From<MessageHeaderSubcode> for Details {
+    fn from(s: MessageHeaderSubcode) -> Self {
+        Details::MessageHeaderError(s)
+    }
+}
 
 typeenum!(OpenMessageSubcode, u8, 
     0 => Unspecific,
@@ -305,22 +300,16 @@ typeenum!(OpenMessageSubcode, u8,
     11 => RoleMismatch,
 );
 
-//impl MessageHeaderSubcode {
-//    pub fn code(self) -> ErrorCode {
-//        ErrorCode::MessageHeaderError
-//    }
-//}
-//
-//impl OpenMessageSubcode {
-//    pub fn code(self) -> ErrorCode {
-//        ErrorCode::OpenMessageError
-//    }
-//}
+impl From<OpenMessageSubcode> for Details {
+    fn from(s: OpenMessageSubcode) -> Self {
+        Details::OpenMessageError(s)
+    }
+}
 
 typeenum!(UpdateMessageSubcode, u8,
     0 => Unspecific,
     1 => MalformedAttributeList, // no data
-    2 => UnrecognizedWellknownAttribute, // data: unrecognized attribute (t,l,v)
+    2 => UnrecognizedWellknownAttribute, // data: unrecognized attribute
     3 => MissingWellknownAttribute, // data: typecode of missing attribute
     4 => AttributeFlagsError, // data: erroneous attribute (t, l, v)
     5 => AttributeLengthError, // data: erroneous attribute (t, l, v)
@@ -332,6 +321,12 @@ typeenum!(UpdateMessageSubcode, u8,
     11 => MalformedAsPath, // no data
 );
 
+impl From<UpdateMessageSubcode> for Details {
+    fn from(s: UpdateMessageSubcode) -> Self {
+        Details::UpdateMessageError(s)
+    }
+}
+
 typeenum!(FiniteStateMachineSubcode, u8, 
     0 => UnspecifiedError,
     1 => UnexpectedMessageInOpenSentState, // data: u8 of message type
@@ -339,26 +334,43 @@ typeenum!(FiniteStateMachineSubcode, u8,
     3 => UnexpectedMessageInEstablishedState, // data: u8 of message type
 );
 
+impl From<FiniteStateMachineSubcode> for Details {
+    fn from(s: FiniteStateMachineSubcode) -> Self {
+        Details::FiniteStateMachineError(s)
+    }
+}
+
+typeenum!(CeaseSubcode, u8,
+    0 => Reserved,
+    1 => MaximumPrefixesReached,
+    2 => AdministrativeShutdown,
+    3 => PeerDeconfigured,
+    4 => AdministrativeReset,
+    5 => ConnectionRejected,
+    6 => OtherConfigurationChange,
+    7 => ConnectionCollisionResolution,
+    8 => OutOfResources,
+    9 => HardReset,
+    10 => BfdDown,
+);
+
+impl From<CeaseSubcode> for Details {
+    fn from(s: CeaseSubcode) -> Self {
+        Details::Cease(s)
+    }
+}
+
+
 typeenum!(RouteRefreshMessageSubcode, u8, 
     0 => Reserved,
     1 => InvalidMessageLength, // data: complete RouteRefresh message
 );
 
-
-//#[derive(Debug, Eq, PartialEq)]
-//pub enum SubCode {
-//    Cease(CeaseSubCode),
-//    Todo(u8),
-//}
-//
-//impl From<SubCode> for u8 {
-//    fn from(s: SubCode) -> u8 {
-//        match s {
-//            SubCode::Cease(csc) => csc.into(),
-//            SubCode::Todo(u) => u,
-//        }
-//    }
-//}
+impl From<RouteRefreshMessageSubcode> for Details {
+    fn from(s: RouteRefreshMessageSubcode) -> Self {
+        Details::RouteRefreshMessageError(s)
+    }
+}
 
 //--- Tests ------------------------------------------------------------------
 
@@ -388,10 +400,9 @@ mod tests {
     }
 
     #[test]
-    fn build() {
+    fn build_nodata() {
         let msg = NotificationBuilder::new_vec(
-            //ErrorCode::Cease,
-            Details::Cease(CeaseSubcode::OtherConfigurationChange),
+            CeaseSubcode::OtherConfigurationChange,
             Some(Vec::new())
         ).unwrap();
 
@@ -399,11 +410,26 @@ mod tests {
         assert_eq!(parsed.code(), ErrorCode::Cease);
         assert_eq!(
             parsed.details(),
-            Details::Cease(CeaseSubcode::OtherConfigurationChange)
+            CeaseSubcode::OtherConfigurationChange.into()
         );
         assert_eq!(parsed.length(), 21);
         assert_eq!(parsed.as_ref().len(), 21);
 
-        let foo = MessageHeaderSubcode::Unspecific;
+        let msg2 = NotificationBuilder::new_vec_nodata(
+            CeaseSubcode::OtherConfigurationChange
+        );
+        assert_eq!(msg, msg2);
+    }
+
+    #[test]
+    fn build_with_data() {
+        let msg = NotificationBuilder::new_vec(
+            MessageHeaderSubcode::BadMessageType, Some([12])
+        ).unwrap();
+
+        assert_eq!(msg.len(), 22);
+
+        let parsed = NotificationMessage::from_octets(&msg).unwrap();
+        assert_eq!(parsed.length(), 22);
     }
 }
