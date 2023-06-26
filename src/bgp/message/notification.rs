@@ -1,5 +1,5 @@
 use log::warn;
-use octseq::{Octets, OctetsBuilder, Parser, ShortBuf};
+use octseq::{Octets, OctetsBuilder, Parser};
 #[cfg(feature = "serde")]
 use serde::{Serialize, Deserialize}; // for typeenum! macro
 
@@ -158,7 +158,7 @@ where Infallible: From<<Target as OctetsBuilder>::AppendError> {
         let _ = target.append_slice(&subcode.raw());
 
         if let Some(data) = data {
-            let _ = target.append_slice(&data.as_ref());
+            let _ = target.append_slice(data.as_ref());
         }
 
         Ok(target)
@@ -172,7 +172,7 @@ impl NotificationBuilder<Vec<u8>> {
         subcode: Details,
         data: Option<D>
     ) -> Result<Vec<u8>, NotificationBuildError> {
-        Ok(Self::from_target(Vec::with_capacity(21), /*code,*/ subcode, data)?)
+        Self::from_target(Vec::with_capacity(21), /*code,*/ subcode, data)
     }
 }
 
