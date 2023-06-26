@@ -1797,6 +1797,8 @@ mod tests {
 
     #[test]
     fn peer_down_notification() {
+        use crate::bgp::message::notification::CeaseSubcode;
+
         // BMP PeerDownNotification type 3, containing a BGP NOTIFICATION.
         let buf = vec![
             0x03, 0x00, 0x00, 0x00, 0x46, 0x02, 0x00, 0x80,
@@ -1815,8 +1817,10 @@ mod tests {
         assert_eq!(bmp.fsm(), None);
 
         let bgp_notification = bmp.notification().unwrap();
-        assert_eq!(bgp_notification.code(), 6);
-        assert_eq!(bgp_notification.subcode(), 2);
+        assert_eq!(
+            bgp_notification.details(),
+            CeaseSubcode::AdministrativeShutdown.into()
+        );
     }
 
 
