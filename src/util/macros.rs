@@ -39,10 +39,11 @@
 ///     }
 /// );
 /// ```
-/// Note that match lines with ranges are separated by semi-colons, rather
-/// than by commas. Range variants have a data field with the specified value.
-/// Specifying an half-open range to the right or specifying the matches
-/// exhaustively will disable the default `Unimplemented` variant.
+/// Note that match lines with ranges are come in a separate block after
+/// the block with single selector values. Range variants have a data
+/// field with the specified value. Specifying an half-open range to the
+/// right or specifying the matches exhaustively will disable the default 
+/// `Unimplemented` variant.
 #[macro_export]
 macro_rules! typeenum {
     ( $(#[$attr:meta])* 
