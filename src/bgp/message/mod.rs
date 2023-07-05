@@ -89,12 +89,14 @@ impl<Octs: Octets> Message<Octs> {
 typeenum!(
 /// BGP Message types.
     MsgType, u8,
-    1 => Open,
-    2 => Update,
-    3 => Notification,
-    4 => Keepalive,
-    5 => RouteRefresh, // RFC2918
-    //6 => //Capability, // draft-ietf-idr-dynamic-cap
+    {
+        1 => Open,
+        2 => Update,
+        3 => Notification,
+        4 => Keepalive,
+        5 => RouteRefresh, // RFC2918
+        //6 => //Capability, // draft-ietf-idr-dynamic-cap
+    }
 );
 
 impl<Octs: Octets> Message<Octs> {

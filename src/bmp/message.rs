@@ -510,22 +510,26 @@ typeenum!(
     /// The peer types as defined in
     /// https://www.iana.org/assignments/bmp-parameters/bmp-parameters.xhtml#peer-types
     PeerType, u8,
-    0 => GlobalInstance,
-    1 => RdInstance,
-    2 => LocalInstance,
-    3 => LocalRibInstance;
-    4..=250 => Unassigned;
-    251..=254 => Experimental;
-    255 => Reserved
+    {
+        0 => GlobalInstance,
+        1 => RdInstance,
+        2 => LocalInstance,
+        3 => LocalRibInstance,
+        255 => Reserved
+    },
+    {
+        4..=250 => Unassigned,
+        251..=254 => Experimental,
+    }
 );
 
 
 typeenum!(
     /// Specify which RIB the contents of a message originated from.
     RibType, u8,
-    0 => AdjRibIn,
+    {0 => AdjRibIn,
     1 => AdjRibOut
-);
+});
 
 
 //--- Specific Message types -------------------------------------------------
@@ -1103,12 +1107,16 @@ typeenum!(
     /// See also
     /// <https://www.iana.org/assignments/bmp-parameters/bmp-parameters.xhtml#initiation-peer-up-tlvs>
     InformationTlvType, u16,
-    0 => String,
-    1 => SysDesc,
-    2 => SysName,
-    3 => VrfTableName,
-    4 => AdminLabel;
-    5.. => Undefined
+    { 
+        0 => String,
+        1 => SysDesc,
+        2 => SysName,
+        3 => VrfTableName,
+        4 => AdminLabel,
+    },
+    {
+        5.. => Undefined,
+    }
 );
 
 /// Iterator over `InformationTlv`'s.

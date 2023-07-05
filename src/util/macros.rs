@@ -7,10 +7,13 @@
 /// # use serde::{Serialize, Deserialize};
 /// # #[macro_use] extern crate routecore;
 /// # fn main() {
-/// typeenum!(AFI, u16,
-///     1 => Ipv4,
-///     2 => Ipv6,
-///     25 => L2Vpn,
+/// typeenum!(
+///     AFI, u16,
+///     {
+///         1 => Ipv4,
+///         2 => Ipv6,
+///         25 => L2Vpn
+///     }
 /// );
 /// # }
 /// ```
@@ -23,13 +26,17 @@
 /// ```rust
 /// typeenum!(
 ///     PeerType, u8,
-///     0 => GlobalInstance,
-///     1 => RdInstance,
-///     2 => LocalInstance,
-///     3 => LocalRibInstance;
-///     4..=250 => Unassigned;
-///     251..=254 => Experimental;
-///     255 => Reserved
+///     {
+///         0 => GlobalInstance,
+///         1 => RdInstance,
+///         2 => LocalInstance,
+///         3 => LocalRibInstance,
+///     }
+///     {
+///         4..=250 => Unassigned,
+///         251..=254 => Experimental,
+///         255 => Reserved
+///     }
 /// );
 /// ```
 /// Note that match lines with ranges are separated by semi-colons, rather
@@ -38,16 +45,22 @@
 /// exhaustively will disable the default `Unimplemented` variant.
 #[macro_export]
 macro_rules! typeenum {
-    ($(#[$attr:meta])* $name:ident, 
-        $ty:ty, 
-        $($x:expr => $y:ident),+ $(,)* 
-        $(;$x1:pat => $y1:ident)*) => {
+    ( $(#[$attr:meta])* 
+        $name:ident,
+        $ty:ty,
+        {
+            $($x:expr => $y:ident),+ $(,)*
+        }
+        $(,{
+            $( $x1:pat => $y1:ident ),* $(,)*
+        })?
+    ) => {
             $(#[$attr])*
             #[derive(Clone, Copy, Debug, Hash, Eq, Ord, PartialEq, PartialOrd)]
             #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
             pub enum $name {
                 $($y),+,
-                $($y1($ty),)?
+                $($($y1($ty),)?)?
                 Unimplemented($ty),
             }
 
@@ -56,7 +69,7 @@ macro_rules! typeenum {
                 fn from(f: $ty) -> $name {
                     match f {
                         $($x => $name::$y,)+
-                        $($x1 => $name::$y1(f),)?
+                        $($($x1 => $name::$y1(f),)?)?
                         u => $name::Unimplemented(u),
                     }
                 }
@@ -66,7 +79,7 @@ macro_rules! typeenum {
                 fn from(s: $name) -> $ty {
                     match s {
                         $($name::$y => $x,)+
-                        $($name::$y1(u) => u,)?
+                        $($($name::$y1(u) => u,)?)?
                         $name::Unimplemented(u) => u,
                     }
                 }
@@ -79,7 +92,7 @@ macro_rules! typeenum {
                 {
                     match self {
                         $($name::$y => write!(f, stringify!($y))),+,
-                        $($name::$y1(u) => write!(f, "{} ({})", stringify!($u), u),)?
+                        $($($name::$y1(u) => write!(f, "{} ({})", stringify!($u), u),)?)?
                         $name::Unimplemented(u) =>
                             write!(f, "unknown-{}-{}", stringify!($name), u)
                     }
