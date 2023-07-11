@@ -529,9 +529,11 @@ typeenum!(
 typeenum!(
     /// Specify which RIB the contents of a message originated from.
     RibType, u8,
-    {0 => AdjRibIn,
-    1 => AdjRibOut
-});
+    {
+        0 => AdjRibIn,
+        1 => AdjRibOut
+    }
+);
 
 
 //--- Specific Message types -------------------------------------------------
