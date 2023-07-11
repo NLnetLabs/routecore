@@ -75,14 +75,16 @@ typeenum!(
     /// Types of BMP messages as defined in
     /// [RFC7854](https://datatracker.ietf.org/doc/html/rfc7854).
     MessageType, u8,
-    0 => RouteMonitoring,
-    1 => StatisticsReport,
-    2 => PeerDownNotification,
-    3 => PeerUpNotification,
-    4 => InitiationMessage,
-    5 => TerminationMessage,
-    6 => RouteMirroring,
-);
+    {
+        0 => RouteMonitoring,
+        1 => StatisticsReport,
+        2 => PeerDownNotification,
+        3 => PeerUpNotification,
+        4 => InitiationMessage,
+        5 => TerminationMessage,
+        6 => RouteMirroring,
+        }
+    );
 
 
 impl<Octets: AsRef<[u8]>> AsRef<[u8]> for InitiationMessage<Octets> {
