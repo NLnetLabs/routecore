@@ -24,6 +24,10 @@
 /// You can also specify ranges as like so:
 /// 
 /// ```rust
+/// # #[cfg(feature = "serde")]
+/// # use serde::{Serialize, Deserialize};
+/// # #[macro_use] extern crate routecore;
+/// # fn main() {
 /// typeenum!(
 ///     PeerType, u8,
 ///     {
@@ -31,13 +35,14 @@
 ///         1 => RdInstance,
 ///         2 => LocalInstance,
 ///         3 => LocalRibInstance,
-///     }
+///     },
 ///     {
 ///         4..=250 => Unassigned,
 ///         251..=254 => Experimental,
-///         255 => Reserved
+///         255 => Reserved,
 ///     }
 /// );
+/// # }
 /// ```
 /// Note that match lines with ranges are come in a separate block after
 /// the block with single selector values. Range variants have a data
