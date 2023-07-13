@@ -75,14 +75,16 @@ typeenum!(
     /// Types of BMP messages as defined in
     /// [RFC7854](https://datatracker.ietf.org/doc/html/rfc7854).
     MessageType, u8,
-    0 => RouteMonitoring,
-    1 => StatisticsReport,
-    2 => PeerDownNotification,
-    3 => PeerUpNotification,
-    4 => InitiationMessage,
-    5 => TerminationMessage,
-    6 => RouteMirroring,
-);
+    {
+        0 => RouteMonitoring,
+        1 => StatisticsReport,
+        2 => PeerDownNotification,
+        3 => PeerUpNotification,
+        4 => InitiationMessage,
+        5 => TerminationMessage,
+        6 => RouteMirroring,
+        }
+    );
 
 
 impl<Octets: AsRef<[u8]>> AsRef<[u8]> for InitiationMessage<Octets> {
@@ -373,12 +375,7 @@ impl<Octets: AsRef<[u8]>> PerPeerHeader<Octets> {
     /// Returns the peer type as defined in
     /// [RFC7854](https://datatracker.ietf.org/doc/html/rfc7854#section-10.2).
     pub fn peer_type(&self) -> PeerType {
-        match self.octets.as_ref()[0] {
-            0 => PeerType::GlobalInstance,
-            1 => PeerType::RdInstance,
-            2 => PeerType::LocalInstance,
-            _ => PeerType::Undefined,
-        }
+        self.octets.as_ref()[0].into()
     }
 
     //  0 1 2 3 4 5 6 7
@@ -511,22 +508,32 @@ impl<Octets: AsRef<[u8]>> PartialEq for PerPeerHeader<Octets> {
     }
 }
 
-/// The three peer types as defined in
-/// [RFC7854](https://datatracker.ietf.org/doc/html/rfc7854#section-4.2).
-#[derive(Debug, Hash, Eq, PartialEq)]
-pub enum PeerType {
-    GlobalInstance,
-    RdInstance,
-    LocalInstance,
-    Undefined,
-}
+typeenum!(
+    /// The peer types as defined in
+    /// https://www.iana.org/assignments/bmp-parameters/bmp-parameters.xhtml#peer-types
+    PeerType, u8,
+    {
+        0 => GlobalInstance,
+        1 => RdInstance,
+        2 => LocalInstance,
+        3 => LocalRibInstance,
+        255 => Reserved
+    },
+    {
+        4..=250 => Unassigned,
+        251..=254 => Experimental,
+    }
+);
 
-/// Specify which RIB the contents of a message originated from.
-#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq, Ord, PartialOrd)]
-pub enum RibType {
-    AdjRibIn,
-    AdjRibOut,
-}
+
+typeenum!(
+    /// Specify which RIB the contents of a message originated from.
+    RibType, u8,
+    {
+        0 => AdjRibIn,
+        1 => AdjRibOut
+    }
+);
 
 
 //--- Specific Message types -------------------------------------------------
@@ -1068,14 +1075,7 @@ impl<'a> InformationTlv<'a> {
 
     /// Returns the `InformationTlvType` for this TLV.
     pub fn typ(&self) -> InformationTlvType {
-        match u16::from_be_bytes(self.octets[0..=1].try_into().unwrap()) {
-            0 => InformationTlvType::String,
-            1 => InformationTlvType::SysDesc,
-            2 => InformationTlvType::SysName,
-            3 => InformationTlvType::VrfTableName,
-            4 => InformationTlvType::AdminLabel,
-            u => InformationTlvType::Undefined(u)
-        }
+        InformationTlvType::from(u16::from_be_bytes(self.octets[0..=1].try_into().unwrap()))
     }
 
     /// Returns the length of the value.
@@ -1105,19 +1105,23 @@ impl<'a> Display for InformationTlv<'a> {
 
 }
 
-/// Types of Information TLVs.
-///
-/// See also
-/// <https://www.iana.org/assignments/bmp-parameters/bmp-parameters.xhtml#initiation-peer-up-tlvs>
-#[derive(Debug, Eq, PartialEq)]
-pub enum InformationTlvType {
-    String,         // type 0
-    SysDesc,        // type 1
-    SysName,        // type 2
-    VrfTableName,   // type 3, RFC 9069
-    AdminLabel,     // type 4, RFC 8671
-    Undefined(u16),
-}
+typeenum!(
+    /// Types of Information TLVs.
+    ///
+    /// See also
+    /// <https://www.iana.org/assignments/bmp-parameters/bmp-parameters.xhtml#initiation-peer-up-tlvs>
+    InformationTlvType, u16,
+    { 
+        0 => String,
+        1 => SysDesc,
+        2 => SysName,
+        3 => VrfTableName,
+        4 => AdminLabel,
+    },
+    {
+        5.. => Undefined,
+    }
+);
 
 /// Iterator over `InformationTlv`'s.
 pub struct InformationTlvIter<'a> {
