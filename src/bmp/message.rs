@@ -60,6 +60,7 @@ impl Error for MessageError { }
 /// additional payload. The payload often comprises one or multiple
 /// [`bgp::Message`](crate::bgp::Message)s.
 
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub enum Message<Octets: AsRef<[u8]>> {
     RouteMonitoring(RouteMonitoring<Octets>),
     StatisticsReport(StatisticsReport<Octets>),
@@ -70,6 +71,11 @@ pub enum Message<Octets: AsRef<[u8]>> {
     RouteMirroring(RouteMirroring<Octets>),
 }
 
+impl<Octs: AsRef<[u8]>, OtherOcts: AsRef<[u8]>> PartialEq<Message<OtherOcts>> for Message<Octs> {
+    fn eq(&self, other: &Message<OtherOcts>) -> bool {
+        self.as_ref().eq(other.as_ref())
+    }
+}
 
 typeenum!(
     /// Types of BMP messages as defined in
@@ -83,8 +89,8 @@ typeenum!(
         4 => InitiationMessage,
         5 => TerminationMessage,
         6 => RouteMirroring,
-        }
-    );
+    }
+);
 
 
 impl<Octets: AsRef<[u8]>> AsRef<[u8]> for InitiationMessage<Octets> {
@@ -540,6 +546,9 @@ typeenum!(
 
 
 /// Route Monitoring message.
+
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[derive(Debug)]
 pub struct RouteMonitoring<Octets: AsRef<[u8]>>
 {
     octets: Octets
@@ -589,6 +598,8 @@ impl<Octs: Octets> RouteMonitoring<Octs> {
 }
 
 /// Statistics Report message.
+
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct StatisticsReport<Octs> {
     octets: Octs,
 }
@@ -649,7 +660,9 @@ impl<Octs: Octets> Debug for StatisticsReport<Octs> {
 }
 
 
-/// Peer Down Notification.
+/// Peer Down Notification. 
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[derive(Debug)]
 pub struct PeerDownNotification<Octets: AsRef<[u8]>> {
     octets: Octets,
 }
@@ -757,6 +770,8 @@ impl<Octs: Octets> PeerDownNotification<Octs> {
 
 
 /// Peer Up Notification.
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[derive(Debug)]
 pub struct PeerUpNotification<Octets: AsRef<[u8]>> {
     octets: Octets,
 }
@@ -939,6 +954,8 @@ impl<Octs: Octets> PeerUpNotification<Octs> {
 
 
 /// Initiation Message.
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[derive(Debug)]
 pub struct InitiationMessage<Octets: AsRef<[u8]>> {
     octets: Octets,
 }
@@ -978,6 +995,7 @@ impl<Octs: Octets> InitiationMessage<Octs> {
 
 
 /// Termination message.
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct TerminationMessage<Octets: AsRef<[u8]>> {
     octets: Octets,
 }
@@ -1022,6 +1040,7 @@ impl<Octs: Octets> TerminationMessage<Octs> {
 /// RouteMirroring.
 ///
 /// NB: Not well tested/supported at this moment!  
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct RouteMirroring<Octs> {
     octets: Octs,
 }
