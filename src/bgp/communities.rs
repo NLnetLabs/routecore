@@ -310,7 +310,7 @@ macro_rules! wellknown {
             fn fmt(&self, f: &mut Formatter) -> Result<(), Error> {
                 match self {
                     $($name::$var => write!(f, $pprim),)+
-                    $name::Unrecognized(n) => write!(f, "0x{:08X}", n)
+                    $name::Unrecognized(n) => write!(f, "0xFFFF{:04X}", n)
                 }
             }
         }
@@ -1409,5 +1409,13 @@ mod tests {
     fn wk_try_from() {
         assert!(<Wellknown as TryFrom<u32>>::try_from(0xffff0001).is_ok());
         assert!(<Wellknown as TryFrom<u32>>::try_from(0x0fff0001).is_err());
+    }
+
+    #[test]
+    fn to_string_and_back() {
+        let c: Community = [0xFF, 0xFF, 0xFF, 0x05].into();
+        let s = c.to_string();
+        let c2 = Community::from_str(&s).unwrap();
+        assert_eq!(c, c2);
     }
 }
