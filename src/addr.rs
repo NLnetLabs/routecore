@@ -405,13 +405,9 @@ impl Prefix {
             ==  other.bits.into_int() & !(u128::MAX >> self.len())
     }
 
-    /// Returns `true` if the prefix contains `addr` .
+    /// Returns `true` if the prefix contains `addr`.
     pub fn contains(self, addr: IpAddr) -> bool {
-        let p2 = match addr {
-            IpAddr::V4(a) => Prefix::new_v4(a, 32),
-            IpAddr::V6(a) => Prefix::new_v6(a, 128)
-        }.unwrap();
-        self.covers(p2)
+        self.min_addr() <= addr && addr <= self.max_addr()
     }
 }
 
@@ -1391,5 +1387,37 @@ mod test {
     #[test]
     fn clear_host_of_zero_len_prefix() {
         assert_eq!(Bits(0), Bits(12345).clear_host(0));
+    }
+
+    #[test] 
+    fn prefix_contains() {
+        fn test(prefix: &str, addr: &str, expected: bool) {
+            let p = Prefix::from_str(prefix).unwrap();
+            let a = IpAddr::from_str(addr).unwrap();
+            assert_eq!(p.contains(a), expected);
+        }
+
+        for i in [
+            ("10.0.0.0/8", "10.0.0.0", true),
+            ("10.0.0.0/8", "10.1.1.1", true),
+            ("10.0.0.0/8", "10.255.255.255", true),
+            ("10.0.0.0/32", "10.0.0.0", true),
+            ("10.0.0.0/8", "192.168.1.1", false),
+            ("10.0.0.0/8", "2001:0db8::1", false),
+
+            ("2001:0db8::/32", "2001:0db8::0", true),
+            ("2001:0db8::/32", "2001:0db8::1", true),
+            ("2001:0db8::/32", "10.0.0.1", false),
+            
+            ("::0/120", "0.0.0.10", false),
+            ("0.0.0.0/24", "::1", false),
+
+            ("0.0.0.1/32", "::1", false),
+            ("0.0.0.1/32", "0.0.0.1", true),
+            ("::1/128", "0.0.0.1", false),
+            ("::1/128", "::1", true),
+        ] {
+            test(i.0, i.1, i.2);
+        }
     }
 }
