@@ -635,38 +635,44 @@ typeenum!(
 /// BGP Capability type, as per
 /// <https://www.iana.org/assignments/capability-codes/capability-codes.xhtml>.
     CapabilityType, u8,
-    0 => Reserved,
-    1 => MultiProtocol,
-    2 => RouteRefresh,
-    3 => OutboundRouteFiltering,
-    5 => ExtendedNextHop,
-    6 => ExtendedMessage,
-    8 => MultipleLabels,
-    9 => BgpRole,
-    //10..=63 => Unassigned,
-    64 => GracefulRestart,
-    65 => FourOctetAsn,
-    66 => DeprecatedDynamicCapability,
-    67 => DynamicCapability,
-    68 => Multisession,
-    69 => AddPath,
-    70 => EnhancedRouteRefresh,
-    71 => LongLivedGracefulRestart,
-    73 => FQDN,
-    128 => PrestandardRouteRefresh,
-    130 => PrestandardOutboundRouteFiltering,
-    131 => PrestandardMultisession,
+    {
+        0 => Reserved,
+        1 => MultiProtocol,
+        2 => RouteRefresh,
+        3 => OutboundRouteFiltering,
+        5 => ExtendedNextHop,
+        6 => ExtendedMessage,
+        8 => MultipleLabels,
+        9 => BgpRole,
+        //10..=63 => Unassigned,
+        64 => GracefulRestart,
+        65 => FourOctetAsn,
+        66 => DeprecatedDynamicCapability,
+        67 => DynamicCapability,
+        68 => Multisession,
+        69 => AddPath,
+        70 => EnhancedRouteRefresh,
+        71 => LongLivedGracefulRestart,
+        73 => FQDN,
+        128 => PrestandardRouteRefresh,
+        130 => PrestandardOutboundRouteFiltering,
+        131 => PrestandardMultisession,
+    }
 );
 
 typeenum!(
 /// BGP OPEN Optional Parameter type, as per
 /// <https://www.iana.org/assignments/bgp-parameters/bgp-parameters.xhtml#bgp-parameters-11>.
     OptionalParameterType, u8,
-    0 => Reserved,
-    1 => Authentication,
-    2 => Capabilities,
-    //3..=254 => Unassigned,
-    255 => ExtendedLength
+    {
+        0 => Reserved,
+        1 => Authentication,
+        2 => Capabilities,
+        255 => ExtendedLength
+    },
+    {
+        3..=254 => Unassigned,
+    }
 );
 
 
