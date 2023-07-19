@@ -404,6 +404,15 @@ impl Prefix {
         self.bits.into_int()
             ==  other.bits.into_int() & !(u128::MAX >> self.len())
     }
+
+    /// Returns `true` if the prefix contains `addr` .
+    pub fn contains(self, addr: IpAddr) -> bool {
+        let p2 = match addr {
+            IpAddr::V4(a) => Prefix::new_v4(a, 32),
+            IpAddr::V6(a) => Prefix::new_v6(a, 128)
+        }.unwrap();
+        self.covers(p2)
+    }
 }
 
 //--- PartialOrd and Ord
