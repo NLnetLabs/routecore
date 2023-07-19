@@ -811,8 +811,8 @@ impl<'a> PathAttribute<'a, [u8]> {
                 }
             },
             PathAttributeType::Aggregator => {
-                let mut pp = parser.parse_parser(len)?;
-                Aggregator::check(&mut pp, config)?;
+                let pp = parser.parse_parser(len)?;
+                Aggregator::check(&pp, config)?;
             },
             PathAttributeType::Communities => {
                 let mut pp = parser.parse_parser(len)?;
@@ -1392,7 +1392,7 @@ impl<Octs: Octets> Iterator for LargeCommunityIter<Octs> {
 }
 
 impl Aggregator {
-    fn check(parser: &mut Parser<[u8]>, config: SessionConfig)
+    fn check(parser: &Parser<[u8]>, config: SessionConfig)
         -> Result<(), ParseError>
     {
         let len = parser.remaining(); // XXX is this always correct?

@@ -24,13 +24,13 @@ impl NextHop {
             (16, AFI::Ipv6, SAFI::Unicast | SAFI::MplsUnicast) =>
                 //NextHop::Ipv6
                 parser.advance(16)?,
-            (32, AFI::Ipv6, SAFI::Unicast) =>
+            (32, AFI::Ipv6, SAFI::Unicast | SAFI::Multicast) =>
                 //NextHop::Ipv6LL
                 parser.advance(16 + 16)?,
             (24, AFI::Ipv6, SAFI::MplsVpnUnicast) =>
                 //NextHop::Ipv6MplsVpnUnicast
                 parser.advance(8 + 16)?,
-            (4, AFI::Ipv4, SAFI::Unicast | SAFI::MplsUnicast ) =>
+            (4, AFI::Ipv4, SAFI::Unicast | SAFI::Multicast | SAFI::MplsUnicast ) =>
                 //NextHop::Ipv4
                 parser.advance(4)?,
             (12, AFI::Ipv4, SAFI::MplsVpnUnicast) =>
@@ -63,7 +63,7 @@ impl NextHop {
         let res = match (len, afi, safi) {
             (16, AFI::Ipv6, SAFI::Unicast | SAFI::MplsUnicast) =>
                 NextHop::Ipv6(parse_ipv6addr(parser)?),
-            (32, AFI::Ipv6, SAFI::Unicast) =>
+            (32, AFI::Ipv6, SAFI::Unicast | SAFI::Multicast) =>
                 NextHop::Ipv6LL(
                     parse_ipv6addr(parser)?,
                     parse_ipv6addr(parser)?
@@ -73,7 +73,7 @@ impl NextHop {
                     RouteDistinguisher::parse(parser)?,
                     parse_ipv6addr(parser)?
                 ),
-            (4, AFI::Ipv4, SAFI::Unicast | SAFI::MplsUnicast ) =>
+            (4, AFI::Ipv4, SAFI::Unicast | SAFI::Multicast | SAFI::MplsUnicast ) =>
                 NextHop::Ipv4(parse_ipv4addr(parser)?),
             (12, AFI::Ipv4, SAFI::MplsVpnUnicast) =>
                 NextHop::Ipv4MplsVpnUnicast(
