@@ -98,7 +98,8 @@ use crate::asn::{Asn, Asn16, ParseAsnError};
 //--- Community --------------------------------------------------------------
 
 /// Standard and Extended/Large Communities variants.
-#[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd )]
+#[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, )]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub enum Community {
     Standard(StandardCommunity),
     Extended(ExtendedCommunity),
@@ -309,7 +310,7 @@ macro_rules! wellknown {
             fn fmt(&self, f: &mut Formatter) -> Result<(), Error> {
                 match self {
                     $($name::$var => write!(f, $pprim),)+
-                    $name::Unrecognized(n) => write!(f, "0x{:08X}", n)
+                    $name::Unrecognized(n) => write!(f, "0xFFFF{:04X}", n)
                 }
             }
         }
@@ -349,6 +350,7 @@ wellknown!(Wellknown,
 
 /// Conventional, RFC1997 4-byte community.
 #[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd )]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct StandardCommunity([u8; 4]);
 
 impl StandardCommunity {
@@ -523,6 +525,7 @@ impl Display for Tag {
 
 /// Extended Community as defined in RFC4360.
 #[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd )]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct ExtendedCommunity([u8; 8]);
 
 impl ExtendedCommunity {
@@ -907,6 +910,7 @@ impl Display for ExtendedCommunity {
 
 /// IPv6 Extended Community as defined in RFC5701.
 #[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd )]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct Ipv6ExtendedCommunity([u8; 20]);
 
 
@@ -1023,6 +1027,7 @@ impl Display for Ipv6ExtendedCommunity {
 
 /// Large Community as defined in RFC8092.
 #[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd )]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct LargeCommunity([u8; 12]);
 
 impl LargeCommunity {
@@ -1404,5 +1409,13 @@ mod tests {
     fn wk_try_from() {
         assert!(<Wellknown as TryFrom<u32>>::try_from(0xffff0001).is_ok());
         assert!(<Wellknown as TryFrom<u32>>::try_from(0x0fff0001).is_err());
+    }
+
+    #[test]
+    fn to_string_and_back() {
+        let c: Community = [0xFF, 0xFF, 0xFF, 0x05].into();
+        let s = c.to_string();
+        let c2 = Community::from_str(&s).unwrap();
+        assert_eq!(c, c2);
     }
 }

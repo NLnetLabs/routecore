@@ -27,7 +27,8 @@ use crate::bgp::communities::{
 const COFF: usize = 19; // XXX replace this with .skip()'s?
 
 /// BGP UPDATE message, variant of the [`Message`] enum.
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct UpdateMessage<Octs: Octets> {
     octets: Octs,
     session_config: SessionConfig,
@@ -513,7 +514,8 @@ impl<Octs: Octets> UpdateMessage<Octs> {
 /// available in the UPDATE messages themselves, but are only exchanged in the
 /// BGP OPEN messages when the session was established.
 ///
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct SessionConfig {
     pub four_octet_asn: FourOctetAsn,
     pub add_path: AddPath,
@@ -581,14 +583,16 @@ impl SessionConfig {
 }
 
 /// Indicates whether this session is Four Octet capable.
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub enum FourOctetAsn {
     Enabled,
     Disabled,
 }
 
 /// Indicates whether AddPath is enabled for this session.
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub enum AddPath {
     Enabled,
     Disabled,
@@ -801,8 +805,8 @@ impl<'a> PathAttribute<'a, [u8]> {
                 }
             },
             PathAttributeType::Aggregator => {
-                let mut pp = parser.parse_parser(len)?;
-                Aggregator::check(&mut pp, config)?;
+                let pp = parser.parse_parser(len)?;
+                Aggregator::check(&pp, config)?;
             },
             PathAttributeType::Communities => {
                 let mut pp = parser.parse_parser(len)?;
@@ -1255,7 +1259,8 @@ impl<'a, Ref: Octets> IntoIterator for PathAttributes<'a, Ref> {
 
 //--- Aggregator -------------------------------------------------------------
 /// Path Attribute (7).
-#[derive(Debug, Eq, PartialEq, Copy, Clone)]
+#[derive(Debug, Eq, PartialEq, Copy, Clone, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct Aggregator {
     asn: Asn,
     speaker: Ipv4Addr,
@@ -1381,7 +1386,7 @@ impl<Octs: Octets> Iterator for LargeCommunityIter<Octs> {
 }
 
 impl Aggregator {
-    fn check(parser: &mut Parser<[u8]>, config: SessionConfig)
+    fn check(parser: &Parser<[u8]>, config: SessionConfig)
         -> Result<(), ParseError>
     {
         let len = parser.remaining(); // XXX is this always correct?
