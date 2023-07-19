@@ -261,22 +261,28 @@ impl Details {
 
 // See RFCs 4271 4486 8203 9003
 
-typeenum!(ErrorCode, u8, 
-    0 => Reserved,
-    1 => MessageHeaderError,
-    2 => OpenMessageError,
-    3 => UpdateMessageError,
-    4 => HoldTimerExpired,
-    5 => FiniteStateMachineError,
-    6 => Cease,
-    7 => RouteRefreshMessageError,
+typeenum!(
+    ErrorCode, u8,
+    {
+        0 => Reserved,
+        1 => MessageHeaderError,
+        2 => OpenMessageError,
+        3 => UpdateMessageError,
+        4 => HoldTimerExpired,
+        5 => FiniteStateMachineError,
+        6 => Cease,
+        7 => RouteRefreshMessageError,
+    }
 );
 
-typeenum!(MessageHeaderSubcode, u8,
-    0 => Unspecific,
-    1 => ConnectionNotSynchronized,
-    2 => BadMessageLength, // data: u16 bad length
-    3 => BadMessageType, // data: u8 bad type
+typeenum!(
+    MessageHeaderSubcode, u8,
+    {
+        0 => Unspecific,
+        1 => ConnectionNotSynchronized,
+        2 => BadMessageLength, // data: u16 bad length
+        3 => BadMessageType, // data: u8 bad type
+    }
 );
 
 impl From<MessageHeaderSubcode> for Details {
@@ -285,19 +291,22 @@ impl From<MessageHeaderSubcode> for Details {
     }
 }
 
-typeenum!(OpenMessageSubcode, u8, 
-    0 => Unspecific,
-    1 => UnsupportedVersionNumber, // only one with data: u16 version number
-    2 => BadPeerAs,
-    3 => BadBgpIdentifier,
-    4 => UnsupportedOptionalParameter,
-    5 => Deprecated5, // was: authentication failure
-    6 => UnacceptableHoldTime,
-    7 => UnsupportedCapability,
-    8 => Deprecated8, // 8-10 deprecated because of 'improper use', rfc9234
-    9 => Deprecated9,
-    10 => Deprecated10,
-    11 => RoleMismatch,
+typeenum!(
+    OpenMessageSubcode, u8,
+    {
+        0 => Unspecific,
+        1 => UnsupportedVersionNumber, // only one with data: u16 version number
+        2 => BadPeerAs,
+        3 => BadBgpIdentifier,
+        4 => UnsupportedOptionalParameter,
+        5 => Deprecated5, // was: authentication failure
+        6 => UnacceptableHoldTime,
+        7 => UnsupportedCapability,
+        8 => Deprecated8, // 8-10 deprecated because of 'improper use', rfc9234
+        9 => Deprecated9,
+        10 => Deprecated10,
+        11 => RoleMismatch,
+    }
 );
 
 impl From<OpenMessageSubcode> for Details {
@@ -306,19 +315,22 @@ impl From<OpenMessageSubcode> for Details {
     }
 }
 
-typeenum!(UpdateMessageSubcode, u8,
-    0 => Unspecific,
-    1 => MalformedAttributeList, // no data
-    2 => UnrecognizedWellknownAttribute, // data: unrecognized attribute
-    3 => MissingWellknownAttribute, // data: typecode of missing attribute
-    4 => AttributeFlagsError, // data: erroneous attribute (t, l, v)
-    5 => AttributeLengthError, // data: erroneous attribute (t, l, v)
-    6 => InvalidOriginAttribute, // data: erroneous attribute (t, l, v)
-    7 => Deprecated7, // was: AS routing loop, rfc1771
-    8 => InvalidNextHopAttribute, // data: erroneous attribute (t, l, v)
-    9 => OptionalAttributeError, // data: erroneous attribute (t, l, v)
-    10 => InvalidNetworkField, // no data
-    11 => MalformedAsPath, // no data
+typeenum!(
+    UpdateMessageSubcode, u8,
+    {
+        0 => Unspecific,
+        1 => MalformedAttributeList, // no data
+        2 => UnrecognizedWellknownAttribute, // data: unrecognized attribute
+        3 => MissingWellknownAttribute, // data: typecode of missing attribute
+        4 => AttributeFlagsError, // data: erroneous attribute (t, l, v)
+        5 => AttributeLengthError, // data: erroneous attribute (t, l, v)
+        6 => InvalidOriginAttribute, // data: erroneous attribute (t, l, v)
+        7 => Deprecated7, // was: AS routing loop, rfc1771
+        8 => InvalidNextHopAttribute, // data: erroneous attribute (t, l, v)
+        9 => OptionalAttributeError, // data: erroneous attribute (t, l, v)
+        10 => InvalidNetworkField, // no data
+        11 => MalformedAsPath, // no data
+    }
 );
 
 impl From<UpdateMessageSubcode> for Details {
@@ -327,11 +339,14 @@ impl From<UpdateMessageSubcode> for Details {
     }
 }
 
-typeenum!(FiniteStateMachineSubcode, u8, 
-    0 => UnspecifiedError,
-    1 => UnexpectedMessageInOpenSentState, // data: u8 of message type
-    2 => UnexpectedMessageInOpenConfirmState, // data: u8 of message type
-    3 => UnexpectedMessageInEstablishedState, // data: u8 of message type
+typeenum!(
+    FiniteStateMachineSubcode, u8,
+    {
+        0 => UnspecifiedError,
+        1 => UnexpectedMessageInOpenSentState, // data: u8 of message type
+        2 => UnexpectedMessageInOpenConfirmState, // data: u8 of message type
+        3 => UnexpectedMessageInEstablishedState, // data: u8 of message type
+    }
 );
 
 impl From<FiniteStateMachineSubcode> for Details {
@@ -340,18 +355,21 @@ impl From<FiniteStateMachineSubcode> for Details {
     }
 }
 
-typeenum!(CeaseSubcode, u8,
-    0 => Reserved,
-    1 => MaximumPrefixesReached,
-    2 => AdministrativeShutdown,
-    3 => PeerDeconfigured,
-    4 => AdministrativeReset,
-    5 => ConnectionRejected,
-    6 => OtherConfigurationChange,
-    7 => ConnectionCollisionResolution,
-    8 => OutOfResources,
-    9 => HardReset,
-    10 => BfdDown,
+typeenum!(
+    CeaseSubcode, u8,
+    {
+        0 => Reserved,
+        1 => MaximumPrefixesReached,
+        2 => AdministrativeShutdown,
+        3 => PeerDeconfigured,
+        4 => AdministrativeReset,
+        5 => ConnectionRejected,
+        6 => OtherConfigurationChange,
+        7 => ConnectionCollisionResolution,
+        8 => OutOfResources,
+        9 => HardReset,
+        10 => BfdDown,
+    }
 );
 
 impl From<CeaseSubcode> for Details {
@@ -361,9 +379,12 @@ impl From<CeaseSubcode> for Details {
 }
 
 
-typeenum!(RouteRefreshMessageSubcode, u8, 
-    0 => Reserved,
-    1 => InvalidMessageLength, // data: complete RouteRefresh message
+typeenum!(
+    RouteRefreshMessageSubcode, u8,
+    {
+        0 => Reserved,
+        1 => InvalidMessageLength, // data: complete RouteRefresh message
+    }
 );
 
 impl From<RouteRefreshMessageSubcode> for Details {
