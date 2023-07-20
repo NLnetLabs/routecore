@@ -32,7 +32,7 @@ typeenum!(
 
 /// BGP Origin types as used in BGP UPDATE messages.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub enum OriginType {
     Igp,
     Egp,

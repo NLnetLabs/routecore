@@ -547,7 +547,7 @@ typeenum!(
 
 /// Route Monitoring message.
 
-#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 #[derive(Debug)]
 pub struct RouteMonitoring<Octets: AsRef<[u8]>>
 {
@@ -661,7 +661,7 @@ impl<Octs: Octets> Debug for StatisticsReport<Octs> {
 
 
 /// Peer Down Notification. 
-#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 #[derive(Debug)]
 pub struct PeerDownNotification<Octets: AsRef<[u8]>> {
     octets: Octets,
@@ -770,7 +770,7 @@ impl<Octs: Octets> PeerDownNotification<Octs> {
 
 
 /// Peer Up Notification.
-#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 #[derive(Debug)]
 pub struct PeerUpNotification<Octets: AsRef<[u8]>> {
     octets: Octets,
