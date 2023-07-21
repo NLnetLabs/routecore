@@ -520,6 +520,7 @@ impl<Octs: Octets> UpdateMessage<Octs> {
 /// BGP OPEN messages when the session was established.
 ///
 #[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct SessionConfig {
     pub four_octet_asn: FourOctetAsn,
     pub add_path: AddPath,
@@ -588,6 +589,7 @@ impl SessionConfig {
 
 /// Indicates whether this session is Four Octet capable.
 #[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub enum FourOctetAsn {
     Enabled,
     Disabled,
@@ -595,6 +597,7 @@ pub enum FourOctetAsn {
 
 /// Indicates whether AddPath is enabled for this session.
 #[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub enum AddPath {
     Enabled,
     Disabled,
