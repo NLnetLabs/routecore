@@ -8,28 +8,31 @@ use serde::{Serialize, Deserialize};
 
 typeenum!(
 /// AFI as used in BGP OPEN and UPDATE messages.
-    AFI, u16,
-    1 => Ipv4,
-    2 => Ipv6,
-    25 => L2Vpn,
-);
+        AFI, u16,
+        {
+            1 => Ipv4,
+            2 => Ipv6,
+            25 => L2Vpn
+        });
 
 typeenum!(
 /// SAFI as used in BGP OPEN and UPDATE messages.
     SAFI, u8,
-    1 => Unicast,
-    2 => Multicast,
-    4 => MplsUnicast,
-    65 => Vpls,
-    70 => Evpn,
-    128 => MplsVpnUnicast,
+    {
+        1 => Unicast,
+        2 => Multicast,
+        4 => MplsUnicast,
+        65 => Vpls,
+        70 => Evpn,
+        128 => MplsVpnUnicast,
     132 => RouteTarget,
     133 => FlowSpec,
-    134 => FlowSpecVpn,
-);
+    134 => FlowSpecVpn
+    });
 
 /// BGP Origin types as used in BGP UPDATE messages.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub enum OriginType {
     Igp,
     Egp,
@@ -54,34 +57,37 @@ typeenum!(
 /// As per:
 /// <https://www.iana.org/assignments/bgp-parameters/bgp-parameters.xhtml#bgp-parameters-2>
     PathAttributeType, u8,
-    0 => Reserved,
-    1 => Origin,
-    2 => AsPath,
-    3 => NextHop,
-    4 => MultiExitDisc,
-    5 => LocalPref,
-    6 => AtomicAggregate,
-    7 => Aggregator,
-    8 => Communities,
-    9 => OriginatorId,
-    10 => ClusterList,
-    14 => MpReachNlri,
-    15 => MpUnreachNlri,
-    16 => ExtendedCommunities,
-    17 => As4Path,
-    18 => As4Aggregator,
-    20 => Connector,
-    21 => AsPathLimit,
-    22 => PmsiTunnel,
-    25 => Ipv6ExtendedCommunities,
-    32 => LargeCommunities,
-    33 => BgpsecAsPath,
-    128 => AttrSet,
-    255 => RsrvdDevelopment,
+    {
+        0 => Reserved,
+        1 => Origin,
+        2 => AsPath,
+        3 => NextHop,
+        4 => MultiExitDisc,
+        5 => LocalPref,
+        6 => AtomicAggregate,
+        7 => Aggregator,
+        8 => Communities,
+        9 => OriginatorId,
+        10 => ClusterList,
+        14 => MpReachNlri,
+        15 => MpUnreachNlri,
+        16 => ExtendedCommunities,
+        17 => As4Path,
+        18 => As4Aggregator,
+        20 => Connector,
+        21 => AsPathLimit,
+        22 => PmsiTunnel,
+        25 => Ipv6ExtendedCommunities,
+        32 => LargeCommunities,
+        33 => BgpsecAsPath,
+        128 => AttrSet,
+        255 => RsrvdDevelopment
+    }
 );
 
 /// Wrapper for the 4 byte Multi-Exit Discriminator in path attributes.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct MultiExitDisc(pub u32);
 
 impl std::fmt::Display for MultiExitDisc {
@@ -92,6 +98,7 @@ impl std::fmt::Display for MultiExitDisc {
 
 /// Wrapper for the 4 byte Local Preference value in path attributes.
 #[derive(Debug, Eq, PartialEq, Clone, Copy, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct LocalPref(pub u32);
 
 impl std::fmt::Display for LocalPref {

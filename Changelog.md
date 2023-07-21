@@ -34,6 +34,10 @@ New
   reason about than the wireformat. `HopPath` replaces `AsPathBuilder`.
   ([#23])
 
+* Added `fn contains` to check whether an `std::net::IpAddr` lies within a
+  `addr::Prefix`. ([#35])
+
+* Better parsing and creation of BGP NOTIFICATION messages. ([#35])
 
 Bug fixes
 
@@ -47,6 +51,7 @@ Other changes
 [#22]: https://github.com/NLnetLabs/routecore/pull/22
 [#23]: https://github.com/NLnetLabs/routecore/pull/23
 [#24]: https://github.com/NLnetLabs/routecore/pull/24
+[#35]: https://github.com/NLnetLabs/routecore/pull/35
 
 
 ## 0.2.0
