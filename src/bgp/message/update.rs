@@ -1942,8 +1942,8 @@ use crate::bgp::message::MsgType;
 #[derive(Debug)]
 pub struct UpdateBuilder<Target> {
     target: Target,
-    announcements: Vec<Prefix>,
-    withdrawals: Vec<Prefix>,
+    announcements: Vec<Nlri<Vec<u8>>>,
+    withdrawals: Vec<Nlri<Vec<u8>>>,
     //attributes: Vec<PathAttribute<'a, Vec<u8>>>, // XXX this lifetime is..
     //not nice
 }
@@ -1963,6 +1963,10 @@ impl<Target: OctetsBuilder> UpdateBuilder<Target> {
             withdrawals: Vec::new(),
             //attributes: ?
         })
+    }
+
+    pub fn append_withdrawals(&mut self, mut withdrawals: Vec<Nlri<Vec<u8>>>) {
+        self.withdrawals.append(&mut withdrawals);
     }
 }
 
@@ -2168,15 +2172,62 @@ where Infallible: From<<Target as OctetsBuilder>::AppendError>
 
 impl<Target: OctetsBuilder + AsMut<[u8]>> UpdateBuilder<Target> {
     pub fn finish(mut self) -> Target {
-        let withdraw_len = 0_usize;
+        let mut withdraw_len = 0_usize;
         let total_pa_len = 0_usize;
         let nlri_len = 0_usize;
         // TODO self.header_mut().set_length( ... );
-        let msg_len = 19 
+        let mut msg_len = 19 
             + 2 + withdraw_len 
             + 2 + total_pa_len
             + nlri_len
         ;
+
+        // XXX we can do these unwraps because of the if+todo!() above, for
+        // now
+        let total_pa_len = u16::try_from(total_pa_len).unwrap();
+
+        //// update pdu len
+        //self.target.as_mut()[16..=17].copy_from_slice( &(msg_len.to_be_bytes()) );
+
+        // two bytes placeholder for withdraws len 
+        let _ = self.target.append_slice(&[0x00, 0x00]);
+
+        let mut withdraw_len = 0_usize;
+        for w in self.withdrawals {
+            match w {
+                Nlri::Basic(b) => {
+                    if b.is_v4() {
+                        if let Ok(len) = b.compose(&mut self.target) {
+                            withdraw_len += len;
+                        } else {
+                            unreachable!()
+                        }
+                    } else {
+                        // Other withdrawals should not go here, but in
+                        // MP_UNREACH_NLRI
+                        todo!()
+                    }
+                },
+                _ => todo!(),
+            }
+        }
+
+        if withdraw_len > 4096 {
+            todo!()
+        }
+
+        msg_len += withdraw_len;
+
+        // We can unwrap because of the >4096 check above, for now.
+        self.target.as_mut()[19..=20].copy_from_slice(
+            &(u16::try_from(withdraw_len).unwrap().to_be_bytes()
+        ));
+
+        let _ = self.target.append_slice(&(total_pa_len.to_be_bytes()));
+        // TODO write path attributes, if any
+
+        // TODO write conventional NLRI, if any
+
 
         if msg_len > 4096 {
             // do we just create a larger PDU and let the user decide what to
@@ -2185,22 +2236,11 @@ impl<Target: OctetsBuilder + AsMut<[u8]>> UpdateBuilder<Target> {
             todo!()
         }
 
-        // XXX we can do these unwraps because of the if+todo!() above, for
-        // now
-        let msg_len = u16::try_from(msg_len).unwrap();
-        let withdraw_len = u16::try_from(withdraw_len).unwrap();
-        let total_pa_len = u16::try_from(total_pa_len).unwrap();
 
         // update pdu len
-        self.target.as_mut()[16..=17].copy_from_slice( &(msg_len.to_be_bytes()) );
-
-        let _ = self.target.append_slice(&(withdraw_len.to_be_bytes()));
-        // TODO write withdrawals, if any
-
-        let _ = self.target.append_slice(&(total_pa_len.to_be_bytes()));
-        // TODO write path attributes, if any
-
-        // TODO write conventional NLRI, if any
+        self.target.as_mut()[16..=17].copy_from_slice(
+            &(u16::try_from(msg_len).unwrap().to_be_bytes())
+            );
 
         self.target
     }
@@ -2906,7 +2946,69 @@ mod tests {
     fn build_empty() {
         let builder = UpdateBuilder::new_vec();
         let msg = builder.finish();
+        //print_pcap(&msg);
+    }
+
+    #[test]
+    fn build_withdrawals_basic_v4() {
+        let mut builder = UpdateBuilder::new_vec();
+
+        let withdrawals = [
+            "0.0.0.0/0",
+            "10.2.1.0/24",
+            "10.2.2.0/24",
+            "10.2.0.0/23",
+            "10.2.4.0/25",
+            "10.0.0.0/7",
+            "10.0.0.0/8",
+            "10.0.0.0/9",
+        ].map(|s| Nlri::Basic(Prefix::from_str(s).unwrap().into()))
+         .into_iter()
+         .collect::<Vec<_>>();
+
+
+        builder.append_withdrawals(withdrawals);
+        let msg = builder.finish();
         print_pcap(&msg);
+    }
+
+    #[test]
+    fn build_withdrawals_basic_v4_addpath() {
+        use crate::bgp::message::nlri::PathId;
+        let mut builder = UpdateBuilder::new_vec();
+        let withdrawals = [
+            "0.0.0.0/0",
+            "10.2.1.0/24",
+            "10.2.2.0/24",
+            "10.2.0.0/23",
+            "10.2.4.0/25",
+            "10.0.0.0/7",
+            "10.0.0.0/8",
+            "10.0.0.0/9",
+        ].iter().enumerate().map(|(idx, s)| Nlri::Basic(BasicNlri {
+            prefix: Prefix::from_str(s).unwrap(),
+            path_id: Some(PathId::from_u32(idx.try_into().unwrap()))})
+        ).into_iter().collect::<Vec<_>>();
+        builder.append_withdrawals(withdrawals);
+        let msg = builder.finish();
+        print_pcap(&msg);
+    }
+
+    #[test]
+    #[should_panic] // Everything besides v4 should go into MP_UNREACH_NLRI
+                    // when composing the PDU, but that's on the TODO list.
+    fn build_withdrawals_basic_v6() {
+        let mut builder = UpdateBuilder::new_vec();
+        let withdrawals = [
+            "2001:db8::/32",
+        ].iter().enumerate().map(|(idx, s)| Nlri::Basic(BasicNlri {
+            prefix: Prefix::from_str(s).unwrap(),
+            path_id: None})
+        ).into_iter().collect::<Vec<_>>();
+        builder.append_withdrawals(withdrawals);
+        let msg = builder.finish();
+        print_pcap(&msg);
+
     }
 
 
@@ -2944,7 +3046,7 @@ mod tests {
         ]);
 
         let msg = builder.build_acs(acs).unwrap();
-        print_pcap(&msg);
+        //print_pcap(&msg);
     }
 
 }
