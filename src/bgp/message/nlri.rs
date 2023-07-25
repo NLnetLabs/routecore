@@ -5,7 +5,7 @@ use crate::addr::Prefix;
 use crate::util::parser::{parse_ipv4addr, parse_ipv6addr, ParseError};
 use crate::bgp::message::update::{AddPath, SessionConfig};
 use crate::flowspec::Component;
-use octseq::{Octets, Parser};
+use octseq::{Octets, OctetsBuilder, Parser};
 use log::warn;
 
 use std::net::IpAddr;
@@ -552,7 +552,50 @@ impl BasicNlri {
             }
         )
     }
+
+    pub fn compose<Target: OctetsBuilder>(&self, target: &mut Target)
+        -> Result<usize, Target::AppendError> {
+        let len = self.prefix.len();
+        let addpath_bytes = if let Some(path_id) = self.path_id {
+            target.append_slice(&path_id.to_raw())?;
+            4
+        } else {
+            0
+        };
+
+        target.append_slice(&[len])?;
+        let prefix_bytes = prefix_bits_to_bytes(len);
+
+        match self.prefix.addr() {
+            IpAddr::V4(a) => {
+                target.append_slice(&a.octets()[..prefix_bytes])?;
+            }
+            IpAddr::V6(a) => {
+                target.append_slice(&a.octets()[..prefix_bytes])?;
+            }
+        }
+        Ok(1 + addpath_bytes + prefix_bytes)
+    }
+
+
+    pub fn is_v4(&self) -> bool {
+        self.prefix.is_v4()
+    }
 }
+
+impl From<Prefix> for BasicNlri {
+    fn from(prefix: Prefix) -> BasicNlri {
+        BasicNlri { prefix, path_id: None }
+    }
+}
+
+//TODO
+//impl From<(Prefix, PathId)> for BasicNlri {
+//    fn from(prefix: Prefix) -> BasicNlri {
+//        BasicNlri { prefix, path_id: Some( }
+//    }
+//}
+
 
 impl MplsVpnNlri<()> {
     pub fn check(
