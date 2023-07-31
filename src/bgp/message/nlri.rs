@@ -589,14 +589,11 @@ impl BasicNlri {
     }
 
     pub fn compose<Target: OctetsBuilder>(&self, target: &mut Target)
-        -> Result<usize, Target::AppendError> {
+        -> Result<(), Target::AppendError> {
         let len = self.prefix.len();
-        let addpath_bytes = if let Some(path_id) = self.path_id {
+        if let Some(path_id) = self.path_id {
             target.append_slice(&path_id.to_raw())?;
-            4
-        } else {
-            0
-        };
+        }
 
         target.append_slice(&[len])?;
         let prefix_bytes = prefix_bits_to_bytes(len);
@@ -609,7 +606,7 @@ impl BasicNlri {
                 target.append_slice(&a.octets()[..prefix_bytes])?;
             }
         }
-        Ok(1 + addpath_bytes + prefix_bytes)
+        Ok(())
     }
 
 
