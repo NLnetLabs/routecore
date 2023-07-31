@@ -2252,11 +2252,8 @@ impl<Target: OctetsBuilder + AsMut<[u8]> + AsRef<[u8]>> UpdateBuilder<Target> {
     }
 
     pub fn finish(mut self) -> Target {
-        //TODO use Header
-        //// update pdu len
-        self.target.as_mut()[16..=17].copy_from_slice(
-            &(u16::try_from(self.total_pdu_len).unwrap().to_be_bytes()));
-        //let _ = self.target.append_slice(u16::from(self.total_pdu_len).unwrap());
+        let mut header = Header::for_slice_mut(self.target.as_mut());
+        header.set_length(u16::try_from(self.total_pdu_len).unwrap());
 
         let _ = self.target.append_slice(&u16::try_from(self.withdrawals_len).unwrap().to_be_bytes());
 
@@ -3007,7 +3004,7 @@ mod tests {
     fn build_empty() {
         let builder = UpdateBuilder::new_vec();
         let msg = builder.finish();
-        print_pcap(&msg);
+        //print_pcap(&msg);
         let parsed = UpdateMessage::from_octets(msg, SessionConfig::modern());
     }
 
@@ -3030,6 +3027,10 @@ mod tests {
 
         let _ = builder.append_withdrawals(&mut withdrawals.clone());
         let msg = builder.finish();
+        assert!(
+            UpdateMessage::from_octets(&msg, SessionConfig::modern())
+            .is_ok()
+        );
         print_pcap(&msg);
 
 
@@ -3039,6 +3040,10 @@ mod tests {
         }
 
         let msg2 = builder2.finish();
+        assert!(
+            UpdateMessage::from_octets(&msg2, SessionConfig::modern())
+            .is_ok()
+        );
         print_pcap(&msg2);
 
         assert_eq!(msg, msg2);
@@ -3076,7 +3081,10 @@ mod tests {
         assert!(builder.append_withdrawals(&mut prefixes).is_err());
         assert!(prefixes.len() < prefixes_len);
         let pdu = builder.into_pdu();
-        assert_eq!(pdu.withdrawals().iter().count(), prefixes_len - prefixes.len());
+        assert_eq!(
+            pdu.withdrawals().iter().count(),
+            prefixes_len - prefixes.len()
+        );
     }
 
 
@@ -3100,6 +3108,10 @@ mod tests {
         ).into_iter().collect::<Vec<_>>();
         let _ = builder.append_withdrawals(&mut withdrawals);
         let msg = builder.finish();
+        assert!(
+            UpdateMessage::from_octets(&msg, SessionConfig::modern_addpath())
+            .is_ok()
+        );
         print_pcap(&msg);
     }
 

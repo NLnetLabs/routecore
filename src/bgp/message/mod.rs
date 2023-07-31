@@ -192,7 +192,7 @@ impl<Octs: Octets> TryFrom<Message<Octs>> for NotificationMessage<Octs> {
 #[derive(Clone, Copy, Default)]
 pub struct Header<Octs>(Octs);
 
-impl<Octs: Octets + AsMut<[u8]>> Header<Octs> {
+impl<Octs: AsMut<[u8]>> Header<Octs> {
     pub fn set_type(&mut self, typ: MsgType) {
         self.0.as_mut()[18] = typ.into();
     }
@@ -205,6 +205,12 @@ impl<Octs: Octets + AsMut<[u8]>> Header<Octs> {
 impl<Octs: Octets> AsRef<[u8]> for Header<Octs> {
     fn as_ref(&self) -> &[u8] {
         self.0.as_ref()
+    }
+}
+
+impl Header<&mut [u8]> {
+    pub fn for_slice_mut(s: &mut [u8]) -> Header<&mut [u8]> {
+        Header(s)
     }
 }
 
