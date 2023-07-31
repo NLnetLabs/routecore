@@ -1,4 +1,5 @@
 use crate::bgp::message::Header;
+use bytes::BytesMut;
 use octseq::{Octets, Parser};
 use log::{debug, error, warn};
 
@@ -1939,20 +1940,28 @@ use crate::addr::Prefix;
 use crate::bgp::message::attr_change_set::AttrChangeSet;
 use crate::bgp::message::MsgType;
 
+//use rotonda_fsm::bgp::session::AgreedConfig;
+
 #[derive(Debug)]
 pub struct UpdateBuilder<Target> {
     target: Target,
+    //config: AgreedConfig, //FIXME this lives in rotonda_fsm, but that
+    //depends on routecore. Sounds like a depedency hell.
     announcements: Vec<Nlri<Vec<u8>>>,
+    announcements_len: usize,
     withdrawals: Vec<Nlri<Vec<u8>>>,
+    withdrawals_len: usize,
     //attributes: Vec<PathAttribute<'a, Vec<u8>>>, // XXX this lifetime is..
-    //not nice
+                                                    //not nice
+    attributes_len: usize,
+    total_pdu_len: usize,
 }
 
 impl<Target: OctetsBuilder> UpdateBuilder<Target> {
     pub fn from_target(mut target: Target) -> Result<Self, ShortBuf> {
         //target.truncate(0);
         let mut h = Header::<&[u8]>::new();
-        h.set_length(19);
+        h.set_length(19 + 2 + 2);
         h.set_type(MsgType::Update);
         let _ =target.append_slice(h.as_ref());
 
@@ -1960,13 +1969,56 @@ impl<Target: OctetsBuilder> UpdateBuilder<Target> {
         Ok(UpdateBuilder {
             target,
             announcements: Vec::new(),
+            announcements_len: 0,
             withdrawals: Vec::new(),
+            withdrawals_len: 0,
             //attributes: ?
+            attributes_len: 0,
+            total_pdu_len: 19 + 2 + 2,
         })
     }
 
-    pub fn append_withdrawals(&mut self, mut withdrawals: Vec<Nlri<Vec<u8>>>) {
-        self.withdrawals.append(&mut withdrawals);
+
+    pub fn add_withdrawal(&mut self, withdrawal: Nlri<Vec<u8>>)
+        -> Result<(), ComposeError>
+    {
+
+        // TODO: this 4096 needs to come from self.config
+        // but that requires some refactoring because AgreedConfig currently
+        // lives in rotonda_fsm.
+        let new_bytes_num = withdrawal.compose_len();
+        let new_total = self.total_pdu_len + new_bytes_num;
+        if new_total > 4096 {
+            return Err(ComposeError::PduTooLarge(new_total));
+        }
+        self.withdrawals.push(withdrawal);
+
+        self.total_pdu_len = new_total;
+        self.withdrawals_len += new_bytes_num;
+
+        Ok(())
+    }
+
+    pub fn withdrawals_from_iter<I>(&mut self, withdrawals: &mut I)
+        -> Result<(), ComposeError>
+    where I: Iterator<Item = Nlri<Vec<u8>>> 
+    {
+        todo!()
+    }
+
+    pub fn append_withdrawals(&mut self, withdrawals: &mut Vec<Nlri<Vec<u8>>>)
+        -> Result<(), ComposeError>
+    {
+        let mut added = 0;
+        for (idx, w) in withdrawals.iter().enumerate() {
+            if let Err(e) = self.add_withdrawal(w.clone()) {
+
+                *withdrawals = withdrawals[idx..].to_vec();
+                return Err(e);
+            }
+            added +=1 ;
+        }
+        Ok(())
     }
 }
 
@@ -2170,35 +2222,51 @@ where Infallible: From<<Target as OctetsBuilder>::AppendError>
     }
 }
 
-impl<Target: OctetsBuilder + AsMut<[u8]>> UpdateBuilder<Target> {
+fn print_pcap<T: AsRef<[u8]>>(buf: T) {
+    print!("000000 ");
+    for b in buf.as_ref() {
+        print!("{:02x} ", b);
+    }
+    println!();
+}
+impl<Target: OctetsBuilder + AsMut<[u8]> + AsRef<[u8]>> UpdateBuilder<Target> {
+    pub fn into_pdu(self) -> UpdateMessage<<Target as FreezeBuilder>::Octets>
+        where
+        Target: FreezeBuilder,
+        <Target as FreezeBuilder>::Octets: Octets,
+        {
+            // Assuming the builder only builds valid PDUs, we can unwrap.
+            let octs = self.freeze();
+            //print_pcap(octs.as_ref());
+            UpdateMessage::from_octets(
+                octs, SessionConfig::modern()
+            ).unwrap()
+        }
+
+    pub fn freeze(self) -> <Target as FreezeBuilder>::Octets
+    where 
+        Target: FreezeBuilder
+    {
+        let target = self.finish();
+        target.freeze()
+    }
+
     pub fn finish(mut self) -> Target {
-        let mut withdraw_len = 0_usize;
-        let total_pa_len = 0_usize;
-        let nlri_len = 0_usize;
-        // TODO self.header_mut().set_length( ... );
-        let mut msg_len = 19 
-            + 2 + withdraw_len 
-            + 2 + total_pa_len
-            + nlri_len
-        ;
-
-        // XXX we can do these unwraps because of the if+todo!() above, for
-        // now
-        let total_pa_len = u16::try_from(total_pa_len).unwrap();
-
+        //TODO use Header
         //// update pdu len
-        //self.target.as_mut()[16..=17].copy_from_slice( &(msg_len.to_be_bytes()) );
+        self.target.as_mut()[16..=17].copy_from_slice(
+            &(u16::try_from(self.total_pdu_len).unwrap().to_be_bytes()));
+        //let _ = self.target.append_slice(u16::from(self.total_pdu_len).unwrap());
 
-        // two bytes placeholder for withdraws len 
-        let _ = self.target.append_slice(&[0x00, 0x00]);
+        let _ = self.target.append_slice(&u16::try_from(self.withdrawals_len).unwrap().to_be_bytes());
 
-        let mut withdraw_len = 0_usize;
         for w in self.withdrawals {
             match w {
                 Nlri::Basic(b) => {
                     if b.is_v4() {
+                        //b.compose(&mut self.target)?
                         if let Ok(len) = b.compose(&mut self.target) {
-                            withdraw_len += len;
+                            //withdraw_len += len;
                         } else {
                             unreachable!()
                         }
@@ -2212,35 +2280,22 @@ impl<Target: OctetsBuilder + AsMut<[u8]>> UpdateBuilder<Target> {
             }
         }
 
-        if withdraw_len > 4096 {
-            todo!()
-        }
-
-        msg_len += withdraw_len;
-
-        // We can unwrap because of the >4096 check above, for now.
-        self.target.as_mut()[19..=20].copy_from_slice(
-            &(u16::try_from(withdraw_len).unwrap().to_be_bytes()
-        ));
-
+        // XXX we can do these unwraps because of the checks in the add/append
+        // methods
+        let total_pa_len = u16::try_from(self.attributes_len).unwrap();
         let _ = self.target.append_slice(&(total_pa_len.to_be_bytes()));
+
         // TODO write path attributes, if any
 
         // TODO write conventional NLRI, if any
 
 
-        if msg_len > 4096 {
-            // do we just create a larger PDU and let the user decide what to
-            // do with it? Perhaps we need an enum
-            // see rfc8654, which raises the max size to 65535.
-            todo!()
-        }
-
-
-        // update pdu len
-        self.target.as_mut()[16..=17].copy_from_slice(
-            &(u16::try_from(msg_len).unwrap().to_be_bytes())
-            );
+        //if msg_len > 4096 {
+        //    // do we just create a larger PDU and let the user decide what to
+        //    // do with it? Perhaps we need an enum
+        //    // see rfc8654, which raises the max size to 65535.
+        //    todo!()
+        //}
 
         self.target
     }
@@ -2255,6 +2310,12 @@ impl<Target: OctetsBuilder + AsMut<[u8]>> UpdateBuilder<Target> {
 impl UpdateBuilder<Vec<u8>> {
     pub fn new_vec() -> Self {
         Self::from_target(Vec::with_capacity(23)).unwrap()
+    }
+}
+
+impl UpdateBuilder<BytesMut> {
+    pub fn new_bytes() -> Self {
+        Self::from_target(BytesMut::new()).unwrap()
     }
 }
 
@@ -2946,14 +3007,15 @@ mod tests {
     fn build_empty() {
         let builder = UpdateBuilder::new_vec();
         let msg = builder.finish();
-        //print_pcap(&msg);
+        print_pcap(&msg);
+        let parsed = UpdateMessage::from_octets(msg, SessionConfig::modern());
     }
 
     #[test]
     fn build_withdrawals_basic_v4() {
         let mut builder = UpdateBuilder::new_vec();
 
-        let withdrawals = [
+        let mut withdrawals = [
             "0.0.0.0/0",
             "10.2.1.0/24",
             "10.2.2.0/24",
@@ -2966,17 +3028,64 @@ mod tests {
          .into_iter()
          .collect::<Vec<_>>();
 
-
-        builder.append_withdrawals(withdrawals);
+        let _ = builder.append_withdrawals(&mut withdrawals.clone());
         let msg = builder.finish();
         print_pcap(&msg);
+
+
+        let mut builder2 = UpdateBuilder::new_vec();
+        for w in withdrawals {
+            builder2.add_withdrawal(w).unwrap();
+        }
+
+        let msg2 = builder2.finish();
+        print_pcap(&msg2);
+
+        assert_eq!(msg, msg2);
     }
+
+    #[test]
+    #[should_panic]
+    fn build_too_many_withdrawals() {
+        let mut builder = UpdateBuilder::new_vec();
+        for i in 0..1024 {
+            builder.add_withdrawal(
+                Nlri::Basic(
+                    Prefix::from_str(&format!("2001:db:{:04}::/48", i))
+                    .unwrap().into()
+                )
+            ).unwrap();
+        }
+    }
+
+    #[test]
+    fn build_too_many_withdrawals2() {
+        let mut builder = UpdateBuilder::new_vec();
+        let mut prefixes: Vec<Nlri<Vec<u8>>> = vec![];
+        for i in 1..1024_u32 {
+            prefixes.push(
+                Nlri::Basic(
+                    Prefix::new_v4(
+                        Ipv4Addr::from((i << 10).to_be_bytes()),
+                        22
+                    ).unwrap().into()
+                )
+            );
+        }
+        let prefixes_len = prefixes.len();
+        assert!(builder.append_withdrawals(&mut prefixes).is_err());
+        assert!(prefixes.len() < prefixes_len);
+        let pdu = builder.into_pdu();
+        assert_eq!(pdu.withdrawals().iter().count(), prefixes_len - prefixes.len());
+    }
+
+
 
     #[test]
     fn build_withdrawals_basic_v4_addpath() {
         use crate::bgp::message::nlri::PathId;
         let mut builder = UpdateBuilder::new_vec();
-        let withdrawals = [
+        let mut withdrawals = [
             "0.0.0.0/0",
             "10.2.1.0/24",
             "10.2.2.0/24",
@@ -2989,7 +3098,7 @@ mod tests {
             prefix: Prefix::from_str(s).unwrap(),
             path_id: Some(PathId::from_u32(idx.try_into().unwrap()))})
         ).into_iter().collect::<Vec<_>>();
-        builder.append_withdrawals(withdrawals);
+        let _ = builder.append_withdrawals(&mut withdrawals);
         let msg = builder.finish();
         print_pcap(&msg);
     }
@@ -2999,13 +3108,13 @@ mod tests {
                     // when composing the PDU, but that's on the TODO list.
     fn build_withdrawals_basic_v6() {
         let mut builder = UpdateBuilder::new_vec();
-        let withdrawals = [
+        let mut withdrawals = [
             "2001:db8::/32",
         ].iter().enumerate().map(|(idx, s)| Nlri::Basic(BasicNlri {
             prefix: Prefix::from_str(s).unwrap(),
             path_id: None})
         ).into_iter().collect::<Vec<_>>();
-        builder.append_withdrawals(withdrawals);
+        let _ = builder.append_withdrawals(&mut withdrawals);
         let msg = builder.finish();
         print_pcap(&msg);
 
