@@ -2024,10 +2024,29 @@ impl<Target: OctetsBuilder> UpdateBuilder<Target> {
 
 #[derive(Debug)]
 pub enum ComposeError{
+    /// Exceeded maximum PDU size, data field carries the violating length.
     PduTooLarge(usize),
+
+    // TODO proper docstrings, first see how/if we actually use these.
     AttributeTooLarge(PathAttributeType, usize),
     AttributesTooLarge(usize),
     IllegalCombination,
+
+    /// Variant for `octseq::builder::ShortBuf`
+    ShortBuf,
+    /// Wrapper for util::parser::ParseError, used in `fn into_message`
+    ParseError(ParseError)
+}
+
+impl From<ShortBuf> for ComposeError {
+    fn from(_: ShortBuf) -> ComposeError {
+        ComposeError::ShortBuf
+    }
+}
+impl From<ParseError> for ComposeError {
+    fn from(pe: ParseError) -> ComposeError {
+        ComposeError::ParseError(pe)
+    }
 }
 impl std::error::Error for ComposeError { }
 impl fmt::Display for ComposeError {
@@ -2045,6 +2064,13 @@ impl fmt::Display for ComposeError {
             ComposeError::IllegalCombination => {
                 write!(f, "illegal combination of prefixes/attributes")
             }
+            ComposeError::ShortBuf => {
+                ShortBuf.fmt(f)
+            }
+            ComposeError::ParseError(pe) => {
+                write!(f, "parse error in builder: {}", pe)
+            }
+
         }
     }
 }
@@ -2229,44 +2255,40 @@ fn print_pcap<T: AsRef<[u8]>>(buf: T) {
     }
     println!();
 }
-impl<Target: OctetsBuilder + AsMut<[u8]> + AsRef<[u8]>> UpdateBuilder<Target> {
-    pub fn into_pdu(self) -> UpdateMessage<<Target as FreezeBuilder>::Octets>
-        where
+
+impl<Target> UpdateBuilder<Target>
+where
+    Target: OctetsBuilder + FreezeBuilder + AsMut<[u8]>,
+    <Target as FreezeBuilder>::Octets: Octets,
+{
+    pub fn into_message(self) ->
+        Result<UpdateMessage<<Target as FreezeBuilder>::Octets>, ComposeError>
+    where
         Target: FreezeBuilder,
         <Target as FreezeBuilder>::Octets: Octets,
-        {
-            // Assuming the builder only builds valid PDUs, we can unwrap.
-            let octs = self.freeze();
-            //print_pcap(octs.as_ref());
-            UpdateMessage::from_octets(
-                octs, SessionConfig::modern()
-            ).unwrap()
-        }
-
-    pub fn freeze(self) -> <Target as FreezeBuilder>::Octets
-    where 
-        Target: FreezeBuilder
     {
-        let target = self.finish();
-        target.freeze()
+        Ok(UpdateMessage::from_octets(
+            self.finish()?, SessionConfig::modern()
+        )?)
     }
 
-    pub fn finish(mut self) -> Target {
+    pub fn finish(mut self)
+        -> Result<<Target as FreezeBuilder>::Octets, ShortBuf>
+    {
         let mut header = Header::for_slice_mut(self.target.as_mut());
         header.set_length(u16::try_from(self.total_pdu_len).unwrap());
 
-        let _ = self.target.append_slice(&u16::try_from(self.withdrawals_len).unwrap().to_be_bytes());
+        // `withdrawals_len` is checked to be <= 4096 or <= 65535
+        // so it will always fit in a u16.
+        let _ = self.target.append_slice(
+            &u16::try_from(self.withdrawals_len).unwrap().to_be_bytes()
+        );
 
         for w in self.withdrawals {
             match w {
                 Nlri::Basic(b) => {
                     if b.is_v4() {
-                        //b.compose(&mut self.target)?
-                        if let Ok(len) = b.compose(&mut self.target) {
-                            //withdraw_len += len;
-                        } else {
-                            unreachable!()
-                        }
+                        b.compose(&mut self.target).map_err(|_| ShortBuf)?
                     } else {
                         // Other withdrawals should not go here, but in
                         // MP_UNREACH_NLRI
@@ -2294,14 +2316,8 @@ impl<Target: OctetsBuilder + AsMut<[u8]> + AsRef<[u8]>> UpdateBuilder<Target> {
         //    todo!()
         //}
 
-        self.target
+        Ok(self.target.freeze())
     }
-
-    //pub fn into_message(self)
-    //    -> UpdateMessage<<Target as FreezeBuilder>::Octets>
-    //where Target: FreezeBuilder {
-    //    UpdateMessage { octets: self.finish().freeze() }
-    //}
 }
 
 impl UpdateBuilder<Vec<u8>> {
@@ -3003,7 +3019,7 @@ mod tests {
     #[test]
     fn build_empty() {
         let builder = UpdateBuilder::new_vec();
-        let msg = builder.finish();
+        let msg = builder.finish().unwrap();
         //print_pcap(&msg);
         let parsed = UpdateMessage::from_octets(msg, SessionConfig::modern());
     }
@@ -3026,7 +3042,7 @@ mod tests {
          .collect::<Vec<_>>();
 
         let _ = builder.append_withdrawals(&mut withdrawals.clone());
-        let msg = builder.finish();
+        let msg = builder.finish().unwrap();
         assert!(
             UpdateMessage::from_octets(&msg, SessionConfig::modern())
             .is_ok()
@@ -3039,7 +3055,7 @@ mod tests {
             builder2.add_withdrawal(w).unwrap();
         }
 
-        let msg2 = builder2.finish();
+        let msg2 = builder2.finish().unwrap();
         assert!(
             UpdateMessage::from_octets(&msg2, SessionConfig::modern())
             .is_ok()
@@ -3080,7 +3096,7 @@ mod tests {
         let prefixes_len = prefixes.len();
         assert!(builder.append_withdrawals(&mut prefixes).is_err());
         assert!(prefixes.len() < prefixes_len);
-        let pdu = builder.into_pdu();
+        let pdu = builder.into_message().unwrap();
         assert_eq!(
             pdu.withdrawals().iter().count(),
             prefixes_len - prefixes.len()
@@ -3107,7 +3123,7 @@ mod tests {
             path_id: Some(PathId::from_u32(idx.try_into().unwrap()))})
         ).into_iter().collect::<Vec<_>>();
         let _ = builder.append_withdrawals(&mut withdrawals);
-        let msg = builder.finish();
+        let msg = builder.finish().unwrap();
         assert!(
             UpdateMessage::from_octets(&msg, SessionConfig::modern_addpath())
             .is_ok()
@@ -3127,7 +3143,7 @@ mod tests {
             path_id: None})
         ).into_iter().collect::<Vec<_>>();
         let _ = builder.append_withdrawals(&mut withdrawals);
-        let msg = builder.finish();
+        let msg = builder.finish().unwrap();
         print_pcap(&msg);
 
     }
