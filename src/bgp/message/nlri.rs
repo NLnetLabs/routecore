@@ -288,7 +288,7 @@ pub struct BasicNlri {
 }
 
 /// NLRI comprised of a [`BasicNlri`] and MPLS `Labels`.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct MplsNlri<Octets> {
     basic: BasicNlri,
     labels: Labels<Octets>,
@@ -296,7 +296,7 @@ pub struct MplsNlri<Octets> {
 
 /// NLRI comprised of a [`BasicNlri`], MPLS `Labels` and a VPN
 /// `RouteDistinguisher`.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct MplsVpnNlri<Octets> {
     basic: BasicNlri,
     labels: Labels<Octets>,
@@ -304,7 +304,7 @@ pub struct MplsVpnNlri<Octets> {
 }
 
 /// VPLS Information as defined in RFC4761.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct VplsNlri {
     rd: RouteDistinguisher,
     ve_id: u16,
@@ -316,7 +316,7 @@ pub struct VplsNlri {
 /// NLRI containing a FlowSpec v1 specification.
 ///
 /// Also see [`crate::flowspec`].
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct FlowSpecNlri<Octets> {
     #[allow(dead_code)]
     raw: Octets,
@@ -325,14 +325,14 @@ pub struct FlowSpecNlri<Octets> {
 /// NLRI containing a Route Target membership as defined in RFC4684.
 ///
 /// **TODO**: implement accessor methods for the contents of this NLRI.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct RouteTargetNlri<Octets> {
     #[allow(dead_code)]
     raw: Octets,
 }
 
 /// Conventional and BGP-MP NLRI variants.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum Nlri<Octets> {
     Basic(BasicNlri),
     Mpls(MplsNlri<Octets>),
@@ -435,6 +435,22 @@ impl<Octets> Nlri<Octets> {
             Nlri::Vpls(n) => Some(n.raw_label_base),
             _ => None
         }
+    }
+
+    //--- Compose methods
+
+    pub fn compose_len(&self) -> usize {
+        match self {
+            Nlri::Basic(b) => b.compose_len(),
+            _ => unimplemented!()
+        }
+    }
+}
+
+
+impl<Octs> From<Prefix> for Nlri<Octs> {
+    fn from(prefix: Prefix) -> Nlri<Octs> {
+        Nlri::Basic(BasicNlri::new(prefix))
     }
 }
 
@@ -553,6 +569,25 @@ impl BasicNlri {
         )
     }
 
+    pub fn new(prefix: Prefix) -> BasicNlri {
+        BasicNlri { prefix, path_id: None }
+    }
+
+    pub fn with_path_id(prefix: Prefix, path_id: PathId) -> BasicNlri {
+        BasicNlri { prefix, path_id: Some(path_id) }
+    }
+
+    pub fn compose_len(&self) -> usize {
+        let mut res = if self.path_id.is_some() {
+            4
+        } else {
+            0
+        };
+        // 1 byte for the length itself
+        res += 1 + prefix_bits_to_bytes(self.prefix.len());
+        res
+    }
+
     pub fn compose<Target: OctetsBuilder>(&self, target: &mut Target)
         -> Result<usize, Target::AppendError> {
         let len = self.prefix.len();
@@ -589,12 +624,17 @@ impl From<Prefix> for BasicNlri {
     }
 }
 
-//TODO
-//impl From<(Prefix, PathId)> for BasicNlri {
-//    fn from(prefix: Prefix) -> BasicNlri {
-//        BasicNlri { prefix, path_id: Some( }
-//    }
-//}
+impl From<(Prefix, PathId)> for BasicNlri {
+    fn from(tuple: (Prefix, PathId)) -> BasicNlri {
+        BasicNlri { prefix: tuple.0, path_id: Some(tuple.1) }
+    }
+}
+
+impl From<(Prefix, Option<PathId>)> for BasicNlri {
+    fn from(tuple: (Prefix, Option<PathId>)) -> BasicNlri {
+        BasicNlri { prefix: tuple.0, path_id: tuple.1 }
+    }
+}
 
 
 impl MplsVpnNlri<()> {
@@ -846,3 +886,42 @@ impl<Octs: Octets> RouteTargetNlri<Octs> {
         )
     }
 }
+
+//------------ Tests ----------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+
+    use super::*;
+    use std::str::FromStr;
+
+    #[test]
+    fn compose_len() {
+        fn test(p: (&str, Option<PathId>), expected_len: usize) {
+            let prefix = Prefix::from_str(p.0).unwrap();
+            let b: BasicNlri = (prefix, p.1).into();
+            assert_eq!(b.compose_len(), expected_len);
+        }
+
+        [
+            (("10.0.0.0/24",    None),  4 ),
+            (("10.0.0.0/23",    None),  4 ),
+            (("10.0.0.0/25",    None),  5 ),
+            (("0.0.0.0/0",      None),  1 ),
+
+            (("10.0.0.0/24",    Some(PathId(1))),  4 + 4 ),
+            (("10.0.0.0/23",    Some(PathId(1))),  4 + 4 ),
+            (("10.0.0.0/25",    Some(PathId(1))),  5 + 4 ),
+            (("0.0.0.0/0",      Some(PathId(1))),  1 + 4 ),
+
+            (("2001:db8::/32",  None),  5 ),
+            (("::/0",           None),  1 ),
+
+            (("2001:db8::/32",  Some(PathId(1))),  5 + 4 ),
+            (("::/0",           Some(PathId(1))),  1 + 4 ),
+
+        ].iter().for_each(|e| test(e.0, e.1));
+
+    }
+}
+
