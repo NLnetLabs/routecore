@@ -14,6 +14,7 @@ use crate::bgp::message::nlri::{
     RouteTargetNlri
 };
 
+use core::iter::Peekable;
 use std::net::Ipv4Addr;
 use std::fmt;
 use crate::util::parser::{parse_ipv4addr, ParseError};
@@ -1979,7 +1980,7 @@ impl<Target: OctetsBuilder> UpdateBuilder<Target> {
     }
 
 
-    pub fn add_withdrawal(&mut self, withdrawal: Nlri<Vec<u8>>)
+    pub fn add_withdrawal(&mut self, withdrawal: &Nlri<Vec<u8>>)
         -> Result<(), ComposeError>
     {
 
@@ -1988,22 +1989,29 @@ impl<Target: OctetsBuilder> UpdateBuilder<Target> {
         // lives in rotonda_fsm.
         let new_bytes_num = withdrawal.compose_len();
         let new_total = self.total_pdu_len + new_bytes_num;
+
         if new_total > 4096 {
             return Err(ComposeError::PduTooLarge(new_total));
         }
-        self.withdrawals.push(withdrawal);
 
+        self.withdrawals.push(withdrawal.clone());
         self.total_pdu_len = new_total;
         self.withdrawals_len += new_bytes_num;
 
         Ok(())
     }
 
-    pub fn withdrawals_from_iter<I>(&mut self, withdrawals: &mut I)
+    pub fn withdrawals_from_iter<I>(&mut self, withdrawals: &mut Peekable<I>)
         -> Result<(), ComposeError>
-    where I: Iterator<Item = Nlri<Vec<u8>>> 
+    where I: Iterator<Item = Nlri<Vec<u8>>>
     {
-        todo!()
+        while let Some(w) = withdrawals.peek() {
+            match self.add_withdrawal(w) {
+                Ok(_) => { withdrawals.next(); }
+                Err(e) => return Err(e)
+            }
+        }
+        Ok(())
     }
 
     pub fn append_withdrawals(&mut self, withdrawals: &mut Vec<Nlri<Vec<u8>>>)
@@ -2011,7 +2019,7 @@ impl<Target: OctetsBuilder> UpdateBuilder<Target> {
     {
         let mut added = 0;
         for (idx, w) in withdrawals.iter().enumerate() {
-            if let Err(e) = self.add_withdrawal(w.clone()) {
+            if let Err(e) = self.add_withdrawal(w) {
 
                 *withdrawals = withdrawals[idx..].to_vec();
                 return Err(e);
@@ -3051,7 +3059,7 @@ mod tests {
 
 
         let mut builder2 = UpdateBuilder::new_vec();
-        for w in withdrawals {
+        for w in &withdrawals {
             builder2.add_withdrawal(w).unwrap();
         }
 
@@ -3066,12 +3074,34 @@ mod tests {
     }
 
     #[test]
+    fn build_withdrawals_from_iter() {
+        let mut builder = UpdateBuilder::new_vec();
+
+        let mut withdrawals = [
+            "0.0.0.0/0",
+            "10.2.1.0/24",
+            "10.2.2.0/24",
+            "10.2.0.0/23",
+            "10.2.4.0/25",
+            "10.0.0.0/7",
+            "10.0.0.0/8",
+            "10.0.0.0/9",
+        ].map(|s| Nlri::Basic(Prefix::from_str(s).unwrap().into()))
+         .into_iter()
+         .collect::<Vec<_>>();
+
+        let _ = builder.withdrawals_from_iter(&mut withdrawals.into_iter().peekable());
+        let msg = builder.into_message().unwrap();
+        print_pcap(&msg);
+    }
+
+    #[test]
     #[should_panic]
     fn build_too_many_withdrawals() {
         let mut builder = UpdateBuilder::new_vec();
         for i in 0..1024 {
             builder.add_withdrawal(
-                Nlri::Basic(
+                &Nlri::Basic(
                     Prefix::from_str(&format!("2001:db:{:04}::/48", i))
                     .unwrap().into()
                 )
@@ -3080,7 +3110,7 @@ mod tests {
     }
 
     #[test]
-    fn build_too_many_withdrawals2() {
+    fn build_too_many_withdrawals_remainder() {
         let mut builder = UpdateBuilder::new_vec();
         let mut prefixes: Vec<Nlri<Vec<u8>>> = vec![];
         for i in 1..1024_u32 {
@@ -3100,6 +3130,31 @@ mod tests {
         assert_eq!(
             pdu.withdrawals().iter().count(),
             prefixes_len - prefixes.len()
+        );
+    }
+
+    #[test]
+    fn build_too_many_withdrawals_from_iter() {
+        let mut builder = UpdateBuilder::new_vec();
+        let mut prefixes: Vec<Nlri<Vec<u8>>> = vec![];
+        for i in 1..1024_u32 {
+            prefixes.push(
+                Nlri::Basic(
+                    Prefix::new_v4(
+                        Ipv4Addr::from((i << 10).to_be_bytes()),
+                        22
+                    ).unwrap().into()
+                )
+            );
+        }
+        let prefixes_len = prefixes.len();
+        let mut prefix_iter = prefixes.into_iter().peekable();
+
+        assert!(builder.withdrawals_from_iter(&mut prefix_iter).is_err());
+        let msg = builder.into_message().unwrap();
+        assert_eq!(
+            prefix_iter.count() + msg.withdrawals().iter().count(),
+            1023
         );
     }
 
