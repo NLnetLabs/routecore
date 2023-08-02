@@ -581,6 +581,10 @@ impl BasicNlri {
         BasicNlri { prefix, path_id: Some(path_id) }
     }
 
+    pub fn prefix(&self) -> Prefix {
+        self.prefix
+    }
+
     pub fn compose_len(&self) -> usize {
         let mut res = if self.path_id.is_some() {
             4

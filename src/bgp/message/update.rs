@@ -1937,7 +1937,6 @@ impl LargeCommunity {
 //------------ UpdateBuilder -------------------------------------------------
 
 use octseq::{FreezeBuilder, OctetsBuilder, ShortBuf};
-use crate::addr::Prefix;
 use crate::bgp::message::attr_change_set::AttrChangeSet;
 use crate::bgp::message::MsgType;
 use crate::bgp::message::update_builder::MpUnreachNlriBuilder;
@@ -1949,8 +1948,8 @@ pub struct UpdateBuilder<Target> {
     target: Target,
     //config: AgreedConfig, //FIXME this lives in rotonda_fsm, but that
     //depends on routecore. Sounds like a depedency hell.
-    announcements: Vec<Nlri<Vec<u8>>>,
-    announcements_len: usize,
+    _announcements: Vec<Nlri<Vec<u8>>>,
+    _announcements_len: usize,
     withdrawals: Vec<Nlri<Vec<u8>>>,
     withdrawals_len: usize,
     addpath_enabled: Option<bool>,
@@ -1982,8 +1981,8 @@ impl<Target: OctetsBuilder> UpdateBuilder<Target> {
 
         Ok(UpdateBuilder {
             target,
-            announcements: Vec::new(),
-            announcements_len: 0,
+            _announcements: Vec::new(),
+            _announcements_len: 0,
             withdrawals: Vec::new(),
             withdrawals_len: 0,
             addpath_enabled: None,
@@ -2083,14 +2082,12 @@ impl<Target: OctetsBuilder> UpdateBuilder<Target> {
     pub fn append_withdrawals(&mut self, withdrawals: &mut Vec<Nlri<Vec<u8>>>)
         -> Result<(), ComposeError>
     {
-        let mut added = 0;
         for (idx, w) in withdrawals.iter().enumerate() {
             if let Err(e) = self.add_withdrawal(w) {
 
                 *withdrawals = withdrawals[idx..].to_vec();
                 return Err(e);
             }
-            added +=1 ;
         }
         Ok(())
     }
@@ -2158,7 +2155,7 @@ where Infallible: From<<Target as OctetsBuilder>::AppendError>
         -> Result<Target, ComposeError>
     {
         // Withdrawals
-        let mut withdraw_len = 0_usize;
+        let withdraw_len = 0_usize;
         // placeholder
         let _ = self.target.append_slice(&(withdraw_len as u16).to_be_bytes());
         //self.target.as_mut()[19..=20].copy_from_slice(
@@ -2277,24 +2274,24 @@ where Infallible: From<<Target as OctetsBuilder>::AppendError>
         if let Some(nlri) = acs.nlri.into_opt() {
             match nlri {
                 Nlri::Basic(b) => {
-                    if let Some(p) = nlri.prefix() {
-                        if let Some(id) = nlri.path_id() {
-                            let _ = self.target.append_slice(&id.to_raw());
-                            nlri_len += 4;
+                    //if let Some(p) = nlri.prefix() {
+                    if let Some(id) = nlri.path_id() {
+                        let _ = self.target.append_slice(&id.to_raw());
+                        nlri_len += 4;
+                    }
+                    match b.prefix().addr_and_len() {
+                        (std::net::IpAddr::V4(addr), len) => {
+                            let _ = self.target.append_slice(&[len]);
+                            let len_bytes = (usize::from(len)-1) / 8 + 1;
+                            let _ = self.target.append_slice(
+                                &addr.octets()[0..len_bytes]
+                            );
+                            nlri_len += 1 + len_bytes;
                         }
-                        match p.addr_and_len() {
-                            (std::net::IpAddr::V4(addr), len) => {
-                                let _ = self.target.append_slice(&[len]);
-                                let len_bytes = (usize::from(len)-1) / 8 + 1;
-                                let _ = self.target.append_slice(
-                                    &addr.octets()[0..len_bytes]
-                                );
-                                nlri_len += 1 + len_bytes;
-                            }
-                            _ => todo!()
-                        }
+                        _ => todo!()
                     }
                 }
+                //}
                 _ => todo!()
             }
         }
@@ -2321,14 +2318,6 @@ where Infallible: From<<Target as OctetsBuilder>::AppendError>
 
         Ok(self.target)
     }
-}
-
-fn print_pcap<T: AsRef<[u8]>>(buf: T) {
-    print!("000000 ");
-    for b in buf.as_ref() {
-        print!("{:02x} ", b);
-    }
-    println!();
 }
 
 impl<Target> UpdateBuilder<Target>
@@ -3103,14 +3092,16 @@ mod tests {
         let builder = UpdateBuilder::new_vec();
         let msg = builder.finish().unwrap();
         //print_pcap(&msg);
-        let parsed = UpdateMessage::from_octets(msg, SessionConfig::modern());
+        assert!(
+            UpdateMessage::from_octets(msg, SessionConfig::modern()).is_ok()
+        );
     }
 
     #[test]
     fn build_withdrawals_basic_v4() {
         let mut builder = UpdateBuilder::new_vec();
 
-        let mut withdrawals = [
+        let withdrawals = [
             "0.0.0.0/0",
             "10.2.1.0/24",
             "10.2.2.0/24",
@@ -3151,7 +3142,7 @@ mod tests {
     fn build_withdrawals_from_iter() {
         let mut builder = UpdateBuilder::new_vec();
 
-        let mut withdrawals = [
+        let withdrawals = [
             "0.0.0.0/0",
             "10.2.1.0/24",
             "10.2.2.0/24",
@@ -3166,7 +3157,7 @@ mod tests {
 
         let _ = builder.withdrawals_from_iter(&mut withdrawals.into_iter().peekable());
         let msg = builder.into_message().unwrap();
-        print_pcap(&msg);
+        print_pcap(msg);
     }
 
     #[test]
@@ -3221,7 +3212,6 @@ mod tests {
                 )
             );
         }
-        let prefixes_len = prefixes.len();
         let mut prefix_iter = prefixes.into_iter().peekable();
 
         assert!(builder.withdrawals_from_iter(&mut prefix_iter).is_err());
@@ -3250,7 +3240,7 @@ mod tests {
         ].iter().enumerate().map(|(idx, s)| Nlri::Basic(BasicNlri {
             prefix: Prefix::from_str(s).unwrap(),
             path_id: Some(PathId::from_u32(idx.try_into().unwrap()))})
-        ).into_iter().collect::<Vec<_>>();
+        ).collect::<Vec<_>>();
         let _ = builder.append_withdrawals(&mut withdrawals);
         let msg = builder.finish().unwrap();
         assert!(
@@ -3263,12 +3253,9 @@ mod tests {
     #[test]
     fn build_withdrawals_basic_v6() {
         let mut builder = UpdateBuilder::new_vec();
-        let mut withdrawals = [
-            "2001:db8::/32",
-        ].iter().enumerate().map(|(idx, s)| Nlri::Basic(BasicNlri {
-            prefix: Prefix::from_str(s).unwrap(),
-            path_id: None})
-        ).into_iter().collect::<Vec<_>>();
+        let mut withdrawals = vec![
+            Nlri::Basic(Prefix::from_str("2001:db8::/32").unwrap().into())
+        ];
 
         let _ = builder.append_withdrawals(&mut withdrawals);
 
@@ -3400,7 +3387,7 @@ mod tests {
             Wellknown::Blackhole.into(),
         ]);
 
-        let msg = builder.build_acs(acs).unwrap();
+        let _msg = builder.build_acs(acs).unwrap();
         //print_pcap(&msg);
     }
 

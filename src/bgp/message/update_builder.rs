@@ -6,6 +6,7 @@ use crate::bgp::message::update::{AFI, SAFI};
 use super::update::ComposeError;
 
 // just drafting ideas, not used right now
+#[allow(dead_code)]
 pub mod new_pas {
     // eventually we work towards
     // enum PathAttribute {
