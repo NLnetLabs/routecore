@@ -1953,6 +1953,7 @@ pub struct UpdateBuilder<Target> {
     announcements_len: usize,
     withdrawals: Vec<Nlri<Vec<u8>>>,
     withdrawals_len: usize,
+    addpath_enabled: Option<bool>,
     //attributes: Vec<PathAttribute<'a, Vec<u8>>>, // XXX this lifetime is..
                                                     //not nice
     attributes_len: usize,
@@ -1985,6 +1986,7 @@ impl<Target: OctetsBuilder> UpdateBuilder<Target> {
             announcements_len: 0,
             withdrawals: Vec::new(),
             withdrawals_len: 0,
+            addpath_enabled: None,
             //attributes: ?
             attributes_len: 0,
             total_pdu_len: 19 + 2 + 2,
@@ -2000,6 +2002,14 @@ impl<Target: OctetsBuilder> UpdateBuilder<Target> {
         match *withdrawal {
             Nlri::Basic(b) => {
                 if b.is_v4() {
+                    if let Some(addpath_enabled) = self.addpath_enabled {
+                        if addpath_enabled != withdrawal.is_addpath() {
+                            return Err(ComposeError::IllegalCombination)
+                        }
+                    } else {
+                        self.addpath_enabled = Some(withdrawal.is_addpath());
+                    }
+
                     let new_bytes_num = withdrawal.compose_len();
                     let new_total = self.total_pdu_len + new_bytes_num;
                     if new_total > Self::MAX_PDU {
@@ -2014,7 +2024,8 @@ impl<Target: OctetsBuilder> UpdateBuilder<Target> {
                     let new_bytes_num = match self.mp_unreach_nlri_builder {
                         None => {
                             let builder = MpUnreachNlriBuilder::new(
-                                AFI::Ipv6, SAFI::Unicast
+                                AFI::Ipv6, SAFI::Unicast,
+                                withdrawal.is_addpath()
                             );
                             let res = builder.compose_len(withdrawal);
                             self.mp_unreach_nlri_builder = Some(builder);
@@ -2022,10 +2033,12 @@ impl<Target: OctetsBuilder> UpdateBuilder<Target> {
                             
                         }
                         Some(ref builder) => {
-                            if  builder.afi_safi() != (AFI::Ipv6, SAFI::Unicast) {
+                            if builder.afi_safi() != (AFI::Ipv6, SAFI::Unicast)
+                            || builder.addpath_enabled() != withdrawal.is_addpath() {
                                 // We are already constructing a
                                 // MP_UNREACH_NLRI but for a different
-                                // AFI,SAFI than the prefix in `withdrawal`.
+                                // AFI,SAFI than the prefix in `withdrawal`,
+                                // or we are mixing addpath with non-addpath.
                                 return Err(ComposeError::IllegalCombination);
                             }
                             builder.compose_len(withdrawal)
@@ -3303,6 +3316,56 @@ mod tests {
         // limitation of our own parser:
         //assert_eq!(msg.withdrawals().iter().count(), 2);
     }
+
+    #[test]
+    fn build_mixed_addpath_conventional() {
+        use crate::bgp::message::nlri::PathId;
+        let mut builder = UpdateBuilder::new_vec();
+        builder.add_withdrawal(
+            &Nlri::Basic(Prefix::from_str("10.0.0.0/8").unwrap().into())
+        ).unwrap();
+        let res = builder.add_withdrawal(
+            &Nlri::Basic(
+                (Prefix::from_str("10.0.0.0/8").unwrap(),
+                Some(PathId::from_u32(123))
+                ).into())
+        );
+        assert!(matches!(res, Err(ComposeError::IllegalCombination)));
+    }
+
+    #[test]
+    fn build_mixed_addpath_mp() {
+        use crate::bgp::message::nlri::PathId;
+        let mut builder = UpdateBuilder::new_vec();
+        builder.add_withdrawal(
+            &Nlri::Basic(Prefix::from_str("2001:db8::/32").unwrap().into())
+        ).unwrap();
+        let res = builder.add_withdrawal(
+            &Nlri::Basic(
+                (Prefix::from_str("2001:db8::/32").unwrap(),
+                Some(PathId::from_u32(123))
+                ).into())
+        );
+        assert!(matches!(res, Err(ComposeError::IllegalCombination)));
+    }
+
+    #[test]
+    fn build_mixed_addpath_ok() {
+        use crate::bgp::message::nlri::PathId;
+        let mut builder = UpdateBuilder::new_vec();
+        builder.add_withdrawal(
+            &Nlri::Basic(Prefix::from_str("10.0.0.0/8").unwrap().into())
+        ).unwrap();
+        let res = builder.add_withdrawal(
+            &Nlri::Basic(
+                (Prefix::from_str("2001:db8::/32").unwrap(),
+                Some(PathId::from_u32(123))
+                ).into())
+        );
+        assert!(res.is_ok());
+        print_pcap(builder.finish().unwrap());
+    }
+
 
     #[test]
     fn build_acs() {

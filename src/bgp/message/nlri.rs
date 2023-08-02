@@ -380,6 +380,10 @@ impl<Octets> Nlri<Octets> {
         }
     }
 
+    pub fn is_addpath(&self) -> bool {
+        self.path_id().is_some()
+    }
+
     /// Returns the MPLS [`Labels`], if any.
     ///
     /// Applicable to MPLS and MPLS-VPN NLRI.
@@ -608,7 +612,6 @@ impl BasicNlri {
         }
         Ok(())
     }
-
 
     pub fn is_v4(&self) -> bool {
         self.prefix.is_v4()

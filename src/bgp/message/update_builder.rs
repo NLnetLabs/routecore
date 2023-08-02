@@ -45,28 +45,45 @@ pub mod new_pas {
 
 //------------ MpUnreachNlriBuilder ------------------------------------------
 
+// Note that all to-be-withdrawn NLRI should either have no PathID, or have a
+// PathID. We can not mix non-addpath and addpath NLRI.
+// Note that:
+//  - add path works on a afi/safi level for a session, so a peer could do
+//    addpath for v4 unicast but not for v6 unicast.
+//  - in the Capability in the BGP OPEN, a peer can signal to be able to
+//    receive, send, or receive+send add path NLRI. So, if we create methods
+//    that take a NegotiatedConfig, the modification methods like
+//    add_withdrawal should check whether the remote side is able to receive
+//    path ids if the Nlri passed to add_withdrawal contains Some(PathId).
+//
 #[derive(Debug)]
 pub struct MpUnreachNlriBuilder {
     withdrawals: Vec<Nlri<Vec<u8>>>,
-    len: usize, // len of value, excluding other path attribute bytes
+    len: usize, // size of value, excluding path attribute flags+typecode+len
     extended: bool,
     afi: AFI,
     safi: SAFI,
+    addpath_enabled: bool,
 }
 
 impl MpUnreachNlriBuilder {
-    pub fn new(afi: AFI, safi: SAFI) -> MpUnreachNlriBuilder {
+    pub fn new(afi: AFI, safi: SAFI, addpath_enabled: bool) -> Self {
         MpUnreachNlriBuilder {
             withdrawals: vec![],
             len: 3, // 3 bytes for AFI+SAFI
             extended: false,
             afi,
-            safi
+            safi,
+            addpath_enabled
         }
     }
 
     pub fn afi_safi(&self) -> (AFI, SAFI) {
         (self.afi, self.safi)
+    }
+
+    pub fn addpath_enabled(&self) -> bool {
+        self.addpath_enabled
     }
 
     pub fn add_withdrawal(&mut self, withdrawal: &Nlri<Vec<u8>>)
