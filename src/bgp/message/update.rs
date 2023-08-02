@@ -1940,6 +1940,7 @@ use octseq::{FreezeBuilder, OctetsBuilder, ShortBuf};
 use crate::addr::Prefix;
 use crate::bgp::message::attr_change_set::AttrChangeSet;
 use crate::bgp::message::MsgType;
+use crate::bgp::message::update_builder::MpUnreachNlriBuilder;
 
 //use rotonda_fsm::bgp::session::AgreedConfig;
 
@@ -1956,16 +1957,27 @@ pub struct UpdateBuilder<Target> {
                                                     //not nice
     attributes_len: usize,
     total_pdu_len: usize,
+
+    // MP_REACH_NLRI and MP_UNREACH_NLRI can only occur once (like any path
+    // attribute), and can carry only a single tuple of (AFI, SAFI).
+    // My interpretation of RFC4760 means one can mix conventional
+    // NLRI/withdrawals (so, v4 unicast) with one other (AFI, SAFI) in an
+    // MP_(UN)REACH_NLRI path attribute.
+    // Question is: can one also put (v4, unicast) in an MP_* attribute, and,
+    // then also in the conventional part (at the end of the PDU)? 
+    mp_unreach_nlri_builder: Option<MpUnreachNlriBuilder>,
 }
 
 impl<Target: OctetsBuilder> UpdateBuilder<Target> {
+
+    const MAX_PDU: usize = 4096; // XXX should come from NegotiatedConfig
+
     pub fn from_target(mut target: Target) -> Result<Self, ShortBuf> {
         //target.truncate(0);
         let mut h = Header::<&[u8]>::new();
         h.set_length(19 + 2 + 2);
         h.set_type(MsgType::Update);
         let _ =target.append_slice(h.as_ref());
-
 
         Ok(UpdateBuilder {
             target,
@@ -1976,6 +1988,7 @@ impl<Target: OctetsBuilder> UpdateBuilder<Target> {
             //attributes: ?
             attributes_len: 0,
             total_pdu_len: 19 + 2 + 2,
+            mp_unreach_nlri_builder: None,
         })
     }
 
@@ -1983,21 +1996,61 @@ impl<Target: OctetsBuilder> UpdateBuilder<Target> {
     pub fn add_withdrawal(&mut self, withdrawal: &Nlri<Vec<u8>>)
         -> Result<(), ComposeError>
     {
+        //println!("add_withdrawal for {}", withdrawal.prefix().unwrap());
+        match *withdrawal {
+            Nlri::Basic(b) => {
+                if b.is_v4() {
+                    let new_bytes_num = withdrawal.compose_len();
+                    let new_total = self.total_pdu_len + new_bytes_num;
+                    if new_total > Self::MAX_PDU {
+                        return Err(ComposeError::PduTooLarge(new_total));
+                    }
+                    self.withdrawals.push(withdrawal.clone());
+                    self.withdrawals_len += new_bytes_num;
+                    self.total_pdu_len = new_total;
+                } else {
+                    // Nlri::Basic only holds IPv4 and IPv6, so this must be
+                    // IPv6.
+                    let new_bytes_num = match self.mp_unreach_nlri_builder {
+                        None => {
+                            let builder = MpUnreachNlriBuilder::new(
+                                AFI::Ipv6, SAFI::Unicast
+                            );
+                            let res = builder.compose_len(withdrawal);
+                            self.mp_unreach_nlri_builder = Some(builder);
+                            res
+                            
+                        }
+                        Some(ref builder) => {
+                            if  builder.afi_safi() != (AFI::Ipv6, SAFI::Unicast) {
+                                // We are already constructing a
+                                // MP_UNREACH_NLRI but for a different
+                                // AFI,SAFI than the prefix in `withdrawal`.
+                                return Err(ComposeError::IllegalCombination);
+                            }
+                            builder.compose_len(withdrawal)
+                        }
+                    };
 
-        // TODO: this 4096 needs to come from self.config
-        // but that requires some refactoring because AgreedConfig currently
-        // lives in rotonda_fsm.
-        let new_bytes_num = withdrawal.compose_len();
-        let new_total = self.total_pdu_len + new_bytes_num;
+                    let new_total = self.total_pdu_len + new_bytes_num;
 
-        if new_total > 4096 {
-            return Err(ComposeError::PduTooLarge(new_total));
-        }
+                    if new_total > Self::MAX_PDU {
+                        return Err(ComposeError::PduTooLarge(new_total));
+                    }
 
-        self.withdrawals.push(withdrawal.clone());
-        self.total_pdu_len = new_total;
-        self.withdrawals_len += new_bytes_num;
+                    if let Some(ref mut builder) = self.mp_unreach_nlri_builder {
+                        builder.add_withdrawal(withdrawal)?;
+                        self.attributes_len += new_bytes_num;
+                        self.total_pdu_len = new_total;
+                    } else {
+                        // We always have Some builder at this point.
+                        unreachable!()
+                    }
+                }
 
+            }
+            _ => todo!() // 
+        };
         Ok(())
     }
 
@@ -2056,6 +2109,7 @@ impl From<ParseError> for ComposeError {
         ComposeError::ParseError(pe)
     }
 }
+
 impl std::error::Error for ComposeError { }
 impl fmt::Display for ComposeError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -2276,31 +2330,31 @@ where
         <Target as FreezeBuilder>::Octets: Octets,
     {
         Ok(UpdateMessage::from_octets(
-            self.finish()?, SessionConfig::modern()
+            self.finish().map_err(|_| ShortBuf)?, SessionConfig::modern()
         )?)
     }
 
     pub fn finish(mut self)
-        -> Result<<Target as FreezeBuilder>::Octets, ShortBuf>
+        -> Result<<Target as FreezeBuilder>::Octets, Target::AppendError>
     {
         let mut header = Header::for_slice_mut(self.target.as_mut());
         header.set_length(u16::try_from(self.total_pdu_len).unwrap());
 
         // `withdrawals_len` is checked to be <= 4096 or <= 65535
         // so it will always fit in a u16.
-        let _ = self.target.append_slice(
+        self.target.append_slice(
             &u16::try_from(self.withdrawals_len).unwrap().to_be_bytes()
-        );
+        )?;
 
-        for w in self.withdrawals {
+        for w in &self.withdrawals {
             match w {
                 Nlri::Basic(b) => {
                     if b.is_v4() {
-                        b.compose(&mut self.target).map_err(|_| ShortBuf)?
+                        b.compose(&mut self.target)?;
                     } else {
                         // Other withdrawals should not go here, but in
-                        // MP_UNREACH_NLRI
-                        todo!()
+                        // MP_UNREACH_NLRI. Handling these ones below in the
+                        // path attributes.
                     }
                 },
                 _ => todo!(),
@@ -2309,13 +2363,19 @@ where
 
         // XXX we can do these unwraps because of the checks in the add/append
         // methods
-        let total_pa_len = u16::try_from(self.attributes_len).unwrap();
-        let _ = self.target.append_slice(&(total_pa_len.to_be_bytes()));
 
-        // TODO write path attributes, if any
+        // `attributes_len` is checked to be <= 4096 or <= 65535
+        // so it will always fit in a u16.
+        let _ = self.target.append_slice(
+            &u16::try_from(self.attributes_len).unwrap().to_be_bytes()
+        );
+
+        // TODO write path attributes, if any, in order of typecode
+        if let Some(builder) = self.mp_unreach_nlri_builder {
+            builder.compose(&mut self.target)?
+        }
 
         // TODO write conventional NLRI, if any
-
 
         //if msg_len > 4096 {
         //    // do we just create a larger PDU and let the user decide what to
@@ -2347,6 +2407,7 @@ mod tests {
 
     use super::*;
     use std::str::FromStr;
+    use std::net::Ipv6Addr;
     use crate::bgp::communities::*;
     use crate::bgp::message::Message;
     use crate::addr::Prefix;
@@ -3187,8 +3248,6 @@ mod tests {
     }
 
     #[test]
-    #[should_panic] // Everything besides v4 should go into MP_UNREACH_NLRI
-                    // when composing the PDU, but that's on the TODO list.
     fn build_withdrawals_basic_v6() {
         let mut builder = UpdateBuilder::new_vec();
         let mut withdrawals = [
@@ -3197,12 +3256,53 @@ mod tests {
             prefix: Prefix::from_str(s).unwrap(),
             path_id: None})
         ).into_iter().collect::<Vec<_>>();
-        let _ = builder.append_withdrawals(&mut withdrawals);
-        let msg = builder.finish().unwrap();
-        print_pcap(&msg);
 
+        let _ = builder.append_withdrawals(&mut withdrawals);
+
+        let msg = builder.finish().unwrap();
+        println!("msg raw len: {}", &msg.len());
+        print_pcap(&msg);
+        
+        UpdateMessage::from_octets(&msg, SessionConfig::modern()).unwrap();
     }
 
+    #[test]
+    fn build_withdrawals_basic_v6_from_iter() {
+        let mut builder = UpdateBuilder::new_vec();
+
+        let mut withdrawals: Vec<Nlri<Vec<u8>>> = vec![];
+        for i in 1..512_u128 {
+            withdrawals.push(
+                Nlri::Basic(
+                    Prefix::new_v6(
+                        Ipv6Addr::from((i << 64).to_be_bytes()),
+                        64
+                    ).unwrap().into()
+                )
+            );
+        }
+
+        let _ = builder.withdrawals_from_iter(&mut withdrawals.into_iter().peekable());
+        let raw = builder.finish().unwrap();
+        print_pcap(&raw);
+        UpdateMessage::from_octets(&raw, SessionConfig::modern()).unwrap();
+    }
+
+    #[test]
+    fn build_mixed_withdrawals() {
+        let mut builder = UpdateBuilder::new_vec();
+        builder.add_withdrawal(
+            &Nlri::Basic(Prefix::from_str("10.0.0.0/8").unwrap().into())
+        ).unwrap();
+        builder.add_withdrawal(
+            &Nlri::Basic(Prefix::from_str("2001:db8::/32").unwrap().into())
+        ).unwrap();
+        let msg = builder.into_message().unwrap();
+        print_pcap(msg.as_ref());
+
+        // limitation of our own parser:
+        //assert_eq!(msg.withdrawals().iter().count(), 2);
+    }
 
     #[test]
     fn build_acs() {

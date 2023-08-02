@@ -1,5 +1,6 @@
 pub mod open;
 pub mod update;
+pub mod update_builder;
 pub mod nlri;
 pub mod notification;
 pub mod keepalive;
