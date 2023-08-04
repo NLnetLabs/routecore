@@ -61,6 +61,7 @@ impl Error for MessageError { }
 /// [`bgp::Message`](crate::bgp::Message)s.
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[derive(Eq)]
 pub enum Message<Octets: AsRef<[u8]>> {
     RouteMonitoring(RouteMonitoring<Octets>),
     StatisticsReport(StatisticsReport<Octets>),
@@ -548,7 +549,7 @@ typeenum!(
 /// Route Monitoring message.
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct RouteMonitoring<Octets: AsRef<[u8]>>
 {
     octets: Octets
@@ -600,6 +601,7 @@ impl<Octs: Octets> RouteMonitoring<Octs> {
 /// Statistics Report message.
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[derive(Eq, PartialEq)]
 pub struct StatisticsReport<Octs> {
     octets: Octs,
 }
@@ -662,7 +664,7 @@ impl<Octs: Octets> Debug for StatisticsReport<Octs> {
 
 /// Peer Down Notification. 
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct PeerDownNotification<Octets: AsRef<[u8]>> {
     octets: Octets,
 }
@@ -771,7 +773,7 @@ impl<Octs: Octets> PeerDownNotification<Octs> {
 
 /// Peer Up Notification.
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct PeerUpNotification<Octets: AsRef<[u8]>> {
     octets: Octets,
 }
@@ -955,7 +957,7 @@ impl<Octs: Octets> PeerUpNotification<Octs> {
 
 /// Initiation Message.
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct InitiationMessage<Octets: AsRef<[u8]>> {
     octets: Octets,
 }
@@ -996,6 +998,7 @@ impl<Octs: Octets> InitiationMessage<Octs> {
 
 /// Termination message.
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[derive(Debug, Eq, PartialEq)]
 pub struct TerminationMessage<Octets: AsRef<[u8]>> {
     octets: Octets,
 }
@@ -1041,6 +1044,7 @@ impl<Octs: Octets> TerminationMessage<Octs> {
 ///
 /// NB: Not well tested/supported at this moment!  
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[derive(Debug, Eq, PartialEq)]
 pub struct RouteMirroring<Octs> {
     octets: Octs,
 }
