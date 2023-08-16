@@ -49,7 +49,11 @@ impl NextHop {
                 { },
             _ => {
                 parser.advance(len.into())?;
-                warn!("Unimplemented NextHop AFI/SAFI {}/{}", afi, safi);
+                warn!("Unimplemented NextHop AFI/SAFI {}/{} len {}",
+                      afi, safi, len);
+                return Err(ParseError::form_error(
+                        "unimplemented AFI/SAFI in NextHop"
+                ))
             }
         }
 
@@ -333,14 +337,55 @@ pub struct RouteTargetNlri<Octets> {
 
 /// Conventional and BGP-MP NLRI variants.
 #[derive(Clone, Debug)]
-pub enum Nlri<Octets> {
-    Basic(BasicNlri),
-    Mpls(MplsNlri<Octets>),
-    MplsVpn(MplsVpnNlri<Octets>),
-    Vpls(VplsNlri),
-    FlowSpec(FlowSpecNlri<Octets>),
-    RouteTarget(RouteTargetNlri<Octets>),
+pub enum Nlri<Octets> {             // (AFIs  , SAFIs):
+    Basic(BasicNlri),               // (v4/v6 , unicast/multicast)
+    Mpls(MplsNlri<Octets>),         // (v4/v6, mpls unicast) 
+    MplsVpn(MplsVpnNlri<Octets>),   // (v4/v6, mpls vpn unicast)
+    Vpls(VplsNlri),                 // (l2vpn , vpls)
+    FlowSpec(FlowSpecNlri<Octets>), // (v4/v6, flowspec)
+    RouteTarget(RouteTargetNlri<Octets>), // (v4, route target)
 }
+// XXX some thoughts on if and how we need to redesign Nlri:
+//
+// Looking at which enum variants represent which afis/safis, currently only
+// the Basic variant represents more than one SAFI, i.e. unicast and
+// multicast. The other variants represent a single SAFI, and many of them do
+// that for both v4 and v6.
+//
+// This means that when an Iterator<Item = Nlri> is created, the user
+// determines the SAFI by matching on the Nlri variant coming from next(), but
+// for the BasicNlri it is uncertain whether we deal with unicast or
+// multicast.
+//
+// It would be nice if the user could query the UpdateMessage to find out what
+// AFI/SAFI is in the announcements/withdrawals. Currently, `fn nlris()` and
+// `fn withdrawals()` return a struct with getters for both afi and safi, and
+// a `fn iter()` to get an iterator over the actual NLRI. But because nlris()
+// needs an overhaul to (correctly) return both conventional and MP_* NLRI, it
+// might actually return an iterator over _two_ AFI/SAFI tuples: one
+// conventional v4/unicast, and one MP tuple. 
+//
+// The AFI could be derived from the Prefix in all cases but FlowSpec. For
+// the Vpls and RouteTarget variants, there can only be one (valid) AFI, i.e.
+// l2vpn and v4, respectively.
+//
+// We also need to take into account the creation of messages, i.e. adding
+// NLRI for announcement/withdrawal to an instance of UpdateBuilder. The
+// UpdateBuilder needs to be able to determine from the NLRI which AFI/SAFI it
+// is dealing with. Currently a BasicNlri could be both unicast and multicast,
+// but there is no way to know which one. That must be fixed.
+//
+// Questions:
+// - are we ok with deriving the AFI from the Prefix, or do we want to
+// explicitly embed the AFI in the variant? (NB that would add 4 variants for
+// now, possibly more later).
+// - should we simply add a Multicast variant (and perhaps rename Basic to
+// Unicast)?
+// - should we remove methods from the enum level to force a user to pattern
+// match on the exact variant? e.g. calling Nlri.prefix() hides the exact
+// variant from the user, possibly causing confusion. They might unknowingly
+// storing MplsVpn prefixes thinking it was a 'Basic unicast' thing.
+
 
 impl<Octets> Display for Nlri<Octets> {
     fn fmt(&self, f: &mut Formatter) -> FmtResult {

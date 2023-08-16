@@ -135,6 +135,8 @@ impl<Octs: Octets> UpdateMessage<Octs> {
 }
 
 impl<Octs: Octets> UpdateMessage<Octs> {
+    // FIXME same issue as with NLRI, an UPDATE PDU can contain both
+    // conventional and MP_UNREACH_NLRI.
     pub fn withdrawals(&self) -> Withdrawals<'_, Octs> {
         if let Some(ref mut pa) = self.path_attributes().into_iter().find(|pa|
             pa.type_code() == PathAttributeType::MpUnreachNlri
@@ -157,6 +159,31 @@ impl<Octs: Octets> UpdateMessage<Octs> {
                 safi: SAFI::Unicast
             }
         }
+    }
+
+    pub fn all_withdrawals_iter(&self) -> impl Iterator<Item = Nlri<Octs::Range<'_>>> {
+        let mp_iter = self.path_attributes().into_iter().find(|pa|
+            pa.type_code() == PathAttributeType::MpUnreachNlri
+        ).as_mut().map(|pa|
+            Withdrawals::parse(
+                &mut pa.value_into_parser(),
+                self.session_config
+            ).expect("parsed before").iter()
+        );
+
+        let len = self.withdrawn_routes_len() as usize;
+        let mut parser = Parser::from_ref(self.octets());
+        parser.advance(COFF+2).expect("parsed before");
+        let pp = Parser::parse_parser(&mut parser, len)
+            .expect("parsed before");
+
+        let conventional_iter = Withdrawals {
+            parser: pp,
+            session_config: self.session_config,
+            afi: AFI::Ipv4,
+            safi: SAFI::Unicast
+        }.iter();
+        mp_iter.into_iter().flatten().chain(conventional_iter)
     }
 
     // RFC4271: A value of 0 indicates that neither the Network Layer
@@ -189,6 +216,10 @@ impl<Octs: Octets> UpdateMessage<Octs> {
     /// If present, the NLRIs are taken from the MP_REACH_NLRI path attribute.
     /// Otherwise, they are taken from their conventional place at the end of
     /// the message.
+    /// **NB**: this is 
+    // FIXME an UPDATE PDU possibly contains NLRI in both the conventional
+    // part as well as in an MP_REACH_NLRI path attribute. We need to chain
+    // two iterators.
     pub fn nlris(&self) -> Nlris<Octs> {
         if let Some(ref mut pa) = self.path_attributes().into_iter().find(|pa|
             pa.type_code() == PathAttributeType::MpReachNlri
@@ -202,6 +233,52 @@ impl<Octs: Octets> UpdateMessage<Octs> {
             parser.advance(COFF+2+wrl+2+tpal).expect("parsed before");
             Nlris::parse_conventional(&mut parser, self.session_config).expect("parsed before")
         }
+    }
+    
+    /// Iterator over both conventional NLRI and MP_REACH_NLRI.
+    ///
+    // FIXME this currently hides the actual afi/safi of the MP NLRI, if any.
+    // Should we rethink the Nlri enum to be more explicit?
+    pub fn all_nlri_iter(&self) -> impl Iterator<Item = Nlri<Octs::Range<'_>>> {
+        let mp_iter = self.path_attributes().into_iter().find(|pa|
+            pa.type_code() == PathAttributeType::MpReachNlri
+        ).as_mut().map(|pa|
+           Nlris::parse(
+               &mut pa.value_into_parser(),
+               self.session_config
+            ).expect("parsed before").iter()
+        );
+
+        let wrl = self.withdrawn_routes_len() as usize;
+        let tpal = self.total_path_attribute_len() as usize;
+        let mut parser = Parser::from_ref(self.octets());
+        parser.advance(COFF+2+wrl+2+tpal).expect("parsed before");
+        let conventional_iter = Nlris::parse_conventional(
+                &mut parser, self.session_config
+            ).expect("parsed before").iter();
+
+        //if let Some(mp_iter) = mp_iter {
+        //    conventional_iter.chain(mp_iter)
+        //} else {
+        //    use core::iter::empty;
+        //    conventional_iter.chain(empty().into_iter())
+        //}
+        mp_iter.into_iter().flatten().chain(conventional_iter)
+
+    }
+
+    pub fn has_conventional_nlri(&self) -> bool {
+        let wrl = self.withdrawn_routes_len() as usize;
+        let tpal = self.total_path_attribute_len() as usize;
+        let pdu_len = self.as_ref().len();
+
+        (pdu_len - 16 - 2 - 1 - 2 - wrl - 2 - tpal) > 0
+    }
+
+    pub fn has_mp_nlri(&self) -> bool {
+        self.path_attributes().into_iter().any(|pa|
+            pa.type_code() == PathAttributeType::MpReachNlri
+        )
     }
 
     /// Returns `Option<(AFI, SAFI)>` if this UPDATE represents the End-of-RIB
@@ -2618,6 +2695,9 @@ mod tests {
         assert_eq!(update.withdrawn_routes_len(), 0);
         assert_eq!(update.total_path_attribute_len(), 113);
 
+        assert!(!update.has_conventional_nlri());
+        assert!(update.has_mp_nlri());
+
         let nlris = update.nlris();
         let nlri_iter = nlris.iter();
         assert_eq!(nlri_iter.count(), 5);
@@ -2720,6 +2800,33 @@ mod tests {
         for (nlri, w) in update.withdrawals().iter().zip(ws.iter()) {
             assert_eq!(nlri.prefix(), Some(*w))
         }
+    }
+
+    #[test]
+    fn empty_nlri_iterators() {
+        let mut builder = UpdateBuilder::new_vec();
+        //builder.add_withdrawal(
+        //    &Nlri::Basic(Prefix::from_str("10.0.0.0/8").unwrap().into())
+        //).unwrap();
+        builder.add_withdrawal(
+            &Nlri::Basic(Prefix::from_str("2001:db8::/32").unwrap().into())
+        ).unwrap();
+
+        let msg = builder.into_message().unwrap();
+        print_pcap(msg.as_ref());
+        assert_eq!(msg.all_withdrawals_iter().count(), 1);
+
+        let mut builder2 = UpdateBuilder::new_vec();
+        builder2.add_withdrawal(
+            &Nlri::Basic(Prefix::from_str("10.0.0.0/8").unwrap().into())
+        ).unwrap();
+        //builder2.add_withdrawal(
+        //    &Nlri::Basic(Prefix::from_str("2001:db8::/32").unwrap().into())
+        //).unwrap();
+
+        let msg2 = builder2.into_message().unwrap();
+        print_pcap(msg2.as_ref());
+        assert_eq!(msg2.all_withdrawals_iter().count(), 1);
     }
 
     //--- Path Attributes ------------------------------------------------
@@ -3300,8 +3407,7 @@ mod tests {
         let msg = builder.into_message().unwrap();
         print_pcap(msg.as_ref());
 
-        // limitation of our own parser:
-        //assert_eq!(msg.withdrawals().iter().count(), 2);
+        assert_eq!(msg.all_withdrawals_iter().count(), 2);
     }
 
     #[test]
@@ -3351,6 +3457,41 @@ mod tests {
         );
         assert!(res.is_ok());
         print_pcap(builder.finish().unwrap());
+    }
+
+    #[test]
+    fn build_conv_mp_mix() {
+        let buf = vec![
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0x00, 0x88 + 8, // adding length for the conv NLRI
+            0x02, 0x00, 0x00, 0x00, 0x71, 0x80,
+            0x0e, 0x5a, 0x00, 0x02, 0x01, 0x20, 0xfc, 0x00,
+            0x00, 0x10, 0x00, 0x01, 0x00, 0x10, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0xfe, 0x80,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x80,
+            0xfc, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10,
+            0x40, 0x20, 0x01, 0x0d, 0xb8, 0xff, 0xff, 0x00,
+            0x00, 0x40, 0x20, 0x01, 0x0d, 0xb8, 0xff, 0xff,
+            0x00, 0x01, 0x40, 0x20, 0x01, 0x0d, 0xb8, 0xff,
+            0xff, 0x00, 0x02, 0x40, 0x20, 0x01, 0x0d, 0xb8,
+            0xff, 0xff, 0x00, 0x03, 0x40, 0x01, 0x01, 0x00,
+            0x40, 0x02, 0x06, 0x02, 0x01, 0x00, 0x00, 0x00,
+            0xc8, 0x80, 0x04, 0x04, 0x00, 0x00, 0x00, 0x00,
+            // manually adding two conv NLRI here
+            24, 1, 1, 1,
+            24, 1, 1, 2
+
+        ];
+
+        let upd = UpdateMessage::from_octets(&buf, SessionConfig::modern()).unwrap();
+        print_pcap(upd.as_ref());
+
+        assert!(upd.has_conventional_nlri() && upd.has_mp_nlri());
+        assert_eq!(upd.all_nlri_iter().count(), 7);
+
     }
 
 
