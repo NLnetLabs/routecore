@@ -15,7 +15,7 @@ use crate::bgp::message::nlri::{
 };
 
 use core::iter::Peekable;
-use std::net::Ipv4Addr;
+use std::net::{IpAddr, Ipv4Addr};
 use std::fmt;
 use crate::util::parser::{parse_ipv4addr, ParseError};
 
@@ -2032,18 +2032,25 @@ use crate::bgp::message::update_builder::MpUnreachNlriBuilder;
 
 //use rotonda_fsm::bgp::session::AgreedConfig;
 
+use super::update_builder::new_pas;
 #[derive(Debug)]
 pub struct UpdateBuilder<Target> {
     target: Target,
     //config: AgreedConfig, //FIXME this lives in rotonda_fsm, but that
     //depends on routecore. Sounds like a depedency hell.
-    _announcements: Vec<Nlri<Vec<u8>>>,
-    _announcements_len: usize,
+    announcements: Vec<Nlri<Vec<u8>>>,
+    announcements_len: usize,
     withdrawals: Vec<Nlri<Vec<u8>>>,
     withdrawals_len: usize,
-    addpath_enabled: Option<bool>,
+    addpath_enabled: Option<bool>, // for conventional nlri (unicast v4)
     //attributes: Vec<PathAttribute<'a, Vec<u8>>>, // XXX this lifetime is..
                                                     //not nice
+    // attributes:
+    origin: Option<new_pas::Origin>,
+    aspath: Option<AsPath<Vec<u8>>>,
+    nexthop: Option<new_pas::NextHop>,
+
+
     attributes_len: usize,
     total_pdu_len: usize,
 
@@ -2070,18 +2077,23 @@ impl<Target: OctetsBuilder> UpdateBuilder<Target> {
 
         Ok(UpdateBuilder {
             target,
-            _announcements: Vec::new(),
-            _announcements_len: 0,
+            announcements: Vec::new(),
+            announcements_len: 0,
             withdrawals: Vec::new(),
             withdrawals_len: 0,
             addpath_enabled: None,
-            //attributes: ?
+            //attributes:
+            origin: None,
+            aspath: None,
+            nexthop: None,
+
             attributes_len: 0,
             total_pdu_len: 19 + 2 + 2,
             mp_unreach_nlri_builder: None,
         })
     }
 
+    //--- Withdrawals
 
     pub fn add_withdrawal(&mut self, withdrawal: &Nlri<Vec<u8>>)
         -> Result<(), ComposeError>
@@ -2150,7 +2162,7 @@ impl<Target: OctetsBuilder> UpdateBuilder<Target> {
                 }
 
             }
-            _ => todo!() // 
+            _ => todo!() // TODO use the MpUnreachNlriBuilder for these
         };
         Ok(())
     }
@@ -2180,6 +2192,132 @@ impl<Target: OctetsBuilder> UpdateBuilder<Target> {
         }
         Ok(())
     }
+
+    //--- Path Attributes
+
+    pub fn set_origin(&mut self, origin: OriginType)
+        -> Result<(), ComposeError>
+    {
+        if self.origin.is_none() {
+            // Check if this goes over the total PDU len. That will happen
+            // before we will go over the u16 for Total Path Attributes Length
+            // so we don't have to check for that.
+            let new_total = self.total_pdu_len + 4; // XXX should this 4 come
+                                                    // from a
+                                                    // `fn compose_len()` on
+                                                    // the attribute itself
+                                                    // perhaps?
+            if new_total > Self::MAX_PDU {
+                return Err(ComposeError::PduTooLarge(new_total));
+            } else {
+                self.total_pdu_len = new_total;
+                self.attributes_len += 4
+            }
+        }
+        self.origin = Some(new_pas::Origin::new(origin));
+        Ok(())
+    }
+
+    pub fn set_aspath<Octs>(&mut self , aspath: AsPath<Vec<u8>>)
+        -> Result<(), ComposeError>
+    {
+        if aspath.compose_len() > u16::MAX.into()  {
+            return Err(ComposeError::AttributeTooLarge(
+                 PathAttributeType::AsPath, aspath.compose_len()
+            ));
+        }
+        if let Some(old_aspath) = &self.aspath {
+            let new_total = self.total_pdu_len
+                - old_aspath.compose_len()
+                + aspath.compose_len();
+            if new_total > Self::MAX_PDU {
+                return Err(ComposeError::PduTooLarge(new_total));
+            } else {
+                self.total_pdu_len -= old_aspath.compose_len();
+                self.attributes_len -= old_aspath.compose_len();
+            }
+        }
+        self.attributes_len += aspath.compose_len();
+        self.total_pdu_len += aspath.compose_len();
+        self.aspath = Some(aspath);
+        Ok(())
+    }
+
+    pub fn set_nexthop(&mut self, addr: IpAddr) -> Result<(), ComposeError> {
+        if self.nexthop.is_none() {
+            // Check if this goes over the total PDU len. That will happen
+            // before we will go over the u16 for Total Path Attributes Length
+            // so we don't have to check for that.
+            let new_total = self.total_pdu_len + 7;
+            if new_total > Self::MAX_PDU {
+                return Err(ComposeError::PduTooLarge(new_total));
+            } else {
+                self.total_pdu_len = new_total;
+                self.attributes_len += 7
+            }
+        }
+        match addr {
+            IpAddr::V4(a) => {
+                self.nexthop = Some(new_pas::NextHop::new(a))
+            }
+            IpAddr::V6(_a) => todo!() // goes in MP_REACH_NLRI
+        }
+        Ok(())
+    }
+
+
+    //--- Announcements
+
+    pub fn add_announcement(&mut self, announcement: &Nlri<Vec<u8>>)
+        -> Result<(), ComposeError>
+    {
+        match *announcement {
+            Nlri::Unicast(b) => {
+                if b.is_v4() {
+                    if let Some(addpath_enabled) = self.addpath_enabled {
+                        if addpath_enabled != b.is_addpath() {
+                            return Err(ComposeError::IllegalCombination)
+                        }
+                    } else {
+                        self.addpath_enabled = Some(b.is_addpath());
+                    }
+
+                    let new_bytes_num = announcement.compose_len();
+                    let new_total = self.total_pdu_len + new_bytes_num;
+                    if new_total > Self::MAX_PDU {
+                        return Err(ComposeError::PduTooLarge(new_total));
+                    }
+                    self.announcements.push(announcement.clone());
+                    self.announcements_len += new_bytes_num;
+                    self.total_pdu_len = new_total;
+                    
+                } else {
+                    // Nlri::Unicast only holds IPv4 and IPv6, so this must be
+                    // IPv6.
+                    todo!() // TODO use MpReachNlriBuilder once we have that. 
+                }
+            }
+            _ => todo!() // TODO use MpReachNlriBuilder once we have that.
+        }
+
+        Ok(())
+    }
+
+    pub fn announcements_from_iter<I>(
+        &mut self, announcements: &mut Peekable<I>
+    ) -> Result<(), ComposeError>
+        where I: Iterator<Item = Nlri<Vec<u8>>>
+    {
+        while let Some(a) = announcements.peek() {
+            match self.add_announcement(a) {
+                Ok(_) => { announcements.next(); }
+                Err(e) => return Err(e)
+            }
+        }
+        Ok(())
+    }
+
+
 }
 
 #[derive(Debug)]
@@ -2208,6 +2346,7 @@ impl From<ParseError> for ComposeError {
         ComposeError::ParseError(pe)
     }
 }
+
 
 impl std::error::Error for ComposeError { }
 impl fmt::Display for ComposeError {
@@ -2450,6 +2589,8 @@ where
             }
         }
 
+
+
         // XXX we can do these unwraps because of the checks in the add/append
         // methods
 
@@ -2459,19 +2600,42 @@ where
             &u16::try_from(self.attributes_len).unwrap().to_be_bytes()
         );
 
-        // TODO write path attributes, if any, in order of typecode
+        // TODO write all path attributes, if any, in order of typecode
+
+        if let Some(origin) = self.origin {
+            origin.compose(&mut self.target)?
+        }
+
+        if let Some(aspath) = self.aspath {
+            aspath.compose(&mut self.target)?
+        }
+
+        if let Some(nexthop) = self.nexthop {
+            nexthop.compose(&mut self.target)?
+        }
+
         if let Some(builder) = self.mp_unreach_nlri_builder {
             builder.compose(&mut self.target)?
         }
 
-        // TODO write conventional NLRI, if any
-
-        //if msg_len > 4096 {
-        //    // do we just create a larger PDU and let the user decide what to
-        //    // do with it? Perhaps we need an enum
-        //    // see rfc8654, which raises the max size to 65535.
-        //    todo!()
-        //}
+        // XXX Here, in the conventional NLRI field at the end of the PDU, we
+        // write IPv4 Unicast announcements. But what if we have agreed to do
+        // MP for v4/unicast, should these announcements go in the
+        // MP_REACH_NLRI attribute then instead?
+        for a in &self.announcements {
+            match a {
+                Nlri::Unicast(b) => {
+                    if b.is_v4() {
+                        b.compose(&mut self.target)?;
+                    } else {
+                        // Other announcements should not go here, but in
+                        // MP_REACH_NLRI, handled before in the path
+                        // attributes.
+                    }
+                },
+                _ => todo!(),
+            }
+        }
 
         Ok(self.target.freeze())
     }
@@ -3478,8 +3642,34 @@ mod tests {
 
         assert!(upd.has_conventional_nlri() && upd.has_mp_nlri());
         assert_eq!(upd.unicast_announcements().count(), 7);
-
     }
+
+    #[test]
+    fn build_announcements_conventional() {
+        use crate::bgp::aspath::HopPath;
+        let mut builder = UpdateBuilder::new_vec();
+        let prefixes = [
+            "1.0.1.0/24",
+            "1.0.2.0/24",
+            "1.0.3.0/24",
+            "1.0.4.0/24",
+        ].map(|p| Nlri::unicast_from_str(p).unwrap());
+        let mut iter = prefixes.into_iter().peekable();
+        builder.announcements_from_iter(&mut iter).unwrap();
+        builder.set_origin(OriginType::Igp).unwrap();
+        builder.set_nexthop("1.2.3.4".parse().unwrap()).unwrap();
+        let path = HopPath::from([
+             Asn::from_u32(123); 70
+        ]);
+        builder.set_aspath::<Vec<u8>>(path.to_as_path().unwrap()).unwrap();
+
+        let raw = builder.finish().unwrap();
+        print_pcap(&raw);
+
+        //let pdu = builder.into_message().unwrap();
+        //print_pcap(pdu);
+    }
+
 
 
     #[test]

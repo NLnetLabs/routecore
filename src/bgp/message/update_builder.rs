@@ -8,6 +8,7 @@ use super::update::ComposeError;
 // just drafting ideas, not used right now
 #[allow(dead_code)]
 pub mod new_pas {
+
     // eventually we work towards
     // enum PathAttribute {
     //     ...
@@ -21,6 +22,8 @@ pub mod new_pas {
     // We can get rid off PathAttributeType, and have one or multiple impl
     // blocks for the specific types.
 
+    use octseq::OctetsBuilder;
+
     pub struct Flags { }
 
     impl Flags {
@@ -33,6 +36,7 @@ pub mod new_pas {
         // 4-7: MUST be 0 when sent, ignored when received
         const OPT_NON_TRANS: u8 = 0b1000_0000;
         const OPT_NON_TRANS_EXT: u8 = 0b1001_0000;
+        const WELLKNOWN: u8 = 0b0100_0000;
     }
 
     pub struct MpUnreachNlri { }
@@ -41,6 +45,62 @@ pub mod new_pas {
         // optional non-transitive attribute
         const TYPECODE: u8 = 15;
     }
+
+    //--- Origin
+
+    use crate::bgp::message::update::OriginType;
+    #[derive(Debug)]
+    pub struct Origin(OriginType);
+
+    impl Origin {
+        const TYPECODE: u8 = 1;
+        fn value_len() -> u8 { 1 }
+
+        pub fn new(origin_type: OriginType) -> Origin {
+            Origin(origin_type)
+        }
+
+        pub fn compose<Target: OctetsBuilder>(&self, target: &mut Target)
+            -> Result<(), Target::AppendError>
+        {
+            target.append_slice(&[
+                Flags::WELLKNOWN,
+                Self::TYPECODE,
+                Self::value_len(),
+                self.0.into()
+            ]) 
+        }
+    }
+
+    //--- AsPath (TODO, also see bgp::aspath)
+
+    //--- NextHop
+
+    use crate::bgp::types::NextHop as NextHopType;
+    use std::net::Ipv4Addr;
+    #[derive(Debug)]
+    pub struct NextHop(Ipv4Addr);
+
+    impl NextHop {
+        const TYPECODE: u8 = 3;
+        fn value_len() -> u8 { 4 }
+
+        pub fn new(addr: Ipv4Addr) -> NextHop {
+            NextHop(addr)
+        }
+
+        pub fn compose<Target: OctetsBuilder>(&self, target: &mut Target)
+            -> Result<(), Target::AppendError>
+        {
+            target.append_slice(&[
+                Flags::WELLKNOWN,
+                Self::TYPECODE,
+                Self::value_len()
+            ])?;
+            target.append_slice(&self.0.octets())
+        }
+    }
+
 
 }
 
@@ -124,6 +184,7 @@ impl MpUnreachNlriBuilder {
         let len = self.len.to_be_bytes();
 
         if self.extended {
+            // FIXME this assumes usize is 64bits
             target.append_slice(&[0b1001_0000, 15, len[6], len[7]])
         } else {
             target.append_slice(&[0b1000_0000, 15, len[7]])
