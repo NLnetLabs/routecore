@@ -8,8 +8,8 @@ use crate::flowspec::Component;
 use octseq::{Octets, OctetsBuilder, Parser};
 use log::warn;
 
+use std::fmt;
 use std::net::IpAddr;
-use std::fmt::{Debug, Display, Formatter, Result as FmtResult};
 
 #[cfg(feature = "serde")]
 use serde::{Serialize, Deserialize};
@@ -141,6 +141,12 @@ impl PathId {
     }
 }
 
+impl fmt::Display for PathId {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
 /// MPLS labels, part of [`MplsNlri`] and [`MplsVpnNlri`].
 #[derive(Copy, Clone, Eq, Debug, PartialEq)]
 pub struct Labels<Octets: ?Sized> {
@@ -151,6 +157,11 @@ impl<Octs: Octets> Labels<Octs> {
     fn len(&self) -> usize {
         self.octets.as_ref().len()
     }
+
+    fn as_ref(&self) -> &[u8] {
+        self.octets.as_ref()
+    }
+    
 }
 
 impl<Octs: Octets> Labels<Octs> {
@@ -267,8 +278,8 @@ impl RouteDistinguisher {
     }
 }
 
-impl std::fmt::Display for RouteDistinguisher {
-    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+impl fmt::Display for RouteDistinguisher {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{:#?}", self.bytes)
     }
 }
@@ -285,14 +296,14 @@ pub enum RouteDistinguisherType {
 /// NLRI comprised of a [`Prefix`] and an optional [`PathId`].
 ///
 /// The `BasicNlri` is extended in [`MplsNlri`] and [`MplsVpnNlri`].
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub struct BasicNlri {
     pub prefix: Prefix,
     pub path_id: Option<PathId>,
 }
 
 /// NLRI comprised of a [`BasicNlri`] and MPLS `Labels`.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MplsNlri<Octets> {
     basic: BasicNlri,
     labels: Labels<Octets>,
@@ -300,7 +311,7 @@ pub struct MplsNlri<Octets> {
 
 /// NLRI comprised of a [`BasicNlri`], MPLS `Labels` and a VPN
 /// `RouteDistinguisher`.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MplsVpnNlri<Octets> {
     basic: BasicNlri,
     labels: Labels<Octets>,
@@ -308,7 +319,7 @@ pub struct MplsVpnNlri<Octets> {
 }
 
 /// VPLS Information as defined in RFC4761.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct VplsNlri {
     rd: RouteDistinguisher,
     ve_id: u16,
@@ -320,7 +331,7 @@ pub struct VplsNlri {
 /// NLRI containing a FlowSpec v1 specification.
 ///
 /// Also see [`crate::flowspec`].
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FlowSpecNlri<Octets> {
     #[allow(dead_code)]
     raw: Octets,
@@ -329,21 +340,22 @@ pub struct FlowSpecNlri<Octets> {
 /// NLRI containing a Route Target membership as defined in RFC4684.
 ///
 /// **TODO**: implement accessor methods for the contents of this NLRI.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RouteTargetNlri<Octets> {
     #[allow(dead_code)]
     raw: Octets,
 }
 
 /// Conventional and BGP-MP NLRI variants.
-#[derive(Clone, Debug)]
-pub enum Nlri<Octets> {             // (AFIs  , SAFIs):
-    Basic(BasicNlri),               // (v4/v6 , unicast/multicast)
-    Mpls(MplsNlri<Octets>),         // (v4/v6, mpls unicast) 
-    MplsVpn(MplsVpnNlri<Octets>),   // (v4/v6, mpls vpn unicast)
-    Vpls(VplsNlri),                 // (l2vpn , vpls)
-    FlowSpec(FlowSpecNlri<Octets>), // (v4/v6, flowspec)
-    RouteTarget(RouteTargetNlri<Octets>), // (v4, route target)
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Nlri<Octets> {                     // (AFIs  , SAFIs):
+    Unicast(BasicNlri),                     // (v4/v6, unicast)
+    Multicast(BasicNlri),                   // (v4/v6, multicast)
+    Mpls(MplsNlri<Octets>),                 // (v4/v6, mpls unicast) 
+    MplsVpn(MplsVpnNlri<Octets>),           // (v4/v6, mpls vpn unicast)
+    Vpls(VplsNlri),                         // (l2vpn, vpls)
+    FlowSpec(FlowSpecNlri<Octets>),         // (v4/v6, flowspec)
+    RouteTarget(RouteTargetNlri<Octets>),   // (v4, route target)
 }
 // XXX some thoughts on if and how we need to redesign Nlri:
 //
@@ -387,48 +399,41 @@ pub enum Nlri<Octets> {             // (AFIs  , SAFIs):
 // storing MplsVpn prefixes thinking it was a 'Basic unicast' thing.
 
 
-impl<Octets> Display for Nlri<Octets> {
-    fn fmt(&self, f: &mut Formatter) -> FmtResult {
+impl<Octs: Octets> fmt::Display for Nlri<Octs> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Nlri::Vpls(n) => write!(f, "VPLS-{:?}", n.rd),
-            _ => write!(f, "{}", self.prefix().unwrap())
+            Nlri::Unicast(b) => {
+                write!(f, "{}", b.prefix())?;
+                if let Some(path_id) = b.path_id() {
+                    write!(f, " (path_id {})", path_id)?
+                }
+            }
+            Nlri::Multicast(b) => {
+                write!(f, "{} (mcast)", b.prefix())?;
+                if let Some(path_id) = b.path_id() {
+                    write!(f, " (path_id {})", path_id)?
+                }
+            }
+            Nlri::Mpls(m) => {
+                write!(f, "MPLS-{}-{:?}",
+                    m.basic.prefix(), m.labels.as_ref()
+                )?
+            }
+            Nlri::MplsVpn(m) => {
+                write!(f, "MPLSVPN-{}-{:?}-{:?}",
+                    m.basic.prefix(), m.labels.as_ref(), m.rd
+                )?
+            }
+            Nlri::Vpls(n) => write!(f, "VPLS-{:?}", n.rd)?,
+            Nlri::FlowSpec(_) => write!(f, "FlowSpec-NLRI")?,
+            Nlri::RouteTarget(r) => {
+                write!(f, "RouteTarget-NLRI-{:?}", r.raw.as_ref())?
+            }
         }
+        Ok(())
     }
 }
 impl<Octets> Nlri<Octets> {
-    fn basic(&self) -> Option<BasicNlri> { 
-        match self {
-            Nlri::Basic(n) => Some(*n),
-            Nlri::Mpls(n) => Some(n.basic),
-            Nlri::MplsVpn(n) => Some(n.basic),
-            Nlri::Vpls(_) => None,
-            Nlri::FlowSpec(_) => None,
-            Nlri::RouteTarget(_) => None,
-        }
-    }
-
-    /// Returns the [`Prefix`] for this NLRI, if any.
-    ///
-    /// Since the NLRI in Multiprotocol BGP can contain many different types
-    /// of information depending on the AFI/SAFI, there might be no prefix at
-    /// all.
-    pub fn prefix(&self) -> Option<Prefix> {
-        self.basic().map(|b| b.prefix)
-    }
-
-    /// Returns the PathId for AddPath enabled prefixes.
-    pub fn path_id(&self) -> Option<PathId> {
-        if let Some(b) = self.basic() {
-            b.path_id
-        } else {
-            None
-        }
-    }
-
-    pub fn is_addpath(&self) -> bool {
-        self.path_id().is_some()
-    }
-
     /// Returns the MPLS [`Labels`], if any.
     ///
     /// Applicable to MPLS and MPLS-VPN NLRI.
@@ -490,16 +495,27 @@ impl<Octets> Nlri<Octets> {
 
     pub fn compose_len(&self) -> usize {
         match self {
-            Nlri::Basic(b) => b.compose_len(),
+            Nlri::Unicast(b) => b.compose_len(),
             _ => unimplemented!()
         }
     }
 }
 
 
-impl<Octs> From<Prefix> for Nlri<Octs> {
-    fn from(prefix: Prefix) -> Nlri<Octs> {
-        Nlri::Basic(BasicNlri::new(prefix))
+use std::str::FromStr;
+impl<Octs> Nlri<Octs> {
+    /// Creates a `Nlri::Unicast` for `prefix`.
+    ///
+    /// This returns the error thrown by `Prefix::from_str` if `prefix` does
+    /// not represent a valid IPv6 or IPv4 prefix.
+    pub fn unicast_from_str(prefix: &str)
+        -> Result<Nlri<Octs>, <Prefix as FromStr>::Err>
+    {
+        Ok(
+            Nlri::Unicast(BasicNlri::new(
+                    Prefix::from_str(prefix)?
+            ))
+        )
     }
 }
 
@@ -630,7 +646,17 @@ impl BasicNlri {
         self.prefix
     }
 
-    pub fn compose_len(&self) -> usize {
+    /// Returns the PathId for AddPath enabled prefixes, if some.
+    pub fn path_id(&self) -> Option<PathId> {
+        self.path_id
+    }
+
+    /// Returns true if this NLRI contains a Path Id. 
+    pub fn is_addpath(&self) -> bool {
+        self.path_id.is_some()
+    }
+
+    pub(crate) fn compose_len(&self) -> usize {
         let mut res = if self.path_id.is_some() {
             4
         } else {
@@ -641,7 +667,7 @@ impl BasicNlri {
         res
     }
 
-    pub fn compose<Target: OctetsBuilder>(&self, target: &mut Target)
+    pub(crate) fn compose<Target: OctetsBuilder>(&self, target: &mut Target)
         -> Result<(), Target::AppendError> {
         let len = self.prefix.len();
         if let Some(path_id) = self.path_id {
@@ -779,6 +805,10 @@ impl MplsNlri<()> {
         prefix_bits -= 8 * labels.len() as u8;
         check_prefix(parser, prefix_bits, afi)?;
         Ok(())
+    }
+
+    pub fn basic(&self) -> BasicNlri {
+        self.basic
     }
 }
 

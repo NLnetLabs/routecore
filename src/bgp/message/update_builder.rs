@@ -134,7 +134,7 @@ impl MpUnreachNlriBuilder {
 
         for w in &self.withdrawals {
             match w {
-                Nlri::Basic(b) => {
+                Nlri::Unicast(b) => {
                     if !b.is_v4() {
                         b.compose(target)?;
                     } else {

@@ -235,19 +235,23 @@ impl<Octs: Octets> UpdateMessage<Octs> {
         }
     }
     
-    /// Iterator over both conventional NLRI and MP_REACH_NLRI.
-    ///
-    // FIXME this currently hides the actual afi/safi of the MP NLRI, if any.
-    // Should we rethink the Nlri enum to be more explicit?
-    pub fn all_nlri_iter(&self) -> impl Iterator<Item = Nlri<Octs::Range<'_>>> {
+    /// Iterator over both conventional NLRI and unicast MP_REACH_NLRI.
+    pub fn unicast_announcements(&self)
+        -> impl Iterator<Item = Nlri<Octs::Range<'_>>>
+    {
         let mp_iter = self.path_attributes().into_iter().find(|pa|
             pa.type_code() == PathAttributeType::MpReachNlri
         ).as_mut().map(|pa|
            Nlris::parse(
                &mut pa.value_into_parser(),
                self.session_config
-            ).expect("parsed before").iter()
-        );
+            ).expect("parsed before")
+        ).filter(|nlris|
+               match (nlris.afi(), nlris.safi()) {
+                   (AFI::Ipv4 | AFI::Ipv6, SAFI::Unicast) => true,
+                   _ => false,
+                }
+        ).map(|nlris| nlris.iter());
 
         let wrl = self.withdrawn_routes_len() as usize;
         let tpal = self.total_path_attribute_len() as usize;
@@ -257,12 +261,6 @@ impl<Octs: Octets> UpdateMessage<Octs> {
                 &mut parser, self.session_config
             ).expect("parsed before").iter();
 
-        //if let Some(mp_iter) = mp_iter {
-        //    conventional_iter.chain(mp_iter)
-        //} else {
-        //    use core::iter::empty;
-        //    conventional_iter.chain(empty().into_iter())
-        //}
         mp_iter.into_iter().flatten().chain(conventional_iter)
 
     }
@@ -1561,21 +1559,28 @@ pub struct WithdrawalsIterMp<'a, Ref: ?Sized> {
 impl<'a, Octs: 'a + Octets> WithdrawalsIterMp<'a, Octs> {
     fn get_nlri(&mut self) -> Nlri<Octs::Range<'a>> {
         match (self.afi, self.safi) {
-            (_, SAFI::Unicast | SAFI::Multicast) => {
-                Nlri::Basic(BasicNlri::parse(
+            (AFI::Ipv4 | AFI::Ipv6, SAFI::Unicast) => {
+                Nlri::Unicast(BasicNlri::parse(
                         &mut self.parser,
                         self.session_config,
                         self.afi
                 ).expect("parsed before"))
             }
-            (_, SAFI::MplsVpnUnicast) => {
+            (AFI::Ipv4 | AFI::Ipv6, SAFI::Multicast) => {
+                Nlri::Multicast(BasicNlri::parse(
+                        &mut self.parser,
+                        self.session_config,
+                        self.afi
+                ).expect("parsed before"))
+            }
+            (AFI::Ipv4 | AFI::Ipv6, SAFI::MplsVpnUnicast) => {
                 Nlri::MplsVpn(MplsVpnNlri::parse(
                         &mut self.parser,
                         self.session_config,
                         self.afi
                 ).expect("parsed before"))
             },
-            (_, SAFI::MplsUnicast) => {
+            (AFI::Ipv4 | AFI::Ipv6, SAFI::MplsUnicast) => {
                 Nlri::Mpls(MplsNlri::parse(
                         &mut self.parser,
                         self.session_config,
@@ -1757,21 +1762,28 @@ pub struct NlriIterMp<'a, Ref: ?Sized> {
 impl<'a, Octs: Octets> NlriIterMp<'a, Octs> {
     fn get_nlri(&mut self) -> Nlri<Octs::Range<'a>> {
         match (self.afi, self.safi) {
-            (_, SAFI::Unicast | SAFI::Multicast) => {
-                Nlri::Basic(BasicNlri::parse(
+            (AFI::Ipv4 | AFI::Ipv6, SAFI::Unicast) => {
+                Nlri::Unicast(BasicNlri::parse(
                         &mut self.parser,
                         self.session_config,
                         self.afi
                 ).expect("parsed before"))
-            },
-            (_, SAFI::MplsVpnUnicast) => {
+            }
+            (AFI::Ipv4 | AFI::Ipv6, SAFI::Multicast) => {
+                Nlri::Multicast(BasicNlri::parse(
+                        &mut self.parser,
+                        self.session_config,
+                        self.afi
+                ).expect("parsed before"))
+            }
+            (AFI::Ipv4 | AFI::Ipv6, SAFI::MplsVpnUnicast) => {
                 Nlri::MplsVpn(MplsVpnNlri::parse(
                         &mut self.parser,
                         self.session_config,
                         self.afi
                 ).expect("parsed before"))
             },
-            (_, SAFI::MplsUnicast) => {
+            (AFI::Ipv4 | AFI::Ipv6, SAFI::MplsUnicast) => {
                 Nlri::Mpls(MplsNlri::parse(
                         &mut self.parser,
                         self.session_config,
@@ -2076,14 +2088,14 @@ impl<Target: OctetsBuilder> UpdateBuilder<Target> {
     {
         //println!("add_withdrawal for {}", withdrawal.prefix().unwrap());
         match *withdrawal {
-            Nlri::Basic(b) => {
+            Nlri::Unicast(b) => {
                 if b.is_v4() {
                     if let Some(addpath_enabled) = self.addpath_enabled {
-                        if addpath_enabled != withdrawal.is_addpath() {
+                        if addpath_enabled != b.is_addpath() {
                             return Err(ComposeError::IllegalCombination)
                         }
                     } else {
-                        self.addpath_enabled = Some(withdrawal.is_addpath());
+                        self.addpath_enabled = Some(b.is_addpath());
                     }
 
                     let new_bytes_num = withdrawal.compose_len();
@@ -2095,13 +2107,13 @@ impl<Target: OctetsBuilder> UpdateBuilder<Target> {
                     self.withdrawals_len += new_bytes_num;
                     self.total_pdu_len = new_total;
                 } else {
-                    // Nlri::Basic only holds IPv4 and IPv6, so this must be
+                    // Nlri::Unicast only holds IPv4 and IPv6, so this must be
                     // IPv6.
                     let new_bytes_num = match self.mp_unreach_nlri_builder {
                         None => {
                             let builder = MpUnreachNlriBuilder::new(
                                 AFI::Ipv6, SAFI::Unicast,
-                                withdrawal.is_addpath()
+                                b.is_addpath()
                             );
                             let res = builder.compose_len(withdrawal);
                             self.mp_unreach_nlri_builder = Some(builder);
@@ -2110,7 +2122,7 @@ impl<Target: OctetsBuilder> UpdateBuilder<Target> {
                         }
                         Some(ref builder) => {
                             if builder.afi_safi() != (AFI::Ipv6, SAFI::Unicast)
-                            || builder.addpath_enabled() != withdrawal.is_addpath() {
+                            || builder.addpath_enabled() != b.is_addpath() {
                                 // We are already constructing a
                                 // MP_UNREACH_NLRI but for a different
                                 // AFI,SAFI than the prefix in `withdrawal`,
@@ -2350,9 +2362,8 @@ where Infallible: From<<Target as OctetsBuilder>::AppendError>
 
         if let Some(nlri) = acs.nlri.into_opt() {
             match nlri {
-                Nlri::Basic(b) => {
-                    //if let Some(p) = nlri.prefix() {
-                    if let Some(id) = nlri.path_id() {
+                Nlri::Unicast(b) => {
+                    if let Some(id) = b.path_id() {
                         let _ = self.target.append_slice(&id.to_raw());
                         nlri_len += 4;
                     }
@@ -2368,7 +2379,6 @@ where Infallible: From<<Target as OctetsBuilder>::AppendError>
                         _ => todo!()
                     }
                 }
-                //}
                 _ => todo!()
             }
         }
@@ -2427,7 +2437,7 @@ where
 
         for w in &self.withdrawals {
             match w {
-                Nlri::Basic(b) => {
+                Nlri::Unicast(b) => {
                     if b.is_v4() {
                         b.compose(&mut self.target)?;
                     } else {
@@ -2488,7 +2498,7 @@ mod tests {
     use std::str::FromStr;
     use std::net::Ipv6Addr;
     use crate::bgp::communities::*;
-    use crate::bgp::message::Message;
+    use crate::bgp::message::{Message, nlri::PathId};
     use crate::addr::Prefix;
 
     use bytes::Bytes;
@@ -2624,11 +2634,7 @@ mod tests {
         let nlris = update.nlris();
         let mut nlri_iter = nlris.iter();
         let nlri1 = nlri_iter.next().unwrap();
-        assert!(matches!(nlri1, Nlri::Basic(_)));
-        assert_eq!(
-            nlri1.prefix(),
-            Some(Prefix::from_str("10.10.10.2/32").unwrap())
-            );
+        assert_eq!(nlri1, Nlri::unicast_from_str("10.10.10.2/32").unwrap());
         assert!(nlri_iter.next().is_none());
     }
 
@@ -2654,13 +2660,11 @@ mod tests {
         assert_eq!(update.total_path_attribute_len(), 27);
         assert_eq!(update.nlris().iter().count(), 2);
 
-        let prefixes = ["10.10.10.9/32", "192.168.97.0/30"].map(|p|
-                                                                Prefix::from_str(p).unwrap()
-                                                               );
+        let prefixes = ["10.10.10.9/32", "192.168.97.0/30"]
+            .map(|p| Nlri::unicast_from_str(p).unwrap());
 
-        for (nlri, prefix) in update.nlris().iter().zip(prefixes.iter()) {
-            assert_eq!(nlri.prefix(), Some(*prefix))
-        }
+        assert!(prefixes.into_iter().eq(update.nlris().iter()));
+
     }
 
     #[test]
@@ -2701,7 +2705,6 @@ mod tests {
         let nlris = update.nlris();
         let nlri_iter = nlris.iter();
         assert_eq!(nlri_iter.count(), 5);
-        //assert_eq!(update.nlris().iter().count(), 5);
 
         let prefixes = [
             "fc00::10/128",
@@ -2709,13 +2712,9 @@ mod tests {
             "2001:db8:ffff:1::/64",
             "2001:db8:ffff:2::/64",
             "2001:db8:ffff:3::/64",
-        ].map(|p|
-              Prefix::from_str(p).unwrap()
-             );
+        ].map(|p| Nlri::unicast_from_str(p).unwrap());
 
-        for (nlri, prefix) in update.nlris().iter().zip(prefixes.iter()) {
-            assert_eq!(nlri.prefix(), Some(*prefix))
-        }
+        assert!(prefixes.into_iter().eq(update.nlris().iter()));
 
     }
 
@@ -2756,14 +2755,9 @@ mod tests {
             "192.168.98.0/30",
             "192.168.0.16/30",
             "192.168.99.0/30",
-        ].map(|w|
-              Prefix::from_str(w).unwrap()
-             );
+        ].map(|w| Nlri::unicast_from_str(w).unwrap());
 
-        for (nlri, w) in update.withdrawals().iter().zip(ws.iter()) {
-            assert_eq!(nlri.prefix(), Some(*w))
-        }
-
+        assert!(ws.into_iter().eq(update.withdrawals().iter()));
     }
 
     #[test]
@@ -2793,23 +2787,15 @@ mod tests {
             "2001:db8:ffff:1::/64",
             "2001:db8:ffff:2::/64",
             "2001:db8:ffff:3::/64",
-        ].map(|w|
-              Prefix::from_str(w).unwrap()
-             );
-
-        for (nlri, w) in update.withdrawals().iter().zip(ws.iter()) {
-            assert_eq!(nlri.prefix(), Some(*w))
-        }
+        ].map(|w| Nlri::unicast_from_str(w).unwrap());
+        assert!(ws.into_iter().eq(update.withdrawals().iter()));
     }
 
     #[test]
     fn empty_nlri_iterators() {
         let mut builder = UpdateBuilder::new_vec();
-        //builder.add_withdrawal(
-        //    &Nlri::Basic(Prefix::from_str("10.0.0.0/8").unwrap().into())
-        //).unwrap();
         builder.add_withdrawal(
-            &Nlri::Basic(Prefix::from_str("2001:db8::/32").unwrap().into())
+            &Nlri::unicast_from_str("2001:db8::/32").unwrap()
         ).unwrap();
 
         let msg = builder.into_message().unwrap();
@@ -2818,11 +2804,8 @@ mod tests {
 
         let mut builder2 = UpdateBuilder::new_vec();
         builder2.add_withdrawal(
-            &Nlri::Basic(Prefix::from_str("10.0.0.0/8").unwrap().into())
+            &Nlri::unicast_from_str("10.0.0.0/8").unwrap()
         ).unwrap();
-        //builder2.add_withdrawal(
-        //    &Nlri::Basic(Prefix::from_str("2001:db8::/32").unwrap().into())
-        //).unwrap();
 
         let msg2 = builder2.into_message().unwrap();
         print_pcap(msg2.as_ref());
@@ -2981,10 +2964,14 @@ mod tests {
         let upd: UpdateMessage<_> = Message::from_octets(&buf, Some(sc))
             .unwrap().try_into().unwrap();
 
+        let nlri1 = upd.nlris().iter().next().unwrap();
         assert_eq!(
-            upd.nlris().iter().next().unwrap().prefix(),
-            Some(Prefix::from_str("198.51.100.0/25").unwrap())
-            );
+            nlri1,
+            Nlri::Unicast(BasicNlri::with_path_id(
+                    Prefix::from_str("198.51.100.0/25").unwrap(),
+                    PathId::from_u32(1)
+                    ))
+        );
 
         assert!(upd.communities().is_some());
         for c in upd.communities().unwrap() { 
@@ -3161,12 +3148,14 @@ mod tests {
             .unwrap().try_into().unwrap();
         assert_eq!(upd.nlris().afi(), AFI::Ipv4);
         assert_eq!(upd.nlris().safi(), SAFI::Multicast);
-        assert!(upd.nlris().iter().map(|n| n.prefix().unwrap()).eq([
-              Prefix::from_str("198.51.100.0/26").unwrap(),
-              Prefix::from_str("198.51.100.64/26").unwrap(),
-              Prefix::from_str("198.51.100.128/26").unwrap(),
-              Prefix::from_str("198.51.100.192/26").unwrap(),
-        ]));
+        let prefixes = [
+            "198.51.100.0/26",
+            "198.51.100.64/26",
+            "198.51.100.128/26",
+            "198.51.100.192/26",
+        ].map(|p| Nlri::Multicast(Prefix::from_str(p).unwrap().into()));
+
+        assert!(prefixes.into_iter().eq(upd.nlris().iter()));
     }
 
     #[test]
@@ -3217,7 +3206,7 @@ mod tests {
             "10.0.0.0/7",
             "10.0.0.0/8",
             "10.0.0.0/9",
-        ].map(|s| Nlri::Basic(Prefix::from_str(s).unwrap().into()))
+        ].map(|s| Nlri::unicast_from_str(s).unwrap())
          .into_iter()
          .collect::<Vec<_>>();
 
@@ -3258,7 +3247,7 @@ mod tests {
             "10.0.0.0/7",
             "10.0.0.0/8",
             "10.0.0.0/9",
-        ].map(|s| Nlri::Basic(Prefix::from_str(s).unwrap().into()))
+        ].map(|s| Nlri::unicast_from_str(s).unwrap().into())
          .into_iter()
          .collect::<Vec<_>>();
 
@@ -3273,10 +3262,8 @@ mod tests {
         let mut builder = UpdateBuilder::new_vec();
         for i in 0..1024 {
             builder.add_withdrawal(
-                &Nlri::Basic(
-                    Prefix::from_str(&format!("2001:db:{:04}::/48", i))
-                    .unwrap().into()
-                )
+                &Nlri::unicast_from_str(&format!("2001:db:{:04}::/48", i))
+                    .unwrap()
             ).unwrap();
         }
     }
@@ -3287,7 +3274,7 @@ mod tests {
         let mut prefixes: Vec<Nlri<Vec<u8>>> = vec![];
         for i in 1..1024_u32 {
             prefixes.push(
-                Nlri::Basic(
+                Nlri::Unicast(
                     Prefix::new_v4(
                         Ipv4Addr::from((i << 10).to_be_bytes()),
                         22
@@ -3311,7 +3298,7 @@ mod tests {
         let mut prefixes: Vec<Nlri<Vec<u8>>> = vec![];
         for i in 1..1024_u32 {
             prefixes.push(
-                Nlri::Basic(
+                Nlri::Unicast(
                     Prefix::new_v4(
                         Ipv4Addr::from((i << 10).to_be_bytes()),
                         22
@@ -3344,7 +3331,7 @@ mod tests {
             "10.0.0.0/7",
             "10.0.0.0/8",
             "10.0.0.0/9",
-        ].iter().enumerate().map(|(idx, s)| Nlri::Basic(BasicNlri {
+        ].iter().enumerate().map(|(idx, s)| Nlri::Unicast(BasicNlri {
             prefix: Prefix::from_str(s).unwrap(),
             path_id: Some(PathId::from_u32(idx.try_into().unwrap()))})
         ).collect::<Vec<_>>();
@@ -3361,7 +3348,7 @@ mod tests {
     fn build_withdrawals_basic_v6() {
         let mut builder = UpdateBuilder::new_vec();
         let mut withdrawals = vec![
-            Nlri::Basic(Prefix::from_str("2001:db8::/32").unwrap().into())
+            Nlri::unicast_from_str("2001:db8::/32").unwrap()
         ];
 
         let _ = builder.append_withdrawals(&mut withdrawals);
@@ -3380,7 +3367,7 @@ mod tests {
         let mut withdrawals: Vec<Nlri<Vec<u8>>> = vec![];
         for i in 1..512_u128 {
             withdrawals.push(
-                Nlri::Basic(
+                Nlri::Unicast(
                     Prefix::new_v6(
                         Ipv6Addr::from((i << 64).to_be_bytes()),
                         64
@@ -3399,10 +3386,10 @@ mod tests {
     fn build_mixed_withdrawals() {
         let mut builder = UpdateBuilder::new_vec();
         builder.add_withdrawal(
-            &Nlri::Basic(Prefix::from_str("10.0.0.0/8").unwrap().into())
+            &Nlri::unicast_from_str("10.0.0.0/8").unwrap()
         ).unwrap();
         builder.add_withdrawal(
-            &Nlri::Basic(Prefix::from_str("2001:db8::/32").unwrap().into())
+            &Nlri::unicast_from_str("2001:db8::/32").unwrap()
         ).unwrap();
         let msg = builder.into_message().unwrap();
         print_pcap(msg.as_ref());
@@ -3415,10 +3402,10 @@ mod tests {
         use crate::bgp::message::nlri::PathId;
         let mut builder = UpdateBuilder::new_vec();
         builder.add_withdrawal(
-            &Nlri::Basic(Prefix::from_str("10.0.0.0/8").unwrap().into())
+            &Nlri::unicast_from_str("10.0.0.0/8").unwrap()
         ).unwrap();
         let res = builder.add_withdrawal(
-            &Nlri::Basic(
+            &Nlri::Unicast(
                 (Prefix::from_str("10.0.0.0/8").unwrap(),
                 Some(PathId::from_u32(123))
                 ).into())
@@ -3431,10 +3418,10 @@ mod tests {
         use crate::bgp::message::nlri::PathId;
         let mut builder = UpdateBuilder::new_vec();
         builder.add_withdrawal(
-            &Nlri::Basic(Prefix::from_str("2001:db8::/32").unwrap().into())
+            &Nlri::unicast_from_str("2001:db8::/32").unwrap()
         ).unwrap();
         let res = builder.add_withdrawal(
-            &Nlri::Basic(
+            &Nlri::Unicast(
                 (Prefix::from_str("2001:db8::/32").unwrap(),
                 Some(PathId::from_u32(123))
                 ).into())
@@ -3447,10 +3434,10 @@ mod tests {
         use crate::bgp::message::nlri::PathId;
         let mut builder = UpdateBuilder::new_vec();
         builder.add_withdrawal(
-            &Nlri::Basic(Prefix::from_str("10.0.0.0/8").unwrap().into())
+            &Nlri::unicast_from_str("10.0.0.0/8").unwrap()
         ).unwrap();
         let res = builder.add_withdrawal(
-            &Nlri::Basic(
+            &Nlri::Unicast(
                 (Prefix::from_str("2001:db8::/32").unwrap(),
                 Some(PathId::from_u32(123))
                 ).into())
@@ -3490,7 +3477,7 @@ mod tests {
         print_pcap(upd.as_ref());
 
         assert!(upd.has_conventional_nlri() && upd.has_mp_nlri());
-        assert_eq!(upd.all_nlri_iter().count(), 7);
+        assert_eq!(upd.unicast_announcements().count(), 7);
 
     }
 
@@ -3518,7 +3505,7 @@ mod tests {
 
         // now for some NLRI
         // XXX currently ACS only holds one single Nlri
-        acs.nlri.set(Nlri::Basic(BasicNlri{
+        acs.nlri.set(Nlri::Unicast(BasicNlri{
             prefix: Prefix::from_str("1.2.0.0/25").unwrap(),
             path_id: Some(PathId::from_u32(123))
         }));
