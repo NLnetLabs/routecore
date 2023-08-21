@@ -76,7 +76,6 @@ pub mod new_pas {
 
     //--- NextHop
 
-    use crate::bgp::types::NextHop as NextHopType;
     use std::net::Ipv4Addr;
     #[derive(Debug)]
     pub struct NextHop(Ipv4Addr);

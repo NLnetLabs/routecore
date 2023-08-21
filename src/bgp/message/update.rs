@@ -247,10 +247,9 @@ impl<Octs: Octets> UpdateMessage<Octs> {
                self.session_config
             ).expect("parsed before")
         ).filter(|nlris|
-               match (nlris.afi(), nlris.safi()) {
-                   (AFI::Ipv4 | AFI::Ipv6, SAFI::Unicast) => true,
-                   _ => false,
-                }
+            matches!((nlris.afi(), nlris.safi()), 
+                     (AFI::Ipv4 | AFI::Ipv6, SAFI::Unicast)
+            )
         ).map(|nlris| nlris.iter());
 
         let wrl = self.withdrawn_routes_len() as usize;

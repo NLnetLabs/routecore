@@ -14,7 +14,6 @@ use std::slice::SliceIndex;
 use std::{error, fmt};
 
 use crate::asn::{Asn, LargeAsnError};
-use crate::bgp::message::update::{ComposeError, PathAttributeType};
 
 use octseq::builder::{infallible, EmptyBuilder, FromBuilder, OctetsBuilder};
 use octseq::octets::{Octets, OctetsFrom, OctetsInto};
