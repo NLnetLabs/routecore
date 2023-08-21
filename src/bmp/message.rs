@@ -1614,6 +1614,7 @@ mod tests {
     use std::str::FromStr;
     use crate::addr::Prefix;
     use crate::bgp::types::{AFI, SAFI, PathAttributeType};
+    use crate::bgp::message::nlri::Nlri;
     use crate::bgp::message::update::{AddPath, FourOctetAsn, SessionConfig};
 
     // Helper for generating a .pcap, pass output to `text2pcap`.
@@ -1759,8 +1760,14 @@ mod tests {
         // NLRI
         let nlris = bgp_update.nlris();
         let mut nlris = nlris.iter();
-        let n1 = nlris.next().unwrap().prefix();
-        assert_eq!(n1, Some(Prefix::from_str("10.10.10.2/32").unwrap()));
+        if let Some(Nlri::Unicast(n1)) = nlris.next() {
+            assert_eq!(
+                n1.prefix(),
+                Prefix::from_str("10.10.10.2/32").unwrap()
+            );
+        } else {
+            panic!()
+        }
         assert!(nlris.next().is_none());
     }
 
