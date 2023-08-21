@@ -301,8 +301,8 @@ impl<Octs: Octets> UpdateMessage<Octs> {
                     ).into(),
                     pa.value().as_ref()[2].into()
                 ));
-        }
 
+            }
         None
     }
 
@@ -2027,7 +2027,10 @@ impl LargeCommunity {
 use octseq::{FreezeBuilder, OctetsBuilder, ShortBuf};
 use crate::bgp::message::attr_change_set::AttrChangeSet;
 use crate::bgp::message::MsgType;
-use crate::bgp::message::update_builder::MpUnreachNlriBuilder;
+use crate::bgp::message::update_builder::{
+    MpReachNlriBuilder,
+    MpUnreachNlriBuilder
+};
 
 //use rotonda_fsm::bgp::session::AgreedConfig;
 
@@ -2060,6 +2063,7 @@ pub struct UpdateBuilder<Target> {
     // MP_(UN)REACH_NLRI path attribute.
     // Question is: can one also put (v4, unicast) in an MP_* attribute, and,
     // then also in the conventional part (at the end of the PDU)? 
+    mp_reach_nlri_builder: Option<MpReachNlriBuilder>,
     mp_unreach_nlri_builder: Option<MpUnreachNlriBuilder>,
 }
 
@@ -2088,6 +2092,7 @@ impl<Target: OctetsBuilder> UpdateBuilder<Target> {
 
             attributes_len: 0,
             total_pdu_len: 19 + 2 + 2,
+            mp_reach_nlri_builder: None,
             mp_unreach_nlri_builder: None,
         })
     }
@@ -2292,8 +2297,56 @@ impl<Target: OctetsBuilder> UpdateBuilder<Target> {
                     
                 } else {
                     // Nlri::Unicast only holds IPv4 and IPv6, so this must be
-                    // IPv6.
-                    todo!() // TODO use MpReachNlriBuilder once we have that. 
+                    // IPv6 unicast.
+
+                    let new_bytes_num = match self.mp_reach_nlri_builder {
+                        None => {
+                            let nexthop = NextHop::Ipv6(0.into());
+                            let builder = MpReachNlriBuilder::new(
+                                AFI::Ipv6, SAFI::Unicast,
+                                nexthop,
+                                b.is_addpath()
+                            );
+                            let res = builder.compose_len(announcement);
+                            self.mp_reach_nlri_builder = Some(builder);
+                            res
+                            
+                        }
+                        Some(ref builder) => {
+                            //TODO we should allow multicast here, but then we
+                            //should also check whether a prefix is_multicast.
+                            //Similarly, should we check for is_unicast?
+                            //Or should we handle anything other than unicast
+                            //in the outer match anyway, as that is never a
+                            //conventional announcement anyway?
+                            
+                            if builder.afi_safi() != (AFI::Ipv6, SAFI::Unicast)
+                            || builder.addpath_enabled() != b.is_addpath() {
+                                // We are already constructing a
+                                // MP_REACH_NLRI but for a different
+                                // AFI,SAFI than the prefix in `announcement`,
+                                // or we are mixing addpath with non-addpath.
+                                return Err(ComposeError::IllegalCombination);
+                            }
+                            builder.compose_len(announcement)
+                        }
+                    };
+
+                    println!("new_bytes_num: {new_bytes_num}");
+                    let new_total = self.total_pdu_len + new_bytes_num;
+
+                    if new_total > Self::MAX_PDU {
+                        return Err(ComposeError::PduTooLarge(new_total));
+                    }
+
+                    if let Some(ref mut builder) = self.mp_reach_nlri_builder {
+                        builder.add_announcement(announcement)?;
+                        self.attributes_len += new_bytes_num;
+                        self.total_pdu_len = new_total;
+                    } else {
+                        // We always have Some builder at this point.
+                        unreachable!()
+                    }
                 }
             }
             _ => todo!() // TODO use MpReachNlriBuilder once we have that.
@@ -2611,6 +2664,10 @@ where
 
         if let Some(nexthop) = self.nexthop {
             nexthop.compose(&mut self.target)?
+        }
+
+        if let Some(builder) = self.mp_reach_nlri_builder {
+            builder.compose(&mut self.target)?
         }
 
         if let Some(builder) = self.mp_unreach_nlri_builder {
@@ -3667,6 +3724,32 @@ mod tests {
 
         //let pdu = builder.into_message().unwrap();
         //print_pcap(pdu);
+    }
+
+    #[test]
+    fn build_announcements_mp() {
+        use crate::bgp::aspath::HopPath;
+
+        let mut builder = UpdateBuilder::new_vec();
+        let prefixes = [
+            "2001:db8:1::/48",
+            "2001:db8:2::/48",
+            "2001:db8:3::/48",
+        ].map(|p| Nlri::unicast_from_str(p).unwrap());
+        let mut iter = prefixes.into_iter().peekable();
+        builder.announcements_from_iter(&mut iter).unwrap();
+        builder.set_origin(OriginType::Igp).unwrap();
+        //builder.set_nexthop("fe80:1:2;3::".parse().unwrap()).unwrap();
+        let path = HopPath::from([
+             Asn::from_u32(100),
+             Asn::from_u32(200),
+             Asn::from_u32(300),
+        ]);
+        builder.set_aspath::<Vec<u8>>(path.to_as_path().unwrap()).unwrap();
+
+        let raw = builder.finish().unwrap();
+        print_pcap(&raw);
+
     }
 
 
