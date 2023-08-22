@@ -137,6 +137,39 @@ pub mod new_pas {
         }
     }
 
+    //--- LocalPref
+
+    #[derive(Debug)]
+    pub struct LocalPref(u32);
+
+    impl LocalPref {
+        const TYPECODE: u8 = 5;
+
+        pub fn new(local_pref: u32) -> LocalPref {
+            LocalPref(local_pref)
+        }
+
+        fn value_len() -> u8 {
+            4
+        }
+
+        pub fn compose_len(&self) -> usize {
+            7
+        }
+
+        pub fn compose<Target: OctetsBuilder>(&self, target: &mut Target)
+            -> Result<(), Target::AppendError>
+        {
+            target.append_slice(&[
+                Flags::WELLKNOWN,
+                Self::TYPECODE,
+                Self::value_len()
+            ])?;
+            target.append_slice(&self.0.to_be_bytes())?;
+            Ok(())
+        }
+    }
+
 
 }
 

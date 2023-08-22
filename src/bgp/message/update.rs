@@ -2053,6 +2053,7 @@ pub struct UpdateBuilder<Target> {
     aspath: Option<AsPath<Vec<u8>>>,
     nexthop: Option<new_pas::NextHop>,
     multi_exit_disc: Option<new_pas::MultiExitDisc>,
+    local_pref: Option<new_pas::LocalPref>,
 
     standard_communities_builder: Option<StandardCommunitiesBuilder>,
 
@@ -2094,6 +2095,7 @@ impl<Target: OctetsBuilder> UpdateBuilder<Target> {
             aspath: None,
             nexthop: None,
             multi_exit_disc: None,
+            local_pref: None,
 
             standard_communities_builder: None,
 
@@ -2346,6 +2348,20 @@ impl<Target: OctetsBuilder> UpdateBuilder<Target> {
             return Err(ComposeError::PduTooLarge(new_total));
         }
         self.multi_exit_disc = Some(med);
+        self.total_pdu_len = new_total;
+        self.attributes_len += new_bytes;
+        Ok(())
+    }
+
+    pub fn set_local_pref(&mut self, local_pref: new_pas::LocalPref)
+    -> Result<(), ComposeError>
+    {
+        let new_bytes = local_pref.compose_len();
+        let new_total = self.total_pdu_len + new_bytes;
+        if new_total > Self::MAX_PDU {
+            return Err(ComposeError::PduTooLarge(new_total));
+        }
+        self.local_pref = Some(local_pref);
         self.total_pdu_len = new_total;
         self.attributes_len += new_bytes;
         Ok(())
@@ -2811,6 +2827,10 @@ where
 
         if let Some(med) = self.multi_exit_disc {
             med.compose(&mut self.target)?
+        }
+
+        if let Some(local_pref) = self.local_pref {
+            local_pref.compose(&mut self.target)?
         }
 
         if let Some(builder) = self.standard_communities_builder {
@@ -4034,6 +4054,7 @@ mod tests {
         builder.set_aspath::<Vec<u8>>(path.to_as_path().unwrap()).unwrap();
 
         builder.set_multi_exit_disc(new_pas::MultiExitDisc::new(1234)).unwrap();
+        builder.set_local_pref(new_pas::LocalPref::new(9876)).unwrap();
 
         let msg = builder.into_message().unwrap();
         msg.print_pcap();
