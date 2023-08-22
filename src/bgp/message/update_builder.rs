@@ -104,6 +104,39 @@ pub mod new_pas {
         }
     }
 
+    //--- MultiExitDisc
+
+    #[derive(Debug)]
+    pub struct MultiExitDisc(u32);
+
+    impl MultiExitDisc {
+        const TYPECODE: u8 = 4;
+
+        pub fn new(med: u32) -> MultiExitDisc {
+            MultiExitDisc(med)
+        }
+
+        fn value_len() -> u8 {
+            4
+        }
+
+        pub fn compose_len(&self) -> usize {
+            7
+        }
+
+        pub fn compose<Target: OctetsBuilder>(&self, target: &mut Target)
+            -> Result<(), Target::AppendError>
+        {
+            target.append_slice(&[
+                Flags::OPT_NON_TRANS,
+                Self::TYPECODE,
+                Self::value_len()
+            ])?;
+            target.append_slice(&self.0.to_be_bytes())?;
+            Ok(())
+        }
+    }
+
 
 }
 

@@ -2052,6 +2052,7 @@ pub struct UpdateBuilder<Target> {
     origin: Option<new_pas::Origin>,
     aspath: Option<AsPath<Vec<u8>>>,
     nexthop: Option<new_pas::NextHop>,
+    multi_exit_disc: Option<new_pas::MultiExitDisc>,
 
     standard_communities_builder: Option<StandardCommunitiesBuilder>,
 
@@ -2092,6 +2093,7 @@ impl<Target: OctetsBuilder> UpdateBuilder<Target> {
             origin: None,
             aspath: None,
             nexthop: None,
+            multi_exit_disc: None,
 
             standard_communities_builder: None,
 
@@ -2332,6 +2334,20 @@ impl<Target: OctetsBuilder> UpdateBuilder<Target> {
             self.mp_reach_nlri_builder = Some(builder);
         }
 
+        Ok(())
+    }
+
+    pub fn set_multi_exit_disc(&mut self, med: new_pas::MultiExitDisc)
+    -> Result<(), ComposeError>
+    {
+        let new_bytes = med.compose_len();
+        let new_total = self.total_pdu_len + new_bytes;
+        if new_total > Self::MAX_PDU {
+            return Err(ComposeError::PduTooLarge(new_total));
+        }
+        self.multi_exit_disc = Some(med);
+        self.total_pdu_len = new_total;
+        self.attributes_len += new_bytes;
         Ok(())
     }
 
@@ -2791,6 +2807,10 @@ where
 
         if let Some(nexthop) = self.nexthop {
             nexthop.compose(&mut self.target)?
+        }
+
+        if let Some(med) = self.multi_exit_disc {
+            med.compose(&mut self.target)?
         }
 
         if let Some(builder) = self.standard_communities_builder {
@@ -3990,6 +4010,33 @@ mod tests {
         builder.into_message().unwrap();
         //let raw = builder.finish().unwrap();
         //print_pcap(&raw);
+    }
+
+    #[test]
+    fn build_other_attributes() {
+        use crate::bgp::aspath::HopPath;
+        let mut builder = UpdateBuilder::new_vec();
+        let prefixes = [
+            "1.0.1.0/24",
+            "1.0.2.0/24",
+            "1.0.3.0/24",
+            "1.0.4.0/24",
+        ].map(|p| Nlri::unicast_from_str(p).unwrap());
+        let mut iter = prefixes.into_iter().peekable();
+        builder.announcements_from_iter(&mut iter).unwrap();
+        builder.set_origin(OriginType::Igp).unwrap();
+        builder.set_nexthop("1.2.3.4".parse().unwrap()).unwrap();
+        let path = HopPath::from([
+             Asn::from_u32(100),
+             Asn::from_u32(200),
+             Asn::from_u32(300),
+        ]);
+        builder.set_aspath::<Vec<u8>>(path.to_as_path().unwrap()).unwrap();
+
+        builder.set_multi_exit_disc(new_pas::MultiExitDisc::new(1234)).unwrap();
+
+        let msg = builder.into_message().unwrap();
+        msg.print_pcap();
     }
 
 
