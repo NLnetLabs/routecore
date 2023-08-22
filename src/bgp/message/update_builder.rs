@@ -40,8 +40,11 @@ pub mod new_pas {
         // 3: extended length (0 -> 1 byte length, 1 -> 2 byte length)
         // 4-7: MUST be 0 when sent, ignored when received
         const OPT_NON_TRANS: u8 = 0b1000_0000;
-        const OPT_NON_TRANS_EXT: u8 = 0b1001_0000;
+        const OPT_TRANS: u8 = 0b1100_0000;
         const WELLKNOWN: u8 = 0b0100_0000;
+
+        const EXTENDED_LEN: u8 = 0b0001_0000;
+        const PARTIAL: u8 = 0b0010_0000;
     }
 
     pub struct MpUnreachNlri { }
