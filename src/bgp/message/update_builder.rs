@@ -28,7 +28,7 @@ pub mod new_pas {
     // blocks for the specific types.
 
 
-    enum PathAttribute {
+    pub enum PathAttribute {
         Origin(Origin),
         NextHop(NextHop),
         MultiExitDisc(MultiExitDisc),
@@ -55,11 +55,36 @@ pub mod new_pas {
         const PARTIAL: u8 = 0b0010_0000;
     }
 
-    pub trait SimpleAttribute {
+    pub trait AttributeHeader {
         const FLAGS: u8;
         const TYPECODE: u8;
         const VALUE_LEN: u8;
         const COMPOSE_LEN: u8 = 3 + Self::VALUE_LEN;
+    }
+
+    macro_rules! simple_attribute {
+        ($name:ident($data:ty),
+         $flags:expr,
+         $typecode:expr,
+         $value_len:expr
+         ) => {
+            #[derive(Debug)]
+            pub struct $name($data);
+            impl $name {
+                pub fn new(data: $data) -> $name {
+                    $name(data)
+                }
+            }
+
+            impl AttributeHeader for $name {
+                const FLAGS: u8 = $flags;
+                const TYPECODE: u8 = $typecode;
+                const VALUE_LEN: u8 = $value_len;
+            }
+        }
+    }
+
+    pub trait SimpleAttribute: AttributeHeader {
 
         fn compose_len(&self) -> usize {
             Self::COMPOSE_LEN.into()
@@ -89,20 +114,9 @@ pub mod new_pas {
     //--- Origin
 
     use crate::bgp::message::update::OriginType;
-    #[derive(Debug)]
-    pub struct Origin(OriginType);
-
-    impl Origin {
-        pub fn new(origin_type: OriginType) -> Origin {
-            Origin(origin_type)
-        }
-    }
+    simple_attribute!(Origin(OriginType), Flags::WELLKNOWN, 1, 1);
 
     impl SimpleAttribute for Origin {
-        const FLAGS: u8 = Flags::WELLKNOWN;
-        const TYPECODE: u8 = 1;
-        const VALUE_LEN: u8 = 1;
-
         fn compose_value<Target: OctetsBuilder>(&self, target: &mut Target)
             -> Result<(), Target::AppendError>
         {
@@ -110,24 +124,13 @@ pub mod new_pas {
         }
     }
 
-    //--- AsPath (TODO, also see bgp::aspath)
+    //--- AsPath (see bgp::aspath)
 
     //--- NextHop
 
-    #[derive(Debug)]
-    pub struct NextHop(Ipv4Addr);
-
-    impl NextHop {
-        pub fn new(addr: Ipv4Addr) -> NextHop {
-            NextHop(addr)
-        }
-    }
+    simple_attribute!(NextHop(Ipv4Addr), Flags::WELLKNOWN, 3, 4);
 
     impl SimpleAttribute for NextHop {
-        const FLAGS: u8 = Flags::WELLKNOWN;
-        const TYPECODE: u8 = 3;
-        const VALUE_LEN: u8 = 4;
-
         fn compose_value<Target: OctetsBuilder>(&self, target: &mut Target)
             -> Result<(), Target::AppendError>
         {
@@ -137,20 +140,9 @@ pub mod new_pas {
 
     //--- MultiExitDisc
 
-    #[derive(Debug)]
-    pub struct MultiExitDisc(u32);
-
-    impl MultiExitDisc {
-        pub fn new(med: u32) -> MultiExitDisc {
-            MultiExitDisc(med)
-        }
-    }
+    simple_attribute!(MultiExitDisc(u32), Flags::OPT_NON_TRANS, 4, 4);
 
     impl SimpleAttribute for MultiExitDisc {
-        const FLAGS: u8 = Flags::OPT_NON_TRANS;
-        const TYPECODE: u8 = 4;
-        const VALUE_LEN: u8 = 4;
-
         fn compose_value<Target: OctetsBuilder>(&self, target: &mut Target)
             -> Result<(), Target::AppendError>
         {
@@ -160,20 +152,9 @@ pub mod new_pas {
 
     //--- LocalPref
 
-    #[derive(Debug)]
-    pub struct LocalPref(u32);
-
-    impl LocalPref {
-        pub fn new(local_pref: u32) -> LocalPref {
-            LocalPref(local_pref)
-        }
-    }
+    simple_attribute!(LocalPref(u32), Flags::WELLKNOWN, 5, 4);
 
     impl SimpleAttribute for LocalPref {
-        const FLAGS: u8 = Flags::WELLKNOWN;
-        const TYPECODE: u8 = 5;
-        const VALUE_LEN: u8 = 4;
-
         fn compose_value<Target: OctetsBuilder>(&self, target: &mut Target)
             -> Result<(), Target::AppendError>
         {
