@@ -2029,7 +2029,8 @@ use crate::bgp::message::attr_change_set::AttrChangeSet;
 use crate::bgp::message::MsgType;
 use crate::bgp::message::update_builder::{
     MpReachNlriBuilder,
-    MpUnreachNlriBuilder
+    MpUnreachNlriBuilder,
+    StandardCommunitiesBuilder
 };
 
 //use rotonda_fsm::bgp::session::AgreedConfig;
@@ -2052,6 +2053,7 @@ pub struct UpdateBuilder<Target> {
     aspath: Option<AsPath<Vec<u8>>>,
     nexthop: Option<new_pas::NextHop>,
 
+    standard_communities_builder: Option<StandardCommunitiesBuilder>,
 
     attributes_len: usize,
     total_pdu_len: usize,
@@ -2085,10 +2087,13 @@ impl<Target: OctetsBuilder> UpdateBuilder<Target> {
             withdrawals: Vec::new(),
             withdrawals_len: 0,
             addpath_enabled: None,
+
             //attributes:
             origin: None,
             aspath: None,
             nexthop: None,
+
+            standard_communities_builder: None,
 
             attributes_len: 0,
             total_pdu_len: 19 + 2 + 2,
@@ -2428,6 +2433,37 @@ impl<Target: OctetsBuilder> UpdateBuilder<Target> {
         Ok(())
     }
 
+    //--- Standard communities
+    
+    pub fn add_community(&mut self, community: StandardCommunity)
+        -> Result<(), ComposeError>
+    {
+
+        if let Some(ref mut builder) = self.standard_communities_builder {
+            let new_bytes = builder.compose_len(community);
+            let new_total = self.total_pdu_len + new_bytes;
+            if new_total > Self::MAX_PDU {
+                return Err(ComposeError::PduTooLarge(new_total));
+            }
+            builder.add_community(community);
+            self.attributes_len += new_bytes;
+            self.total_pdu_len = new_total;
+        } else {
+            let mut builder = StandardCommunitiesBuilder::new();
+            let new_bytes = builder.compose_len_empty()
+                + builder.compose_len(community); 
+            let new_total = self.total_pdu_len + new_bytes;
+            if new_total > Self::MAX_PDU {
+                return Err(ComposeError::PduTooLarge(new_total));
+            }
+            builder.add_community(community);
+            self.standard_communities_builder = Some(builder);
+            self.attributes_len += new_bytes;
+            self.total_pdu_len = new_total;
+        }
+
+        Ok(())
+    }
 
 }
 
@@ -2755,6 +2791,10 @@ where
 
         if let Some(nexthop) = self.nexthop {
             nexthop.compose(&mut self.target)?
+        }
+
+        if let Some(builder) = self.standard_communities_builder {
+            builder.compose(&mut self.target)?
         }
 
         if let Some(builder) = self.mp_reach_nlri_builder {
@@ -3918,6 +3958,40 @@ mod tests {
                 Err(ComposeError::EmptyMpReachNlri)
         ));
     }
+
+    #[test]
+    fn build_standard_communities() {
+        use crate::bgp::aspath::HopPath;
+        let mut builder = UpdateBuilder::new_vec();
+        let prefixes = [
+            "1.0.1.0/24",
+            "1.0.2.0/24",
+            "1.0.3.0/24",
+            "1.0.4.0/24",
+        ].map(|p| Nlri::unicast_from_str(p).unwrap());
+        let mut iter = prefixes.into_iter().peekable();
+        builder.announcements_from_iter(&mut iter).unwrap();
+        builder.set_origin(OriginType::Igp).unwrap();
+        builder.set_nexthop("1.2.3.4".parse().unwrap()).unwrap();
+        let path = HopPath::from([
+             Asn::from_u32(100),
+             Asn::from_u32(200),
+             Asn::from_u32(300),
+        ]);
+        builder.set_aspath::<Vec<u8>>(path.to_as_path().unwrap()).unwrap();
+
+
+        builder.add_community("AS1234:666".parse().unwrap()).unwrap();
+        builder.add_community("NO_EXPORT".parse().unwrap()).unwrap();
+        for n in 1..100 {
+            builder.add_community(format!("AS999:{n}").parse().unwrap()).unwrap();
+        }
+
+        builder.into_message().unwrap();
+        //let raw = builder.finish().unwrap();
+        //print_pcap(&raw);
+    }
+
 
 
     #[test]

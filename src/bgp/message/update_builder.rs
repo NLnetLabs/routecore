@@ -2,6 +2,7 @@ use std::net::Ipv6Addr;
 
 use octseq::OctetsBuilder;
 
+use crate::bgp::communities::StandardCommunity;
 use crate::bgp::message::nlri::Nlri;
 use crate::bgp::message::update::{AFI, SAFI, NextHop};
 
@@ -123,7 +124,7 @@ pub mod new_pas {
 
 
 #[derive(Debug)]
-pub struct MpReachNlriBuilder {
+pub(crate) struct MpReachNlriBuilder {
     announcements: Vec<Nlri<Vec<u8>>>,
     len: usize, // size of value, excluding path attribute flags+typecode+len
     extended: bool,
@@ -322,7 +323,7 @@ impl NextHop {
 //    path ids if the Nlri passed to add_withdrawal contains Some(PathId).
 //
 #[derive(Debug)]
-pub struct MpUnreachNlriBuilder {
+pub(crate) struct MpUnreachNlriBuilder {
     withdrawals: Vec<Nlri<Vec<u8>>>,
     len: usize, // size of value, excluding path attribute flags+typecode+len
     extended: bool,
@@ -417,3 +418,59 @@ impl MpUnreachNlriBuilder {
         Ok(())
     }
 }
+
+
+#[derive(Debug)]
+pub(crate) struct StandardCommunitiesBuilder {
+    communities: Vec<StandardCommunity>,
+    len: usize, // size of value, excluding path attribute flags+typecode+len
+    extended: bool,
+}
+
+impl StandardCommunitiesBuilder {
+    pub(crate) fn new() -> StandardCommunitiesBuilder {
+        StandardCommunitiesBuilder {
+            communities: Vec::new(),
+            len: 0,
+            extended: false
+        }
+    }
+
+    pub(crate) fn compose_len_empty(&self) -> usize {
+        3
+    }
+
+    pub(crate) fn compose_len(&self, _community: StandardCommunity) -> usize {
+        if !self.extended && self.len + 4 > 255 {
+            4 +1
+        } else {
+            4
+        }
+    }
+
+    pub(crate) fn add_community(&mut self, community: StandardCommunity) {
+        if !self.extended && self.len + 4 > 255 {
+            self.extended = true;
+        }
+        self.len += 4;
+        self.communities.push(community);
+    }
+
+    pub(crate) fn compose<Target: OctetsBuilder>(&self, target: &mut Target)
+        -> Result<(), Target::AppendError>
+    {
+        let len = self.len.to_be_bytes();
+        if self.extended {
+            // FIXME this assumes usize is 64bits
+            target.append_slice(&[0b1001_0000, 8, len[6], len[7]])
+        } else {
+            target.append_slice(&[0b1000_0000, 8, len[7]])
+        }?;
+
+        for c in &self.communities {
+            target.append_slice(&c.to_raw())?;
+        }
+        Ok(())
+    }
+}
+
