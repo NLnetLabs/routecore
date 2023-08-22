@@ -2737,6 +2737,7 @@ where Infallible: From<<Target as OctetsBuilder>::AppendError>
     }
 }
 
+use super::update_builder::new_pas::SimpleAttribute;
 impl<Target> UpdateBuilder<Target>
 where
     Target: OctetsBuilder + FreezeBuilder + AsMut<[u8]>,

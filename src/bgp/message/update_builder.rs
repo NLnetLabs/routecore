@@ -27,9 +27,17 @@ pub mod new_pas {
     // We can get rid off PathAttributeType, and have one or multiple impl
     // blocks for the specific types.
 
+
+    enum PathAttribute {
+        Origin(Origin),
+        NextHop(NextHop),
+        MultiExitDisc(MultiExitDisc),
+        LocalPref(LocalPref),
+    }
+
     use octseq::OctetsBuilder;
 
-    pub struct Flags { }
+    struct Flags { }
 
     impl Flags {
         // 0 1 2 3 4 5 6 7
@@ -47,11 +55,35 @@ pub mod new_pas {
         const PARTIAL: u8 = 0b0010_0000;
     }
 
-    pub struct MpUnreachNlri { }
+    pub trait SimpleAttribute {
+        const FLAGS: u8;
+        const TYPECODE: u8;
+        const VALUE_LEN: u8;
+        const COMPOSE_LEN: u8 = 3 + Self::VALUE_LEN;
 
-    impl MpUnreachNlri {
-        // optional non-transitive attribute
-        const TYPECODE: u8 = 15;
+        fn compose_len(&self) -> usize {
+            Self::COMPOSE_LEN.into()
+        }
+
+        fn compose<Target: OctetsBuilder>(&self, target: &mut Target)
+            -> Result<(), Target::AppendError>
+        {
+            self.compose_header(target)?;
+            self.compose_value(target)
+        }
+
+        fn compose_header<Target: OctetsBuilder>(&self, target: &mut Target)
+            -> Result<(), Target::AppendError>
+        {
+            target.append_slice(&[
+                Self::FLAGS,
+                Self::TYPECODE,
+                Self::VALUE_LEN,
+            ])
+        }
+
+        fn compose_value<Target: OctetsBuilder>(&self, target: &mut Target)
+            -> Result<(), Target::AppendError>;
     }
 
     //--- Origin
@@ -61,22 +93,20 @@ pub mod new_pas {
     pub struct Origin(OriginType);
 
     impl Origin {
-        const TYPECODE: u8 = 1;
-        fn value_len() -> u8 { 1 }
-
         pub fn new(origin_type: OriginType) -> Origin {
             Origin(origin_type)
         }
+    }
 
-        pub fn compose<Target: OctetsBuilder>(&self, target: &mut Target)
+    impl SimpleAttribute for Origin {
+        const FLAGS: u8 = Flags::WELLKNOWN;
+        const TYPECODE: u8 = 1;
+        const VALUE_LEN: u8 = 1;
+
+        fn compose_value<Target: OctetsBuilder>(&self, target: &mut Target)
             -> Result<(), Target::AppendError>
         {
-            target.append_slice(&[
-                Flags::WELLKNOWN,
-                Self::TYPECODE,
-                Self::value_len(),
-                self.0.into()
-            ]) 
+            target.append_slice(&[self.0.into()]) 
         }
     }
 
@@ -88,21 +118,19 @@ pub mod new_pas {
     pub struct NextHop(Ipv4Addr);
 
     impl NextHop {
-        const TYPECODE: u8 = 3;
-        fn value_len() -> u8 { 4 }
-
         pub fn new(addr: Ipv4Addr) -> NextHop {
             NextHop(addr)
         }
+    }
 
-        pub fn compose<Target: OctetsBuilder>(&self, target: &mut Target)
+    impl SimpleAttribute for NextHop {
+        const FLAGS: u8 = Flags::WELLKNOWN;
+        const TYPECODE: u8 = 3;
+        const VALUE_LEN: u8 = 4;
+
+        fn compose_value<Target: OctetsBuilder>(&self, target: &mut Target)
             -> Result<(), Target::AppendError>
         {
-            target.append_slice(&[
-                Flags::WELLKNOWN,
-                Self::TYPECODE,
-                Self::value_len()
-            ])?;
             target.append_slice(&self.0.octets())
         }
     }
@@ -113,30 +141,20 @@ pub mod new_pas {
     pub struct MultiExitDisc(u32);
 
     impl MultiExitDisc {
-        const TYPECODE: u8 = 4;
-
         pub fn new(med: u32) -> MultiExitDisc {
             MultiExitDisc(med)
         }
+    }
 
-        fn value_len() -> u8 {
-            4
-        }
+    impl SimpleAttribute for MultiExitDisc {
+        const FLAGS: u8 = Flags::OPT_NON_TRANS;
+        const TYPECODE: u8 = 4;
+        const VALUE_LEN: u8 = 4;
 
-        pub fn compose_len(&self) -> usize {
-            7
-        }
-
-        pub fn compose<Target: OctetsBuilder>(&self, target: &mut Target)
+        fn compose_value<Target: OctetsBuilder>(&self, target: &mut Target)
             -> Result<(), Target::AppendError>
         {
-            target.append_slice(&[
-                Flags::OPT_NON_TRANS,
-                Self::TYPECODE,
-                Self::value_len()
-            ])?;
-            target.append_slice(&self.0.to_be_bytes())?;
-            Ok(())
+            target.append_slice(&self.0.to_be_bytes()) 
         }
     }
 
@@ -146,34 +164,22 @@ pub mod new_pas {
     pub struct LocalPref(u32);
 
     impl LocalPref {
-        const TYPECODE: u8 = 5;
-
         pub fn new(local_pref: u32) -> LocalPref {
             LocalPref(local_pref)
         }
-
-        fn value_len() -> u8 {
-            4
-        }
-
-        pub fn compose_len(&self) -> usize {
-            7
-        }
-
-        pub fn compose<Target: OctetsBuilder>(&self, target: &mut Target)
-            -> Result<(), Target::AppendError>
-        {
-            target.append_slice(&[
-                Flags::WELLKNOWN,
-                Self::TYPECODE,
-                Self::value_len()
-            ])?;
-            target.append_slice(&self.0.to_be_bytes())?;
-            Ok(())
-        }
     }
 
+    impl SimpleAttribute for LocalPref {
+        const FLAGS: u8 = Flags::WELLKNOWN;
+        const TYPECODE: u8 = 5;
+        const VALUE_LEN: u8 = 4;
 
+        fn compose_value<Target: OctetsBuilder>(&self, target: &mut Target)
+            -> Result<(), Target::AppendError>
+        {
+            target.append_slice(&self.0.to_be_bytes()) 
+        }
+    }
 }
 
 
