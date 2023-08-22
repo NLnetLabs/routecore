@@ -1,3 +1,5 @@
+use std::net::Ipv6Addr;
+
 use octseq::OctetsBuilder;
 
 use crate::bgp::message::nlri::Nlri;
@@ -8,6 +10,8 @@ use super::update::ComposeError;
 // just drafting ideas, not used right now
 #[allow(dead_code)]
 pub mod new_pas {
+
+    use std::net::Ipv4Addr;
 
     // eventually we work towards
     // enum PathAttribute {
@@ -76,7 +80,6 @@ pub mod new_pas {
 
     //--- NextHop
 
-    use std::net::Ipv4Addr;
     #[derive(Debug)]
     pub struct NextHop(Ipv4Addr);
 
@@ -131,7 +134,14 @@ pub struct MpReachNlriBuilder {
 }
 
 impl MpReachNlriBuilder {
-    pub fn new(
+
+
+    // Minimal required size for a meaningful MP_REACH_NLRI. This comprises
+    // the attribute flags/size/type (3 bytes), a IPv6 nexthop (17), reserved
+    // byte (1) and then space for at least an IPv6 /48 announcement (7)
+    //pub const MIN_SIZE: usize = 3 + 17 + 1 + 7;
+
+    pub(crate) fn new(
         afi: AFI,
         safi: SAFI,
         nexthop: NextHop,
@@ -158,19 +168,47 @@ impl MpReachNlriBuilder {
         }
     }
 
-    pub fn afi_safi(&self) -> (AFI, SAFI) {
-        (self.afi, self.safi)
+    pub(crate) fn is_empty(&self) -> bool {
+        self.announcements.is_empty()
     }
 
-    pub fn addpath_enabled(&self) -> bool {
-        self.addpath_enabled
+    pub(crate) fn get_nexthop(&self) -> &NextHop {
+        &self.nexthop
     }
 
-    pub fn set_nexthop(&mut self, nexthop: NextHop) {
-        self.nexthop = nexthop;
+    pub(crate) fn set_nexthop(&mut self, addr: Ipv6Addr) {
+        match self.nexthop {
+            NextHop::Ipv6(_) => self.nexthop = NextHop::Ipv6(addr),
+            NextHop::Ipv6LL(_, ll) => {
+                self.nexthop = NextHop::Ipv6LL(addr, ll)
+            }
+            _ => unimplemented!()
+        }
     }
 
-    pub fn add_announcement(&mut self, announcement: &Nlri<Vec<u8>>)
+    pub(crate) fn set_nexthop_ll(&mut self, addr: Ipv6Addr) {
+        match self.nexthop {
+            NextHop::Ipv6(a) => {
+                self.nexthop = NextHop::Ipv6LL(a, addr);
+                self.len += 16;
+            }
+            NextHop::Ipv6LL(a, _ll) => {
+                self.nexthop = NextHop::Ipv6LL(a, addr);
+            }
+            _ => unreachable!()
+        }
+    }
+
+    pub(crate) fn valid_combination(
+        &self, afi: AFI, safi: SAFI, is_addpath: bool
+    ) -> bool {
+        self.afi == afi
+        && self.safi == safi
+        && (self.announcements.is_empty()
+             || self.addpath_enabled == is_addpath)
+    }
+
+    pub(crate) fn add_announcement(&mut self, announcement: &Nlri<Vec<u8>>)
         -> Result<(), ComposeError>
     {
         let announcement_len = announcement.compose_len();
@@ -182,16 +220,13 @@ impl MpReachNlriBuilder {
         Ok(())
     }
 
-    pub fn compose_len(&self, announcement: &Nlri<Vec<u8>>) -> usize {
-        let announcement_len = announcement.compose_len();
-        if self.announcements.is_empty() {
-            // First announcement to be added, so the total number of
-            // required octets includes the path attribute flags and
-            // length, the AFI/SAFI, the nexthop field, and the reserved byte.
-            let nh_len = self.nexthop.compose_len();
-            return announcement_len + 3 + 3 + nh_len + 1;
-        }
+    pub(crate) fn compose_len_empty(&self) -> usize {
+        3 + 3 + self.nexthop.compose_len() + 1
+    }
 
+
+    pub(crate) fn compose_len(&self, announcement: &Nlri<Vec<u8>>) -> usize {
+        let announcement_len = announcement.compose_len();
         if !self.extended && self.len + announcement_len > 255 {
             // Adding this announcement would make the path attribute exceed
             // 255 and thus require the Extended Length bit to be set.
@@ -202,7 +237,7 @@ impl MpReachNlriBuilder {
         announcement_len
     }
 
-    pub fn compose<Target: OctetsBuilder>(&self, target: &mut Target)
+    pub(crate) fn compose<Target: OctetsBuilder>(&self, target: &mut Target)
         -> Result<(), Target::AppendError>
     {
         let len = self.len.to_be_bytes();
@@ -253,7 +288,7 @@ impl NextHop {
         }
     }
 
-    pub fn compose<Target: OctetsBuilder>(&self, target: &mut Target)
+    pub(crate) fn compose<Target: OctetsBuilder>(&self, target: &mut Target)
         -> Result<(), Target::AppendError>
     {
         target.append_slice(&[u8::try_from(self.compose_len()).unwrap() - 1])?;
@@ -297,7 +332,7 @@ pub struct MpUnreachNlriBuilder {
 }
 
 impl MpUnreachNlriBuilder {
-    pub fn new(afi: AFI, safi: SAFI, addpath_enabled: bool) -> Self {
+    pub(crate) fn new(afi: AFI, safi: SAFI, addpath_enabled: bool) -> Self {
         MpUnreachNlriBuilder {
             withdrawals: vec![],
             len: 3, // 3 bytes for AFI+SAFI
@@ -308,15 +343,20 @@ impl MpUnreachNlriBuilder {
         }
     }
 
-    pub fn afi_safi(&self) -> (AFI, SAFI) {
-        (self.afi, self.safi)
+    pub(crate) fn is_empty(&self) -> bool {
+        self.withdrawals.is_empty()
     }
 
-    pub fn addpath_enabled(&self) -> bool {
-        self.addpath_enabled
+    pub(crate) fn valid_combination(
+        &self, afi: AFI, safi: SAFI, is_addpath: bool
+    ) -> bool {
+        self.afi == afi
+        && self.safi == safi
+        && (self.withdrawals.is_empty()
+             || self.addpath_enabled == is_addpath)
     }
 
-    pub fn add_withdrawal(&mut self, withdrawal: &Nlri<Vec<u8>>)
+    pub(crate) fn add_withdrawal(&mut self, withdrawal: &Nlri<Vec<u8>>)
         -> Result<(), ComposeError>
     {
         let withdrawal_len = withdrawal.compose_len();
@@ -328,7 +368,7 @@ impl MpUnreachNlriBuilder {
         Ok(())
     }
 
-    pub fn compose_len(&self, withdrawal: &Nlri<Vec<u8>>) -> usize {
+    pub(crate) fn compose_len(&self, withdrawal: &Nlri<Vec<u8>>) -> usize {
         let withdrawal_len = withdrawal.compose_len();
         if self.withdrawals.is_empty() {
             // First withdrawal to be added, so the total number of
@@ -347,7 +387,7 @@ impl MpUnreachNlriBuilder {
         withdrawal_len
     }
 
-    pub fn compose<Target: OctetsBuilder>(&self, target: &mut Target)
+    pub(crate) fn compose<Target: OctetsBuilder>(&self, target: &mut Target)
         -> Result<(), Target::AppendError>
     {
         let len = self.len.to_be_bytes();

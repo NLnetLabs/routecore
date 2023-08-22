@@ -15,7 +15,7 @@ use crate::bgp::message::nlri::{
 };
 
 use core::iter::Peekable;
-use std::net::{IpAddr, Ipv4Addr};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::fmt;
 use crate::util::parser::{parse_ipv4addr, ParseError};
 
@@ -2137,8 +2137,9 @@ impl<Target: OctetsBuilder> UpdateBuilder<Target> {
                             
                         }
                         Some(ref builder) => {
-                            if builder.afi_safi() != (AFI::Ipv6, SAFI::Unicast)
-                            || builder.addpath_enabled() != b.is_addpath() {
+                            if !builder.valid_combination(
+                                AFI::Ipv6, SAFI::Unicast, b.is_addpath()
+                            ) {
                                 // We are already constructing a
                                 // MP_UNREACH_NLRI but for a different
                                 // AFI,SAFI than the prefix in `withdrawal`,
@@ -2248,24 +2249,84 @@ impl<Target: OctetsBuilder> UpdateBuilder<Target> {
     }
 
     pub fn set_nexthop(&mut self, addr: IpAddr) -> Result<(), ComposeError> {
-        if self.nexthop.is_none() {
-            // Check if this goes over the total PDU len. That will happen
-            // before we will go over the u16 for Total Path Attributes Length
-            // so we don't have to check for that.
-            let new_total = self.total_pdu_len + 7;
-            if new_total > Self::MAX_PDU {
-                return Err(ComposeError::PduTooLarge(new_total));
-            } else {
-                self.total_pdu_len = new_total;
-                self.attributes_len += 7
-            }
-        }
+        // Depending on the variant of `addr` we add/update either:
+        // - the conventional NEXT_HOP path attribute (IPv4); or
+        // - we update/create a MpReachNlriBuilder (IPv6)
         match addr {
             IpAddr::V4(a) => {
-                self.nexthop = Some(new_pas::NextHop::new(a))
+                if self.nexthop.is_none() {
+                    // NEXT_HOP path attribute is 7 bytes long.
+                    let new_total = self.total_pdu_len + 7;
+                    if new_total > Self::MAX_PDU {
+                        return Err(ComposeError::PduTooLarge(new_total));
+                    } else {
+                        self.total_pdu_len = new_total;
+                        self.attributes_len += 7
+                    }
+                    self.nexthop = Some(new_pas::NextHop::new(a));
+                }
             }
-            IpAddr::V6(_a) => todo!() // goes in MP_REACH_NLRI
+            IpAddr::V6(a) => {
+                if let Some(ref mut builder) = self.mp_reach_nlri_builder {
+                    // Given that we have a builder, there is already either a
+                    // NextHop::Ipv6 or a NextHop::Ipv6LL. Setting the
+                    // non-link-local address does not change the length of
+                    // the next hop part, so there is no need to update the
+                    // total_pdu_len and the attributes_len.
+                    builder.set_nexthop(a);
+                } else {
+                    let builder = MpReachNlriBuilder::new(
+                        AFI::Ipv6, SAFI::Unicast, NextHop::Ipv6(a), false
+                        );
+                    let new_bytes = builder.compose_len_empty();
+                    let new_total = self.total_pdu_len + new_bytes;
+                    if new_total > Self::MAX_PDU {
+                        return Err(ComposeError::PduTooLarge(new_total));
+                    }
+                    self.attributes_len += new_bytes;
+                    self.total_pdu_len = new_total;
+                    self.mp_reach_nlri_builder = Some(builder);
+                }
+            }
         }
+        Ok(())
+    }
+
+    pub fn set_nexthop_ll(&mut self, addr: Ipv6Addr)
+        -> Result<(), ComposeError>
+    {
+        // XXX We could/should check for addr.is_unicast_link_local() once
+        // that lands in stable.
+        
+        if let Some(ref mut builder) = self.mp_reach_nlri_builder {
+            let new_bytes = match builder.get_nexthop() {
+                NextHop::Ipv6(_) => 16,
+                NextHop::Ipv6LL(_,_) => 0,
+                _ => unreachable!()
+            };
+
+            let new_total = self.total_pdu_len + new_bytes;
+            if new_total > Self::MAX_PDU {
+                return Err(ComposeError::PduTooLarge(new_total));
+            }
+            builder.set_nexthop_ll(addr);
+            self.attributes_len += new_bytes;
+            self.total_pdu_len = new_total;
+        } else {
+            let builder = MpReachNlriBuilder::new(
+                AFI::Ipv6, SAFI::Unicast, NextHop::Ipv6LL(0.into(), addr),
+                false
+            );
+            let new_bytes = builder.compose_len_empty();
+            let new_total = self.total_pdu_len + new_bytes;
+            if new_total > Self::MAX_PDU {
+                return Err(ComposeError::PduTooLarge(new_total));
+            }
+            self.attributes_len += new_bytes;
+            self.total_pdu_len = new_total;
+            self.mp_reach_nlri_builder = Some(builder);
+        }
+
         Ok(())
     }
 
@@ -2307,7 +2368,8 @@ impl<Target: OctetsBuilder> UpdateBuilder<Target> {
                                 nexthop,
                                 b.is_addpath()
                             );
-                            let res = builder.compose_len(announcement);
+                            let res = builder.compose_len_empty() + 
+                                builder.compose_len(announcement);
                             self.mp_reach_nlri_builder = Some(builder);
                             res
                             
@@ -2320,19 +2382,16 @@ impl<Target: OctetsBuilder> UpdateBuilder<Target> {
                             //in the outer match anyway, as that is never a
                             //conventional announcement anyway?
                             
-                            if builder.afi_safi() != (AFI::Ipv6, SAFI::Unicast)
-                            || builder.addpath_enabled() != b.is_addpath() {
-                                // We are already constructing a
-                                // MP_REACH_NLRI but for a different
-                                // AFI,SAFI than the prefix in `announcement`,
-                                // or we are mixing addpath with non-addpath.
+                            if !builder.valid_combination(
+                                AFI::Ipv6, SAFI::Unicast, b.is_addpath()
+                            ) {
                                 return Err(ComposeError::IllegalCombination);
                             }
+
                             builder.compose_len(announcement)
                         }
                     };
 
-                    println!("new_bytes_num: {new_bytes_num}");
                     let new_total = self.total_pdu_len + new_bytes_num;
 
                     if new_total > Self::MAX_PDU {
@@ -2381,6 +2440,9 @@ pub enum ComposeError{
     AttributeTooLarge(PathAttributeType, usize),
     AttributesTooLarge(usize),
     IllegalCombination,
+    EmptyMpReachNlri,
+    EmptyMpUnreachNlri,
+    WrongAddressType,
 
     /// Variant for `octseq::builder::ShortBuf`
     ShortBuf,
@@ -2415,6 +2477,15 @@ impl fmt::Display for ComposeError {
             }
             ComposeError::IllegalCombination => {
                 write!(f, "illegal combination of prefixes/attributes")
+            }
+            ComposeError::EmptyMpReachNlri => {
+                write!(f, "missing NLRI in MP_REACH_NLRI")
+            }
+            ComposeError::EmptyMpUnreachNlri => {
+                write!(f, "missing NLRI in MP_UNREACH_NLRI")
+            }
+            ComposeError::WrongAddressType => {
+                write!(f, "wrong address type")
             }
             ComposeError::ShortBuf => {
                 ShortBuf.fmt(f)
@@ -2609,12 +2680,32 @@ where
         Target: FreezeBuilder,
         <Target as FreezeBuilder>::Octets: Octets,
     {
+        self.is_valid()?;
         Ok(UpdateMessage::from_octets(
             self.finish().map_err(|_| ShortBuf)?, SessionConfig::modern()
         )?)
     }
 
-    pub fn finish(mut self)
+    // Check whether the combination of NLRI and attributes would produce a
+    // valid UPDATE pdu.
+    fn is_valid(&self) -> Result<(), ComposeError> {
+        // If we have builders for MP_(UN)REACH_NLRI, they should carry
+        // prefixes.
+        if let Some(ref builder) = self.mp_reach_nlri_builder {
+            if builder.is_empty() {
+                return Err(ComposeError::EmptyMpReachNlri);
+            }
+        }
+        if let Some(ref builder) = self.mp_unreach_nlri_builder {
+            if builder.is_empty() {
+                return Err(ComposeError::EmptyMpUnreachNlri);
+            }
+        }
+
+        Ok(())
+    }
+
+    fn finish(mut self)
         -> Result<<Target as FreezeBuilder>::Octets, Target::AppendError>
     {
         let mut header = Header::for_slice_mut(self.target.as_mut());
@@ -3739,7 +3830,7 @@ mod tests {
         let mut iter = prefixes.into_iter().peekable();
         builder.announcements_from_iter(&mut iter).unwrap();
         builder.set_origin(OriginType::Igp).unwrap();
-        //builder.set_nexthop("fe80:1:2;3::".parse().unwrap()).unwrap();
+        builder.set_nexthop("fe80:1:2:3::".parse().unwrap()).unwrap();
         let path = HopPath::from([
              Asn::from_u32(100),
              Asn::from_u32(200),
@@ -3749,9 +3840,84 @@ mod tests {
 
         let raw = builder.finish().unwrap();
         print_pcap(&raw);
-
     }
 
+    #[test]
+    fn build_announcements_mp_missing_nlri() {
+        use crate::bgp::aspath::HopPath;
+
+        let mut builder = UpdateBuilder::new_vec();
+        builder.set_origin(OriginType::Igp).unwrap();
+        builder.set_nexthop("fe80:1:2:3::".parse().unwrap()).unwrap();
+        assert!(builder.mp_reach_nlri_builder.is_some());
+        let path = HopPath::from([
+             Asn::from_u32(100),
+             Asn::from_u32(200),
+             Asn::from_u32(300),
+        ]);
+        builder.set_aspath::<Vec<u8>>(path.to_as_path().unwrap()).unwrap();
+
+        assert!(matches!(
+                builder.into_message(),
+                Err(ComposeError::EmptyMpReachNlri)
+        ));
+    }
+
+    #[test]
+    fn build_announcements_mp_link_local() {
+        use crate::bgp::aspath::HopPath;
+
+        let mut builder = UpdateBuilder::new_vec();
+
+        let prefixes = [
+            "2001:db8:1::/48",
+            "2001:db8:2::/48",
+            "2001:db8:3::/48",
+        ].map(|p| Nlri::unicast_from_str(p).unwrap());
+
+
+        let mut iter = prefixes.into_iter().peekable();
+
+        builder.announcements_from_iter(&mut iter).unwrap();
+        builder.set_origin(OriginType::Igp).unwrap();
+        //builder.set_nexthop("2001:db8::1".parse().unwrap()).unwrap();
+        builder.set_nexthop_ll("fe80:1:2:3::".parse().unwrap()).unwrap();
+
+
+        let path = HopPath::from([
+             Asn::from_u32(100),
+             Asn::from_u32(200),
+             Asn::from_u32(300),
+        ]);
+        builder.set_aspath::<Vec<u8>>(path.to_as_path().unwrap()).unwrap();
+
+        //let unchecked = builder.finish().unwrap();
+        //print_pcap(unchecked);
+        let msg = builder.into_message().unwrap();
+        msg.print_pcap();
+    }
+
+    #[test]
+    fn build_announcements_mp_ll_no_nlri() {
+        use crate::bgp::aspath::HopPath;
+
+        let mut builder = UpdateBuilder::new_vec();
+        builder.set_origin(OriginType::Igp).unwrap();
+        //builder.set_nexthop("2001:db8::1".parse().unwrap()).unwrap();
+        builder.set_nexthop_ll("fe80:1:2:3::".parse().unwrap()).unwrap();
+        assert!(builder.mp_reach_nlri_builder.is_some());
+        let path = HopPath::from([
+             Asn::from_u32(100),
+             Asn::from_u32(200),
+             Asn::from_u32(300),
+        ]);
+        builder.set_aspath::<Vec<u8>>(path.to_as_path().unwrap()).unwrap();
+
+        assert!(matches!(
+                builder.into_message(),
+                Err(ComposeError::EmptyMpReachNlri)
+        ));
+    }
 
 
     #[test]
