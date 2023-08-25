@@ -13,24 +13,12 @@ use super::update::ComposeError;
 pub mod new_pas {
 
     use std::net::Ipv4Addr;
+
+    use octseq::{Octets, OctetsBuilder, Parser};
+
     use crate::asn::Asn;
     use crate::bgp::aspath::HopPath;
     use crate::bgp::message::SessionConfig;
-
-    // eventually we work towards
-    // enum PathAttribute {
-    //     ...
-    //     ...
-    //     MpUnreachNlri(MpUnreachNlri),
-    //     ...
-    // }
-    // and we macro_rules! all the enum variants and boilerplate for the
-    // struct they carry in their data field.
-    // 
-    // We can get rid off PathAttributeType, and have one or multiple impl
-    // blocks for the specific types.
-
-    use octseq::{Octets, OctetsBuilder, Parser};
     use crate::util::parser::{ParseError, parse_ipv4addr};
 
     struct Flags { }
@@ -109,13 +97,13 @@ pub mod new_pas {
                 }
             }
 
-            /* FIXME
+            $(
             impl From<$name> for PathAttribute {
                 fn from(pa: $name) -> PathAttribute {
-                    PathAttribute::$name($name)
+                    PathAttribute::$name(pa)
                 }
             }
-            */
+            )+
 
             pub enum WireformatPathAttribute<'a, Octs> {
                 $( $name(Parser<'a, Octs>, SessionConfig) ),+
@@ -653,11 +641,12 @@ pub mod new_pas {
             );
             check(
                 vec![0x80, 0x09, 0x04, 0x0a, 0x00, 0x00, 0x04],
-                PA::OriginatorId(OriginatorId("10.0.0.4".parse().unwrap()))
+                OriginatorId("10.0.0.4".parse().unwrap()).into()
             );
             check(
                 vec![0x80, 0x0a, 0x04, 0x0a, 0x00, 0x00, 0x03],
-                PA::ClusterList(ClusterList(ClusterIds::new(vec![[10, 0, 0, 3].into()])))
+                //PA::ClusterList(ClusterList(ClusterIds::new(vec![[10, 0, 0, 3].into()])))
+                ClusterList(ClusterIds::new(vec![[10, 0, 0, 3].into()])).into()
             );
             //TODO
             //check(
