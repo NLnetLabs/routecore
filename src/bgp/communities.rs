@@ -1074,6 +1074,12 @@ impl From<[u8; 12]> for Community {
     }
 }
 
+impl From<[u8; 12]> for LargeCommunity {
+    fn from(raw: [u8; 12]) -> LargeCommunity {
+        LargeCommunity(raw)
+    }
+}
+
 impl FromStr for LargeCommunity {
     type Err = ParseError;
 

@@ -13,6 +13,9 @@ use super::update::ComposeError;
 pub mod new_pas {
 
     use std::net::Ipv4Addr;
+    use crate::asn::Asn;
+    use crate::bgp::aspath::HopPath;
+    use crate::bgp::message::SessionConfig;
 
     // eventually we work towards
     // enum PathAttribute {
@@ -27,15 +30,8 @@ pub mod new_pas {
     // We can get rid off PathAttributeType, and have one or multiple impl
     // blocks for the specific types.
 
-
-    pub enum PathAttribute {
-        Origin(Origin),
-        NextHop(NextHop),
-        MultiExitDisc(MultiExitDisc),
-        LocalPref(LocalPref),
-    }
-
-    use octseq::OctetsBuilder;
+    use octseq::{Octets, OctetsBuilder, Parser};
+    use crate::util::parser::{ParseError, parse_ipv4addr};
 
     struct Flags { }
 
@@ -58,17 +54,18 @@ pub mod new_pas {
     pub trait AttributeHeader {
         const FLAGS: u8;
         const TYPECODE: u8;
-        const VALUE_LEN: u8;
-        const COMPOSE_LEN: u8 = 3 + Self::VALUE_LEN;
+        //const VALUE_LEN: u8;
+        //const COMPOSE_LEN: u8 = 3 + Self::VALUE_LEN;
     }
 
-    macro_rules! simple_attribute {
+    macro_rules! attribute {
         ($name:ident($data:ty),
          $flags:expr,
-         $typecode:expr,
-         $value_len:expr
+         $typecode:expr
+         //$value_len:expr
          ) => {
-            #[derive(Debug)]
+
+            #[derive(Debug, PartialEq)]
             pub struct $name($data);
             impl $name {
                 pub fn new(data: $data) -> $name {
@@ -79,16 +76,132 @@ pub mod new_pas {
             impl AttributeHeader for $name {
                 const FLAGS: u8 = $flags;
                 const TYPECODE: u8 = $typecode;
-                const VALUE_LEN: u8 = $value_len;
+                //const VALUE_LEN: u8 = $value_len;
             }
         }
     }
 
-    pub trait SimpleAttribute: AttributeHeader {
+    macro_rules! path_attributes {
+        (
+            $(
+                $typecode:expr =>   $name:ident($data:ty),
+                                    $flags:expr
+                                    //$value_len:expr
+            ),+ $(,)*
+        ) => {
+
+            #[derive(Debug, PartialEq)]
+            pub enum PathAttribute {
+                $( $name($name) ),+
+            }
+
+            impl PathAttribute {
+                pub fn compose<Target: OctetsBuilder>(
+                    &self,
+                    target: &mut Target
+                ) -> Result<(), Target::AppendError> {
+
+                    match self {
+                    $(
+                        PathAttribute::$name(i) => i.compose(target)
+                    ),+
+                    }
+                }
+            }
+
+            /* FIXME
+            impl From<$name> for PathAttribute {
+                fn from(pa: $name) -> PathAttribute {
+                    PathAttribute::$name($name)
+                }
+            }
+            */
+
+            pub enum WireformatPathAttribute<'a, Octs> {
+                $( $name(Parser<'a, Octs>, SessionConfig) ),+
+            }
+
+            impl<'a, Octs: Octets> WireformatPathAttribute<'a, Octs> {
+                fn parse(parser: &mut Parser<'a, Octs>, sc: SessionConfig) 
+                    -> Result<WireformatPathAttribute<'a, Octs>, ParseError>
+                {
+                    let flags = parser.parse_u8()?;
+                    let typecode = parser.parse_u8()?;
+                    let mut _headerlen = 3;
+                    let len = match flags & 0x10 == 0x10 {
+                        true => {
+                            _headerlen += 1;
+                            parser.parse_u16_be()? as usize
+                        },
+                        false => parser.parse_u8()? as usize, 
+                    };
+
+                    let pp = parser.parse_parser(len)?;
+                    let res = match typecode {
+                        $(
+                        $typecode => WireformatPathAttribute::$name(pp, sc)
+                        ),+
+                        ,
+                        _ => unimplemented!() // FIXME return Err, or have an
+                                              // Unknown/Unimplemented variant
+                                              // again?
+                    };
+
+                    Ok(res)
+                }
+
+                fn to_owned(&self) -> PathAttribute {
+                    match self {
+                        $(
+                        WireformatPathAttribute::$name(p, sc) => {
+                            PathAttribute::$name(
+                                $name::parse(&mut p.clone(), *sc).unwrap()
+                            )
+                        }
+                        ),+
+                    }
+                }
+            }
+
+            $(
+            attribute!($name($data), $flags, $typecode);
+            )+
+        }
+    }
+
+    path_attributes!(
+        1   => Origin(OriginType), Flags::WELLKNOWN,
+        2   => AsPath(HopPath), Flags::WELLKNOWN,
+        3   => NextHop(Ipv4Addr), Flags::WELLKNOWN,
+        4   => MultiExitDisc(u32), Flags::OPT_NON_TRANS,
+        5   => LocalPref(u32), Flags::WELLKNOWN,
+        6   => AtomicAggregate(()), Flags::WELLKNOWN,
+        7   => Aggregator(AggregatorInfo), Flags::OPT_TRANS,
+        8   => Communities(StandardCommunitiesList), Flags::OPT_TRANS,
+        9   => OriginatorId(Ipv4Addr), Flags::OPT_NON_TRANS,
+        10  => ClusterList(ClusterIds), Flags::OPT_NON_TRANS,
+        32  => LargeCommunities(LargeCommunitiesList), Flags::OPT_TRANS,
+    );
+
+    pub trait Attribute: AttributeHeader {
 
         fn compose_len(&self) -> usize {
-            Self::COMPOSE_LEN.into()
+            self.header_len() + self.value_len()
         }
+
+        fn is_extended(&self) -> bool {
+            self.value_len() > 255
+        }
+
+        fn header_len(&self) -> usize {
+            if self.is_extended() {
+                4
+            } else {
+                3
+            }
+        }
+
+        fn value_len(&self) -> usize;
 
         fn compose<Target: OctetsBuilder>(&self, target: &mut Target)
             -> Result<(), Target::AppendError>
@@ -100,65 +213,460 @@ pub mod new_pas {
         fn compose_header<Target: OctetsBuilder>(&self, target: &mut Target)
             -> Result<(), Target::AppendError>
         {
-            target.append_slice(&[
-                Self::FLAGS,
-                Self::TYPECODE,
-                Self::VALUE_LEN,
-            ])
+            if self.is_extended() {
+                target.append_slice(&[
+                    Self::FLAGS | Flags::EXTENDED_LEN,
+                    Self::TYPECODE,
+                ])?;
+                target.append_slice(
+                    &u16::try_from(self.value_len()).unwrap_or(u16::MAX)
+                    .to_be_bytes()
+                )
+            } else {
+                target.append_slice(&[
+                    Self::FLAGS,
+                    Self::TYPECODE,
+                    u8::try_from(self.value_len()).unwrap_or(u8::MAX)
+                ])
+            }
         }
 
         fn compose_value<Target: OctetsBuilder>(&self, target: &mut Target)
             -> Result<(), Target::AppendError>;
+
+        fn parse<Octs: Octets>(parser: &mut Parser<Octs>, sc: SessionConfig) 
+            -> Result<Self, ParseError>
+        where Self: Sized;
+        
     }
 
     //--- Origin
 
     use crate::bgp::message::update::OriginType;
-    simple_attribute!(Origin(OriginType), Flags::WELLKNOWN, 1, 1);
 
-    impl SimpleAttribute for Origin {
+    impl Attribute for Origin {
+        fn value_len(&self) -> usize { 1 }
+
         fn compose_value<Target: OctetsBuilder>(&self, target: &mut Target)
             -> Result<(), Target::AppendError>
         {
             target.append_slice(&[self.0.into()]) 
         }
+
+        fn parse<Octs: Octets>(parser: &mut Parser<Octs>, _sc: SessionConfig) 
+            -> Result<Origin, ParseError>
+        {
+            Ok(Origin(parser.parse_u8()?.into()))
+        }
     }
 
     //--- AsPath (see bgp::aspath)
 
+    impl Attribute for AsPath {
+        fn value_len(&self) -> usize {
+            self.0.to_as_path::<Vec<u8>>().unwrap().into_inner().len()
+        }
+
+        fn parse<Octs: Octets>(parser: &mut Parser<Octs>, sc: SessionConfig) 
+            -> Result<AsPath, ParseError>
+        {
+            // XXX reusing the old/existing AsPath here while PoC'ing, which
+            // new() expects Octets (not a Parser<_,_>) starting at the actual
+            // value, so without the first 3 or 4 bytes (flags/type/len).
+            let asp = crate::bgp::aspath::AsPath::new(
+                parser.octets_ref().as_ref()[3..].to_vec(),
+                sc.has_four_octet_asn()
+            ).unwrap();
+            Ok(AsPath(asp.to_hop_path()))
+        }
+
+        fn compose_value<Target: OctetsBuilder>(&self, target: &mut Target)
+            -> Result<(), Target::AppendError>
+        {
+           //HopPath::compose_as_path(self.0.hops(), target) 
+           target.append_slice(
+               self.0.to_as_path::<Vec<u8>>().unwrap().into_inner().as_ref()
+            )
+        }
+    }
+
     //--- NextHop
 
-    simple_attribute!(NextHop(Ipv4Addr), Flags::WELLKNOWN, 3, 4);
+    impl Attribute for NextHop {
+        fn value_len(&self) -> usize { 4 }
 
-    impl SimpleAttribute for NextHop {
         fn compose_value<Target: OctetsBuilder>(&self, target: &mut Target)
             -> Result<(), Target::AppendError>
         {
             target.append_slice(&self.0.octets())
         }
+
+        fn parse<Octs: Octets>(parser: &mut Parser<Octs>, _sc: SessionConfig) 
+            -> Result<NextHop, ParseError>
+        {
+            Ok(NextHop(parse_ipv4addr(parser)?))
+        }
     }
 
     //--- MultiExitDisc
 
-    simple_attribute!(MultiExitDisc(u32), Flags::OPT_NON_TRANS, 4, 4);
+    impl Attribute for MultiExitDisc {
+        fn value_len(&self) -> usize { 4 }
 
-    impl SimpleAttribute for MultiExitDisc {
         fn compose_value<Target: OctetsBuilder>(&self, target: &mut Target)
             -> Result<(), Target::AppendError>
         {
             target.append_slice(&self.0.to_be_bytes()) 
         }
+
+        fn parse<Octs: Octets>(parser: &mut Parser<Octs>, _sc: SessionConfig) 
+            -> Result<MultiExitDisc, ParseError>
+        {
+            Ok(MultiExitDisc(parser.parse_u32_be()?))
+        }
     }
 
     //--- LocalPref
 
-    simple_attribute!(LocalPref(u32), Flags::WELLKNOWN, 5, 4);
+    impl Attribute for LocalPref {
+        fn value_len(&self) -> usize { 4 }
 
-    impl SimpleAttribute for LocalPref {
         fn compose_value<Target: OctetsBuilder>(&self, target: &mut Target)
             -> Result<(), Target::AppendError>
         {
             target.append_slice(&self.0.to_be_bytes()) 
+        }
+
+        fn parse<Octs: Octets>(parser: &mut Parser<Octs>, _sc: SessionConfig) 
+            -> Result<LocalPref, ParseError>
+        {
+            Ok(LocalPref(parser.parse_u32_be()?))
+        }
+    }
+
+    //--- AtomicAggregate
+
+    impl Attribute for AtomicAggregate {
+        fn value_len(&self) -> usize { 0 }
+
+        fn compose_value<Target: OctetsBuilder>(&self, _target: &mut Target)
+            -> Result<(), Target::AppendError>
+        {
+            Ok(())
+        }
+
+        fn parse<Octs: Octets>(_parser: &mut Parser<Octs>, _sc: SessionConfig) 
+            -> Result<AtomicAggregate, ParseError>
+        {
+            Ok(AtomicAggregate(()))
+        }
+    }
+
+    //--- Aggregator
+
+    #[derive(Debug, PartialEq)]
+    pub struct AggregatorInfo {
+        asn: Asn,
+        address: Ipv4Addr,
+    }
+
+    impl AggregatorInfo {
+        fn new(asn: Asn, address: Ipv4Addr) -> AggregatorInfo {
+            AggregatorInfo { asn, address }
+        }
+        pub fn asn(&self) -> Asn {
+            self.asn
+        }
+        pub fn address(&self) -> Ipv4Addr {
+            self.address
+        }
+    }
+
+    impl Attribute for Aggregator {
+        // FIXME for legacy 2-byte ASNs, this should be 6.
+        // Should we pass a (&)SessionConfig to this method as well?
+        // Note that `fn compose_len` would then also need a SessionConfig,
+        // which, sort of makes sense anyway.
+        fn value_len(&self) -> usize { 
+            8
+        }
+
+        fn compose_value<Target: OctetsBuilder>(&self, target: &mut Target)
+            -> Result<(), Target::AppendError>
+        {
+            target.append_slice(&self.0.asn().to_raw())?;
+            target.append_slice(&self.0.address().octets())
+        }
+
+        fn parse<Octs: Octets>(parser: &mut Parser<Octs>, sc: SessionConfig) 
+            -> Result<Aggregator, ParseError>
+        {
+            let asn = if sc.has_four_octet_asn() {
+                Asn::from_u32(parser.parse_u32_be()?)
+            } else {
+                Asn::from_u32(parser.parse_u16_be()?.into())
+            };
+
+            let address = parse_ipv4addr(parser)?;
+            Ok(Aggregator(AggregatorInfo::new(asn, address)))
+        }
+    }
+
+    //--- Communities
+    
+    use crate::bgp::communities::StandardCommunity;
+    #[derive(Debug, PartialEq)]
+    pub struct StandardCommunitiesList {
+        communities: Vec<StandardCommunity>
+    }
+
+    impl StandardCommunitiesList {
+        fn new(communities: Vec<StandardCommunity>)
+            -> StandardCommunitiesList
+        {
+            StandardCommunitiesList {communities }
+        }
+
+        pub fn communities(&self) -> &Vec<StandardCommunity> {
+            &self.communities
+        }
+    }
+
+
+    impl Attribute for Communities {
+        fn value_len(&self) -> usize { 
+            self.0.communities.len() * 4
+        }
+
+        fn compose_value<Target: OctetsBuilder>(&self, target: &mut Target)
+            -> Result<(), Target::AppendError>
+        {
+            for c in &self.0.communities {
+                target.append_slice(&c.to_raw())?;
+            }
+            Ok(())
+        }
+
+        fn parse<Octs: Octets>(parser: &mut Parser<Octs>, _sc: SessionConfig) 
+            -> Result<Communities, ParseError>
+        {
+            let mut communities = Vec::with_capacity(parser.remaining() / 4);
+            while parser.remaining() > 0 {
+                communities.push(parser.parse_u32_be()?.into());
+            }
+            Ok(Communities(StandardCommunitiesList::new(communities)))
+        }
+    }
+
+    //--- OriginatorId
+
+    impl Attribute for OriginatorId {
+        fn value_len(&self) -> usize { 4 }
+
+        fn compose_value<Target: OctetsBuilder>(&self, target: &mut Target)
+            -> Result<(), Target::AppendError>
+        {
+            target.append_slice(&self.0.octets())
+        }
+
+        fn parse<Octs: Octets>(parser: &mut Parser<Octs>, _sc: SessionConfig) 
+            -> Result<OriginatorId, ParseError>
+        {
+            Ok(OriginatorId(parse_ipv4addr(parser)?))
+        }
+    }
+
+    //--- ClusterList
+    
+    #[derive(Debug, PartialEq)]
+    pub struct BgpIdentifier([u8; 4]);
+
+    impl From<[u8; 4]> for BgpIdentifier {
+        fn from(raw: [u8; 4]) -> BgpIdentifier {
+            BgpIdentifier(raw)
+        }
+    }
+
+    /*
+    impl From<u32> for BgpIdentifier {
+        fn from(raw: u32) -> BgpIdentifier {
+            BgpIdentifier(raw.to_be_bytes())
+        }
+    }
+    */
+
+    #[derive(Debug, PartialEq)]
+    pub struct ClusterIds {
+        cluster_ids: Vec<BgpIdentifier>
+    }
+
+    impl ClusterIds {
+        fn new(cluster_ids: Vec<BgpIdentifier>) -> ClusterIds {
+            ClusterIds {cluster_ids }
+        }
+        pub fn cluster_ids(&self) -> &Vec<BgpIdentifier> {
+            &self.cluster_ids
+        }
+    }
+
+
+    impl Attribute for ClusterList {
+        fn value_len(&self) -> usize { 
+            self.0.cluster_ids.len() * 4
+        }
+
+        fn compose_value<Target: OctetsBuilder>(&self, target: &mut Target)
+            -> Result<(), Target::AppendError>
+        {
+            for c in &self.0.cluster_ids {
+                target.append_slice(&c.0)?;
+            }
+            Ok(())
+        }
+
+        fn parse<Octs: Octets>(parser: &mut Parser<Octs>, _sc: SessionConfig) 
+            -> Result<ClusterList, ParseError>
+        {
+            let mut cluster_ids = Vec::with_capacity(parser.remaining() / 4);
+            while parser.remaining() > 0 {
+                cluster_ids.push(parser.parse_u32_be()?.to_be_bytes().into());
+            }
+            Ok(ClusterList(ClusterIds::new(cluster_ids)))
+        }
+    }
+
+    //--- LargeCommunities
+    
+    use crate::bgp::communities::LargeCommunity;
+    #[derive(Debug, PartialEq)]
+    pub struct LargeCommunitiesList {
+        communities: Vec<LargeCommunity>
+    }
+
+    impl LargeCommunitiesList {
+        fn new(communities: Vec<LargeCommunity>)
+            -> LargeCommunitiesList
+        {
+            LargeCommunitiesList {communities }
+        }
+
+        pub fn communities(&self) -> &Vec<LargeCommunity> {
+            &self.communities
+        }
+    }
+
+
+    impl Attribute for LargeCommunities {
+        fn value_len(&self) -> usize { 
+            self.0.communities.len() * 12
+        }
+
+        fn compose_value<Target: OctetsBuilder>(&self, _target: &mut Target)
+            -> Result<(), Target::AppendError>
+        {
+            todo!()
+        }
+
+        fn parse<Octs: Octets>(parser: &mut Parser<Octs>, _sc: SessionConfig) 
+            -> Result<LargeCommunities, ParseError>
+        {
+            let mut communities = Vec::with_capacity(parser.remaining() / 12);
+            let mut buf = [0u8; 12];
+            while parser.remaining() > 0 {
+                parser.parse_buf(&mut buf)?;
+                communities.push(buf.into());
+            }
+            Ok(LargeCommunities(LargeCommunitiesList::new(communities)))
+        }
+    }
+
+#[cfg(test)]
+    mod tests {
+        use super::*;
+        use crate::asn::Asn;
+        use crate::bgp::communities::Wellknown;
+
+        #[test]
+        fn wireformat_to_owned_and_back() {
+            use super::PathAttribute as PA;
+            fn check(raw: Vec<u8>, owned: PathAttribute) {
+                let mut parser = Parser::from_ref(&raw);
+                let sc = SessionConfig::modern();
+                let pa = WireformatPathAttribute::parse(&mut parser, sc).unwrap();
+                assert_eq!(owned, pa.to_owned());
+                let mut target = Vec::new();
+                owned.compose(&mut target).unwrap();
+                assert_eq!(target, raw);
+            }
+
+            check(vec![0x40, 0x01, 0x01, 0x00], PA::Origin(Origin(0.into())));
+            check(
+                vec![0x40, 0x02, 10,
+                0x02, 0x02, // SEQUENCE of length 2
+                0x00, 0x00, 0x00, 100,
+                0x00, 0x00, 0x00, 200,
+                ],
+                PA::AsPath(AsPath(HopPath::from(vec![
+                    Asn::from_u32(100),
+                    Asn::from_u32(200)]
+                )))
+            );
+            check(
+                vec![0x40, 0x03, 0x04, 0x01, 0x02, 0x03, 0x04],
+                PA::NextHop(NextHop("1.2.3.4".parse().unwrap()))
+            );
+            check(
+                vec![0x80, 0x04, 0x04, 0x00, 0x00, 0x00, 0xff],
+                PA::MultiExitDisc(MultiExitDisc::new(255))
+            );
+            check(
+                vec![0x40, 0x05, 0x04, 0x00, 0x00, 0x00, 0x0a],
+                PA::LocalPref(LocalPref::new(10))
+            );
+            check(
+                vec![0x40, 0x06, 0x00],
+                PA::AtomicAggregate(AtomicAggregate(()))
+            );
+            check(
+                vec![
+                    0xc0, 0x07, 0x08, 0x00, 0x00, 0x00, 0x65, 0xc6,
+                    0x33, 0x64, 0x01
+                ],
+                PA::Aggregator(Aggregator(AggregatorInfo::new(
+                        Asn::from_u32(101),
+                        "198.51.100.1".parse().unwrap()
+                )))
+            );
+            check(
+                vec![
+                    0xc0, 0x08, 0x10, 0x00, 0x2a, 0x02, 0x06, 0xff,
+                    0xff, 0xff, 0x01, 0xff, 0xff, 0xff, 0x02, 0xff,
+                    0xff, 0xff, 0x03
+                ],
+                PA::Communities(Communities(StandardCommunitiesList::new(
+                    vec!["AS42:518".parse().unwrap(),
+                        Wellknown::NoExport.into(),
+                        Wellknown::NoAdvertise.into(),
+                        Wellknown::NoExportSubconfed.into(),
+                    ]
+                )))
+            );
+            check(
+                vec![0x80, 0x09, 0x04, 0x0a, 0x00, 0x00, 0x04],
+                PA::OriginatorId(OriginatorId("10.0.0.4".parse().unwrap()))
+            );
+            check(
+                vec![0x80, 0x0a, 0x04, 0x0a, 0x00, 0x00, 0x03],
+                PA::ClusterList(ClusterList(ClusterIds::new(vec![[10, 0, 0, 3].into()])))
+            );
+            //TODO
+            //check(
+            //    vec![],
+            //    PA::LargeCommunities(LargeCommunitiesList::new(
+            //            vec![]
+            //);
+
+
         }
     }
 }
@@ -529,4 +1037,3 @@ impl StandardCommunitiesBuilder {
         Ok(())
     }
 }
-
