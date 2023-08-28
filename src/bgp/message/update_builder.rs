@@ -42,15 +42,12 @@ pub mod new_pas {
     pub trait AttributeHeader {
         const FLAGS: u8;
         const TYPECODE: u8;
-        //const VALUE_LEN: u8;
-        //const COMPOSE_LEN: u8 = 3 + Self::VALUE_LEN;
     }
 
     macro_rules! attribute {
         ($name:ident($data:ty),
          $flags:expr,
          $typecode:expr
-         //$value_len:expr
          ) => {
 
             #[derive(Debug, PartialEq)]
@@ -64,7 +61,6 @@ pub mod new_pas {
             impl AttributeHeader for $name {
                 const FLAGS: u8 = $flags;
                 const TYPECODE: u8 = $typecode;
-                //const VALUE_LEN: u8 = $value_len;
             }
         }
     }
@@ -72,9 +68,7 @@ pub mod new_pas {
     macro_rules! path_attributes {
         (
             $(
-                $typecode:expr =>   $name:ident($data:ty),
-                                    $flags:expr
-                                    //$value_len:expr
+                $typecode:expr => $name:ident($data:ty), $flags:expr
             ),+ $(,)*
         ) => {
 
@@ -114,9 +108,11 @@ pub mod new_pas {
             }
             )+
 
+            #[derive(Debug)]
             pub enum WireformatPathAttribute<'a, Octs> {
                 $( $name(Parser<'a, Octs>, SessionConfig) ),+
             }
+
 
             impl<'a, Octs: Octets> WireformatPathAttribute<'a, Octs> {
                 fn parse(parser: &mut Parser<'a, Octs>, sc: SessionConfig) 
@@ -289,7 +285,9 @@ pub mod new_pas {
             PathAttributes { parser, session_config }
         }
         
-        fn get(&self, pat: PathAttributeType) -> Option<WireformatPathAttribute<'a, Octs>> {
+        fn get(&self, pat: PathAttributeType)
+            -> Option<WireformatPathAttribute<'a, Octs>>
+        {
             let mut iter = *self;
             iter.find(|pa|
                  pa.as_ref().is_ok_and(|pa| pa.typecode() == pat)
@@ -671,7 +669,8 @@ pub mod new_pas {
             fn check(raw: Vec<u8>, owned: PathAttribute) {
                 let mut parser = Parser::from_ref(&raw);
                 let sc = SessionConfig::modern();
-                let pa = WireformatPathAttribute::parse(&mut parser, sc).unwrap();
+                let pa = WireformatPathAttribute::parse(&mut parser, sc)
+                    .unwrap();
                 assert_eq!(owned, pa.to_owned());
                 let mut target = Vec::new();
                 owned.compose(&mut target).unwrap();
@@ -736,8 +735,9 @@ pub mod new_pas {
             );
             check(
                 vec![0x80, 0x0a, 0x04, 0x0a, 0x00, 0x00, 0x03],
-                //PA::ClusterList(ClusterList(ClusterIds::new(vec![[10, 0, 0, 3].into()])))
-                ClusterList(ClusterIds::new(vec![[10, 0, 0, 3].into()])).into()
+                ClusterList(ClusterIds::new(
+                        vec![[10, 0, 0, 3].into()]
+                )).into()
             );
             check(
                 vec![
@@ -779,11 +779,6 @@ pub mod new_pas {
             //    println!("{pa:?}");
             //}
 
-            //assert!(
-            //    pas.find(|pa|
-            //         pa.as_ref().is_ok_and(|pa| pa.typecode() == PathAttributeType::Origin)
-            //    ).unwrap().is_ok()
-            //);
             assert!(pas.get(PathAttributeType::Origin).is_some());
             assert!(pas.get(PathAttributeType::AsPath).is_none());
             assert!(pas.get(PathAttributeType::MultiExitDisc).is_some());
