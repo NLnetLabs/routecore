@@ -225,9 +225,16 @@ pub mod new_pas {
         10  => ClusterList(ClusterIds), Flags::OPT_NON_TRANS,
         14  => MpReachNlri(MpReachNlriBuilder), Flags::OPT_NON_TRANS,
         15  => MpUnreachNlri(MpUnreachNlriBuilder), Flags::OPT_NON_TRANS,
-        // 16..18, 20, 21, 22, 25 old PathAttributeType
+        //16=> ExtendedCommunities TODO
+        //17=> As4Path TODO
+        //18=> As4Aggregator TODO
+        20  => Connector(Ipv4Addr), Flags::OPT_TRANS,
+        21  => AsPathLimit(AsPathLimitInfo), Flags::OPT_TRANS,
+        //22  => PmsiTunnel(todo), Flags::OPT_TRANS,
+        // , 25 old PathAttributeType
         32  => LargeCommunities(LargeCommunitiesList), Flags::OPT_TRANS,
         // 33 => BgpsecAsPath,
+        35 => Otc(Asn), Flags::OPT_TRANS,
         // 128 => AttrSet
         // 255 => RsrvdDevelopment
 
@@ -739,6 +746,61 @@ pub mod new_pas {
         }
     }
 
+    //--- Connector (deprecated)
+
+    impl Attribute for Connector {
+        fn value_len(&self) -> usize { 4 }
+
+        fn compose_value<Target: OctetsBuilder>(&self, target: &mut Target)
+            -> Result<(), Target::AppendError>
+        {
+            target.append_slice(&self.0.octets())
+        }
+
+        fn parse<Octs: Octets>(parser: &mut Parser<Octs>, _sc: SessionConfig) 
+            -> Result<Connector, ParseError>
+        {
+            Ok(Connector(parse_ipv4addr(parser)?))
+        }
+    }
+
+    //--- AsPathLimit (deprecated)
+
+    #[derive(Debug, PartialEq)]
+    pub struct AsPathLimitInfo {
+        upper_bound: u8,
+        attacher: Asn,
+    }
+
+    impl AsPathLimitInfo {
+        pub fn new(upper_bound: u8, attacher: Asn) -> AsPathLimitInfo {
+            AsPathLimitInfo { upper_bound, attacher }
+        }
+    }
+
+    impl Attribute for AsPathLimit {
+        fn value_len(&self) -> usize { 5 }
+
+        fn compose_value<Target: OctetsBuilder>(&self, target: &mut Target)
+            -> Result<(), Target::AppendError>
+        {
+            target.append_slice(&[self.0.upper_bound])?;
+            target.append_slice(&self.0.attacher.to_raw())
+        }
+
+        fn parse<Octs: Octets>(parser: &mut Parser<Octs>, _sc: SessionConfig) 
+            -> Result<AsPathLimit, ParseError>
+        {
+            let info = AsPathLimitInfo {
+                upper_bound: parser.parse_u8()?,
+                attacher: Asn::from_u32(parser.parse_u32_be()?)
+            };
+
+            Ok(AsPathLimit(info))
+        }
+    }
+
+
     //--- LargeCommunities
     
     use crate::bgp::communities::LargeCommunity;
@@ -787,6 +849,22 @@ pub mod new_pas {
         }
     }
 
+    impl Attribute for Otc {
+        fn value_len(&self) -> usize { 4 }
+
+        fn compose_value<Target: OctetsBuilder>(&self, target: &mut Target)
+            -> Result<(), Target::AppendError>
+        {
+            target.append_slice(&self.0.to_raw())
+        }
+
+        fn parse<Octs: Octets>(parser: &mut Parser<Octs>, _sc: SessionConfig) 
+            -> Result<Otc, ParseError>
+        {
+            Ok(Otc(Asn::from_u32(parser.parse_u32_be()?)))
+        }
+    }
+
 #[cfg(test)]
     mod tests {
         use super::*;
@@ -810,6 +888,7 @@ pub mod new_pas {
             }
 
             check(vec![0x40, 0x01, 0x01, 0x00], PA::Origin(Origin(0.into())));
+
             check(
                 vec![0x40, 0x02, 10,
                 0x02, 0x02, // SEQUENCE of length 2
@@ -821,22 +900,27 @@ pub mod new_pas {
                     Asn::from_u32(200)]
                 )))
             );
+
             check(
                 vec![0x40, 0x03, 0x04, 0x01, 0x02, 0x03, 0x04],
                 PA::NextHop(NextHop("1.2.3.4".parse().unwrap()))
             );
+
             check(
                 vec![0x80, 0x04, 0x04, 0x00, 0x00, 0x00, 0xff],
                 PA::MultiExitDisc(MultiExitDisc::new(255))
             );
+
             check(
                 vec![0x40, 0x05, 0x04, 0x00, 0x00, 0x00, 0x0a],
                 PA::LocalPref(LocalPref::new(10))
             );
+
             check(
                 vec![0x40, 0x06, 0x00],
                 PA::AtomicAggregate(AtomicAggregate(()))
             );
+            
             check(
                 vec![
                     0xc0, 0x07, 0x08, 0x00, 0x00, 0x00, 0x65, 0xc6,
@@ -847,6 +931,7 @@ pub mod new_pas {
                         "198.51.100.1".parse().unwrap()
                 )))
             );
+
             check(
                 vec![
                     0xc0, 0x08, 0x10, 0x00, 0x2a, 0x02, 0x06, 0xff,
@@ -861,10 +946,12 @@ pub mod new_pas {
                     ]
                 )))
             );
+
             check(
                 vec![0x80, 0x09, 0x04, 0x0a, 0x00, 0x00, 0x04],
                 OriginatorId("10.0.0.4".parse().unwrap()).into()
             );
+
             check(
                 vec![0x80, 0x0a, 0x04, 0x0a, 0x00, 0x00, 0x03],
                 ClusterList(ClusterIds::new(
@@ -896,6 +983,7 @@ pub mod new_pas {
                 MpReachNlri(builder).into()
                 }
             );
+
             check(
                 vec![
                     0x80, 0x0f, 0x27, 0x00, 0x02, 0x01, 0x40, 0x20,
@@ -925,6 +1013,25 @@ pub mod new_pas {
                 MpUnreachNlri(builder).into()
                 }
             );
+
+            //TODO 16 ExtendedCommunities
+            //TODO 17 As4Path
+            //TODO 18 As4Aggregator
+
+            check(
+                vec![0xc0, 0x14, 0x04, 1, 2, 3, 4],
+                Connector("1.2.3.4".parse().unwrap()).into()
+            );
+
+            check(
+                vec![0xc0, 0x15, 0x05, 0x14, 0x00, 0x00, 0x04, 0xd2],
+                AsPathLimit(
+                    AsPathLimitInfo::new(20, Asn::from_u32(1234))
+                ).into()
+            );
+
+            //TODO 22 PmsiTunnel
+
             check(
                 vec![
                     0xc0, 0x20, 0x3c, 0x00, 0x00, 0x20, 0x5b, 0x00,
@@ -945,6 +1052,11 @@ pub mod new_pas {
                         "AS57866:104:31".parse().unwrap(),
                     ]
                 )).into()
+            );
+
+            check(
+                vec![0xc0, 0x23, 0x04, 0x00, 0x00, 0x04, 0xd2],
+                Otc(Asn::from_u32(1234)).into()
             );
 
 
