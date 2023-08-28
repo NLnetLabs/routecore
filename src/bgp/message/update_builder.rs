@@ -74,7 +74,8 @@ pub mod new_pas {
 
             #[derive(Debug, PartialEq)]
             pub enum PathAttribute {
-                $( $name($name) ),+
+                $( $name($name) ),+,
+                Unimplemented(u8)
             }
 
             impl PathAttribute {
@@ -86,16 +87,21 @@ pub mod new_pas {
                     match self {
                     $(
                         PathAttribute::$name(i) => i.compose(target)
-                    ),+
+                    ),+,
+                    //PathAttribute::Unimplemented(i) => TODO return Err(ComposeError) ?
+                    PathAttribute::Unimplemented(_i) => unimplemented!()
                     }
                 }
 
                 pub fn typecode(&self) -> PathAttributeType {
                     match self {
                         $(
-                            PathAttribute::$name(_) =>
-                                PathAttributeType::$name
-                        ),+
+                        PathAttribute::$name(_) =>
+                            PathAttributeType::$name
+                        ),+,
+                        PathAttribute::Unimplemented(i) =>
+                            PathAttributeType::Unimplemented(*i)
+
                     }
                 }
             }
@@ -110,7 +116,8 @@ pub mod new_pas {
 
             #[derive(Debug)]
             pub enum WireformatPathAttribute<'a, Octs> {
-                $( $name(Parser<'a, Octs>, SessionConfig) ),+
+                $( $name(Parser<'a, Octs>, SessionConfig) ),+,
+                Unimplemented(u8)
             }
 
 
@@ -135,9 +142,7 @@ pub mod new_pas {
                         $typecode => WireformatPathAttribute::$name(pp, sc)
                         ),+
                         ,
-                        _ => unimplemented!() // FIXME return Err, or have an
-                                              // Unknown/Unimplemented variant
-                                              // again?
+                        _ => WireformatPathAttribute::Unimplemented(typecode)
                     };
 
                     Ok(res)
@@ -151,7 +156,10 @@ pub mod new_pas {
                                 $name::parse(&mut p.clone(), *sc).unwrap()
                             )
                         }
-                        ),+
+                        ),+,
+                        WireformatPathAttribute::Unimplemented(i) => {
+                            PathAttribute::Unimplemented(*i)
+                        }
                     }
                 }
 
@@ -160,14 +168,17 @@ pub mod new_pas {
                         $(
                             WireformatPathAttribute::$name(_,_) =>
                                 PathAttributeType::$name
-                        ),+
+                        ),+,
+                        WireformatPathAttribute::Unimplemented(i) =>
+                            PathAttributeType::Unimplemented(*i)
                     }
                 }
             }
 
             #[derive(Debug, PartialEq)]
             pub enum PathAttributeType {
-                $( $name ),+
+                $( $name ),+,
+                Unimplemented(u8)
             }
             impl From<u8> for PathAttributeType {
                 fn from(code: u8) -> PathAttributeType {
@@ -182,6 +193,7 @@ pub mod new_pas {
                 fn from(pat: PathAttributeType) -> u8 {
                     match pat {
                         $( PathAttributeType::$name => $typecode ),+,
+                        PathAttributeType::Unimplemented(i) => i
                     }
                 }
             }
