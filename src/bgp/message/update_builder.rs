@@ -267,6 +267,55 @@ pub mod new_pas {
         
     }
 
+    struct PathAttributes<'a, Octs> {
+        parser: Parser<'a, Octs>,
+        session_config: SessionConfig,
+    }
+
+    impl<'a, Octs> Clone for PathAttributes<'a, Octs> {
+        fn clone(&self) -> Self {
+            PathAttributes {
+                parser: self.parser.clone(),
+                session_config: self.session_config
+            }
+        }
+    }
+    impl<'a, Octs> Copy for PathAttributes<'a, Octs> { }
+
+    impl<'a, Octs: Octets> PathAttributes<'a, Octs> {
+        fn new(parser: Parser<'a, Octs>, session_config: SessionConfig)
+            -> PathAttributes<'_, Octs>
+        {
+            PathAttributes { parser, session_config }
+        }
+        
+        fn get(&self, pat: PathAttributeType) -> Option<WireformatPathAttribute<'a, Octs>> {
+            let mut iter = *self;
+            iter.find(|pa|
+                 pa.as_ref().is_ok_and(|pa| pa.typecode() == pat)
+            ).map(|res| res.unwrap())
+        }
+
+    }
+
+    impl<'a, Octs: Octets> Iterator for PathAttributes<'a, Octs> {
+        type Item = Result<WireformatPathAttribute<'a, Octs>, ParseError>;
+        fn next(&mut self) -> Option<Self::Item> {
+            if self.parser.remaining() == 0 {
+                return None;
+            }
+
+            let res = WireformatPathAttribute::parse(
+                &mut self.parser,
+                self.session_config
+            );
+            Some(res)
+        }
+    }
+
+
+
+
     //--- Origin
 
     use crate::bgp::message::update::OriginType;
@@ -713,6 +762,32 @@ pub mod new_pas {
             );
 
 
+        }
+
+        #[test]
+        fn iter_and_find() {
+            let raw = vec![
+                0x40, 0x01, 0x01, 0x00, // ORIGIN
+                0x40, 0x03, 0x04, 0x01, 0x02, 0x03, 0x04, // NEXTHOP
+                0x80, 0x04, 0x04, 0x00, 0x00, 0x00, 0xff // MED 
+            ];
+            let mut pas = PathAttributes::new(
+                Parser::from_ref(&raw), SessionConfig::modern()
+            );
+            //for _ in 0..4 {
+            //    let pa = pas.next();
+            //    println!("{pa:?}");
+            //}
+
+            //assert!(
+            //    pas.find(|pa|
+            //         pa.as_ref().is_ok_and(|pa| pa.typecode() == PathAttributeType::Origin)
+            //    ).unwrap().is_ok()
+            //);
+            assert!(pas.get(PathAttributeType::Origin).is_some());
+            assert!(pas.get(PathAttributeType::AsPath).is_none());
+            assert!(pas.get(PathAttributeType::MultiExitDisc).is_some());
+            assert!(pas.get(PathAttributeType::NextHop).is_some());
         }
     }
 }
