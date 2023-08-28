@@ -588,10 +588,13 @@ pub mod new_pas {
             self.0.communities.len() * 12
         }
 
-        fn compose_value<Target: OctetsBuilder>(&self, _target: &mut Target)
+        fn compose_value<Target: OctetsBuilder>(&self, target: &mut Target)
             -> Result<(), Target::AppendError>
         {
-            todo!()
+            for c in &self.0.communities {
+                target.append_slice(&c.to_raw())?;
+            }
+            Ok(())
         }
 
         fn parse<Octs: Octets>(parser: &mut Parser<Octs>, _sc: SessionConfig) 
@@ -687,12 +690,27 @@ pub mod new_pas {
                 //PA::ClusterList(ClusterList(ClusterIds::new(vec![[10, 0, 0, 3].into()])))
                 ClusterList(ClusterIds::new(vec![[10, 0, 0, 3].into()])).into()
             );
-            //TODO
-            //check(
-            //    vec![],
-            //    PA::LargeCommunities(LargeCommunitiesList::new(
-            //            vec![]
-            //);
+            check(
+                vec![
+                    0xc0, 0x20, 0x3c, 0x00, 0x00, 0x20, 0x5b, 0x00,
+                    0x00, 0x00, 0x06, 0x00, 0x00, 0x00, 0x0f, 0x00,
+                    0x00, 0xe2, 0x0a, 0x00, 0x00, 0x00, 0x64, 0x00,
+                    0x00, 0x0b, 0x62, 0x00, 0x00, 0xe2, 0x0a, 0x00,
+                    0x00, 0x00, 0x65, 0x00, 0x00, 0x00, 0x64, 0x00,
+                    0x00, 0xe2, 0x0a, 0x00, 0x00, 0x00, 0x67, 0x00,
+                    0x00, 0x00, 0x01, 0x00, 0x00, 0xe2, 0x0a, 0x00,
+                    0x00, 0x00, 0x68, 0x00, 0x00, 0x00, 0x1f
+                ],
+                LargeCommunities(LargeCommunitiesList::new(
+                    vec![
+                        "AS8283:6:15".parse().unwrap(),
+                        "AS57866:100:2914".parse().unwrap(),
+                        "AS57866:101:100".parse().unwrap(),
+                        "AS57866:103:1".parse().unwrap(),
+                        "AS57866:104:31".parse().unwrap(),
+                    ]
+                )).into()
+            );
 
 
         }

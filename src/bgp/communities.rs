@@ -1040,7 +1040,7 @@ impl LargeCommunity {
         Self(raw)
     }
 
-    pub fn raw(self) -> [u8; 12] {
+    pub fn to_raw(self) -> [u8; 12] {
         self.0
     }
 
