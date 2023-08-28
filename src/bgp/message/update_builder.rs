@@ -271,7 +271,7 @@ pub mod new_pas {
     impl<'a, Octs> Clone for PathAttributes<'a, Octs> {
         fn clone(&self) -> Self {
             PathAttributes {
-                parser: self.parser.clone(),
+                parser: self.parser,
                 session_config: self.session_config
             }
         }
@@ -771,7 +771,7 @@ pub mod new_pas {
                 0x40, 0x03, 0x04, 0x01, 0x02, 0x03, 0x04, // NEXTHOP
                 0x80, 0x04, 0x04, 0x00, 0x00, 0x00, 0xff // MED 
             ];
-            let mut pas = PathAttributes::new(
+            let pas = PathAttributes::new(
                 Parser::from_ref(&raw), SessionConfig::modern()
             );
             //for _ in 0..4 {
