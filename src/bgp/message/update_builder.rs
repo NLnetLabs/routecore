@@ -18,7 +18,9 @@ pub mod new_pas {
 
     use crate::asn::Asn;
     use crate::bgp::aspath::HopPath;
+    use crate::bgp::message::update_builder::MpReachNlriBuilder;
     use crate::bgp::message::SessionConfig;
+    use crate::bgp::types::{AFI, SAFI};
     use crate::util::parser::{ParseError, parse_ipv4addr};
 
     struct Flags { }
@@ -32,11 +34,11 @@ pub mod new_pas {
         // 3: extended length (0 -> 1 byte length, 1 -> 2 byte length)
         // 4-7: MUST be 0 when sent, ignored when received
         const OPT_NON_TRANS: u8 = 0b1000_0000;
-        const OPT_TRANS: u8 = 0b1100_0000;
-        const WELLKNOWN: u8 = 0b0100_0000;
+        const OPT_TRANS: u8     = 0b1100_0000;
+        const WELLKNOWN: u8     = 0b0100_0000;
 
-        const EXTENDED_LEN: u8 = 0b0001_0000;
-        const PARTIAL: u8 = 0b0010_0000;
+        const EXTENDED_LEN: u8  = 0b0001_0000;
+        const PARTIAL: u8       = 0b0010_0000;
     }
 
     pub trait AttributeHeader {
@@ -148,6 +150,9 @@ pub mod new_pas {
                     Ok(res)
                 }
 
+                // XXX this method is the reason we have fn parse as part of
+                // the trait, forcing us the pass a SessionConfig to all of
+                // the parse() implementations.
                 fn to_owned(&self) -> PathAttribute {
                     match self {
                         $(
@@ -215,7 +220,13 @@ pub mod new_pas {
         8   => Communities(StandardCommunitiesList), Flags::OPT_TRANS,
         9   => OriginatorId(Ipv4Addr), Flags::OPT_NON_TRANS,
         10  => ClusterList(ClusterIds), Flags::OPT_NON_TRANS,
+        14  => MpReachNlri(MpReachNlriBuilder), Flags::OPT_NON_TRANS,
+        // 15..18, 20, 21, 22, 25 old PathAttributeType
         32  => LargeCommunities(LargeCommunitiesList), Flags::OPT_TRANS,
+        // 33 => BgpsecAsPath,
+        // 128 => AttrSet
+        // 255 => RsrvdDevelopment
+
     );
 
     pub trait Attribute: AttributeHeader {
@@ -621,6 +632,60 @@ pub mod new_pas {
         }
     }
 
+    //--- MpReachNlri
+    impl Attribute for MpReachNlri {
+        fn value_len(&self) -> usize { 
+            self.0.value_len()
+        }
+
+        fn compose_value<Target: OctetsBuilder>(&self, target: &mut Target)
+            -> Result<(), Target::AppendError>
+        {
+            self.0.compose_value(target)
+        }
+
+        fn parse<Octs: Octets>(parser: &mut Parser<Octs>, sc: SessionConfig) 
+            -> Result<MpReachNlri, ParseError>
+        {
+            let afi: AFI = parser.parse_u16_be()?.into();
+            let safi: SAFI = parser.parse_u8()?.into();
+            let nexthop = crate::bgp::types::NextHop::parse(parser, afi, safi)?;
+            parser.advance(1)?; // reserved byte
+            let mut builder = MpReachNlriBuilder::new(
+                afi, safi, nexthop, sc.addpath_enabled()
+            );
+            let nlri_iter = crate::bgp::message::update::Nlris::new(
+                *parser,
+                sc,
+                afi,
+                safi
+            ).iter();
+
+            // FIXME
+            // MpReachNlriBuilder works with Nlri<Vec<u8>>
+            // but that is somewhat limiting. Here, we reuse the existing
+            // Nlris iter from bgp::message::update, where the iterator
+            // returns Item = Nlri<Octs::Range<'_>>.
+            // Perhaps add_announcement should take Nlri<T> where T:
+            // OctetsInto<Vec<u8>> or something like that?
+            use crate::bgp::message::nlri::{Nlri, BasicNlri};
+            for nlri in nlri_iter {
+                match nlri {
+                    Nlri::Unicast(b) => {
+                        builder.add_announcement(
+                            &Nlri::Unicast(BasicNlri {
+                                prefix: b.prefix,
+                                path_id: b.path_id
+                            })
+                        ).unwrap()
+                    },
+                    _ => unimplemented!()
+                }
+            }
+            Ok(MpReachNlri(builder))
+        }
+    }
+
     //--- LargeCommunities
     
     use crate::bgp::communities::LargeCommunity;
@@ -674,6 +739,8 @@ pub mod new_pas {
         use super::*;
         use crate::asn::Asn;
         use crate::bgp::communities::Wellknown;
+        use crate::bgp::message::nlri::Nlri;
+        use crate::bgp::message::update::NextHop;
 
         #[test]
         fn wireformat_to_owned_and_back() {
@@ -751,6 +818,30 @@ pub mod new_pas {
                         vec![[10, 0, 0, 3].into()]
                 )).into()
             );
+            
+            check(
+                vec![
+                    0x80, 0x0e, 0x1c,
+                    0x00, 0x02, 0x01,
+                    0x10,
+                    0x20, 0x01, 0x0d, 0xb8, 0x00, 0x00, 0x00, 0x00,
+                    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x12, 0x34,
+                    0x00,
+                    0x30, 0x20, 0x01, 0x0d, 0xb8, 0xaa, 0xbb
+                ],
+                {
+                let mut builder = MpReachNlriBuilder::new(
+                    AFI::Ipv6,
+                    SAFI::Unicast,
+                    NextHop::Ipv6("2001:db8::1234".parse().unwrap()),
+                    false // no addpath
+                );
+                builder.add_announcement(
+                    &Nlri::unicast_from_str("2001:db8:aabb::/48").unwrap()
+                ).unwrap();
+                MpReachNlri(builder).into()
+                }
+            );
             check(
                 vec![
                     0xc0, 0x20, 0x3c, 0x00, 0x00, 0x20, 0x5b, 0x00,
@@ -815,8 +906,8 @@ pub mod new_pas {
 // size allowed on the BGP session.
 
 
-#[derive(Debug)]
-pub(crate) struct MpReachNlriBuilder {
+#[derive(Debug, PartialEq)]
+pub struct MpReachNlriBuilder {
     announcements: Vec<Nlri<Vec<u8>>>,
     len: usize, // size of value, excluding path attribute flags+typecode+len
     extended: bool,
@@ -859,6 +950,10 @@ impl MpReachNlriBuilder {
             nexthop,
             addpath_enabled
         }
+    }
+
+    pub(crate) fn value_len(&self) -> usize {
+        self.len
     }
 
     pub(crate) fn is_empty(&self) -> bool {
@@ -930,6 +1025,35 @@ impl MpReachNlriBuilder {
         announcement_len
     }
 
+    pub(crate) fn compose_value<Target: OctetsBuilder>(
+        &self,
+        target: &mut Target
+    ) -> Result<(), Target::AppendError>
+    {
+        target.append_slice(&u16::from(self.afi).to_be_bytes())?;
+        target.append_slice(&[self.safi.into()])?;
+        self.nexthop.compose(target)?;
+
+        // Reserved byte:
+        target.append_slice(&[0x00])?;
+
+        for w in &self.announcements {
+            match w {
+                Nlri::Unicast(b) => {
+                    if !b.is_v4() {
+                        b.compose(target)?;
+                    } else {
+                        unreachable!();
+                    }
+                }
+                _ => unreachable!()
+            }
+        }
+        Ok(())
+    }
+
+    // XXX can we get rid of this once MpReachNlri is supported in the new_pas
+    // PathAttribute enum?
     pub(crate) fn compose<Target: OctetsBuilder>(&self, target: &mut Target)
         -> Result<(), Target::AppendError>
     {

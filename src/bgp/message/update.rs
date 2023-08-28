@@ -633,6 +633,10 @@ impl SessionConfig {
         matches!(self.four_octet_asn, FourOctetAsn::Enabled)
     }
 
+    pub fn addpath_enabled(&self) -> bool {
+        matches!(self.add_path, AddPath::Enabled)
+    }
+
     pub fn enable_four_octet_asn(&mut self) {
         self.four_octet_asn = FourOctetAsn::Enabled
     }
@@ -1727,6 +1731,15 @@ pub struct Nlris<'a, Octs: Octets + ?Sized> {
 }
 
 impl<'a, Octs: Octets> Nlris<'a, Octs> {
+    pub fn new(
+        parser: Parser<'a, Octs>,
+        session_config: SessionConfig,
+        afi: AFI,
+        safi: SAFI
+    ) -> Nlris<'a, Octs> {
+        Nlris { parser, session_config, afi, safi }
+    }
+
     pub fn iter(&self) -> NlriIterMp<'a, Octs> {
         NlriIterMp {
             parser: self.parser,
