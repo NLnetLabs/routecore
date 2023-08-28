@@ -59,7 +59,7 @@ impl Error for MessageError { }
 /// including the [`CommonHeader`], possibly a [`PerPeerHeader`] and the
 /// additional payload. The payload often comprises one or multiple
 /// [`bgp::Message`](crate::bgp::Message)s.
-
+#[derive(Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub enum Message<Octets: AsRef<[u8]>> {
     RouteMonitoring(RouteMonitoring<Octets>),
@@ -548,7 +548,7 @@ typeenum!(
 /// Route Monitoring message.
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct RouteMonitoring<Octets: AsRef<[u8]>>
 {
     octets: Octets
@@ -598,7 +598,7 @@ impl<Octs: Octets> RouteMonitoring<Octs> {
 }
 
 /// Statistics Report message.
-
+#[derive(Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct StatisticsReport<Octs> {
     octets: Octs,
@@ -662,7 +662,7 @@ impl<Octs: Octets> Debug for StatisticsReport<Octs> {
 
 /// Peer Down Notification. 
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct PeerDownNotification<Octets: AsRef<[u8]>> {
     octets: Octets,
 }
@@ -771,7 +771,7 @@ impl<Octs: Octets> PeerDownNotification<Octs> {
 
 /// Peer Up Notification.
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct PeerUpNotification<Octets: AsRef<[u8]>> {
     octets: Octets,
 }
@@ -955,7 +955,7 @@ impl<Octs: Octets> PeerUpNotification<Octs> {
 
 /// Initiation Message.
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct InitiationMessage<Octets: AsRef<[u8]>> {
     octets: Octets,
 }
@@ -995,6 +995,7 @@ impl<Octs: Octets> InitiationMessage<Octs> {
 
 
 /// Termination message.
+#[derive(Clone, Debug)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct TerminationMessage<Octets: AsRef<[u8]>> {
     octets: Octets,
@@ -1040,6 +1041,7 @@ impl<Octs: Octets> TerminationMessage<Octs> {
 /// RouteMirroring.
 ///
 /// NB: Not well tested/supported at this moment!  
+#[derive(Clone, Debug)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct RouteMirroring<Octs> {
     octets: Octs,
