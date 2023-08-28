@@ -95,6 +95,15 @@ pub mod new_pas {
                     ),+
                     }
                 }
+
+                pub fn typecode(&self) -> PathAttributeType {
+                    match self {
+                        $(
+                            PathAttribute::$name(_) =>
+                                PathAttributeType::$name
+                        ),+
+                    }
+                }
             }
 
             $(
@@ -147,6 +156,36 @@ pub mod new_pas {
                             )
                         }
                         ),+
+                    }
+                }
+
+                pub fn typecode(&self) -> PathAttributeType {
+                    match self {
+                        $(
+                            WireformatPathAttribute::$name(_,_) =>
+                                PathAttributeType::$name
+                        ),+
+                    }
+                }
+            }
+
+            #[derive(Debug, PartialEq)]
+            pub enum PathAttributeType {
+                $( $name ),+
+            }
+            impl From<u8> for PathAttributeType {
+                fn from(code: u8) -> PathAttributeType {
+                    match code {
+                        $( $typecode => PathAttributeType::$name ),+,
+                        _ => unimplemented!() // TODO
+                    }
+                }
+            }
+
+            impl From<PathAttributeType> for u8 {
+                fn from(pat: PathAttributeType) -> u8 {
+                    match pat {
+                        $( PathAttributeType::$name => $typecode ),+,
                     }
                 }
             }
