@@ -55,7 +55,7 @@ pub mod new_pas {
          $typecode:expr
          ) => {
 
-            #[derive(Debug, PartialEq)]
+            #[derive(Debug, Eq, PartialEq)]
             pub struct $name($data);
             impl $name {
                 pub fn new(data: $data) -> $name {
@@ -77,7 +77,7 @@ pub mod new_pas {
             ),+ $(,)*
         ) => {
 
-            #[derive(Debug, PartialEq)]
+            #[derive(Debug, Eq, PartialEq)]
             pub enum PathAttribute {
                 $( $name($name) ),+,
                 Unimplemented(u8)
@@ -183,7 +183,7 @@ pub mod new_pas {
                 }
             }
 
-            #[derive(Debug, PartialEq)]
+            #[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
             pub enum PathAttributeType {
                 $( $name ),+,
                 Unimplemented(u8)
@@ -322,8 +322,14 @@ pub mod new_pas {
         {
             let mut iter = *self;
             iter.find(|pa|
-                 pa.as_ref().is_ok_and(|pa| pa.typecode() == pat)
-            ).map(|res| res.unwrap())
+                  //XXX We need Rust 1.70 for is_ok_and()
+                  //pa.as_ref().is_ok_and(|pa| pa.typecode() == pat)
+                  if let Ok(pa) = pa.as_ref() {
+                      pa.typecode() == pat
+                  } else {
+                      false
+                  }
+            ).map(|res| res.unwrap()) // res is Ok(pa), so we can unwrap.
         }
 
     }
@@ -470,7 +476,7 @@ pub mod new_pas {
 
     //--- Aggregator
 
-    #[derive(Debug, PartialEq)]
+    #[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
     pub struct AggregatorInfo {
         asn: Asn,
         address: Ipv4Addr,
@@ -521,7 +527,7 @@ pub mod new_pas {
     //--- Communities
     
     use crate::bgp::communities::StandardCommunity;
-    #[derive(Debug, PartialEq)]
+    #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
     pub struct StandardCommunitiesList {
         communities: Vec<StandardCommunity>
     }
@@ -584,7 +590,7 @@ pub mod new_pas {
 
     //--- ClusterList
     
-    #[derive(Debug, PartialEq)]
+    #[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
     pub struct BgpIdentifier([u8; 4]);
 
     impl From<[u8; 4]> for BgpIdentifier {
@@ -601,7 +607,7 @@ pub mod new_pas {
     }
     */
 
-    #[derive(Debug, PartialEq)]
+    #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
     pub struct ClusterIds {
         cluster_ids: Vec<BgpIdentifier>
     }
@@ -764,7 +770,7 @@ pub mod new_pas {
 
     //--- AsPathLimit (deprecated)
 
-    #[derive(Debug, PartialEq)]
+    #[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
     pub struct AsPathLimitInfo {
         upper_bound: u8,
         attacher: Asn,
@@ -802,7 +808,7 @@ pub mod new_pas {
     //--- LargeCommunities
     
     use crate::bgp::communities::LargeCommunity;
-    #[derive(Debug, PartialEq)]
+    #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
     pub struct LargeCommunitiesList {
         communities: Vec<LargeCommunity>
     }
@@ -1099,7 +1105,7 @@ pub mod new_pas {
 // size allowed on the BGP session.
 
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct MpReachNlriBuilder {
     announcements: Vec<Nlri<Vec<u8>>>,
     len: usize, // size of value, excluding path attribute flags+typecode+len
@@ -1331,7 +1337,7 @@ impl NextHop {
 //    add_withdrawal should check whether the remote side is able to receive
 //    path ids if the Nlri passed to add_withdrawal contains Some(PathId).
 //
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct MpUnreachNlriBuilder {
     withdrawals: Vec<Nlri<Vec<u8>>>,
     len: usize, // size of value, excluding path attribute flags+typecode+len
