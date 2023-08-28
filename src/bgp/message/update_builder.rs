@@ -304,12 +304,10 @@ pub mod new_pas {
 
     impl<'a, Octs> Clone for PathAttributes<'a, Octs> {
         fn clone(&self) -> Self {
-            PathAttributes {
-                parser: self.parser,
-                session_config: self.session_config
-            }
+            *self
         }
     }
+
     impl<'a, Octs> Copy for PathAttributes<'a, Octs> { }
 
     impl<'a, Octs: Octets> PathAttributes<'a, Octs> {
