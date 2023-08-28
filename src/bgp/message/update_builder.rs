@@ -18,7 +18,10 @@ pub mod new_pas {
 
     use crate::asn::Asn;
     use crate::bgp::aspath::HopPath;
-    use crate::bgp::message::update_builder::MpReachNlriBuilder;
+    use crate::bgp::message::update_builder::{
+        MpReachNlriBuilder,
+        MpUnreachNlriBuilder
+    };
     use crate::bgp::message::SessionConfig;
     use crate::bgp::types::{AFI, SAFI};
     use crate::util::parser::{ParseError, parse_ipv4addr};
@@ -221,7 +224,8 @@ pub mod new_pas {
         9   => OriginatorId(Ipv4Addr), Flags::OPT_NON_TRANS,
         10  => ClusterList(ClusterIds), Flags::OPT_NON_TRANS,
         14  => MpReachNlri(MpReachNlriBuilder), Flags::OPT_NON_TRANS,
-        // 15..18, 20, 21, 22, 25 old PathAttributeType
+        15  => MpUnreachNlri(MpUnreachNlriBuilder), Flags::OPT_NON_TRANS,
+        // 16..18, 20, 21, 22, 25 old PathAttributeType
         32  => LargeCommunities(LargeCommunitiesList), Flags::OPT_TRANS,
         // 33 => BgpsecAsPath,
         // 128 => AttrSet
@@ -686,6 +690,55 @@ pub mod new_pas {
         }
     }
 
+    //--- MpUnreachNlri
+    impl Attribute for MpUnreachNlri {
+        fn value_len(&self) -> usize { 
+            self.0.value_len()
+        }
+
+        fn compose_value<Target: OctetsBuilder>(&self, target: &mut Target)
+            -> Result<(), Target::AppendError>
+        {
+            self.0.compose_value(target)
+        }
+
+        fn parse<Octs: Octets>(parser: &mut Parser<Octs>, sc: SessionConfig) 
+            -> Result<MpUnreachNlri, ParseError>
+        {
+            let afi: AFI = parser.parse_u16_be()?.into();
+            let safi: SAFI = parser.parse_u8()?.into();
+
+            let mut builder = MpUnreachNlriBuilder::new(
+                afi, safi, sc.addpath_enabled()
+            );
+            let nlri_iter = crate::bgp::message::update::Nlris::new(
+                *parser,
+                sc,
+                afi,
+                safi
+            ).iter();
+
+            // FIXME
+            // see note at MpReachNlri above
+            use crate::bgp::message::nlri::{Nlri, BasicNlri};
+            for nlri in nlri_iter {
+                match nlri {
+                    Nlri::Unicast(b) => {
+                        builder.add_withdrawal(
+                            &Nlri::Unicast(BasicNlri {
+                                prefix: b.prefix,
+                                path_id: b.path_id
+                            })
+                        ).unwrap()
+                    },
+                    _ => unimplemented!()
+                }
+            }
+
+            Ok(MpUnreachNlri(builder))
+        }
+    }
+
     //--- LargeCommunities
     
     use crate::bgp::communities::LargeCommunity;
@@ -839,7 +892,37 @@ pub mod new_pas {
                 builder.add_announcement(
                     &Nlri::unicast_from_str("2001:db8:aabb::/48").unwrap()
                 ).unwrap();
+
                 MpReachNlri(builder).into()
+                }
+            );
+            check(
+                vec![
+                    0x80, 0x0f, 0x27, 0x00, 0x02, 0x01, 0x40, 0x20,
+                    0x01, 0x0d, 0xb8, 0xff, 0xff, 0x00, 0x00, 0x40,
+                    0x20, 0x01, 0x0d, 0xb8, 0xff, 0xff, 0x00, 0x01,
+                    0x40, 0x20, 0x01, 0x0d, 0xb8, 0xff, 0xff, 0x00,
+                    0x02, 0x40, 0x20, 0x01, 0x0d, 0xb8, 0xff, 0xff,
+                    0x00, 0x03
+                ],
+                {
+                let mut builder = MpUnreachNlriBuilder::new(
+                    AFI::Ipv6,
+                    SAFI::Unicast,
+                    false // no addpath
+                );
+                [
+                    "2001:db8:ffff::/64",
+                    "2001:db8:ffff:1::/64",
+                    "2001:db8:ffff:2::/64",
+                    "2001:db8:ffff:3::/64",
+                ].into_iter().for_each(|s|{
+                    builder.add_withdrawal(
+                        &Nlri::unicast_from_str(s).unwrap()
+                    ).unwrap();
+                });
+
+                MpUnreachNlri(builder).into()
                 }
             );
             check(
@@ -1138,8 +1221,8 @@ impl NextHop {
 //    add_withdrawal should check whether the remote side is able to receive
 //    path ids if the Nlri passed to add_withdrawal contains Some(PathId).
 //
-#[derive(Debug)]
-pub(crate) struct MpUnreachNlriBuilder {
+#[derive(Debug, PartialEq)]
+pub struct MpUnreachNlriBuilder {
     withdrawals: Vec<Nlri<Vec<u8>>>,
     len: usize, // size of value, excluding path attribute flags+typecode+len
     extended: bool,
@@ -1158,6 +1241,10 @@ impl MpUnreachNlriBuilder {
             safi,
             addpath_enabled
         }
+    }
+
+    pub(crate) fn value_len(&self) -> usize {
+        self.len
     }
 
     pub(crate) fn is_empty(&self) -> bool {
@@ -1202,6 +1289,27 @@ impl MpUnreachNlriBuilder {
             return withdrawal_len + 1;
         }
         withdrawal_len
+    }
+
+    pub(crate) fn compose_value<Target: OctetsBuilder>(&self, target: &mut Target)
+        -> Result<(), Target::AppendError>
+    {
+        target.append_slice(&u16::from(self.afi).to_be_bytes())?;
+        target.append_slice(&[self.safi.into()])?;
+
+        for w in &self.withdrawals {
+            match w {
+                Nlri::Unicast(b) => {
+                    if !b.is_v4() {
+                        b.compose(target)?;
+                    } else {
+                        unreachable!();
+                    }
+                }
+                _ => unreachable!()
+            }
+        }
+        Ok(())
     }
 
     pub(crate) fn compose<Target: OctetsBuilder>(&self, target: &mut Target)
