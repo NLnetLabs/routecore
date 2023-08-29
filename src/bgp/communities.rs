@@ -767,6 +767,7 @@ impl From<[u8; 8]> for Community {
         Community::Extended(ExtendedCommunity(raw))
     }
 }
+
 impl From<[u8; 8]> for ExtendedCommunity {
     fn from(raw: [u8; 8]) -> ExtendedCommunity {
         ExtendedCommunity(raw)

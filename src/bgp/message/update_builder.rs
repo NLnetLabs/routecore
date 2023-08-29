@@ -26,7 +26,8 @@ pub mod new_pas {
     use crate::bgp::types::{AFI, SAFI};
     use crate::util::parser::{ParseError, parse_ipv4addr};
 
-    struct Flags { }
+    #[derive(Copy, Clone, Debug, Eq, PartialEq)]
+    pub struct Flags(u8);
 
     impl Flags {
         // 0 1 2 3 4 5 6 7
@@ -42,7 +43,41 @@ pub mod new_pas {
 
         const EXTENDED_LEN: u8  = 0b0001_0000;
         const PARTIAL: u8       = 0b0010_0000;
+
+        /// Returns true if the optional flag is set.
+        pub fn is_optional(self) -> bool {
+            self.0 & 0x80 == 0x80
+        }
+
+        /// Returns true if the transitive bit is set.
+        pub fn is_transitive(self) -> bool {
+            self.0 & 0x40 == 0x40
+        }
+
+        /// Returns true if the partial flag is set.
+        pub fn is_partial(self) -> bool {
+            self.0 & 0x20 == 0x20
+        }
+
+        /// Returns true if the extended length flag is set.
+        pub fn is_extended_length(self) -> bool {
+            self.0 & 0x10 == 0x10
+        }
+
     }
+
+    impl From<u8> for Flags {
+        fn from(u: u8) -> Flags {
+            Flags(u)
+        }
+    }
+
+    impl From<Flags> for u8 {
+        fn from(f: Flags) -> u8 {
+            f.0
+        }
+    }
+
 
     pub trait AttributeHeader {
         const FLAGS: u8;
@@ -80,7 +115,8 @@ pub mod new_pas {
             #[derive(Debug, Eq, PartialEq)]
             pub enum PathAttribute {
                 $( $name($name) ),+,
-                Unimplemented(u8)
+                //Unimplemented(Flags, u8, Vec<u8>)
+                Unimplemented(UnimplementedPathAttribute)
             }
 
             impl PathAttribute {
@@ -94,7 +130,7 @@ pub mod new_pas {
                         PathAttribute::$name(i) => i.compose(target)
                     ),+,
                     //PathAttribute::Unimplemented(i) => TODO return Err(ComposeError) ?
-                    PathAttribute::Unimplemented(_i) => unimplemented!()
+                    PathAttribute::Unimplemented(u) => u.compose(target)
                     }
                 }
 
@@ -104,9 +140,8 @@ pub mod new_pas {
                         PathAttribute::$name(_) =>
                             PathAttributeType::$name
                         ),+,
-                        PathAttribute::Unimplemented(i) =>
-                            PathAttributeType::Unimplemented(*i)
-
+                        PathAttribute::Unimplemented(u) =>
+                            PathAttributeType::Unimplemented(u.typecode())
                     }
                 }
             }
@@ -119,10 +154,16 @@ pub mod new_pas {
             }
             )+
 
+            impl From<UnimplementedPathAttribute> for PathAttribute {
+                fn from(u: UnimplementedPathAttribute) -> PathAttribute {
+                    PathAttribute::Unimplemented(u)
+                }
+            }
+
             #[derive(Debug)]
             pub enum WireformatPathAttribute<'a, Octs> {
                 $( $name(Parser<'a, Octs>, SessionConfig) ),+,
-                Unimplemented(u8)
+                Unimplemented(UnimplementedWireformat<'a, Octs>)
             }
 
 
@@ -147,7 +188,10 @@ pub mod new_pas {
                         $typecode => WireformatPathAttribute::$name(pp, sc)
                         ),+
                         ,
-                        _ => WireformatPathAttribute::Unimplemented(typecode)
+                        _ => WireformatPathAttribute::Unimplemented(
+                            UnimplementedWireformat::new(
+                                flags.into(), typecode, pp
+                            ))
                     };
 
                     Ok(res)
@@ -165,8 +209,14 @@ pub mod new_pas {
                             )
                         }
                         ),+,
-                        WireformatPathAttribute::Unimplemented(i) => {
-                            PathAttribute::Unimplemented(*i)
+                        WireformatPathAttribute::Unimplemented(u) => {
+                            PathAttribute::Unimplemented(
+                                UnimplementedPathAttribute::new(
+                                    u.flags(),
+                                    u.typecode(),
+                                    u.value().to_vec()
+                                )
+                            )
                         }
                     }
                 }
@@ -177,8 +227,8 @@ pub mod new_pas {
                             WireformatPathAttribute::$name(_,_) =>
                                 PathAttributeType::$name
                         ),+,
-                        WireformatPathAttribute::Unimplemented(i) =>
-                            PathAttributeType::Unimplemented(*i)
+                        WireformatPathAttribute::Unimplemented(u) =>
+                            PathAttributeType::Unimplemented(u.typecode())
                     }
                 }
             }
@@ -192,7 +242,7 @@ pub mod new_pas {
                 fn from(code: u8) -> PathAttributeType {
                     match code {
                         $( $typecode => PathAttributeType::$name ),+,
-                        _ => unimplemented!() // TODO
+                        u => PathAttributeType::Unimplemented(u)
                     }
                 }
             }
@@ -231,7 +281,7 @@ pub mod new_pas {
         20  => Connector(Ipv4Addr), Flags::OPT_TRANS,
         21  => AsPathLimit(AsPathLimitInfo), Flags::OPT_TRANS,
         //22  => PmsiTunnel(todo), Flags::OPT_TRANS,
-        // , 25 old PathAttributeType
+        // , 25 ExtIpv6Comm
         32  => LargeCommunities(LargeCommunitiesList), Flags::OPT_TRANS,
         // 33 => BgpsecAsPath,
         35 => Otc(Asn), Flags::OPT_TRANS,
@@ -239,6 +289,79 @@ pub mod new_pas {
         // 255 => RsrvdDevelopment
 
     );
+
+    #[derive(Debug, Eq, PartialEq)]
+    pub struct UnimplementedPathAttribute {
+        flags: Flags,
+        typecode: u8,
+        value: Vec<u8>,
+    }
+
+    impl UnimplementedPathAttribute {
+        pub fn new(flags: Flags, typecode: u8, value: Vec<u8>) -> Self {
+            Self { flags, typecode, value }
+        }
+
+        pub fn typecode(&self) -> u8 {
+            self.typecode
+        }
+
+        pub fn flags(&self) -> Flags {
+            self.flags
+        }
+
+        pub fn value(&self) -> &Vec<u8> {
+            &self.value
+        }
+    }
+
+    #[derive(Debug)]
+    pub struct UnimplementedWireformat<'a, Octs> {
+        flags: Flags,
+        typecode: u8,
+        value: Parser<'a, Octs>,
+    }
+
+    impl<'a, Octs: Octets> UnimplementedWireformat<'a, Octs> {
+        pub fn new(flags: Flags, typecode: u8, value: Parser<'a, Octs>) -> Self {
+            Self { flags, typecode, value }
+        }
+        pub fn typecode(&self) -> u8 {
+            self.typecode
+        }
+
+        pub fn flags(&self) -> Flags {
+            self.flags
+        }
+
+        pub fn value(&self) -> &[u8] {
+            self.value.peek_all()
+        }
+
+        /* TODO move these to all (wireformat)pathattributes
+        /// Returns true if the optional flag is set.
+        pub fn is_optional(self) -> bool {
+            self.0 & 0x80 == 0x80
+        }
+
+        /// Returns true if the transitive bit is set.
+        pub fn is_transitive(&self) -> bool {
+            self.flags.is_transitive()
+        }
+
+        /// Returns true if the partial flag is set.
+        pub fn is_partial(&self) -> bool {
+            self.flags.is_partial()
+        }
+
+        /// Returns true if the extended length flag is set.
+        pub fn is_extended_length(&self) -> bool {
+            self.flags.is_extended_length()
+        }
+        */
+
+    }
+
 
     pub trait Attribute: AttributeHeader {
 
@@ -970,6 +1093,38 @@ pub mod new_pas {
     }
 
 
+    //--- Unimplemented
+    // 
+    // XXX implementing the Attribute trait requires to implement the
+    // AttributeHeader trait to be implemented as well. But, we have no const
+    // FLAGS and TYPECODE for an UnimplementedPathAttribute, so that does not
+    // fly.
+    //
+    // Let's try to go without the trait.
+
+    impl UnimplementedPathAttribute {
+        fn compose<Target: OctetsBuilder>(&self, target: &mut Target)
+            -> Result<(), Target::AppendError>
+        {
+            let len = self.value().len();
+            target.append_slice(
+                &[self.flags().into(), self.typecode().into()]
+            )?;
+            if self.flags().is_extended_length() {
+                target.append_slice(
+                    &u16::try_from(len).unwrap_or(u16::MAX)
+                    .to_be_bytes()
+                )?;
+            } else {
+                target.append_slice(&[
+                    u8::try_from(len).unwrap_or(u8::MAX)
+                ])?;
+            }
+            target.append_slice(&self.value())
+        }
+    }
+
+
 //------------ Tests ---------------------------------------------------------
 
 #[cfg(test)]
@@ -980,6 +1135,8 @@ pub mod new_pas {
         use crate::bgp::message::nlri::Nlri;
         use crate::bgp::message::update::NextHop;
 
+        // FIXME switch to use ::new() for all attributes instead of relying
+        // on non public newtype constructor
         #[test]
         fn wireformat_to_owned_and_back() {
             use super::PathAttribute as PA;
@@ -1190,6 +1347,18 @@ pub mod new_pas {
             );
 
 
+            // UnimplementedPathAttribute
+            check(
+                vec![0xc0, 254, 0x04, 0x01, 0x02, 0x03, 0x04],
+                UnimplementedPathAttribute::new(
+                    Flags::OPT_TRANS.into(),
+                    254,
+                    vec![0x01, 0x02, 0x03, 0x04]
+                ).into()
+            );
+
+
+
         }
 
         #[test]
@@ -1211,6 +1380,26 @@ pub mod new_pas {
             assert!(pas.get(PathAttributeType::AsPath).is_none());
             assert!(pas.get(PathAttributeType::MultiExitDisc).is_some());
             assert!(pas.get(PathAttributeType::NextHop).is_some());
+        }
+
+        #[test]
+        fn unimplemented_path_attributes() {
+            let raw = vec![
+                0xc0, 254, 0x04, 0x01, 0x02, 0x03, 0x04
+            ];
+            let mut parser = Parser::from_ref(&raw);
+            let sc = SessionConfig::modern();
+            let pa = WireformatPathAttribute::parse(&mut parser, sc);
+
+            if let Ok(WireformatPathAttribute::Unimplemented(u)) = pa {
+                assert_eq!(u.typecode(), 254);
+                assert!(u.flags().is_optional());
+                assert!(u.flags().is_transitive());
+                assert_eq!(u.value(), &[0x01, 0x02, 0x03, 0x04]);
+            } else {
+                panic!("fail");
+            }
+
         }
     }
 }
