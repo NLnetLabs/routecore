@@ -1108,7 +1108,7 @@ pub mod new_pas {
         {
             let len = self.value().len();
             target.append_slice(
-                &[self.flags().into(), self.typecode().into()]
+                &[self.flags().into(), self.typecode()]
             )?;
             if self.flags().is_extended_length() {
                 target.append_slice(
@@ -1120,7 +1120,7 @@ pub mod new_pas {
                     u8::try_from(len).unwrap_or(u8::MAX)
                 ])?;
             }
-            target.append_slice(&self.value())
+            target.append_slice(self.value())
         }
     }
 
