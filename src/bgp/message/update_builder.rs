@@ -226,7 +226,7 @@ pub mod new_pas {
         14  => MpReachNlri(MpReachNlriBuilder), Flags::OPT_NON_TRANS,
         15  => MpUnreachNlri(MpUnreachNlriBuilder), Flags::OPT_NON_TRANS,
         16  => ExtendedCommunities(ExtendedCommunitiesList), Flags::OPT_TRANS,
-        //17=> As4Path TODO
+        17  => As4Path(HopPath), Flags::OPT_TRANS,
         //18=> As4Aggregator TODO
         20  => Connector(Ipv4Addr), Flags::OPT_TRANS,
         21  => AsPathLimit(AsPathLimitInfo), Flags::OPT_TRANS,
@@ -798,6 +798,37 @@ pub mod new_pas {
         }
     }
 
+    //--- As4Path (see bgp::aspath)
+
+    impl Attribute for As4Path {
+        fn value_len(&self) -> usize {
+            self.0.to_as_path::<Vec<u8>>().unwrap().into_inner().len()
+        }
+
+        fn compose_value<Target: OctetsBuilder>(&self, target: &mut Target)
+            -> Result<(), Target::AppendError>
+        {
+            target.append_slice(
+                self.0.to_as_path::<Vec<u8>>().unwrap().into_inner().as_ref()
+            )
+        }
+
+        fn parse<Octs: Octets>(parser: &mut Parser<Octs>, sc: SessionConfig) 
+            -> Result<As4Path, ParseError>
+        {
+            // XXX same as with AsPath, reusing the old/existing As4Path here
+            // while PoC'ing, which new() expects Octets (not a Parser<_,_>)
+            // starting at the actual value, so without the first 3 or 4 bytes
+            // (flags/type/len).
+            let asp = crate::bgp::aspath::AsPath::new(
+                parser.octets_ref().as_ref()[3..].to_vec(),
+                sc.has_four_octet_asn()
+            ).unwrap();
+            Ok(As4Path(asp.to_hop_path()))
+        }
+
+    }
+
     //--- Connector (deprecated)
 
     impl Attribute for Connector {
@@ -1076,7 +1107,18 @@ pub mod new_pas {
                 ])).into()
             );
 
-            //TODO 17 As4Path
+            check(
+                vec![0xc0, 0x11, 10,
+                0x02, 0x02, // SEQUENCE of length 2
+                0x00, 0x00, 0x00, 100,
+                0x00, 0x00, 0x00, 200,
+                ],
+                PA::As4Path(As4Path(HopPath::from(vec![
+                    Asn::from_u32(100),
+                    Asn::from_u32(200)]
+                )))
+            );
+
             //TODO 18 As4Aggregator
 
             check(
