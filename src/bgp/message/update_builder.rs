@@ -227,7 +227,7 @@ pub mod new_pas {
         15  => MpUnreachNlri(MpUnreachNlriBuilder), Flags::OPT_NON_TRANS,
         16  => ExtendedCommunities(ExtendedCommunitiesList), Flags::OPT_TRANS,
         17  => As4Path(HopPath), Flags::OPT_TRANS,
-        //18=> As4Aggregator TODO
+        18  => As4Aggregator(Asn), Flags::OPT_TRANS,
         20  => Connector(Ipv4Addr), Flags::OPT_TRANS,
         21  => AsPathLimit(AsPathLimitInfo), Flags::OPT_TRANS,
         //22  => PmsiTunnel(todo), Flags::OPT_TRANS,
@@ -829,6 +829,25 @@ pub mod new_pas {
 
     }
 
+    //--- As4Aggregator 
+ 
+    impl Attribute for As4Aggregator {
+        fn value_len(&self) -> usize { 4 }
+
+        fn compose_value<Target: OctetsBuilder>(&self, target: &mut Target)
+            -> Result<(), Target::AppendError>
+        {
+            target.append_slice(&self.0.to_raw())
+        }
+
+        fn parse<Octs: Octets>(parser: &mut Parser<Octs>, _sc: SessionConfig) 
+            -> Result<As4Aggregator, ParseError>
+        {
+            Ok(As4Aggregator(Asn::from_u32(parser.parse_u32_be()?)))
+        }
+    }
+
+
     //--- Connector (deprecated)
 
     impl Attribute for Connector {
@@ -932,6 +951,8 @@ pub mod new_pas {
         }
     }
 
+    //--- Otc 
+ 
     impl Attribute for Otc {
         fn value_len(&self) -> usize { 4 }
 
@@ -947,6 +968,9 @@ pub mod new_pas {
             Ok(Otc(Asn::from_u32(parser.parse_u32_be()?)))
         }
     }
+
+
+//------------ Tests ---------------------------------------------------------
 
 #[cfg(test)]
     mod tests {
@@ -1119,7 +1143,10 @@ pub mod new_pas {
                 )))
             );
 
-            //TODO 18 As4Aggregator
+            check(
+                vec![0xc0, 0x12, 0x04, 0x00, 0x00, 0x04, 0xd2],
+                As4Aggregator(Asn::from_u32(1234)).into()
+            );
 
             check(
                 vec![0xc0, 0x14, 0x04, 1, 2, 3, 4],
