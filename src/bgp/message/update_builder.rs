@@ -225,7 +225,7 @@ pub mod new_pas {
         10  => ClusterList(ClusterIds), Flags::OPT_NON_TRANS,
         14  => MpReachNlri(MpReachNlriBuilder), Flags::OPT_NON_TRANS,
         15  => MpUnreachNlri(MpUnreachNlriBuilder), Flags::OPT_NON_TRANS,
-        //16=> ExtendedCommunities TODO
+        16  => ExtendedCommunities(ExtendedCommunitiesList), Flags::OPT_TRANS,
         //17=> As4Path TODO
         //18=> As4Aggregator TODO
         20  => Connector(Ipv4Addr), Flags::OPT_TRANS,
@@ -750,6 +750,54 @@ pub mod new_pas {
         }
     }
 
+    //--- ExtendedCommunities
+    
+    use crate::bgp::communities::ExtendedCommunity;
+    #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+    pub struct ExtendedCommunitiesList {
+        communities: Vec<ExtendedCommunity>
+    }
+
+    impl ExtendedCommunitiesList {
+        fn new(communities: Vec<ExtendedCommunity>)
+            -> ExtendedCommunitiesList
+        {
+            ExtendedCommunitiesList {communities }
+        }
+
+        pub fn communities(&self) -> &Vec<ExtendedCommunity> {
+            &self.communities
+        }
+    }
+
+
+    impl Attribute for ExtendedCommunities {
+        fn value_len(&self) -> usize { 
+            self.0.communities.len() * 8
+        }
+
+        fn compose_value<Target: OctetsBuilder>(&self, target: &mut Target)
+            -> Result<(), Target::AppendError>
+        {
+            for c in &self.0.communities {
+                target.append_slice(&c.to_raw())?;
+            }
+            Ok(())
+        }
+
+        fn parse<Octs: Octets>(parser: &mut Parser<Octs>, _sc: SessionConfig) 
+            -> Result<ExtendedCommunities, ParseError>
+        {
+            let mut communities = Vec::with_capacity(parser.remaining() / 8);
+            let mut buf = [0u8; 8];
+            while parser.remaining() > 0 {
+                parser.parse_buf(&mut buf)?;
+                communities.push(buf.into());
+            }
+            Ok(ExtendedCommunities(ExtendedCommunitiesList::new(communities)))
+        }
+    }
+
     //--- Connector (deprecated)
 
     impl Attribute for Connector {
@@ -1018,7 +1066,16 @@ pub mod new_pas {
                 }
             );
 
-            //TODO 16 ExtendedCommunities
+            check(
+                vec![
+                    0xc0, 0x10, 0x08, 0x00, 0x02, 0xfc, 0x85, 0x00,
+                    0x00, 0xcf, 0x08
+                ],
+                ExtendedCommunities(ExtendedCommunitiesList::new(vec![
+                    "rt:64645:53000".parse().unwrap()
+                ])).into()
+            );
+
             //TODO 17 As4Path
             //TODO 18 As4Aggregator
 

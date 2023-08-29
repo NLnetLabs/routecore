@@ -534,7 +534,7 @@ impl ExtendedCommunity {
         Self(raw)
     }
 
-    pub fn raw(self) -> [u8; 8] {
+    pub fn to_raw(self) -> [u8; 8] {
         self.0
     }
 
@@ -767,6 +767,11 @@ impl From<[u8; 8]> for Community {
         Community::Extended(ExtendedCommunity(raw))
     }
 }
+impl From<[u8; 8]> for ExtendedCommunity {
+    fn from(raw: [u8; 8]) -> ExtendedCommunity {
+        ExtendedCommunity(raw)
+    }
+}
 
 
 impl FromStr for ExtendedCommunity {
@@ -896,7 +901,7 @@ impl Display for ExtendedCommunity {
             
             (_,_) => {
                 write!(f, "0x")?;
-                for b in &self.raw() {
+                for b in &self.to_raw() {
                     write!(f, "{:02X}", b)?;
                 }
                 Ok(())
