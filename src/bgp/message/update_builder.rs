@@ -106,6 +106,20 @@ pub mod new_pas {
                 }
             }
 
+            impl std::ops::Deref for $name {
+                type Target = $data;
+
+                fn deref(&self) -> &Self::Target {
+                    &self.0
+                }
+            }
+
+            impl std::ops::DerefMut for $name {
+                fn deref_mut(&mut self) -> &mut Self::Target {
+                    &mut self.0
+                }
+            }
+
             impl AttributeHeader for $name {
                 const FLAGS: u8 = $flags;
                 const TYPECODE: u8 = $typecode;
@@ -1881,6 +1895,46 @@ pub mod new_pas {
             }
 
         }
+
+        #[test]
+        fn parse_unexpected_two_octet_asn() {
+            let raw = vec![
+                0xc0, 0x07, 0x06, 0x00, 0x65, 0xc6,
+                0x33, 0x64, 0x01
+            ];
+            let mut parser = Parser::from_ref(&raw);
+            let pa = WireformatPathAttribute::parse(
+                    &mut parser, SessionConfig::modern()
+            ).unwrap();
+            assert!(matches!(pa, WireformatPathAttribute::Invalid(_,_,_)));
+        }
+
+        #[test]
+        fn deref_mut() {
+            // AS_PATH: AS_SEQUENCE(AS100, AS200)
+            let raw = vec![0x40, 0x02, 10,
+                0x02, 0x02, // SEQUENCE of length 2
+                0x00, 0x00, 0x00, 100,
+                0x00, 0x00, 0x00, 200,
+            ];
+
+            let pa = WireformatPathAttribute::parse(
+                &mut Parser::from_ref(&raw), SessionConfig::modern()
+            ).unwrap();
+            let mut owned = pa.to_owned().unwrap();
+            if let PathAttribute::AsPath(ref mut asp) = owned  {
+                assert_eq!(format!("{}", **asp), "AS100 AS200");
+                asp.prepend(Asn::from_u32(50));
+                assert_eq!(format!("{}", **asp), "AS50 AS100 AS200");
+                assert_eq!(3, asp.hop_count());
+            }
+
+            let mut composed = Vec::new();
+            owned.compose(&mut composed).unwrap();
+            assert!(composed != raw);
+        }
+
+
     }
 }
 
