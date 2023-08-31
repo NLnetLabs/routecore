@@ -488,6 +488,13 @@ pub mod new_pas {
         fn compose_value<Target: OctetsBuilder>(&self, target: &mut Target)
             -> Result<(), Target::AppendError>;
 
+        fn validate<Octs: Octets>(
+            flags: Flags,
+            parser: &mut Parser<'_, Octs>,
+            sc: SessionConfig
+        )
+            -> Result<(), ParseError>;
+
         fn parse<Octs: Octets>(parser: &mut Parser<Octs>, sc: SessionConfig) 
             -> Result<Self, ParseError>
         where Self: Sized;
@@ -546,8 +553,17 @@ pub mod new_pas {
         }
     }
 
-
-
+    macro_rules! check_len_exact {
+        ($p:expr, $len:expr, $name:expr) => {
+            if $p.remaining() != $len {
+                Err(ParseError::form_error(
+                    "wrong length for $name, expected $len "
+                ))
+            } else {
+                Ok(())
+            }
+        }
+    }
 
     //--- Origin
 
@@ -567,7 +583,16 @@ pub mod new_pas {
         {
             Ok(Origin(parser.parse_u8()?.into()))
         }
+
+        fn validate<Octs: Octets>(
+            _flags: Flags,
+            parser: &mut Parser<'_, Octs>,
+            _session_config: SessionConfig
+        ) -> Result<(), ParseError> {
+            check_len_exact!(parser, 1, "ORIGIN")
+        }
     }
+
 
     //--- AsPath (see bgp::aspath)
 
@@ -601,7 +626,7 @@ pub mod new_pas {
         }
 
         fn validate<Octs: Octets>(
-            flags: Flags,
+            _flags: Flags,
             parser: &mut Parser<'_, Octs>,
             session_config: SessionConfig
         ) -> Result<(), ParseError> {
@@ -611,8 +636,13 @@ pub mod new_pas {
                 2
             };
             while parser.remaining() > 0 {
-                let segment_type = parser.parse_u8()?; // segment type
-                let len = usize::from(parser.parse_u8()?); // segment length
+                let segment_type = parser.parse_u8()?;
+                if !(1..=4).contains(&segment_type) {
+                    return Err(ParseError::form_error(
+                        "illegal segment type in AS_PATH"
+                    ));
+                }
+                let len = usize::from(parser.parse_u8()?); // ASNs in segment
                 parser.advance(len * asn_size)?; // ASNs.
             }
             Ok(())
@@ -635,6 +665,14 @@ pub mod new_pas {
         {
             Ok(NextHop(parse_ipv4addr(parser)?))
         }
+
+        fn validate<Octs: Octets>(
+            _flags: Flags,
+            parser: &mut Parser<'_, Octs>,
+            _session_config: SessionConfig
+        ) -> Result<(), ParseError> {
+            check_len_exact!(parser, 4, "NEXT_HOP")
+        }
     }
 
     //--- MultiExitDisc
@@ -652,6 +690,14 @@ pub mod new_pas {
             -> Result<MultiExitDisc, ParseError>
         {
             Ok(MultiExitDisc(parser.parse_u32_be()?))
+        }
+
+        fn validate<Octs: Octets>(
+            _flags: Flags,
+            parser: &mut Parser<'_, Octs>,
+            _session_config: SessionConfig
+        ) -> Result<(), ParseError> {
+            check_len_exact!(parser, 4, "MULTI_EXIT_DISC")
         }
     }
 
@@ -671,6 +717,14 @@ pub mod new_pas {
         {
             Ok(LocalPref(parser.parse_u32_be()?))
         }
+
+        fn validate<Octs: Octets>(
+            _flags: Flags,
+            parser: &mut Parser<'_, Octs>,
+            _session_config: SessionConfig
+        ) -> Result<(), ParseError> {
+            check_len_exact!(parser, 4, "LOCAL_PREF")
+        }
     }
 
     //--- AtomicAggregate
@@ -688,6 +742,14 @@ pub mod new_pas {
             -> Result<AtomicAggregate, ParseError>
         {
             Ok(AtomicAggregate(()))
+        }
+
+        fn validate<Octs: Octets>(
+            _flags: Flags,
+            parser: &mut Parser<'_, Octs>,
+            _session_config: SessionConfig
+        ) -> Result<(), ParseError> {
+            check_len_exact!(parser, 0, "ATOMIC_AGGREGATE")
         }
     }
 
@@ -750,17 +812,9 @@ pub mod new_pas {
                     return Err(ParseError::form_error("invalid flags"));
             }
             if session_config.has_four_octet_asn() {
-                if parser.remaining() != 8 {
-                    return Err(ParseError::form_error(
-                        "AGGREGATOR of length 8 expected"
-                    ));
-                }
+                check_len_exact!(parser, 8, "AGGREGATOR")?;
             } else {
-                if parser.remaining() != 6 {
-                    return Err(ParseError::form_error(
-                        "AGGREGATOR of length 6 expected"
-                    ));
-                }
+                check_len_exact!(parser, 6, "AGGREGATOR")?;
             }
             Ok(())
         }
@@ -810,6 +864,19 @@ pub mod new_pas {
             }
             Ok(Communities(StandardCommunitiesList::new(communities)))
         }
+
+        fn validate<Octs: Octets>(
+            _flags: Flags,
+            parser: &mut Parser<'_, Octs>,
+            _session_config: SessionConfig
+        ) -> Result<(), ParseError> {
+            if parser.remaining() % 4 != 0 {
+                return Err(ParseError::form_error(
+                    "unexpected length for COMMUNITIES"
+                ));
+            }
+            Ok(())
+        }
     }
 
     //--- OriginatorId
@@ -827,6 +894,14 @@ pub mod new_pas {
             -> Result<OriginatorId, ParseError>
         {
             Ok(OriginatorId(parse_ipv4addr(parser)?))
+        }
+
+        fn validate<Octs: Octets>(
+            _flags: Flags,
+            parser: &mut Parser<'_, Octs>,
+            _session_config: SessionConfig
+        ) -> Result<(), ParseError> {
+            check_len_exact!(parser, 4, "ORIGINATOR_ID")
         }
     }
 
@@ -887,6 +962,19 @@ pub mod new_pas {
             }
             Ok(ClusterList(ClusterIds::new(cluster_ids)))
         }
+
+        fn validate<Octs: Octets>(
+            _flags: Flags,
+            parser: &mut Parser<'_, Octs>,
+            _session_config: SessionConfig
+        ) -> Result<(), ParseError> {
+            if parser.remaining() % 4 != 0 {
+                return Err(ParseError::form_error(
+                    "unexpected length for CLUSTER_LIST"
+                ));
+            }
+            Ok(())
+        }
     }
 
     //--- MpReachNlri
@@ -941,6 +1029,22 @@ pub mod new_pas {
             }
             Ok(MpReachNlri(builder))
         }
+
+        fn validate<Octs: Octets>(
+            _flags: Flags,
+            parser: &mut Parser<'_, Octs>,
+            _session_config: SessionConfig
+        ) -> Result<(), ParseError> {
+            // XXX We only check for the bare minimum here, as most checks are
+            // better done upon (creation of the) Nlri iterator based on the
+            // value of this path attribute.
+            if parser.remaining() < 5 {
+                return Err(ParseError::form_error(
+                    "length for MP_REACH_NLRI less than minimum"
+                ))
+            }
+            Ok(())
+        }
     }
 
     //--- MpUnreachNlri
@@ -990,6 +1094,22 @@ pub mod new_pas {
 
             Ok(MpUnreachNlri(builder))
         }
+
+        fn validate<Octs: Octets>(
+            _flags: Flags,
+            parser: &mut Parser<'_, Octs>,
+            _session_config: SessionConfig
+        ) -> Result<(), ParseError> {
+            // XXX We only check for the bare minimum here, as most checks are
+            // better done upon (creation of the) Nlri iterator based on the
+            // value of this path attribute.
+            if parser.remaining() < 3 {
+                return Err(ParseError::form_error(
+                    "length for MP_UNREACH_NLRI less than minimum"
+                ))
+            }
+            Ok(())
+        }
     }
 
     //--- ExtendedCommunities
@@ -1038,6 +1158,19 @@ pub mod new_pas {
             }
             Ok(ExtendedCommunities(ExtendedCommunitiesList::new(communities)))
         }
+
+        fn validate<Octs: Octets>(
+            _flags: Flags,
+            parser: &mut Parser<'_, Octs>,
+            _session_config: SessionConfig
+        ) -> Result<(), ParseError> {
+            if parser.remaining() % 8 != 0 {
+                return Err(ParseError::form_error(
+                    "unexpected length for EXTENDED_COMMUNITIES"
+                ));
+            }
+            Ok(())
+        }
     }
 
     //--- As4Path (see bgp::aspath)
@@ -1069,6 +1202,24 @@ pub mod new_pas {
             Ok(As4Path(asp.to_hop_path()))
         }
 
+        fn validate<Octs: Octets>(
+            _flags: Flags,
+            parser: &mut Parser<'_, Octs>,
+            _session_config: SessionConfig
+        ) -> Result<(), ParseError> {
+            while parser.remaining() > 0 {
+                let segment_type = parser.parse_u8()?;
+                if !(1..=4).contains(&segment_type) {
+                    return Err(ParseError::form_error(
+                        "illegal segment type in AS4_PATH"
+                    ));
+                }
+                let len = usize::from(parser.parse_u8()?); // ASNs in segment
+                parser.advance(len * 4)?; // ASNs.
+            }
+            Ok(())
+        }
+
     }
 
     //--- As4Aggregator 
@@ -1090,6 +1241,14 @@ pub mod new_pas {
             let address = parse_ipv4addr(parser)?;
             Ok(As4Aggregator(AggregatorInfo::new(asn, address)))
         }
+
+        fn validate<Octs: Octets>(
+            _flags: Flags,
+            parser: &mut Parser<'_, Octs>,
+            _session_config: SessionConfig
+        ) -> Result<(), ParseError> {
+            check_len_exact!(parser, 8, "AS4_AGGREGATOR")
+        }
     }
 
 
@@ -1109,19 +1268,15 @@ pub mod new_pas {
         {
             Ok(Connector(parse_ipv4addr(parser)?))
         }
+
         fn validate<Octs: Octets>(
-            flags: Flags,
+            _flags: Flags,
             parser: &mut Parser<'_, Octs>,
-            sc: SessionConfig
+            _sc: SessionConfig
         )
             -> Result<(), ParseError>
         {
-            if parser.remaining() != 4 {
-                return Err(ParseError::form_error(
-                        "CONNECTOR of length 4 expected"
-                ));
-            }
-            Ok(())
+            check_len_exact!(parser, 4, "CONNECTOR")
         }
     }
 
@@ -1159,8 +1314,17 @@ pub mod new_pas {
 
             Ok(AsPathLimit(info))
         }
-    }
 
+        fn validate<Octs: Octets>(
+            _flags: Flags,
+            parser: &mut Parser<'_, Octs>,
+            _sc: SessionConfig
+        )
+        -> Result<(), ParseError>
+        {
+            check_len_exact!(parser, 5, "AS_PATHLIMIT")
+        }
+    }
 
     //--- LargeCommunities
     
@@ -1208,6 +1372,19 @@ pub mod new_pas {
             }
             Ok(LargeCommunities(LargeCommunitiesList::new(communities)))
         }
+
+        fn validate<Octs: Octets>(
+            _flags: Flags,
+            parser: &mut Parser<'_, Octs>,
+            _session_config: SessionConfig
+        ) -> Result<(), ParseError> {
+            if parser.remaining() % 12 != 0 {
+                return Err(ParseError::form_error(
+                    "unexpected length for LARGE_COMMUNITIES"
+                ));
+            }
+            Ok(())
+        }
     }
 
     //--- Otc 
@@ -1225,6 +1402,16 @@ pub mod new_pas {
             -> Result<Otc, ParseError>
         {
             Ok(Otc(Asn::from_u32(parser.parse_u32_be()?)))
+        }
+
+        fn validate<Octs: Octets>(
+            _flags: Flags,
+            parser: &mut Parser<'_, Octs>,
+            _sc: SessionConfig
+        )
+        -> Result<(), ParseError>
+        {
+            check_len_exact!(parser, 4, "OTC")
         }
     }
 
