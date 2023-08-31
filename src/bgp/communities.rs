@@ -930,7 +930,12 @@ impl Ipv6ExtendedCommunity {
         Self(raw)
     }
 
+    #[deprecated = "use to_raw"]
     pub fn raw(self) -> [u8; 20] {
+        self.0
+    }
+
+    pub fn to_raw(self) -> [u8; 20] {
         self.0
     }
 
@@ -973,6 +978,12 @@ impl AsRef<[u8]> for Ipv6ExtendedCommunity {
 impl From<[u8; 20]> for Community {
     fn from(raw: [u8; 20]) -> Community {
         Community::Ipv6Extended(Ipv6ExtendedCommunity(raw))
+    }
+}
+
+impl From<[u8; 20]> for Ipv6ExtendedCommunity {
+    fn from(raw: [u8; 20]) -> Ipv6ExtendedCommunity {
+        Ipv6ExtendedCommunity(raw)
     }
 }
 
@@ -1025,7 +1036,7 @@ impl Display for Ipv6ExtendedCommunity {
                             ),
             _ => {
                 write!(f, "0x")?;
-                self.raw().iter().for_each(|b|{
+                self.to_raw().iter().for_each(|b|{
                     let _ = write!(f, "{:02x}", b);
                 });
                 Ok(())

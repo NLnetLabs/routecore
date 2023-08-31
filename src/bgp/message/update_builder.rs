@@ -346,7 +346,7 @@ pub mod new_pas {
         20  => Connector(Ipv4Addr), Flags::OPT_TRANS,
         21  => AsPathLimit(AsPathLimitInfo), Flags::OPT_TRANS,
         //22  => PmsiTunnel(todo), Flags::OPT_TRANS,
-        // , 25 ExtIpv6Comm
+        25  => Ipv6ExtendedCommunities(Ipv6ExtendedCommunitiesList), Flags::OPT_TRANS,
         32  => LargeCommunities(LargeCommunitiesList), Flags::OPT_TRANS,
         // 33 => BgpsecAsPath,
         35 => Otc(Asn), Flags::OPT_TRANS,
@@ -1326,6 +1326,67 @@ pub mod new_pas {
         }
     }
 
+    //--- Ipv6ExtendedCommunities
+    
+    use crate::bgp::communities::Ipv6ExtendedCommunity;
+    #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+    pub struct Ipv6ExtendedCommunitiesList {
+        communities: Vec<Ipv6ExtendedCommunity>
+    }
+
+    impl Ipv6ExtendedCommunitiesList {
+        fn new(communities: Vec<Ipv6ExtendedCommunity>)
+            -> Ipv6ExtendedCommunitiesList
+        {
+            Ipv6ExtendedCommunitiesList {communities }
+        }
+
+        pub fn communities(&self) -> &Vec<Ipv6ExtendedCommunity> {
+            &self.communities
+        }
+    }
+
+
+    impl Attribute for Ipv6ExtendedCommunities {
+        fn value_len(&self) -> usize { 
+            self.0.communities.len() * 20
+        }
+
+        fn compose_value<Target: OctetsBuilder>(&self, target: &mut Target)
+            -> Result<(), Target::AppendError>
+        {
+            for c in &self.0.communities {
+                target.append_slice(&c.to_raw())?;
+            }
+            Ok(())
+        }
+
+        fn parse<Octs: Octets>(parser: &mut Parser<Octs>, _sc: SessionConfig) 
+            -> Result<Ipv6ExtendedCommunities, ParseError>
+        {
+            let mut communities = Vec::with_capacity(parser.remaining() / 20);
+            let mut buf = [0u8; 20];
+            while parser.remaining() > 0 {
+                parser.parse_buf(&mut buf)?;
+                communities.push(buf.into());
+            }
+            Ok(Ipv6ExtendedCommunities(Ipv6ExtendedCommunitiesList::new(communities)))
+        }
+
+        fn validate<Octs: Octets>(
+            _flags: Flags,
+            parser: &mut Parser<'_, Octs>,
+            _session_config: SessionConfig
+        ) -> Result<(), ParseError> {
+            if parser.remaining() % 20 != 0 {
+                return Err(ParseError::form_error(
+                    "unexpected length for IPV6_EXTENDED_COMMUNITIES"
+                ));
+            }
+            Ok(())
+        }
+    }
+
     //--- LargeCommunities
     
     use crate::bgp::communities::LargeCommunity;
@@ -1647,6 +1708,7 @@ pub mod new_pas {
             );
 
             //TODO 22 PmsiTunnel
+            //TODO 25 Ipv6ExtendedCommunities
 
             check(
                 vec![
