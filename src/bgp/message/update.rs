@@ -807,6 +807,10 @@ impl<'a, Octs: Octets> PathAttribute<'a, Octs> {
         self.parser.octets_ref().range(start..end)
     }
 
+    pub fn to_raw(&self) -> &[u8] {
+        self.parser.peek_all()
+    }
+
     pub fn into_value(mut self) -> Octs::Range<'a> {
         self.parser.advance(self.hdr_len()).expect("parsed before");
         self.parser.parse_octets(self.parser.remaining()).expect("parsed before")
@@ -2525,6 +2529,8 @@ pub enum ComposeError{
     EmptyMpUnreachNlri,
     WrongAddressType,
 
+    InvalidAttribute,
+
     /// Variant for `octseq::builder::ShortBuf`
     ShortBuf,
     /// Wrapper for util::parser::ParseError, used in `fn into_message`
@@ -2567,6 +2573,9 @@ impl fmt::Display for ComposeError {
             }
             ComposeError::WrongAddressType => {
                 write!(f, "wrong address type")
+            }
+            ComposeError::InvalidAttribute => {
+                write!(f, "invalid attribute")
             }
             ComposeError::ShortBuf => {
                 ShortBuf.fmt(f)

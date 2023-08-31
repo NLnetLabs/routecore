@@ -534,6 +534,11 @@ impl ExtendedCommunity {
         Self(raw)
     }
 
+    #[deprecated = "use to_raw"]
+    pub fn raw(self) -> [u8; 8] {
+        self.0
+    }
+
     pub fn to_raw(self) -> [u8; 8] {
         self.0
     }
@@ -1044,6 +1049,11 @@ impl LargeCommunity {
     
     pub fn from_raw(raw: [u8; 12]) -> Self {
         Self(raw)
+    }
+
+    #[deprecated = "use to_raw"]
+    pub fn raw(self) -> [u8; 12] {
+        self.0
     }
 
     pub fn to_raw(self) -> [u8; 12] {

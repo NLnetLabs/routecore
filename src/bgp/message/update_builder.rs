@@ -12,8 +12,10 @@ use super::update::ComposeError;
 #[allow(dead_code)]
 pub mod new_pas {
 
+    use std::fmt;
     use std::net::Ipv4Addr;
 
+    use log::debug;
     use octseq::{Octets, OctetsBuilder, Parser};
 
     use crate::asn::Asn;
@@ -25,6 +27,8 @@ pub mod new_pas {
     use crate::bgp::message::SessionConfig;
     use crate::bgp::types::{AFI, SAFI};
     use crate::util::parser::{ParseError, parse_ipv4addr};
+
+    use super::ComposeError;
 
     #[derive(Copy, Clone, Debug, Eq, PartialEq)]
     pub struct Flags(u8);
@@ -96,6 +100,10 @@ pub mod new_pas {
                 pub fn new(data: $data) -> $name {
                     $name(data)
                 }
+
+                pub fn inner(self) -> $data {
+                    self.0
+                }
             }
 
             impl AttributeHeader for $name {
@@ -115,22 +123,30 @@ pub mod new_pas {
             #[derive(Debug, Eq, PartialEq)]
             pub enum PathAttribute {
                 $( $name($name) ),+,
-                //Unimplemented(Flags, u8, Vec<u8>)
-                Unimplemented(UnimplementedPathAttribute)
+                Unimplemented(UnimplementedPathAttribute),
+                Invalid(Flags, u8, Vec<u8>),
             }
 
             impl PathAttribute {
                 pub fn compose<Target: OctetsBuilder>(
                     &self,
                     target: &mut Target
-                ) -> Result<(), Target::AppendError> {
+                ) -> Result<(), ComposeError> {
 
                     match self {
                     $(
-                        PathAttribute::$name(i) => i.compose(target)
-                    ),+,
-                    //PathAttribute::Unimplemented(i) => TODO return Err(ComposeError) ?
-                    PathAttribute::Unimplemented(u) => u.compose(target)
+                        PathAttribute::$name(i) => {
+                            i.compose(target)
+                                .map_err(|_| ComposeError::ShortBuf)
+                        }
+                    ),+
+                        PathAttribute::Unimplemented(u) => {
+                            u.compose(target)
+                                .map_err(|_| ComposeError::ShortBuf)
+                        }
+                        PathAttribute::Invalid(_,_,_) => {
+                            Err(ComposeError::InvalidAttribute)
+                        }
                     }
                 }
 
@@ -140,8 +156,12 @@ pub mod new_pas {
                         PathAttribute::$name(_) =>
                             PathAttributeType::$name
                         ),+,
-                        PathAttribute::Unimplemented(u) =>
+                        PathAttribute::Unimplemented(u) => {
                             PathAttributeType::Unimplemented(u.typecode())
+                        }
+                        PathAttribute::Invalid(_, tc, _) => {
+                            PathAttributeType::Invalid(*tc)
+                        }
                     }
                 }
             }
@@ -161,9 +181,10 @@ pub mod new_pas {
             }
 
             #[derive(Debug)]
-            pub enum WireformatPathAttribute<'a, Octs> {
+            pub enum WireformatPathAttribute<'a, Octs: Octets> {
                 $( $name(Parser<'a, Octs>, SessionConfig) ),+,
-                Unimplemented(UnimplementedWireformat<'a, Octs>)
+                Unimplemented(UnimplementedWireformat<'a, Octs>),
+                Invalid(Flags, u8, Parser<'a, Octs>),
             }
 
 
@@ -171,21 +192,32 @@ pub mod new_pas {
                 fn parse(parser: &mut Parser<'a, Octs>, sc: SessionConfig) 
                     -> Result<WireformatPathAttribute<'a, Octs>, ParseError>
                 {
+                    let start_pos = parser.pos();
                     let flags = parser.parse_u8()?;
                     let typecode = parser.parse_u8()?;
-                    let mut _headerlen = 3;
-                    let len = match flags & 0x10 == 0x10 {
-                        true => {
-                            _headerlen += 1;
-                            parser.parse_u16_be()? as usize
-                        },
-                        false => parser.parse_u8()? as usize, 
+                    let (header_len, len) = match flags & 0x10 == 0x10 {
+                        true => (4, parser.parse_u16_be()? as usize),
+                        false => (3, parser.parse_u8()? as usize),
                     };
 
-                    let pp = parser.parse_parser(len)?;
+                    let mut pp = parser.parse_parser(len)?;
+
                     let res = match typecode {
                         $(
-                        $typecode => WireformatPathAttribute::$name(pp, sc)
+                        $typecode => {
+                            if let Err(e) = $name::validate(
+                                flags.into(), &mut pp, sc
+                            ) {
+                                debug!("failed to parse path attribute: {e}");
+                                pp.seek(start_pos)?;
+                                WireformatPathAttribute::Invalid(
+                                    $flags.into(), $typecode, pp
+                                )
+                            } else {
+                                pp.seek(start_pos + header_len)?;
+                                WireformatPathAttribute::$name(pp, sc)
+                            }
+                        }
                         ),+
                         ,
                         _ => WireformatPathAttribute::Unimplemented(
@@ -200,7 +232,9 @@ pub mod new_pas {
                 // XXX this method is the reason we have fn parse as part of
                 // the trait, forcing us the pass a SessionConfig to all of
                 // the parse() implementations.
-                fn to_owned(&self) -> PathAttribute {
+                // XXX should this return a Result? we need to get rid of that
+                // unwrap.
+                pub fn to_owned(&self) -> PathAttribute {
                     match self {
                         $(
                         WireformatPathAttribute::$name(p, sc) => {
@@ -217,6 +251,11 @@ pub mod new_pas {
                                     u.value().to_vec()
                                 )
                             )
+                        },
+                        WireformatPathAttribute::Invalid(f, tc, p) => {
+                            PathAttribute::Invalid(
+                                *f, *tc, p.peek_all().to_vec()
+                            )
                         }
                     }
                 }
@@ -227,8 +266,32 @@ pub mod new_pas {
                             WireformatPathAttribute::$name(_,_) =>
                                 PathAttributeType::$name
                         ),+,
-                        WireformatPathAttribute::Unimplemented(u) =>
+                        WireformatPathAttribute::Unimplemented(u) => {
                             PathAttributeType::Unimplemented(u.typecode())
+                        }
+                        WireformatPathAttribute::Invalid(_, tc, _) => {
+                            PathAttributeType::Invalid(*tc)
+                        }
+                    }
+                }
+            }
+
+            impl<'a, Octs: Octets> AsRef<[u8]> for WireformatPathAttribute<'a, Octs> {
+                fn as_ref(&self) -> &[u8] {
+                    match self {
+                        $(
+                            WireformatPathAttribute::$name(p, _) => {
+                                // this one is maybe fixed this way?
+                            p.peek_all()
+                        }
+                        ),+,
+                            WireformatPathAttribute::Unimplemented(u) => {
+                                u.value()
+                            }
+                            WireformatPathAttribute::Invalid(_, _, pp) => {
+                                pp.peek_all()
+                            }
+
                     }
                 }
             }
@@ -236,7 +299,8 @@ pub mod new_pas {
             #[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
             pub enum PathAttributeType {
                 $( $name ),+,
-                Unimplemented(u8)
+                Unimplemented(u8),
+                Invalid(u8),
             }
             impl From<u8> for PathAttributeType {
                 fn from(code: u8) -> PathAttributeType {
@@ -251,7 +315,8 @@ pub mod new_pas {
                 fn from(pat: PathAttributeType) -> u8 {
                     match pat {
                         $( PathAttributeType::$name => $typecode ),+,
-                        PathAttributeType::Unimplemented(i) => i
+                        PathAttributeType::Unimplemented(i) => i,
+                        PathAttributeType::Invalid(i) => i,
                     }
                 }
             }
@@ -277,7 +342,7 @@ pub mod new_pas {
         15  => MpUnreachNlri(MpUnreachNlriBuilder), Flags::OPT_NON_TRANS,
         16  => ExtendedCommunities(ExtendedCommunitiesList), Flags::OPT_TRANS,
         17  => As4Path(HopPath), Flags::OPT_TRANS,
-        18  => As4Aggregator(Asn), Flags::OPT_TRANS,
+        18  => As4Aggregator(AggregatorInfo), Flags::OPT_TRANS,
         20  => Connector(Ipv4Addr), Flags::OPT_TRANS,
         21  => AsPathLimit(AsPathLimitInfo), Flags::OPT_TRANS,
         //22  => PmsiTunnel(todo), Flags::OPT_TRANS,
@@ -285,6 +350,8 @@ pub mod new_pas {
         32  => LargeCommunities(LargeCommunitiesList), Flags::OPT_TRANS,
         // 33 => BgpsecAsPath,
         35 => Otc(Asn), Flags::OPT_TRANS,
+        //36 => BgpDomainPath(TODO), Flags:: , // https://datatracker.ietf.org/doc/draft-ietf-bess-evpn-ipvpn-interworking/06/
+        //40 => BgpPrefixSid(TODO), Flags::OPT_TRANS, // https://datatracker.ietf.org/doc/html/rfc8669#name-bgp-prefix-sid-attribute
         // 128 => AttrSet
         // 255 => RsrvdDevelopment
 
@@ -315,11 +382,18 @@ pub mod new_pas {
         }
     }
 
-    #[derive(Debug)]
-    pub struct UnimplementedWireformat<'a, Octs> {
+    pub struct UnimplementedWireformat<'a, Octs: Octets> {
         flags: Flags,
         typecode: u8,
         value: Parser<'a, Octs>,
+    }
+
+    impl<'a, Octs: Octets> fmt::Debug for UnimplementedWireformat<'a, Octs> {
+        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            write!(f, "{:08b} {} {:02x?}",
+               u8::from(self.flags()), self.typecode(), self.value()
+            )
+        }
     }
 
     impl<'a, Octs: Octets> UnimplementedWireformat<'a, Octs> {
@@ -502,6 +576,14 @@ pub mod new_pas {
             self.0.to_as_path::<Vec<u8>>().unwrap().into_inner().len()
         }
 
+        fn compose_value<Target: OctetsBuilder>(&self, target: &mut Target)
+            -> Result<(), Target::AppendError>
+        {
+           target.append_slice(
+               self.0.to_as_path::<Vec<u8>>().unwrap().into_inner().as_ref()
+            )
+        }
+
         fn parse<Octs: Octets>(parser: &mut Parser<Octs>, sc: SessionConfig) 
             -> Result<AsPath, ParseError>
         {
@@ -509,19 +591,31 @@ pub mod new_pas {
             // new() expects Octets (not a Parser<_,_>) starting at the actual
             // value, so without the first 3 or 4 bytes (flags/type/len).
             let asp = crate::bgp::aspath::AsPath::new(
-                parser.octets_ref().as_ref()[3..].to_vec(),
+                parser.peek_all().to_vec(),
                 sc.has_four_octet_asn()
-            ).unwrap();
-            Ok(AsPath(asp.to_hop_path()))
+            );
+            if asp.is_err() {
+                return Ok(AsPath(HopPath::new()));
+            }
+            Ok(AsPath(asp?.to_hop_path()))
         }
 
-        fn compose_value<Target: OctetsBuilder>(&self, target: &mut Target)
-            -> Result<(), Target::AppendError>
-        {
-           //HopPath::compose_as_path(self.0.hops(), target) 
-           target.append_slice(
-               self.0.to_as_path::<Vec<u8>>().unwrap().into_inner().as_ref()
-            )
+        fn validate<Octs: Octets>(
+            flags: Flags,
+            parser: &mut Parser<'_, Octs>,
+            session_config: SessionConfig
+        ) -> Result<(), ParseError> {
+            let asn_size = if session_config.has_four_octet_asn() {
+                4
+            } else {
+                2
+            };
+            while parser.remaining() > 0 {
+                let segment_type = parser.parse_u8()?; // segment type
+                let len = usize::from(parser.parse_u8()?); // segment length
+                parser.advance(len * asn_size)?; // ASNs.
+            }
+            Ok(())
         }
     }
 
@@ -617,6 +711,7 @@ pub mod new_pas {
         }
     }
 
+
     impl Attribute for Aggregator {
         // FIXME for legacy 2-byte ASNs, this should be 6.
         // Should we pass a (&)SessionConfig to this method as well?
@@ -644,6 +739,30 @@ pub mod new_pas {
 
             let address = parse_ipv4addr(parser)?;
             Ok(Aggregator(AggregatorInfo::new(asn, address)))
+        }
+
+        fn validate<Octs: Octets>(
+            flags: Flags,
+            parser: &mut Parser<'_, Octs>,
+            session_config: SessionConfig
+        ) -> Result<(), ParseError> {
+            if flags != Self::FLAGS.into() {
+                    return Err(ParseError::form_error("invalid flags"));
+            }
+            if session_config.has_four_octet_asn() {
+                if parser.remaining() != 8 {
+                    return Err(ParseError::form_error(
+                        "AGGREGATOR of length 8 expected"
+                    ));
+                }
+            } else {
+                if parser.remaining() != 6 {
+                    return Err(ParseError::form_error(
+                        "AGGREGATOR of length 6 expected"
+                    ));
+                }
+            }
+            Ok(())
         }
     }
 
@@ -944,7 +1063,7 @@ pub mod new_pas {
             // starting at the actual value, so without the first 3 or 4 bytes
             // (flags/type/len).
             let asp = crate::bgp::aspath::AsPath::new(
-                parser.octets_ref().as_ref()[3..].to_vec(),
+                parser.peek_all().to_vec(),
                 sc.has_four_octet_asn()
             ).unwrap();
             Ok(As4Path(asp.to_hop_path()))
@@ -955,18 +1074,21 @@ pub mod new_pas {
     //--- As4Aggregator 
  
     impl Attribute for As4Aggregator {
-        fn value_len(&self) -> usize { 4 }
+        fn value_len(&self) -> usize { 8 }
 
         fn compose_value<Target: OctetsBuilder>(&self, target: &mut Target)
             -> Result<(), Target::AppendError>
         {
-            target.append_slice(&self.0.to_raw())
+            target.append_slice(&self.0.asn().to_raw())?;
+            target.append_slice(&self.0.address().octets())
         }
 
         fn parse<Octs: Octets>(parser: &mut Parser<Octs>, _sc: SessionConfig) 
             -> Result<As4Aggregator, ParseError>
         {
-            Ok(As4Aggregator(Asn::from_u32(parser.parse_u32_be()?)))
+            let asn = Asn::from_u32(parser.parse_u32_be()?);
+            let address = parse_ipv4addr(parser)?;
+            Ok(As4Aggregator(AggregatorInfo::new(asn, address)))
         }
     }
 
@@ -986,6 +1108,20 @@ pub mod new_pas {
             -> Result<Connector, ParseError>
         {
             Ok(Connector(parse_ipv4addr(parser)?))
+        }
+        fn validate<Octs: Octets>(
+            flags: Flags,
+            parser: &mut Parser<'_, Octs>,
+            sc: SessionConfig
+        )
+            -> Result<(), ParseError>
+        {
+            if parser.remaining() != 4 {
+                return Err(ParseError::form_error(
+                        "CONNECTOR of length 4 expected"
+                ));
+            }
+            Ok(())
         }
     }
 
@@ -1301,8 +1437,14 @@ pub mod new_pas {
             );
 
             check(
-                vec![0xc0, 0x12, 0x04, 0x00, 0x00, 0x04, 0xd2],
-                As4Aggregator(Asn::from_u32(1234)).into()
+                vec![
+                    0xc0, 0x12, 0x04, 0x00, 0x00, 0x04, 0xd2,
+                    10, 0, 0, 99
+                ],
+                As4Aggregator(AggregatorInfo::new(
+                    Asn::from_u32(1234),
+                    "10.0.0.99".parse().unwrap()
+                )).into()
             );
 
             check(
