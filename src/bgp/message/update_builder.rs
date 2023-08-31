@@ -1438,7 +1438,7 @@ pub mod new_pas {
 
             check(
                 vec![
-                    0xc0, 0x12, 0x04, 0x00, 0x00, 0x04, 0xd2,
+                    0xc0, 0x12, 0x08, 0x00, 0x00, 0x04, 0xd2,
                     10, 0, 0, 99
                 ],
                 As4Aggregator(AggregatorInfo::new(
