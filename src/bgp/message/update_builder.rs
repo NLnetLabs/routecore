@@ -352,8 +352,8 @@ pub mod new_pas {
         35 => Otc(Asn), Flags::OPT_TRANS,
         //36 => BgpDomainPath(TODO), Flags:: , // https://datatracker.ietf.org/doc/draft-ietf-bess-evpn-ipvpn-interworking/06/
         //40 => BgpPrefixSid(TODO), Flags::OPT_TRANS, // https://datatracker.ietf.org/doc/html/rfc8669#name-bgp-prefix-sid-attribute
-        // 128 => AttrSet
-        // 255 => RsrvdDevelopment
+        128 => AttrSet(AttributeSet), Flags::OPT_TRANS,
+        255 => Reserved(ReservedRaw), Flags::OPT_TRANS,
 
     );
 
@@ -1476,6 +1476,102 @@ pub mod new_pas {
         }
     }
 
+    //--- AttributeSet
+
+    #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+    pub struct AttributeSet {
+        origin: Asn,
+        attributes: Vec<u8>,
+    }
+
+    impl AttributeSet {
+        pub fn new(origin: Asn, attributes: Vec<u8>) -> AttributeSet {
+            AttributeSet { origin, attributes }
+        }
+    }
+ 
+    impl Attribute for AttrSet {
+        fn value_len(&self) -> usize {
+            4 + self.0.attributes.len()
+        }
+
+        fn compose_value<Target: OctetsBuilder>(&self, target: &mut Target)
+            -> Result<(), Target::AppendError>
+        {
+            target.append_slice(&self.0.origin.to_raw())?;
+            target.append_slice(&self.0.attributes)
+        }
+
+        fn parse<Octs: Octets>(parser: &mut Parser<Octs>, _sc: SessionConfig) 
+            -> Result<AttrSet, ParseError>
+        {
+            let origin = Asn::from_u32(parser.parse_u32_be()?);
+            let attributes = parser.peek_all().to_vec();
+            Ok(AttrSet(AttributeSet::new(origin, attributes)))
+        }
+
+        fn validate<Octs: Octets>(
+            _flags: Flags,
+            parser: &mut Parser<'_, Octs>,
+            _sc: SessionConfig
+        )
+        -> Result<(), ParseError>
+        {
+            // XXX we do not validate the actual content (i.e. the attributes)
+            // here. Whoever wishes to process these will need to iterate over
+            // them with a PathAttributes anyway.
+            if parser.remaining() < 4 {
+                return Err(ParseError::form_error(
+                    "length for ATTR_SET less than minimum"
+                ))
+            }
+            Ok(())
+        }
+    }
+
+    //--- ReservedRaw
+
+    #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+    pub struct ReservedRaw {
+        raw: Vec<u8>,
+    }
+
+    impl ReservedRaw {
+        pub fn new(raw: Vec<u8>) -> ReservedRaw {
+            ReservedRaw { raw }
+        }
+    }
+ 
+    impl Attribute for Reserved {
+        fn value_len(&self) -> usize {
+            self.0.raw.len()
+        }
+
+        fn compose_value<Target: OctetsBuilder>(&self, target: &mut Target)
+            -> Result<(), Target::AppendError>
+        {
+            target.append_slice(&self.0.raw)
+        }
+
+        fn parse<Octs: Octets>(parser: &mut Parser<Octs>, _sc: SessionConfig) 
+            -> Result<Reserved, ParseError>
+        {
+            let raw = parser.peek_all().to_vec();
+            Ok(Reserved(ReservedRaw::new(raw)))
+        }
+
+        fn validate<Octs: Octets>(
+            _flags: Flags,
+            _parser: &mut Parser<'_, Octs>,
+            _sc: SessionConfig
+        )
+        -> Result<(), ParseError>
+        {
+            // Not anything we can validate here, really.
+            Ok(())
+        }
+    }
+
 
     //--- Unimplemented
     // 
@@ -1737,6 +1833,8 @@ pub mod new_pas {
                 Otc(Asn::from_u32(1234)).into()
             );
 
+            // TODO AttrSet
+            // TODO Reserved?
 
             // UnimplementedPathAttribute
             check(
