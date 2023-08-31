@@ -232,30 +232,28 @@ pub mod new_pas {
                 // XXX this method is the reason we have fn parse as part of
                 // the trait, forcing us the pass a SessionConfig to all of
                 // the parse() implementations.
-                // XXX should this return a Result? we need to get rid of that
-                // unwrap.
-                pub fn to_owned(&self) -> PathAttribute {
+                pub fn to_owned(&self) -> Result<PathAttribute, ParseError> {
                     match self {
                         $(
                         WireformatPathAttribute::$name(p, sc) => {
-                            PathAttribute::$name(
-                                $name::parse(&mut p.clone(), *sc).unwrap()
-                            )
+                            Ok(PathAttribute::$name(
+                                $name::parse(&mut p.clone(), *sc)?
+                            ))
                         }
                         ),+,
                         WireformatPathAttribute::Unimplemented(u) => {
-                            PathAttribute::Unimplemented(
+                            Ok(PathAttribute::Unimplemented(
                                 UnimplementedPathAttribute::new(
                                     u.flags(),
                                     u.typecode(),
                                     u.value().to_vec()
                                 )
-                            )
+                            ))
                         },
                         WireformatPathAttribute::Invalid(f, tc, p) => {
-                            PathAttribute::Invalid(
+                            Ok(PathAttribute::Invalid(
                                 *f, *tc, p.peek_all().to_vec()
-                            )
+                            ))
                         }
                     }
                 }
@@ -612,17 +610,13 @@ pub mod new_pas {
         fn parse<Octs: Octets>(parser: &mut Parser<Octs>, sc: SessionConfig) 
             -> Result<AsPath, ParseError>
         {
-            // XXX reusing the old/existing AsPath here while PoC'ing, which
-            // new() expects Octets (not a Parser<_,_>) starting at the actual
-            // value, so without the first 3 or 4 bytes (flags/type/len).
+            // XXX reusing the old/existing AsPath here for the time being
             let asp = crate::bgp::aspath::AsPath::new(
                 parser.peek_all().to_vec(),
                 sc.has_four_octet_asn()
-            );
-            if asp.is_err() {
-                return Ok(AsPath(HopPath::new()));
-            }
-            Ok(AsPath(asp?.to_hop_path()))
+            ).map_err(|_| ParseError::form_error("invalid AS_PATH"))?;
+
+            Ok(AsPath(asp.to_hop_path()))
         }
 
         fn validate<Octs: Octets>(
@@ -1022,7 +1016,7 @@ pub mod new_pas {
                                 prefix: b.prefix,
                                 path_id: b.path_id
                             })
-                        ).unwrap()
+                        )
                     },
                     _ => unimplemented!()
                 }
@@ -1035,7 +1029,7 @@ pub mod new_pas {
             parser: &mut Parser<'_, Octs>,
             _session_config: SessionConfig
         ) -> Result<(), ParseError> {
-            // XXX We only check for the bare minimum here, as most checks are
+            // We only check for the bare minimum here, as most checks are
             // better done upon (creation of the) Nlri iterator based on the
             // value of this path attribute.
             if parser.remaining() < 5 {
@@ -1086,7 +1080,7 @@ pub mod new_pas {
                                 prefix: b.prefix,
                                 path_id: b.path_id
                             })
-                        ).unwrap()
+                        );
                     },
                     _ => unimplemented!()
                 }
@@ -1100,7 +1094,7 @@ pub mod new_pas {
             parser: &mut Parser<'_, Octs>,
             _session_config: SessionConfig
         ) -> Result<(), ParseError> {
-            // XXX We only check for the bare minimum here, as most checks are
+            // We only check for the bare minimum here, as most checks are
             // better done upon (creation of the) Nlri iterator based on the
             // value of this path attribute.
             if parser.remaining() < 3 {
@@ -1191,14 +1185,11 @@ pub mod new_pas {
         fn parse<Octs: Octets>(parser: &mut Parser<Octs>, sc: SessionConfig) 
             -> Result<As4Path, ParseError>
         {
-            // XXX same as with AsPath, reusing the old/existing As4Path here
-            // while PoC'ing, which new() expects Octets (not a Parser<_,_>)
-            // starting at the actual value, so without the first 3 or 4 bytes
-            // (flags/type/len).
+            // XXX Same as with AsPath, reusing the old/existing As4Path here
             let asp = crate::bgp::aspath::AsPath::new(
                 parser.peek_all().to_vec(),
                 sc.has_four_octet_asn()
-            ).unwrap();
+            ).map_err(|_| ParseError::form_error("invalid AS4_PATH"))?;
             Ok(As4Path(asp.to_hop_path()))
         }
 
@@ -1625,7 +1616,7 @@ pub mod new_pas {
                 let sc = SessionConfig::modern();
                 let pa = WireformatPathAttribute::parse(&mut parser, sc)
                     .unwrap();
-                assert_eq!(owned, pa.to_owned());
+                assert_eq!(owned, pa.to_owned().unwrap());
                 let mut target = Vec::new();
                 owned.compose(&mut target).unwrap();
                 assert_eq!(target, raw);
@@ -1722,7 +1713,7 @@ pub mod new_pas {
                 );
                 builder.add_announcement(
                     &Nlri::unicast_from_str("2001:db8:aabb::/48").unwrap()
-                ).unwrap();
+                );
 
                 MpReachNlri(builder).into()
                 }
@@ -1751,7 +1742,7 @@ pub mod new_pas {
                 ].into_iter().for_each(|s|{
                     builder.add_withdrawal(
                         &Nlri::unicast_from_str(s).unwrap()
-                    ).unwrap();
+                    );
                 });
 
                 MpUnreachNlri(builder).into()
@@ -2000,7 +1991,7 @@ impl MpReachNlriBuilder {
     }
 
     pub(crate) fn add_announcement(&mut self, announcement: &Nlri<Vec<u8>>)
-        -> Result<(), ComposeError>
+        //-> Result<(), ComposeError>
     {
         let announcement_len = announcement.compose_len();
         if !self.extended && self.len + announcement_len > 255 {
@@ -2008,7 +1999,7 @@ impl MpReachNlriBuilder {
         }
         self.len += announcement_len;
         self.announcements.push(announcement.clone());
-        Ok(())
+        //Ok(())
     }
 
     pub(crate) fn compose_len_empty(&self) -> usize {
@@ -2181,7 +2172,7 @@ impl MpUnreachNlriBuilder {
     }
 
     pub(crate) fn add_withdrawal(&mut self, withdrawal: &Nlri<Vec<u8>>)
-        -> Result<(), ComposeError>
+        //-> Result<(), ComposeError>
     {
         let withdrawal_len = withdrawal.compose_len();
         if !self.extended && self.len + withdrawal_len > 255 {
@@ -2189,7 +2180,7 @@ impl MpUnreachNlriBuilder {
         }
         self.len += withdrawal_len;
         self.withdrawals.push(withdrawal.clone());
-        Ok(())
+        //Ok(())
     }
 
     pub(crate) fn compose_len(&self, withdrawal: &Nlri<Vec<u8>>) -> usize {

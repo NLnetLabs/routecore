@@ -2183,7 +2183,7 @@ impl<Target: OctetsBuilder> UpdateBuilder<Target> {
                     }
 
                     if let Some(ref mut builder) = self.mp_unreach_nlri_builder {
-                        builder.add_withdrawal(withdrawal)?;
+                        builder.add_withdrawal(withdrawal);
                         self.attributes_len += new_bytes_num;
                         self.total_pdu_len = new_total;
                     } else {
@@ -2453,7 +2453,7 @@ impl<Target: OctetsBuilder> UpdateBuilder<Target> {
                     }
 
                     if let Some(ref mut builder) = self.mp_reach_nlri_builder {
-                        builder.add_announcement(announcement)?;
+                        builder.add_announcement(announcement);
                         self.attributes_len += new_bytes_num;
                         self.total_pdu_len = new_total;
                     } else {
