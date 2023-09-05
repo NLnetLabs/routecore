@@ -106,6 +106,20 @@ pub mod new_pas {
                 }
             }
 
+            impl std::convert::AsRef<$data> for $name {
+                fn as_ref(&self) -> &$data {
+                    &self.0
+                }
+            }
+
+            impl std::convert::AsMut<$data> for $name {
+                fn as_mut(&mut self) -> &mut $data {
+                    &mut self.0
+                }
+            }
+
+
+            /*
             impl std::ops::Deref for $name {
                 type Target = $data;
 
@@ -119,6 +133,7 @@ pub mod new_pas {
                     &mut self.0
                 }
             }
+            */
 
             impl AttributeHeader for $name {
                 const FLAGS: u8 = $flags;
@@ -1909,6 +1924,7 @@ pub mod new_pas {
             assert!(matches!(pa, WireformatPathAttribute::Invalid(_,_,_)));
         }
 
+        /*
         #[test]
         fn deref_mut() {
             // AS_PATH: AS_SEQUENCE(AS100, AS200)
@@ -1927,6 +1943,32 @@ pub mod new_pas {
                 asp.prepend(Asn::from_u32(50));
                 assert_eq!(format!("{}", **asp), "AS50 AS100 AS200");
                 assert_eq!(3, asp.hop_count());
+            }
+
+            let mut composed = Vec::new();
+            owned.compose(&mut composed).unwrap();
+            assert!(composed != raw);
+        }
+        */
+
+        #[test]
+        fn as_ref_as_mut() {
+            // AS_PATH: AS_SEQUENCE(AS100, AS200)
+            let raw = vec![0x40, 0x02, 10,
+                0x02, 0x02, // SEQUENCE of length 2
+                0x00, 0x00, 0x00, 100,
+                0x00, 0x00, 0x00, 200,
+            ];
+
+            let pa = WireformatPathAttribute::parse(
+                &mut Parser::from_ref(&raw), SessionConfig::modern()
+            ).unwrap();
+            let mut owned = pa.to_owned().unwrap();
+            if let PathAttribute::AsPath(ref mut asp) = owned  {
+                assert_eq!(format!("{}", asp.as_ref()), "AS100 AS200");
+                asp.as_mut().prepend(Asn::from_u32(50));
+                assert_eq!(format!("{}", asp.as_ref()), "AS50 AS100 AS200");
+                assert_eq!(3, asp.as_ref().hop_count());
             }
 
             let mut composed = Vec::new();
