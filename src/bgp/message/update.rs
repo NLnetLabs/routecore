@@ -2052,7 +2052,7 @@ use crate::bgp::message::update_builder::{
 
 //use rotonda_fsm::bgp::session::AgreedConfig;
 
-use super::update_builder::new_pas;
+use crate::bgp::path_attributes as new_pas;
 #[derive(Debug)]
 pub struct UpdateBuilder<Target> {
     target: Target,
@@ -2759,7 +2759,7 @@ where Infallible: From<<Target as OctetsBuilder>::AppendError>
     }
 }
 
-use super::update_builder::new_pas::Attribute;
+use new_pas::Attribute;
 impl<Target> UpdateBuilder<Target>
 where
     Target: OctetsBuilder + FreezeBuilder + AsMut<[u8]>,
