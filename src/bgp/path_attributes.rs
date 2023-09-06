@@ -167,6 +167,16 @@ macro_rules! path_attributes {
                 }
             }
 
+            pub fn compose_len(&self) -> usize {
+                match self {
+                    $(
+                        PathAttribute::$name(i) => i.compose_len()
+                    ),+,
+                    PathAttribute::Unimplemented(u) => u.compose_len(),
+                    PathAttribute::Invalid(_, _, _) => 0
+                }
+            }
+
             pub fn typecode(&self) -> PathAttributeType {
                 match self {
                     $(
@@ -417,6 +427,15 @@ impl UnimplementedPathAttribute {
 
     pub fn value(&self) -> &Vec<u8> {
         &self.value
+    }
+
+    pub fn compose_len(&self) -> usize {
+        let value_len = self.value.len();
+        if value_len > 255 {
+            4 + value_len
+        } else {
+            3 + value_len
+        }
     }
 }
 

@@ -18,7 +18,7 @@ use crate::util::parser::ParseError;
 //use rotonda_fsm::bgp::session::AgreedConfig;
 
 use crate::bgp::path_attributes as new_pas;
-use new_pas::PathAttributeType;
+use new_pas::{PathAttribute, PathAttributeType};
 use new_pas::Attribute; // trait
 
 //------------ UpdateBuilder -------------------------------------------------
@@ -32,9 +32,9 @@ pub struct UpdateBuilder<Target> {
     withdrawals: Vec<Nlri<Vec<u8>>>,
     withdrawals_len: usize,
     addpath_enabled: Option<bool>, // for conventional nlri (unicast v4)
-    //attributes: Vec<PathAttribute<'a, Vec<u8>>>, // XXX this lifetime is..
-                                                    //not nice
+                                   //
     // attributes:
+    attributes: Vec<new_pas::PathAttribute>,
     origin: Option<new_pas::Origin>,
     aspath: Option<AsPath<Vec<u8>>>,
     nexthop: Option<new_pas::NextHop>,
@@ -77,6 +77,7 @@ impl<Target: OctetsBuilder> UpdateBuilder<Target> {
             addpath_enabled: None,
 
             //attributes:
+            attributes: Vec::new(),
             origin: None,
             aspath: None,
             nexthop: None,
@@ -90,6 +91,41 @@ impl<Target: OctetsBuilder> UpdateBuilder<Target> {
             mp_reach_nlri_builder: None,
             mp_unreach_nlri_builder: None,
         })
+    }
+
+    /// Creates an UpdateBuilder with Path Attributes from an UpdateMessage
+    ///
+    ///
+    pub fn from_update_message<Octs: Octets>(
+        pdu: UpdateMessage<Octs>, 
+        _session_config: SessionConfig,
+        target: Target
+    ) -> Result<UpdateBuilder<Target>, ComposeError> {
+        
+        let mut builder = UpdateBuilder::from_target(target)
+            .map_err(|_| ComposeError::ShortBuf)?;
+
+        // Add all path attributes, except for MP_(UN)REACH_NLRI, ordered by
+        // their typecode.
+        pdu.new_path_attributes()?
+            .filter(|pa|
+                if let Ok(pa) = pa {
+                    pa.typecode() != PathAttributeType::MpReachNlri
+                    && pa.typecode() != PathAttributeType::MpUnreachNlri
+                } else {
+                    // XXX we actually want to return Err but we are
+                    // in this FnMut...
+                    eprintln!("Err in filter()");
+                    false
+                }
+            )
+            .try_for_each(|pa|
+                // We know pa is Ok() because of the .filter() above,
+                // so we can safely unwrap().
+                builder.add_attribute(pa.unwrap().to_owned()?)
+            )?;
+
+        Ok(builder)
     }
 
     //--- Withdrawals
@@ -194,6 +230,23 @@ impl<Target: OctetsBuilder> UpdateBuilder<Target> {
     }
 
     //--- Path Attributes
+
+
+    pub fn add_attribute(&mut self, pa: PathAttribute)
+        -> Result<(), ComposeError>
+    {
+        let new_bytes = pa.compose_len();
+        let new_total = self.total_pdu_len + new_bytes;
+        if new_total > Self::MAX_PDU {
+            return Err(ComposeError::PduTooLarge(new_total));
+        }
+        self.total_pdu_len = new_total;
+        self.attributes_len += new_bytes;
+
+        eprintln!("pushing {:?}", pa);
+        self.attributes.push(pa);
+        Ok(())
+    }
 
     pub fn set_origin(&mut self, origin: OriginType)
         -> Result<(), ComposeError>
@@ -668,6 +721,7 @@ where
         <Target as FreezeBuilder>::Octets: Octets,
     {
         self.is_valid()?;
+        // FIXME this SessionConfig::modern should come from self
         Ok(UpdateMessage::from_octets(
             self.finish().map_err(|_| ShortBuf)?, SessionConfig::modern()
         )?)
@@ -724,13 +778,24 @@ where
         // XXX we can do these unwraps because of the checks in the add/append
         // methods
 
-        // `attributes_len` is checked to be <= 4096 or <= 65535
+        // attributes_len` is checked to be <= 4096 or <= 65535
         // so it will always fit in a u16.
         let _ = self.target.append_slice(
             &u16::try_from(self.attributes_len).unwrap().to_be_bytes()
         );
 
-        // TODO write all path attributes, if any, in order of typecode
+        // TODO make sure we write attributes ordered by typecode
+        // TODO deal with possible overlaps of Origin, AsPath, NextHop etc for
+        // which we currently have Option<_> as fields on the UpdateBuilder.
+        // Perhaps we could say using those Option<_> fields means to
+        // overwrite any of the other attributes in self.attributes?
+
+        // XXX again them struggles with Target::AppendError and converting..
+        if let Err(e) = self.attributes.iter().try_for_each(
+            |pa| pa.compose(&mut self.target)
+        ) {
+            unreachable!("{e}");
+        }
 
         if let Some(origin) = self.origin {
             origin.compose(&mut self.target)?
@@ -1255,6 +1320,8 @@ impl From<ShortBuf> for ComposeError {
         ComposeError::ShortBuf
     }
 }
+
+
 impl From<ParseError> for ComposeError {
     fn from(pe: ParseError) -> ComposeError {
         ComposeError::ParseError(pe)
@@ -1830,6 +1897,31 @@ mod tests {
         msg.print_pcap();
     }
 
+    #[test]
+    fn from_update_message() {
+        let raw = vec![
+            // BGP UPDATE, single conventional announcement, MultiExitDisc
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x37, 0x02,
+            0x00, 0x00, 0x00, 0x1b, 0x40, 0x01, 0x01, 0x00, 0x40, 0x02,
+            0x06, 0x02, 0x01, 0x00, 0x01, 0x00, 0x00, 0x40, 0x03, 0x04,
+            0x0a, 0xff, 0x00, 0x65, 0x80, 0x04, 0x04, 0x00, 0x00, 0x00,
+            0x01, 0x20, 0x0a, 0x0a, 0x0a, 0x02
+        ];
+        let sc = SessionConfig::modern();
+        let upd = UpdateMessage::from_octets(&raw, sc).unwrap();
+        let mut target = BytesMut::new();
+        let mut builder = UpdateBuilder::from_update_message(upd, sc, target).unwrap();
+
+        assert_eq!(builder.attributes.len(), 4);
+
+        builder.add_announcement(
+            &Nlri::unicast_from_str("10.10.10.2/32").unwrap()
+        ).unwrap();
+
+        let upd2 = builder.into_message().unwrap();
+        assert_eq!(&raw, upd2.as_ref());
+    }
 
 
     #[test]

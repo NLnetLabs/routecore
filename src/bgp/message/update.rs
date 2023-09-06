@@ -4,6 +4,7 @@ use log::{debug, error, warn};
 
 use crate::asn::Asn;
 use crate::bgp::aspath::AsPath;
+use crate::bgp::path_attributes as new_pas;
 pub use crate::bgp::types::{
     AFI, SAFI, LocalPref, MultiExitDisc, NextHop, OriginType, PathAttributeType
 };
@@ -207,6 +208,22 @@ impl<Octs: Octets> UpdateMessage<Octs> {
             parser: pp,
             session_config: self.session_config
         }
+    }
+
+    pub fn new_path_attributes(&self)
+        -> Result<new_pas::PathAttributes<Octs>, ParseError>
+    {
+        // XXX eventually the UpdateMessage will have a field
+        // PathAttributesParser that points to the right place directly.
+        // For now, jump to the right place in this less nice way.
+
+        let wrl = self.withdrawn_routes_len() as usize;
+        let tpal = self.total_path_attribute_len() as usize;
+        let mut parser = Parser::from_ref(&self.octets);
+        parser.advance(COFF+2+wrl+2).unwrap();
+        let pp = Parser::parse_parser(&mut parser, tpal)?;
+
+        Ok(new_pas::PathAttributes::new(pp, self.session_config))
     }
 
     /// Iterator over the reachable NLRIs.
