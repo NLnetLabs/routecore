@@ -1300,3 +1300,576 @@ impl fmt::Display for ComposeError {
         }
     }
 }
+
+
+//------------ Tests ----------------------------------------------------------
+#[cfg(test)]
+mod tests {
+
+    use std::net::Ipv4Addr;
+    use std::str::FromStr;
+    use crate::addr::Prefix;
+    use crate::asn::Asn;
+    use crate::bgp::communities::Wellknown;
+    use crate::bgp::message::nlri::BasicNlri;
+    use super::*;
+
+    fn print_pcap<T: AsRef<[u8]>>(buf: T) {
+        print!("000000 ");
+        for b in buf.as_ref() {
+            print!("{:02x} ", b);
+        }
+        println!();
+    }
+
+
+    #[test]
+    fn empty_nlri_iterators() {
+        let mut builder = UpdateBuilder::new_vec();
+        builder.add_withdrawal(
+            &Nlri::unicast_from_str("2001:db8::/32").unwrap()
+        ).unwrap();
+
+        let msg = builder.into_message().unwrap();
+        print_pcap(msg.as_ref());
+        assert_eq!(msg.all_withdrawals_iter().count(), 1);
+
+        let mut builder2 = UpdateBuilder::new_vec();
+        builder2.add_withdrawal(
+            &Nlri::unicast_from_str("10.0.0.0/8").unwrap()
+        ).unwrap();
+
+        let msg2 = builder2.into_message().unwrap();
+        print_pcap(msg2.as_ref());
+        assert_eq!(msg2.all_withdrawals_iter().count(), 1);
+    }
+
+    #[test]
+    fn build_empty() {
+        let builder = UpdateBuilder::new_vec();
+        let msg = builder.finish().unwrap();
+        //print_pcap(&msg);
+        assert!(
+            UpdateMessage::from_octets(msg, SessionConfig::modern()).is_ok()
+        );
+    }
+
+    #[test]
+    fn build_withdrawals_basic_v4() {
+        let mut builder = UpdateBuilder::new_vec();
+
+        let withdrawals = [
+            "0.0.0.0/0",
+            "10.2.1.0/24",
+            "10.2.2.0/24",
+            "10.2.0.0/23",
+            "10.2.4.0/25",
+            "10.0.0.0/7",
+            "10.0.0.0/8",
+            "10.0.0.0/9",
+        ].map(|s| Nlri::unicast_from_str(s).unwrap())
+         .into_iter()
+         .collect::<Vec<_>>();
+
+        let _ = builder.append_withdrawals(&mut withdrawals.clone());
+        let msg = builder.finish().unwrap();
+        assert!(
+            UpdateMessage::from_octets(&msg, SessionConfig::modern())
+            .is_ok()
+        );
+        print_pcap(&msg);
+
+
+        let mut builder2 = UpdateBuilder::new_vec();
+        for w in &withdrawals {
+            builder2.add_withdrawal(w).unwrap();
+        }
+
+        let msg2 = builder2.finish().unwrap();
+        assert!(
+            UpdateMessage::from_octets(&msg2, SessionConfig::modern())
+            .is_ok()
+        );
+        print_pcap(&msg2);
+
+        assert_eq!(msg, msg2);
+    }
+
+    #[test]
+    fn build_withdrawals_from_iter() {
+        let mut builder = UpdateBuilder::new_vec();
+
+        let withdrawals = [
+            "0.0.0.0/0",
+            "10.2.1.0/24",
+            "10.2.2.0/24",
+            "10.2.0.0/23",
+            "10.2.4.0/25",
+            "10.0.0.0/7",
+            "10.0.0.0/8",
+            "10.0.0.0/9",
+        ].map(|s| Nlri::unicast_from_str(s).unwrap().into())
+         .into_iter()
+         .collect::<Vec<_>>();
+
+        let _ = builder.withdrawals_from_iter(&mut withdrawals.into_iter().peekable());
+        let msg = builder.into_message().unwrap();
+        print_pcap(msg);
+    }
+
+    #[test]
+    #[should_panic]
+    fn build_too_many_withdrawals() {
+        let mut builder = UpdateBuilder::new_vec();
+        for i in 0..1024 {
+            builder.add_withdrawal(
+                &Nlri::unicast_from_str(&format!("2001:db:{:04}::/48", i))
+                    .unwrap()
+            ).unwrap();
+        }
+    }
+
+    #[test]
+    fn build_too_many_withdrawals_remainder() {
+        let mut builder = UpdateBuilder::new_vec();
+        let mut prefixes: Vec<Nlri<Vec<u8>>> = vec![];
+        for i in 1..1024_u32 {
+            prefixes.push(
+                Nlri::Unicast(
+                    Prefix::new_v4(
+                        Ipv4Addr::from((i << 10).to_be_bytes()),
+                        22
+                    ).unwrap().into()
+                )
+            );
+        }
+        let prefixes_len = prefixes.len();
+        assert!(builder.append_withdrawals(&mut prefixes).is_err());
+        assert!(prefixes.len() < prefixes_len);
+        let pdu = builder.into_message().unwrap();
+        assert_eq!(
+            pdu.withdrawals().iter().count(),
+            prefixes_len - prefixes.len()
+        );
+    }
+
+    #[test]
+    fn build_too_many_withdrawals_from_iter() {
+        let mut builder = UpdateBuilder::new_vec();
+        let mut prefixes: Vec<Nlri<Vec<u8>>> = vec![];
+        for i in 1..1024_u32 {
+            prefixes.push(
+                Nlri::Unicast(
+                    Prefix::new_v4(
+                        Ipv4Addr::from((i << 10).to_be_bytes()),
+                        22
+                    ).unwrap().into()
+                )
+            );
+        }
+        let mut prefix_iter = prefixes.into_iter().peekable();
+
+        assert!(builder.withdrawals_from_iter(&mut prefix_iter).is_err());
+        let msg = builder.into_message().unwrap();
+        assert_eq!(
+            prefix_iter.count() + msg.withdrawals().iter().count(),
+            1023
+        );
+    }
+
+
+
+    #[test]
+    fn build_withdrawals_basic_v4_addpath() {
+        use crate::bgp::message::nlri::PathId;
+        let mut builder = UpdateBuilder::new_vec();
+        let mut withdrawals = [
+            "0.0.0.0/0",
+            "10.2.1.0/24",
+            "10.2.2.0/24",
+            "10.2.0.0/23",
+            "10.2.4.0/25",
+            "10.0.0.0/7",
+            "10.0.0.0/8",
+            "10.0.0.0/9",
+        ].iter().enumerate().map(|(idx, s)| Nlri::Unicast(BasicNlri {
+            prefix: Prefix::from_str(s).unwrap(),
+            path_id: Some(PathId::from_u32(idx.try_into().unwrap()))})
+        ).collect::<Vec<_>>();
+        let _ = builder.append_withdrawals(&mut withdrawals);
+        let msg = builder.finish().unwrap();
+        assert!(
+            UpdateMessage::from_octets(&msg, SessionConfig::modern_addpath())
+            .is_ok()
+        );
+        print_pcap(&msg);
+    }
+
+    #[test]
+    fn build_withdrawals_basic_v6() {
+        let mut builder = UpdateBuilder::new_vec();
+        let mut withdrawals = vec![
+            Nlri::unicast_from_str("2001:db8::/32").unwrap()
+        ];
+
+        let _ = builder.append_withdrawals(&mut withdrawals);
+
+        let msg = builder.finish().unwrap();
+        println!("msg raw len: {}", &msg.len());
+        print_pcap(&msg);
+        
+        UpdateMessage::from_octets(&msg, SessionConfig::modern()).unwrap();
+    }
+
+    #[test]
+    fn build_withdrawals_basic_v6_from_iter() {
+        let mut builder = UpdateBuilder::new_vec();
+
+        let mut withdrawals: Vec<Nlri<Vec<u8>>> = vec![];
+        for i in 1..512_u128 {
+            withdrawals.push(
+                Nlri::Unicast(
+                    Prefix::new_v6(
+                        Ipv6Addr::from((i << 64).to_be_bytes()),
+                        64
+                    ).unwrap().into()
+                )
+            );
+        }
+
+        let _ = builder.withdrawals_from_iter(&mut withdrawals.into_iter().peekable());
+        let raw = builder.finish().unwrap();
+        print_pcap(&raw);
+        UpdateMessage::from_octets(&raw, SessionConfig::modern()).unwrap();
+    }
+
+    #[test]
+    fn build_mixed_withdrawals() {
+        let mut builder = UpdateBuilder::new_vec();
+        builder.add_withdrawal(
+            &Nlri::unicast_from_str("10.0.0.0/8").unwrap()
+        ).unwrap();
+        builder.add_withdrawal(
+            &Nlri::unicast_from_str("2001:db8::/32").unwrap()
+        ).unwrap();
+        let msg = builder.into_message().unwrap();
+        print_pcap(msg.as_ref());
+
+        assert_eq!(msg.all_withdrawals_iter().count(), 2);
+    }
+
+    #[test]
+    fn build_mixed_addpath_conventional() {
+        use crate::bgp::message::nlri::PathId;
+        let mut builder = UpdateBuilder::new_vec();
+        builder.add_withdrawal(
+            &Nlri::unicast_from_str("10.0.0.0/8").unwrap()
+        ).unwrap();
+        let res = builder.add_withdrawal(
+            &Nlri::Unicast(
+                (Prefix::from_str("10.0.0.0/8").unwrap(),
+                Some(PathId::from_u32(123))
+                ).into())
+        );
+        assert!(matches!(res, Err(ComposeError::IllegalCombination)));
+    }
+
+    #[test]
+    fn build_mixed_addpath_mp() {
+        use crate::bgp::message::nlri::PathId;
+        let mut builder = UpdateBuilder::new_vec();
+        builder.add_withdrawal(
+            &Nlri::unicast_from_str("2001:db8::/32").unwrap()
+        ).unwrap();
+        let res = builder.add_withdrawal(
+            &Nlri::Unicast(
+                (Prefix::from_str("2001:db8::/32").unwrap(),
+                Some(PathId::from_u32(123))
+                ).into())
+        );
+        assert!(matches!(res, Err(ComposeError::IllegalCombination)));
+    }
+
+    #[test]
+    fn build_mixed_addpath_ok() {
+        use crate::bgp::message::nlri::PathId;
+        let mut builder = UpdateBuilder::new_vec();
+        builder.add_withdrawal(
+            &Nlri::unicast_from_str("10.0.0.0/8").unwrap()
+        ).unwrap();
+        let res = builder.add_withdrawal(
+            &Nlri::Unicast(
+                (Prefix::from_str("2001:db8::/32").unwrap(),
+                Some(PathId::from_u32(123))
+                ).into())
+        );
+        assert!(res.is_ok());
+        print_pcap(builder.finish().unwrap());
+    }
+
+    #[test]
+    fn build_conv_mp_mix() {
+        let buf = vec![
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0x00, 0x88 + 8, // adding length for the conv NLRI
+            0x02, 0x00, 0x00, 0x00, 0x71, 0x80,
+            0x0e, 0x5a, 0x00, 0x02, 0x01, 0x20, 0xfc, 0x00,
+            0x00, 0x10, 0x00, 0x01, 0x00, 0x10, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0xfe, 0x80,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x80,
+            0xfc, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10,
+            0x40, 0x20, 0x01, 0x0d, 0xb8, 0xff, 0xff, 0x00,
+            0x00, 0x40, 0x20, 0x01, 0x0d, 0xb8, 0xff, 0xff,
+            0x00, 0x01, 0x40, 0x20, 0x01, 0x0d, 0xb8, 0xff,
+            0xff, 0x00, 0x02, 0x40, 0x20, 0x01, 0x0d, 0xb8,
+            0xff, 0xff, 0x00, 0x03, 0x40, 0x01, 0x01, 0x00,
+            0x40, 0x02, 0x06, 0x02, 0x01, 0x00, 0x00, 0x00,
+            0xc8, 0x80, 0x04, 0x04, 0x00, 0x00, 0x00, 0x00,
+            // manually adding two conv NLRI here
+            24, 1, 1, 1,
+            24, 1, 1, 2
+
+        ];
+
+        let upd = UpdateMessage::from_octets(&buf, SessionConfig::modern()).unwrap();
+        print_pcap(upd.as_ref());
+
+        assert!(upd.has_conventional_nlri() && upd.has_mp_nlri());
+        assert_eq!(upd.unicast_announcements().count(), 7);
+    }
+
+    #[test]
+    fn build_announcements_conventional() {
+        use crate::bgp::aspath::HopPath;
+        let mut builder = UpdateBuilder::new_vec();
+        let prefixes = [
+            "1.0.1.0/24",
+            "1.0.2.0/24",
+            "1.0.3.0/24",
+            "1.0.4.0/24",
+        ].map(|p| Nlri::unicast_from_str(p).unwrap());
+        let mut iter = prefixes.into_iter().peekable();
+        builder.announcements_from_iter(&mut iter).unwrap();
+        builder.set_origin(OriginType::Igp).unwrap();
+        builder.set_nexthop("1.2.3.4".parse().unwrap()).unwrap();
+        let path = HopPath::from([
+             Asn::from_u32(123); 70
+        ]);
+        builder.set_aspath::<Vec<u8>>(path.to_as_path().unwrap()).unwrap();
+
+        let raw = builder.finish().unwrap();
+        print_pcap(&raw);
+
+        //let pdu = builder.into_message().unwrap();
+        //print_pcap(pdu);
+    }
+
+    #[test]
+    fn build_announcements_mp() {
+        use crate::bgp::aspath::HopPath;
+
+        let mut builder = UpdateBuilder::new_vec();
+        let prefixes = [
+            "2001:db8:1::/48",
+            "2001:db8:2::/48",
+            "2001:db8:3::/48",
+        ].map(|p| Nlri::unicast_from_str(p).unwrap());
+        let mut iter = prefixes.into_iter().peekable();
+        builder.announcements_from_iter(&mut iter).unwrap();
+        builder.set_origin(OriginType::Igp).unwrap();
+        builder.set_nexthop("fe80:1:2:3::".parse().unwrap()).unwrap();
+        let path = HopPath::from([
+             Asn::from_u32(100),
+             Asn::from_u32(200),
+             Asn::from_u32(300),
+        ]);
+        builder.set_aspath::<Vec<u8>>(path.to_as_path().unwrap()).unwrap();
+
+        let raw = builder.finish().unwrap();
+        print_pcap(&raw);
+    }
+
+    #[test]
+    fn build_announcements_mp_missing_nlri() {
+        use crate::bgp::aspath::HopPath;
+
+        let mut builder = UpdateBuilder::new_vec();
+        builder.set_origin(OriginType::Igp).unwrap();
+        builder.set_nexthop("fe80:1:2:3::".parse().unwrap()).unwrap();
+        assert!(builder.mp_reach_nlri_builder.is_some());
+        let path = HopPath::from([
+             Asn::from_u32(100),
+             Asn::from_u32(200),
+             Asn::from_u32(300),
+        ]);
+        builder.set_aspath::<Vec<u8>>(path.to_as_path().unwrap()).unwrap();
+
+        assert!(matches!(
+                builder.into_message(),
+                Err(ComposeError::EmptyMpReachNlri)
+        ));
+    }
+
+    #[test]
+    fn build_announcements_mp_link_local() {
+        use crate::bgp::aspath::HopPath;
+
+        let mut builder = UpdateBuilder::new_vec();
+
+        let prefixes = [
+            "2001:db8:1::/48",
+            "2001:db8:2::/48",
+            "2001:db8:3::/48",
+        ].map(|p| Nlri::unicast_from_str(p).unwrap());
+
+
+        let mut iter = prefixes.into_iter().peekable();
+
+        builder.announcements_from_iter(&mut iter).unwrap();
+        builder.set_origin(OriginType::Igp).unwrap();
+        //builder.set_nexthop("2001:db8::1".parse().unwrap()).unwrap();
+        builder.set_nexthop_ll("fe80:1:2:3::".parse().unwrap()).unwrap();
+
+
+        let path = HopPath::from([
+             Asn::from_u32(100),
+             Asn::from_u32(200),
+             Asn::from_u32(300),
+        ]);
+        builder.set_aspath::<Vec<u8>>(path.to_as_path().unwrap()).unwrap();
+
+        //let unchecked = builder.finish().unwrap();
+        //print_pcap(unchecked);
+        let msg = builder.into_message().unwrap();
+        msg.print_pcap();
+    }
+
+    #[test]
+    fn build_announcements_mp_ll_no_nlri() {
+        use crate::bgp::aspath::HopPath;
+
+        let mut builder = UpdateBuilder::new_vec();
+        builder.set_origin(OriginType::Igp).unwrap();
+        //builder.set_nexthop("2001:db8::1".parse().unwrap()).unwrap();
+        builder.set_nexthop_ll("fe80:1:2:3::".parse().unwrap()).unwrap();
+        assert!(builder.mp_reach_nlri_builder.is_some());
+        let path = HopPath::from([
+             Asn::from_u32(100),
+             Asn::from_u32(200),
+             Asn::from_u32(300),
+        ]);
+        builder.set_aspath::<Vec<u8>>(path.to_as_path().unwrap()).unwrap();
+
+        assert!(matches!(
+                builder.into_message(),
+                Err(ComposeError::EmptyMpReachNlri)
+        ));
+    }
+
+    #[test]
+    fn build_standard_communities() {
+        use crate::bgp::aspath::HopPath;
+        let mut builder = UpdateBuilder::new_vec();
+        let prefixes = [
+            "1.0.1.0/24",
+            "1.0.2.0/24",
+            "1.0.3.0/24",
+            "1.0.4.0/24",
+        ].map(|p| Nlri::unicast_from_str(p).unwrap());
+        let mut iter = prefixes.into_iter().peekable();
+        builder.announcements_from_iter(&mut iter).unwrap();
+        builder.set_origin(OriginType::Igp).unwrap();
+        builder.set_nexthop("1.2.3.4".parse().unwrap()).unwrap();
+        let path = HopPath::from([
+             Asn::from_u32(100),
+             Asn::from_u32(200),
+             Asn::from_u32(300),
+        ]);
+        builder.set_aspath::<Vec<u8>>(path.to_as_path().unwrap()).unwrap();
+
+
+        builder.add_community("AS1234:666".parse().unwrap()).unwrap();
+        builder.add_community("NO_EXPORT".parse().unwrap()).unwrap();
+        for n in 1..100 {
+            builder.add_community(format!("AS999:{n}").parse().unwrap()).unwrap();
+        }
+
+        builder.into_message().unwrap();
+        //let raw = builder.finish().unwrap();
+        //print_pcap(&raw);
+    }
+
+    #[test]
+    fn build_other_attributes() {
+        use crate::bgp::aspath::HopPath;
+        let mut builder = UpdateBuilder::new_vec();
+        let prefixes = [
+            "1.0.1.0/24",
+            "1.0.2.0/24",
+            "1.0.3.0/24",
+            "1.0.4.0/24",
+        ].map(|p| Nlri::unicast_from_str(p).unwrap());
+        let mut iter = prefixes.into_iter().peekable();
+        builder.announcements_from_iter(&mut iter).unwrap();
+        builder.set_origin(OriginType::Igp).unwrap();
+        builder.set_nexthop("1.2.3.4".parse().unwrap()).unwrap();
+        let path = HopPath::from([
+             Asn::from_u32(100),
+             Asn::from_u32(200),
+             Asn::from_u32(300),
+        ]);
+        builder.set_aspath::<Vec<u8>>(path.to_as_path().unwrap()).unwrap();
+
+        builder.set_multi_exit_disc(new_pas::MultiExitDisc::new(1234)).unwrap();
+        builder.set_local_pref(new_pas::LocalPref::new(9876)).unwrap();
+
+        let msg = builder.into_message().unwrap();
+        msg.print_pcap();
+    }
+
+
+
+    #[test]
+    #[allow(deprecated)]
+    fn build_acs() {
+        use crate::bgp::aspath::HopPath;
+        use crate::bgp::message::nlri::PathId;
+
+        let builder = UpdateBuilder::new_vec();
+        let mut acs = AttrChangeSet::empty();
+
+        // ORIGIN
+        acs.origin_type.set(OriginType::Igp);
+
+        // AS_PATH
+        let mut hp = HopPath::new();
+        hp.prepend(Asn::from_u32(100));
+        hp.prepend(Asn::from_u32(101));
+        acs.as_path.set(hp.to_as_path().unwrap());
+
+        // NEXT_HOP
+        acs.next_hop.set(NextHop::Ipv4(Ipv4Addr::from_str("192.0.2.1").unwrap()));
+
+
+        // now for some NLRI
+        // XXX currently ACS only holds one single Nlri
+        acs.nlri.set(Nlri::Unicast(BasicNlri{
+            prefix: Prefix::from_str("1.2.0.0/25").unwrap(),
+            path_id: Some(PathId::from_u32(123))
+        }));
+
+        acs.standard_communities.set(vec![
+            Wellknown::NoExport.into(),
+            Wellknown::Blackhole.into(),
+        ]);
+
+        let _msg = builder.build_acs(acs).unwrap();
+        //print_pcap(&msg);
+    }
+
+
+
+}

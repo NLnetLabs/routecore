@@ -14,7 +14,7 @@ use crate::bgp::message::SessionConfig;
 use crate::bgp::types::{AFI, SAFI};
 use crate::util::parser::{ParseError, parse_ipv4addr};
 
-use crate::bgp::message::update::ComposeError; // TODO move to update_builder
+use crate::bgp::message::update_builder::ComposeError;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub struct Flags(u8);
@@ -553,13 +553,13 @@ impl<'a, Octs> Clone for PathAttributes<'a, Octs> {
 impl<'a, Octs> Copy for PathAttributes<'a, Octs> { }
 
 impl<'a, Octs: Octets> PathAttributes<'a, Octs> {
-    fn new(parser: Parser<'a, Octs>, session_config: SessionConfig)
+    pub fn new(parser: Parser<'a, Octs>, session_config: SessionConfig)
         -> PathAttributes<'_, Octs>
     {
         PathAttributes { parser, session_config }
     }
     
-    fn get(&self, pat: PathAttributeType)
+    pub fn get(&self, pat: PathAttributeType)
         -> Option<WireformatPathAttribute<'a, Octs>>
     {
         let mut iter = *self;
