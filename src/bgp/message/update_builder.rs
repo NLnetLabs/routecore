@@ -2,11 +2,12 @@ use std::convert::Infallible;
 use std::fmt;
 use std::iter::Peekable;
 use std::net::{IpAddr, Ipv6Addr};
+use std::collections::BTreeMap;
 
 use bytes::BytesMut;
 use octseq::{FreezeBuilder, Octets, OctetsBuilder, ShortBuf};
 
-use crate::bgp::aspath::AsPath;
+use crate::bgp::aspath::{AsPath, HopPath};
 use crate::bgp::communities::StandardCommunity;
 use crate::bgp::message::{Header, MsgType, SessionConfig, UpdateMessage};
 use crate::bgp::message::attr_change_set::AttrChangeSet;
@@ -34,12 +35,9 @@ pub struct UpdateBuilder<Target> {
     addpath_enabled: Option<bool>, // for conventional nlri (unicast v4)
                                    //
     // attributes:
-    attributes: Vec<new_pas::PathAttribute>,
-    origin: Option<new_pas::Origin>,
-    aspath: Option<AsPath<Vec<u8>>>,
+    //attributes: Vec<new_pas::PathAttribute>,
+    attributes: BTreeMap<PathAttributeType, new_pas::PathAttribute>,
     nexthop: Option<new_pas::NextHop>,
-    multi_exit_disc: Option<new_pas::MultiExitDisc>,
-    local_pref: Option<new_pas::LocalPref>,
 
     standard_communities_builder: Option<StandardCommunitiesBuilder>,
 
@@ -77,13 +75,8 @@ impl<Target: OctetsBuilder> UpdateBuilder<Target> {
             addpath_enabled: None,
 
             //attributes:
-            attributes: Vec::new(),
-            origin: None,
-            aspath: None,
+            attributes: BTreeMap::new(),
             nexthop: None,
-            multi_exit_disc: None,
-            local_pref: None,
-
             standard_communities_builder: None,
 
             attributes_len: 0,
@@ -232,68 +225,68 @@ impl<Target: OctetsBuilder> UpdateBuilder<Target> {
     //--- Path Attributes
 
 
+    /// Upsert a Path Attribute.
+    ///
+    /// Insert a new, or update an existing Path Attribute in this builder. If
+    /// the new Path Attribute would cause the total PDU length to exceed the
+    /// maximum, a `ComposeError::PduTooLarge` is returned.
+
     pub fn add_attribute(&mut self, pa: PathAttribute)
         -> Result<(), ComposeError>
     {
-        let new_bytes = pa.compose_len();
-        let new_total = self.total_pdu_len + new_bytes;
-        if new_total > Self::MAX_PDU {
-            return Err(ComposeError::PduTooLarge(new_total));
-        }
-        self.total_pdu_len = new_total;
-        self.attributes_len += new_bytes;
+        if let Some(existing_pa) = self.attributes.get_mut(&pa.typecode()) {
 
-        eprintln!("pushing {:?}", pa);
-        self.attributes.push(pa);
+            let new_total = self.total_pdu_len
+                - existing_pa.compose_len()
+                + pa.compose_len();
+            if new_total > Self::MAX_PDU {
+                return Err(ComposeError::PduTooLarge(new_total));
+            }
+            self.attributes_len -=  existing_pa.compose_len();
+            self.attributes_len += pa.compose_len();
+            self.total_pdu_len = new_total;
+            *existing_pa = pa;
+        } else {
+            let new_bytes = pa.compose_len();
+            let new_total = self.total_pdu_len + new_bytes;
+            if new_total > Self::MAX_PDU {
+                return Err(ComposeError::PduTooLarge(new_total));
+            }
+            self.total_pdu_len = new_total;
+            self.attributes_len += new_bytes;
+
+            self.attributes.insert(pa.typecode(), pa);
+        }
+        
         Ok(())
     }
 
     pub fn set_origin(&mut self, origin: OriginType)
         -> Result<(), ComposeError>
     {
-        if self.origin.is_none() {
-            // Check if this goes over the total PDU len. That will happen
-            // before we will go over the u16 for Total Path Attributes Length
-            // so we don't have to check for that.
-            let new_total = self.total_pdu_len + 4; // XXX should this 4 come
-                                                    // from a
-                                                    // `fn compose_len()` on
-                                                    // the attribute itself
-                                                    // perhaps?
-            if new_total > Self::MAX_PDU {
-                return Err(ComposeError::PduTooLarge(new_total));
-            } else {
-                self.total_pdu_len = new_total;
-                self.attributes_len += 4
-            }
-        }
-        self.origin = Some(new_pas::Origin::new(origin));
-        Ok(())
+        self.add_attribute(new_pas::Origin::new(origin).into())
     }
 
-    pub fn set_aspath<Octs>(&mut self , aspath: AsPath<Vec<u8>>)
+    // TODO make all fn set_* like set_origin
+
+    //pub fn set_aspath<Octs>(&mut self , aspath: AsPath<Vec<u8>>)
+    pub fn set_aspath(&mut self , aspath: HopPath)
         -> Result<(), ComposeError>
     {
-        if aspath.compose_len() > u16::MAX.into()  {
-            return Err(ComposeError::AttributeTooLarge(
-                 new_pas::PathAttributeType::AsPath, aspath.compose_len()
-            ));
-        }
-        if let Some(old_aspath) = &self.aspath {
-            let new_total = self.total_pdu_len
-                - old_aspath.compose_len()
-                + aspath.compose_len();
-            if new_total > Self::MAX_PDU {
-                return Err(ComposeError::PduTooLarge(new_total));
-            } else {
-                self.total_pdu_len -= old_aspath.compose_len();
-                self.attributes_len -= old_aspath.compose_len();
+        // XXX there should be a HopPath::compose_len really, instead of
+        // relying on .to_as_path() first.
+        if let Ok(wireformat) = aspath.to_as_path::<Vec<u8>>() {
+            if wireformat.compose_len() > u16::MAX.into() {
+                return Err(ComposeError::AttributeTooLarge(
+                     new_pas::PathAttributeType::AsPath,
+                     wireformat.compose_len()
+                ));
             }
+        } else {
+            return Err(ComposeError::InvalidAttribute)
         }
-        self.attributes_len += aspath.compose_len();
-        self.total_pdu_len += aspath.compose_len();
-        self.aspath = Some(aspath);
-        Ok(())
+
+        self.add_attribute(new_pas::AsPath::new(aspath).into())
     }
 
     pub fn set_nexthop(&mut self, addr: IpAddr) -> Result<(), ComposeError> {
@@ -381,29 +374,13 @@ impl<Target: OctetsBuilder> UpdateBuilder<Target> {
     pub fn set_multi_exit_disc(&mut self, med: new_pas::MultiExitDisc)
     -> Result<(), ComposeError>
     {
-        let new_bytes = med.compose_len();
-        let new_total = self.total_pdu_len + new_bytes;
-        if new_total > Self::MAX_PDU {
-            return Err(ComposeError::PduTooLarge(new_total));
-        }
-        self.multi_exit_disc = Some(med);
-        self.total_pdu_len = new_total;
-        self.attributes_len += new_bytes;
-        Ok(())
+        self.add_attribute(med.into())
     }
 
     pub fn set_local_pref(&mut self, local_pref: new_pas::LocalPref)
     -> Result<(), ComposeError>
     {
-        let new_bytes = local_pref.compose_len();
-        let new_total = self.total_pdu_len + new_bytes;
-        if new_total > Self::MAX_PDU {
-            return Err(ComposeError::PduTooLarge(new_total));
-        }
-        self.local_pref = Some(local_pref);
-        self.total_pdu_len = new_total;
-        self.attributes_len += new_bytes;
-        Ok(())
+        self.add_attribute(local_pref.into())
     }
 
 
@@ -792,29 +769,14 @@ where
 
         // XXX again them struggles with Target::AppendError and converting..
         if let Err(e) = self.attributes.iter().try_for_each(
-            |pa| pa.compose(&mut self.target)
+            |(_tc, pa)| pa.compose(&mut self.target)
         ) {
             unreachable!("{e}");
         }
 
-        if let Some(origin) = self.origin {
-            origin.compose(&mut self.target)?
-        }
-
-        if let Some(aspath) = self.aspath {
-            aspath.compose(&mut self.target)?
-        }
 
         if let Some(nexthop) = self.nexthop {
             nexthop.compose(&mut self.target)?
-        }
-
-        if let Some(med) = self.multi_exit_disc {
-            med.compose(&mut self.target)?
-        }
-
-        if let Some(local_pref) = self.local_pref {
-            local_pref.compose(&mut self.target)?
         }
 
         if let Some(builder) = self.standard_communities_builder {
@@ -1725,7 +1687,9 @@ mod tests {
         let path = HopPath::from([
              Asn::from_u32(123); 70
         ]);
-        builder.set_aspath::<Vec<u8>>(path.to_as_path().unwrap()).unwrap();
+
+        //builder.set_aspath::<Vec<u8>>(path.to_as_path().unwrap()).unwrap();
+        builder.set_aspath(path).unwrap();
 
         let raw = builder.finish().unwrap();
         print_pcap(&raw);
@@ -1753,7 +1717,8 @@ mod tests {
              Asn::from_u32(200),
              Asn::from_u32(300),
         ]);
-        builder.set_aspath::<Vec<u8>>(path.to_as_path().unwrap()).unwrap();
+        //builder.set_aspath::<Vec<u8>>(path.to_as_path().unwrap()).unwrap();
+        builder.set_aspath(path).unwrap();
 
         let raw = builder.finish().unwrap();
         print_pcap(&raw);
@@ -1772,7 +1737,8 @@ mod tests {
              Asn::from_u32(200),
              Asn::from_u32(300),
         ]);
-        builder.set_aspath::<Vec<u8>>(path.to_as_path().unwrap()).unwrap();
+        //builder.set_aspath::<Vec<u8>>(path.to_as_path().unwrap()).unwrap();
+        builder.set_aspath(path).unwrap();
 
         assert!(matches!(
                 builder.into_message(),
@@ -1806,7 +1772,8 @@ mod tests {
              Asn::from_u32(200),
              Asn::from_u32(300),
         ]);
-        builder.set_aspath::<Vec<u8>>(path.to_as_path().unwrap()).unwrap();
+        //builder.set_aspath::<Vec<u8>>(path.to_as_path().unwrap()).unwrap();
+        builder.set_aspath(path).unwrap();
 
         //let unchecked = builder.finish().unwrap();
         //print_pcap(unchecked);
@@ -1828,7 +1795,8 @@ mod tests {
              Asn::from_u32(200),
              Asn::from_u32(300),
         ]);
-        builder.set_aspath::<Vec<u8>>(path.to_as_path().unwrap()).unwrap();
+        //builder.set_aspath::<Vec<u8>>(path.to_as_path().unwrap()).unwrap();
+        builder.set_aspath(path).unwrap();
 
         assert!(matches!(
                 builder.into_message(),
@@ -1855,7 +1823,8 @@ mod tests {
              Asn::from_u32(200),
              Asn::from_u32(300),
         ]);
-        builder.set_aspath::<Vec<u8>>(path.to_as_path().unwrap()).unwrap();
+        //builder.set_aspath::<Vec<u8>>(path.to_as_path().unwrap()).unwrap();
+        builder.set_aspath(path).unwrap();
 
 
         builder.add_community("AS1234:666".parse().unwrap()).unwrap();
@@ -1888,7 +1857,8 @@ mod tests {
              Asn::from_u32(200),
              Asn::from_u32(300),
         ]);
-        builder.set_aspath::<Vec<u8>>(path.to_as_path().unwrap()).unwrap();
+        //builder.set_aspath::<Vec<u8>>(path.to_as_path().unwrap()).unwrap();
+        builder.set_aspath(path).unwrap();
 
         builder.set_multi_exit_disc(new_pas::MultiExitDisc::new(1234)).unwrap();
         builder.set_local_pref(new_pas::LocalPref::new(9876)).unwrap();
@@ -1910,8 +1880,48 @@ mod tests {
         ];
         let sc = SessionConfig::modern();
         let upd = UpdateMessage::from_octets(&raw, sc).unwrap();
-        let mut target = BytesMut::new();
+        let target = BytesMut::new();
         let mut builder = UpdateBuilder::from_update_message(upd, sc, target).unwrap();
+
+        assert_eq!(builder.attributes.len(), 4);
+
+        builder.add_announcement(
+            &Nlri::unicast_from_str("10.10.10.2/32").unwrap()
+        ).unwrap();
+
+        let upd2 = builder.into_message().unwrap();
+        assert_eq!(&raw, upd2.as_ref());
+    }
+
+    #[test]
+    fn build_overwriting_attributes() {
+        // TODO test that when setting and overwriting the same attribute in
+        // an UpdateBuilder, the resulting PDU contains the lastly set
+        // attribute and that all the lengths are correct etc
+        
+        let raw = vec![
+            // BGP UPDATE, single conventional announcement, MultiExitDisc
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x37, 0x02,
+            0x00, 0x00, 0x00, 0x1b, 0x40, 0x01, 0x01, 0x00, 0x40, 0x02,
+            0x06, 0x02, 0x01, 0x00, 0x01, 0x00, 0x00, 0x40, 0x03, 0x04,
+            0x0a, 0xff, 0x00, 0x65, 0x80, 0x04, 0x04, 0x00, 0x00, 0x00,
+            0x01, 0x20, 0x0a, 0x0a, 0x0a, 0x02
+        ];
+        let sc = SessionConfig::modern();
+        let upd = UpdateMessage::from_octets(&raw, sc).unwrap();
+        for pa in upd.clone().new_path_attributes().unwrap() {
+            eprintln!("{:?}", pa.unwrap().to_owned().unwrap());
+        }
+        let target = BytesMut::new();
+        let mut builder = UpdateBuilder::from_update_message(upd, sc, target).unwrap();
+
+        
+        assert_eq!(builder.attributes.len(), 4);
+
+        builder.set_origin(OriginType::Igp).unwrap();
+        builder.set_origin(OriginType::Egp).unwrap();
+        builder.set_origin(OriginType::Igp).unwrap();
 
         assert_eq!(builder.attributes.len(), 4);
 

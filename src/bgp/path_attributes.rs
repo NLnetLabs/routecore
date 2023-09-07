@@ -16,7 +16,7 @@ use crate::util::parser::{ParseError, parse_ipv4addr};
 
 use crate::bgp::message::update_builder::ComposeError;
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub struct Flags(u8);
 
 impl Flags {
