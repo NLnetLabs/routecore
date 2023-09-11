@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 use bytes::BytesMut;
 use octseq::{FreezeBuilder, Octets, OctetsBuilder, ShortBuf};
 
-use crate::bgp::aspath::{AsPath, HopPath};
+use crate::bgp::aspath::HopPath;
 use crate::bgp::communities::StandardCommunity;
 use crate::bgp::message::{Header, MsgType, SessionConfig, UpdateMessage};
 use crate::bgp::message::attr_change_set::AttrChangeSet;
@@ -39,7 +39,7 @@ pub struct UpdateBuilder<Target> {
     attributes: BTreeMap<PathAttributeType, new_pas::PathAttribute>,
     nexthop: Option<new_pas::NextHop>,
 
-    standard_communities_builder: Option<StandardCommunitiesBuilder>,
+    //standard_communities_builder: Option<StandardCommunitiesBuilder>,
 
     attributes_len: usize,
     total_pdu_len: usize,
@@ -77,7 +77,7 @@ impl<Target: OctetsBuilder> UpdateBuilder<Target> {
             //attributes:
             attributes: BTreeMap::new(),
             nexthop: None,
-            standard_communities_builder: None,
+            //standard_communities_builder: None,
 
             attributes_len: 0,
             total_pdu_len: 19 + 2 + 2,
@@ -486,33 +486,29 @@ impl<Target: OctetsBuilder> UpdateBuilder<Target> {
     pub fn add_community(&mut self, community: StandardCommunity)
         -> Result<(), ComposeError>
     {
-
-        if let Some(ref mut builder) = self.standard_communities_builder {
+        if !self.attributes.contains_key(&PathAttributeType::Communities) {
+            self.add_attribute(new_pas::Communities::new(
+                    StandardCommunitiesBuilder::new()
+            ).into())?;
+        }
+        let pa = self.attributes.get_mut(&PathAttributeType::Communities)
+            .unwrap(); // Just added it, so we know it is there.
+            
+        if let PathAttribute::Communities(ref mut pa) = pa {
+            let builder = pa.as_mut();
             let new_bytes = builder.compose_len(community);
             let new_total = self.total_pdu_len + new_bytes;
             if new_total > Self::MAX_PDU {
                 return Err(ComposeError::PduTooLarge(new_total));
             }
             builder.add_community(community);
-            self.attributes_len += new_bytes;
             self.total_pdu_len = new_total;
+            self.attributes_len += new_bytes;
+            Ok(())
         } else {
-            let mut builder = StandardCommunitiesBuilder::new();
-            let new_bytes = builder.compose_len_empty()
-                + builder.compose_len(community); 
-            let new_total = self.total_pdu_len + new_bytes;
-            if new_total > Self::MAX_PDU {
-                return Err(ComposeError::PduTooLarge(new_total));
-            }
-            builder.add_community(community);
-            self.standard_communities_builder = Some(builder);
-            self.attributes_len += new_bytes;
-            self.total_pdu_len = new_total;
+            unreachable!()
         }
-
-        Ok(())
     }
-
 }
 
 impl<Target: OctetsBuilder + AsMut<[u8]>> UpdateBuilder<Target>
@@ -777,10 +773,6 @@ where
 
         if let Some(nexthop) = self.nexthop {
             nexthop.compose(&mut self.target)?
-        }
-
-        if let Some(builder) = self.standard_communities_builder {
-            builder.compose(&mut self.target)?
         }
 
         if let Some(builder) = self.mp_reach_nlri_builder {
@@ -1200,8 +1192,8 @@ impl MpUnreachNlriBuilder {
 //
 //
 
-#[derive(Debug)]
-pub(crate) struct StandardCommunitiesBuilder {
+#[derive(Debug, Eq, PartialEq)]
+pub struct StandardCommunitiesBuilder {
     communities: Vec<StandardCommunity>,
     len: usize, // size of value, excluding path attribute flags+typecode+len
     extended: bool,
@@ -1216,8 +1208,16 @@ impl StandardCommunitiesBuilder {
         }
     }
 
-    pub(crate) fn compose_len_empty(&self) -> usize {
-        3
+    pub(crate) fn with_capacity(c: usize) -> StandardCommunitiesBuilder {
+        StandardCommunitiesBuilder {
+            communities: Vec::with_capacity(c),
+            len: 0,
+            extended: false
+        }
+    }
+
+    pub(crate) fn communities(&self) -> &Vec<StandardCommunity> {
+        &self.communities
     }
 
     pub(crate) fn compose_len(&self, _community: StandardCommunity) -> usize {
@@ -1236,22 +1236,7 @@ impl StandardCommunitiesBuilder {
         self.communities.push(community);
     }
 
-    pub(crate) fn compose<Target: OctetsBuilder>(&self, target: &mut Target)
-        -> Result<(), Target::AppendError>
-    {
-        let len = self.len.to_be_bytes();
-        if self.extended {
-            // FIXME this assumes usize is 64bits
-            target.append_slice(&[0b1001_0000, 8, len[6], len[7]])
-        } else {
-            target.append_slice(&[0b1000_0000, 8, len[7]])
-        }?;
-
-        for c in &self.communities {
-            target.append_slice(&c.to_raw())?;
-        }
-        Ok(())
-    }
+    // TODO fn add_community_from_iter() 
 }
 
 //------------ Errors --------------------------------------------------------
@@ -1933,6 +1918,33 @@ mod tests {
         assert_eq!(&raw, upd2.as_ref());
     }
 
+    #[test]
+    fn build_ordered_attributes() {
+        //TODO check that built PDUs have their path attributes ordered by
+        //typecode. This might be especially tricky when
+        //announcements/withdrawals end up in the MP_(UN)REACH_NLRI attributes
+        //and where communities come from the CommunityBuilders.
+
+        let mut builder = UpdateBuilder::new_vec();
+        builder.add_community(
+            StandardCommunity::from_str("AS1234:999").unwrap()
+        ).unwrap();
+        builder.set_origin(OriginType::Igp).unwrap();
+        builder.add_community(
+            StandardCommunity::from_str("AS1234:1000").unwrap()
+        ).unwrap();
+
+        assert_eq!(builder.attributes.len(), 2);
+
+        let pdu = builder.into_message().unwrap();
+        let mut prev_typecode = 0_u8;
+        for pa in pdu.new_path_attributes().unwrap() {
+            let typecode = u8::from(pa.unwrap().typecode());
+            assert!(prev_typecode < typecode);
+            prev_typecode = typecode; 
+        }
+        assert_eq!(pdu.communities().unwrap().count(), 2);
+    }
 
     #[test]
     #[allow(deprecated)]

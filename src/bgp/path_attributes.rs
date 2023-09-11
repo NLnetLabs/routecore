@@ -14,7 +14,10 @@ use crate::bgp::message::SessionConfig;
 use crate::bgp::types::{AFI, SAFI};
 use crate::util::parser::{ParseError, parse_ipv4addr};
 
-use crate::bgp::message::update_builder::ComposeError;
+use crate::bgp::message::update_builder::{
+    ComposeError,
+    StandardCommunitiesBuilder
+};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub struct Flags(u8);
@@ -383,7 +386,8 @@ path_attributes!(
     5   => LocalPref(u32), Flags::WELLKNOWN,
     6   => AtomicAggregate(()), Flags::WELLKNOWN,
     7   => Aggregator(AggregatorInfo), Flags::OPT_TRANS,
-    8   => Communities(StandardCommunitiesList), Flags::OPT_TRANS,
+    //8   => Communities(StandardCommunitiesList), Flags::OPT_TRANS,
+    8   => Communities(StandardCommunitiesBuilder), Flags::OPT_TRANS,
     9   => OriginatorId(Ipv4Addr), Flags::OPT_NON_TRANS,
     10  => ClusterList(ClusterIds), Flags::OPT_NON_TRANS,
     14  => MpReachNlri(MpReachNlriBuilder), Flags::OPT_NON_TRANS,
@@ -875,34 +879,15 @@ impl Attribute for Aggregator {
 
 //--- Communities
 
-use crate::bgp::communities::StandardCommunity;
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct StandardCommunitiesList {
-    communities: Vec<StandardCommunity>
-}
-
-impl StandardCommunitiesList {
-    fn new(communities: Vec<StandardCommunity>)
-        -> StandardCommunitiesList
-    {
-        StandardCommunitiesList {communities }
-    }
-
-    pub fn communities(&self) -> &Vec<StandardCommunity> {
-        &self.communities
-    }
-}
-
-
 impl Attribute for Communities {
     fn value_len(&self) -> usize { 
-        self.0.communities.len() * 4
+        self.0.communities().len() * 4
     }
 
     fn compose_value<Target: OctetsBuilder>(&self, target: &mut Target)
         -> Result<(), Target::AppendError>
     {
-        for c in &self.0.communities {
+        for c in self.0.communities() {
             target.append_slice(&c.to_raw())?;
         }
         Ok(())
@@ -911,11 +896,14 @@ impl Attribute for Communities {
     fn parse<Octs: Octets>(parser: &mut Parser<Octs>, _sc: SessionConfig) 
         -> Result<Communities, ParseError>
     {
-        let mut communities = Vec::with_capacity(parser.remaining() / 4);
+        let mut builder = StandardCommunitiesBuilder::with_capacity(
+            parser.remaining() / 4
+        );
         while parser.remaining() > 0 {
-            communities.push(parser.parse_u32_be()?.into());
+            builder.add_community(parser.parse_u32_be()?.into());
         }
-        Ok(Communities(StandardCommunitiesList::new(communities)))
+
+        Ok(Communities(builder))
     }
 
     fn validate<Octs: Octets>(
@@ -1732,13 +1720,21 @@ mod tests {
                 0xff, 0xff, 0x01, 0xff, 0xff, 0xff, 0x02, 0xff,
                 0xff, 0xff, 0x03
             ],
-            PA::Communities(Communities(StandardCommunitiesList::new(
-                vec!["AS42:518".parse().unwrap(),
-                    Wellknown::NoExport.into(),
-                    Wellknown::NoAdvertise.into(),
-                    Wellknown::NoExportSubconfed.into(),
-                ]
-            )))
+            {
+                let mut builder = StandardCommunitiesBuilder::new();
+                builder.add_community("AS42:518".parse().unwrap());
+                builder.add_community(Wellknown::NoExport.into());
+                builder.add_community(Wellknown::NoAdvertise.into());
+                builder.add_community(Wellknown::NoExportSubconfed.into());
+                PA::Communities(Communities(builder))
+            }
+            //PA::Communities(Communities(StandardCommunitiesList::new(
+            //    vec!["AS42:518".parse().unwrap(),
+            //        Wellknown::NoExport.into(),
+            //        Wellknown::NoAdvertise.into(),
+            //        Wellknown::NoExportSubconfed.into(),
+            //    ]
+            //)))
         );
 
         check(

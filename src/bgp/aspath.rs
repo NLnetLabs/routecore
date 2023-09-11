@@ -454,30 +454,6 @@ impl<Octs: AsRef<[u8]>> AsPath<Octs> {
             len + 3
         }
     }
-
-    pub(crate) fn compose<Target: OctetsBuilder>(self, target: &mut Target)
-        -> Result<(), Target::AppendError>
-    {
-        let value = self.into_inner();
-        let value_len = value.as_ref().len();
-        // XXX the length check is done `set_aspath`, but there is guarantee
-        // we went via that code path.
-        // Perhaps this means we do need a AsPath attribute wrapper (newtype)
-        // in the new_pas module, so we can distinguish between AsPath/HopPath
-        // and the Path Attribute containing them. 
-        if value_len > 255 {
-            let len_raw = u16::try_from(value_len).unwrap();
-            target.append_slice(&[0b0101_0000, 2])?;
-            target.append_slice(&len_raw.to_be_bytes())?;
-        } else {
-            let len_raw = u8::try_from(value_len).unwrap();
-            target.append_slice(&[0b0100_0000, 2])?;
-            target.append_slice(&[len_raw])?;
-        }
-        let _ = target.append_slice(value.as_ref());
-
-        Ok(())
-    }
 }
 
 impl AsPath<Vec<u8>> {
