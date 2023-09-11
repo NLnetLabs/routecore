@@ -86,23 +86,18 @@ impl<Target: OctetsBuilder> UpdateBuilder<Target> {
 
         // Add all path attributes, except for MP_(UN)REACH_NLRI, ordered by
         // their typecode.
-        pdu.new_path_attributes()?
-            .filter(|pa|
-                if let Ok(pa) = pa {
-                    pa.typecode() != PathAttributeType::MpReachNlri
+        for pa in pdu.new_path_attributes()? {
+            if let Ok(pa) = pa {
+                if pa.typecode() != PathAttributeType::MpReachNlri
                     && pa.typecode() != PathAttributeType::MpUnreachNlri
-                } else {
-                    // XXX we actually want to return Err but we are
-                    // in this FnMut...
-                    eprintln!("Err in filter()");
-                    false
+                {
+                    builder.add_attribute(pa.to_owned()?)?;
                 }
-            )
-            .try_for_each(|pa|
-                // We know pa is Ok() because of the .filter() above,
-                // so we can safely unwrap().
-                builder.add_attribute(pa.unwrap().to_owned()?)
-            )?;
+            } else {
+                return Err(ComposeError::InvalidAttribute);
+            }
+        }
+
 
         Ok(builder)
     }
