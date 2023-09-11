@@ -20,7 +20,6 @@ use crate::util::parser::ParseError;
 
 use crate::bgp::path_attributes as new_pas;
 use new_pas::{PathAttribute, PathAttributeType};
-use new_pas::Attribute; // trait
 
 //------------ UpdateBuilder -------------------------------------------------
 #[derive(Debug)]
@@ -1151,7 +1150,7 @@ pub enum ComposeError{
     EmptyMpUnreachNlri,
     WrongAddressType,
 
-    InvalidAttribute,
+    InvalidAttribute, // XXX perhaps carry the typecode here?
 
     /// Variant for `octseq::builder::ShortBuf`
     ShortBuf,
