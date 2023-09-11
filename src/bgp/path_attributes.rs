@@ -386,7 +386,6 @@ path_attributes!(
     5   => LocalPref(u32), Flags::WELLKNOWN,
     6   => AtomicAggregate(()), Flags::WELLKNOWN,
     7   => Aggregator(AggregatorInfo), Flags::OPT_TRANS,
-    //8   => Communities(StandardCommunitiesList), Flags::OPT_TRANS,
     8   => Communities(StandardCommunitiesBuilder), Flags::OPT_TRANS,
     9   => OriginatorId(Ipv4Addr), Flags::OPT_NON_TRANS,
     10  => ClusterList(ClusterIds), Flags::OPT_NON_TRANS,

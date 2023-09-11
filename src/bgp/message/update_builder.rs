@@ -37,7 +37,6 @@ pub struct UpdateBuilder<Target> {
     // attributes:
     //attributes: Vec<new_pas::PathAttribute>,
     attributes: BTreeMap<PathAttributeType, new_pas::PathAttribute>,
-    nexthop: Option<new_pas::NextHop>,
 
     //standard_communities_builder: Option<StandardCommunitiesBuilder>,
 
@@ -76,7 +75,6 @@ impl<Target: OctetsBuilder> UpdateBuilder<Target> {
 
             //attributes:
             attributes: BTreeMap::new(),
-            nexthop: None,
             //standard_communities_builder: None,
 
             attributes_len: 0,
@@ -295,17 +293,7 @@ impl<Target: OctetsBuilder> UpdateBuilder<Target> {
         // - we update/create a MpReachNlriBuilder (IPv6)
         match addr {
             IpAddr::V4(a) => {
-                if self.nexthop.is_none() {
-                    // NEXT_HOP path attribute is 7 bytes long.
-                    let new_total = self.total_pdu_len + 7;
-                    if new_total > Self::MAX_PDU {
-                        return Err(ComposeError::PduTooLarge(new_total));
-                    } else {
-                        self.total_pdu_len = new_total;
-                        self.attributes_len += 7
-                    }
-                    self.nexthop = Some(new_pas::NextHop::new(a));
-                }
+                self.add_attribute(new_pas::NextHop::new(a).into())?;
             }
             IpAddr::V6(a) => {
                 if let Some(ref mut builder) = self.mp_reach_nlri_builder {
@@ -768,11 +756,6 @@ where
             |(_tc, pa)| pa.compose(&mut self.target)
         ) {
             unreachable!("{e}");
-        }
-
-
-        if let Some(nexthop) = self.nexthop {
-            nexthop.compose(&mut self.target)?
         }
 
         if let Some(builder) = self.mp_reach_nlri_builder {
