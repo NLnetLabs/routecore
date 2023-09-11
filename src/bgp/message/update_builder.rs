@@ -124,7 +124,6 @@ impl<Target: OctetsBuilder> UpdateBuilder<Target> {
     pub fn add_withdrawal(&mut self, withdrawal: &Nlri<Vec<u8>>)
         -> Result<(), ComposeError>
     {
-        //println!("add_withdrawal for {}", withdrawal.prefix().unwrap());
         match *withdrawal {
             Nlri::Unicast(b) => {
                 if b.is_v4() {
@@ -147,43 +146,45 @@ impl<Target: OctetsBuilder> UpdateBuilder<Target> {
                 } else {
                     // Nlri::Unicast only holds IPv4 and IPv6, so this must be
                     // IPv6.
-                    let new_bytes_num = match self.mp_unreach_nlri_builder {
-                        None => {
-                            let builder = MpUnreachNlriBuilder::new(
-                                AFI::Ipv6, SAFI::Unicast,
-                                b.is_addpath()
-                            );
-                            let res = builder.compose_len(withdrawal);
-                            self.mp_unreach_nlri_builder = Some(builder);
-                            res
-                            
-                        }
-                        Some(ref builder) => {
-                            if !builder.valid_combination(
-                                AFI::Ipv6, SAFI::Unicast, b.is_addpath()
-                            ) {
-                                // We are already constructing a
-                                // MP_UNREACH_NLRI but for a different
-                                // AFI,SAFI than the prefix in `withdrawal`,
-                                // or we are mixing addpath with non-addpath.
-                                return Err(ComposeError::IllegalCombination);
-                            }
-                            builder.compose_len(withdrawal)
-                        }
-                    };
 
-                    let new_total = self.total_pdu_len + new_bytes_num;
-
-                    if new_total > Self::MAX_PDU {
-                        return Err(ComposeError::PduTooLarge(new_total));
+                    // Check if we have an attribute in self.attributes
+                    // XXX again, like with Communities, we cant rely on
+                    // entry().or_insert(), because that does not do a max pdu
+                    // length check and it does not allow us to error out.
+                    
+                    if !self.attributes.contains_key(&PathAttributeType::MpUnreachNlri) {
+                        self.add_attribute(new_pas::MpUnreachNlri::new(
+                                MpUnreachNlriBuilder::new(
+                                    AFI::Ipv6, SAFI::Unicast,
+                                    b.is_addpath()
+                                )
+                        ).into())?;
                     }
+                    let pa = self.attributes.get_mut(&PathAttributeType::MpUnreachNlri)
+                        .unwrap(); // Just added it, so we know it is there.
+            
+                    if let PathAttribute::MpUnreachNlri(ref mut pa) = pa {
+                        let builder = pa.as_mut();
 
-                    if let Some(ref mut builder) = self.mp_unreach_nlri_builder {
+                        let new_bytes = builder.compose_len(withdrawal);
+                        let new_total = self.total_pdu_len + new_bytes;
+                        if new_total > Self::MAX_PDU {
+                            return Err(ComposeError::PduTooLarge(new_total));
+                        }
+                        if !builder.valid_combination(
+                            AFI::Ipv6, SAFI::Unicast, b.is_addpath()
+                        ) {
+                            // We are already constructing a
+                            // MP_UNREACH_NLRI but for a different
+                            // AFI,SAFI than the prefix in `withdrawal`,
+                            // or we are mixing addpath with non-addpath.
+                            return Err(ComposeError::IllegalCombination);
+                        }
+
                         builder.add_withdrawal(withdrawal);
-                        self.attributes_len += new_bytes_num;
                         self.total_pdu_len = new_total;
+                        self.attributes_len += new_bytes;
                     } else {
-                        // We always have Some builder at this point.
                         unreachable!()
                     }
                 }
@@ -762,10 +763,6 @@ where
             builder.compose(&mut self.target)?
         }
 
-        if let Some(builder) = self.mp_unreach_nlri_builder {
-            builder.compose(&mut self.target)?
-        }
-
         // XXX Here, in the conventional NLRI field at the end of the PDU, we
         // write IPv4 Unicast announcements. But what if we have agreed to do
         // MP for v4/unicast, should these announcements go in the
@@ -1102,12 +1099,6 @@ impl MpUnreachNlriBuilder {
 
     pub(crate) fn compose_len(&self, withdrawal: &Nlri<Vec<u8>>) -> usize {
         let withdrawal_len = withdrawal.compose_len();
-        if self.withdrawals.is_empty() {
-            // First withdrawal to be added, so the total number of
-            // required octets includes the path attribute flags and
-            // length, and the AFI/SAFI.
-            return withdrawal_len + 3 + 3;
-        }
 
         if !self.extended && self.len + withdrawal_len > 255 {
             // Adding this withdrawal would make the path attribute exceed
@@ -1503,7 +1494,7 @@ mod tests {
     }
 
     #[test]
-    fn build_withdrawals_basic_v6() {
+    fn build_withdrawals_basic_v6_single() {
         let mut builder = UpdateBuilder::new_vec();
         let mut withdrawals = vec![
             Nlri::unicast_from_str("2001:db8::/32").unwrap()
