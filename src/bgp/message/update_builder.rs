@@ -131,11 +131,13 @@ impl<Target: OctetsBuilder> UpdateBuilder<Target> {
                     // IPv6.
 
                     // Check if we have an attribute in self.attributes
-                    // XXX again, like with Communities, we cant rely on
+                    // Again, like with Communities, we cant rely on
                     // entry().or_insert(), because that does not do a max pdu
                     // length check and it does not allow us to error out.
                     
-                    if !self.attributes.contains_key(&PathAttributeType::MpUnreachNlri) {
+                    if !self.attributes.contains_key(
+                        &PathAttributeType::MpUnreachNlri
+                    ) {
                         self.add_attribute(new_pas::MpUnreachNlri::new(
                                 MpUnreachNlriBuilder::new(
                                     AFI::Ipv6, SAFI::Unicast,
@@ -173,7 +175,7 @@ impl<Target: OctetsBuilder> UpdateBuilder<Target> {
                 }
 
             }
-            _ => todo!() // TODO use the MpUnreachNlriBuilder for these
+            _ => todo!() // TODO 
         };
         Ok(())
     }
@@ -249,9 +251,6 @@ impl<Target: OctetsBuilder> UpdateBuilder<Target> {
         self.add_attribute(new_pas::Origin::new(origin).into())
     }
 
-    // TODO make all fn set_* like set_origin
-
-    //pub fn set_aspath<Octs>(&mut self , aspath: AsPath<Vec<u8>>)
     pub fn set_aspath(&mut self , aspath: HopPath)
         -> Result<(), ComposeError>
     {
@@ -304,8 +303,8 @@ impl<Target: OctetsBuilder> UpdateBuilder<Target> {
     pub fn set_nexthop_ll(&mut self, addr: Ipv6Addr)
         -> Result<(), ComposeError>
     {
-        // XXX We could/should check for addr.is_unicast_link_local() once
-        // that lands in stable.
+        // We could/should check for addr.is_unicast_link_local() once that
+        // lands in stable.
         
         if let Some(ref mut pa) = self.attributes.get_mut(
             &PathAttributeType::MpReachNlri
@@ -720,20 +719,14 @@ where
 
 
 
-        // XXX we can do these unwraps because of the checks in the add/append
-        // methods
+        // We can do these unwraps because of the checks in the add/append
+        // methods.
 
         // attributes_len` is checked to be <= 4096 or <= 65535
         // so it will always fit in a u16.
         let _ = self.target.append_slice(
             &u16::try_from(self.attributes_len).unwrap().to_be_bytes()
         );
-
-        // TODO make sure we write attributes ordered by typecode
-        // TODO deal with possible overlaps of Origin, AsPath, NextHop etc for
-        // which we currently have Option<_> as fields on the UpdateBuilder.
-        // Perhaps we could say using those Option<_> fields means to
-        // overwrite any of the other attributes in self.attributes?
 
         // XXX again them struggles with Target::AppendError and converting..
         if let Err(e) = self.attributes.iter().try_for_each(
@@ -757,7 +750,7 @@ where
                         // attributes.
                     }
                 },
-                _ => todo!(),
+                _ => unreachable!(),
             }
         }
 
@@ -1807,11 +1800,6 @@ mod tests {
 
     #[test]
     fn build_ordered_attributes() {
-        //TODO check that built PDUs have their path attributes ordered by
-        //typecode. This might be especially tricky when
-        //announcements/withdrawals end up in the MP_(UN)REACH_NLRI attributes
-        //and where communities come from the CommunityBuilders.
-
         let mut builder = UpdateBuilder::new_vec();
         builder.add_community(
             StandardCommunity::from_str("AS1234:999").unwrap()
