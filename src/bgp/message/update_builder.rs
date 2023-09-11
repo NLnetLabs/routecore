@@ -906,11 +906,6 @@ impl MpReachNlriBuilder {
         //Ok(())
     }
 
-    pub(crate) fn compose_len_empty(&self) -> usize {
-        3 + 3 + self.nexthop.compose_len() + 1
-    }
-
-
     pub(crate) fn compose_len(&self, announcement: &Nlri<Vec<u8>>) -> usize {
         let announcement_len = announcement.compose_len();
         if !self.extended && self.len + announcement_len > 255 {
@@ -947,44 +942,10 @@ impl MpReachNlriBuilder {
                 _ => unreachable!()
             }
         }
+
         Ok(())
     }
 
-    // XXX can we get rid of this once MpReachNlri is supported in the new_pas
-    // PathAttribute enum?
-    pub(crate) fn compose<Target: OctetsBuilder>(&self, target: &mut Target)
-        -> Result<(), Target::AppendError>
-    {
-        let len = self.len.to_be_bytes();
-
-        if self.extended {
-            // FIXME this assumes usize is 64bits
-            target.append_slice(&[0b1001_0000, 14, len[6], len[7]])
-        } else {
-            target.append_slice(&[0b1000_0000, 14, len[7]])
-        }?;
-
-        target.append_slice(&u16::from(self.afi).to_be_bytes())?;
-        target.append_slice(&[self.safi.into()])?;
-        self.nexthop.compose(target)?;
-
-        // Reserved byte:
-        target.append_slice(&[0x00])?;
-
-        for w in &self.announcements {
-            match w {
-                Nlri::Unicast(b) => {
-                    if !b.is_v4() {
-                        b.compose(target)?;
-                    } else {
-                        unreachable!();
-                    }
-                }
-                _ => unreachable!()
-            }
-        }
-        Ok(())
-    }
 }
 
 // **NB:** This is bgp::message::update::NextHop, _not_ new_pas::NextHop
@@ -1118,38 +1079,10 @@ impl MpUnreachNlriBuilder {
                 _ => unreachable!()
             }
         }
+
         Ok(())
     }
 
-    pub(crate) fn compose<Target: OctetsBuilder>(&self, target: &mut Target)
-        -> Result<(), Target::AppendError>
-    {
-        let len = self.len.to_be_bytes();
-
-        if self.extended {
-            // FIXME this assumes usize is 64bits
-            target.append_slice(&[0b1001_0000, 15, len[6], len[7]])
-        } else {
-            target.append_slice(&[0b1000_0000, 15, len[7]])
-        }?;
-
-        target.append_slice(&u16::from(self.afi).to_be_bytes())?;
-        target.append_slice(&[self.safi.into()])?;
-
-        for w in &self.withdrawals {
-            match w {
-                Nlri::Unicast(b) => {
-                    if !b.is_v4() {
-                        b.compose(target)?;
-                    } else {
-                        unreachable!();
-                    }
-                }
-                _ => unreachable!()
-            }
-        }
-        Ok(())
-    }
 }
 
 //------------ StandardCommunitiesBuilder ------------------------------------
