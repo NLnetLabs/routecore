@@ -51,7 +51,6 @@ pub struct UpdateBuilder<Target> {
     // Question is: can one also put (v4, unicast) in an MP_* attribute, and,
     // then also in the conventional part (at the end of the PDU)? 
     mp_reach_nlri_builder: Option<MpReachNlriBuilder>,
-    mp_unreach_nlri_builder: Option<MpUnreachNlriBuilder>,
 }
 
 impl<Target: OctetsBuilder> UpdateBuilder<Target> {
@@ -80,7 +79,6 @@ impl<Target: OctetsBuilder> UpdateBuilder<Target> {
             attributes_len: 0,
             total_pdu_len: 19 + 2 + 2,
             mp_reach_nlri_builder: None,
-            mp_unreach_nlri_builder: None,
         })
     }
 
@@ -699,11 +697,13 @@ where
                 return Err(ComposeError::EmptyMpReachNlri);
             }
         }
-        if let Some(ref builder) = self.mp_unreach_nlri_builder {
-            if builder.is_empty() {
-                return Err(ComposeError::EmptyMpUnreachNlri);
-            }
-        }
+        // FIXME now that we moved the MpUnreachNlriBuilder into the attributes
+        // BTreeMap
+        //if let Some(ref builder) = self.mp_unreach_nlri_builder {
+        //    if builder.is_empty() {
+        //        return Err(ComposeError::EmptyMpUnreachNlri);
+        //    }
+        //}
 
         Ok(())
     }
