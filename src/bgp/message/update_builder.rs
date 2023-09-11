@@ -43,14 +43,6 @@ pub struct UpdateBuilder<Target> {
     attributes_len: usize,
     total_pdu_len: usize,
 
-    // MP_REACH_NLRI and MP_UNREACH_NLRI can only occur once (like any path
-    // attribute), and can carry only a single tuple of (AFI, SAFI).
-    // My interpretation of RFC4760 means one can mix conventional
-    // NLRI/withdrawals (so, v4 unicast) with one other (AFI, SAFI) in an
-    // MP_(UN)REACH_NLRI path attribute.
-    // Question is: can one also put (v4, unicast) in an MP_* attribute, and,
-    // then also in the conventional part (at the end of the PDU)? 
-    mp_reach_nlri_builder: Option<MpReachNlriBuilder>,
 }
 
 impl<Target: OctetsBuilder> UpdateBuilder<Target> {
@@ -78,7 +70,6 @@ impl<Target: OctetsBuilder> UpdateBuilder<Target> {
 
             attributes_len: 0,
             total_pdu_len: 19 + 2 + 2,
-            mp_reach_nlri_builder: None,
         })
     }
 
@@ -295,25 +286,21 @@ impl<Target: OctetsBuilder> UpdateBuilder<Target> {
                 self.add_attribute(new_pas::NextHop::new(a).into())?;
             }
             IpAddr::V6(a) => {
-                if let Some(ref mut builder) = self.mp_reach_nlri_builder {
-                    // Given that we have a builder, there is already either a
-                    // NextHop::Ipv6 or a NextHop::Ipv6LL. Setting the
-                    // non-link-local address does not change the length of
-                    // the next hop part, so there is no need to update the
-                    // total_pdu_len and the attributes_len.
-                    builder.set_nexthop(a);
-                } else {
-                    let builder = MpReachNlriBuilder::new(
-                        AFI::Ipv6, SAFI::Unicast, NextHop::Ipv6(a), false
-                        );
-                    let new_bytes = builder.compose_len_empty();
-                    let new_total = self.total_pdu_len + new_bytes;
-                    if new_total > Self::MAX_PDU {
-                        return Err(ComposeError::PduTooLarge(new_total));
+                if let Some(ref mut pa) = self.attributes.get_mut(
+                    &PathAttributeType::MpReachNlri
+                ) {
+                    if let PathAttribute::MpReachNlri(ref mut pa) = pa {
+                        let builder = pa.as_mut();
+                        builder.set_nexthop(a);
+                    } else {
+                        unreachable!()
                     }
-                    self.attributes_len += new_bytes;
-                    self.total_pdu_len = new_total;
-                    self.mp_reach_nlri_builder = Some(builder);
+                } else {
+                    self.add_attribute(new_pas::MpReachNlri::new(
+                        MpReachNlriBuilder::new(
+                            AFI::Ipv6, SAFI::Unicast, NextHop::Ipv6(a), false
+                        )
+                    ).into())?;
                 }
             }
         }
@@ -326,33 +313,34 @@ impl<Target: OctetsBuilder> UpdateBuilder<Target> {
         // XXX We could/should check for addr.is_unicast_link_local() once
         // that lands in stable.
         
-        if let Some(ref mut builder) = self.mp_reach_nlri_builder {
-            let new_bytes = match builder.get_nexthop() {
-                NextHop::Ipv6(_) => 16,
-                NextHop::Ipv6LL(_,_) => 0,
-                _ => unreachable!()
-            };
+        if let Some(ref mut pa) = self.attributes.get_mut(
+            &PathAttributeType::MpReachNlri
+        ) {
+            if let PathAttribute::MpReachNlri(ref mut pa) = pa {
+                let builder = pa.as_mut();
+                let new_bytes = match builder.get_nexthop() {
+                    NextHop::Ipv6(_) => 16,
+                    NextHop::Ipv6LL(_,_) => 0,
+                    _ => unreachable!()
+                };
 
-            let new_total = self.total_pdu_len + new_bytes;
-            if new_total > Self::MAX_PDU {
-                return Err(ComposeError::PduTooLarge(new_total));
+                let new_total = self.total_pdu_len + new_bytes;
+                if new_total > Self::MAX_PDU {
+                    return Err(ComposeError::PduTooLarge(new_total));
+                }
+                builder.set_nexthop_ll(addr);
+                self.attributes_len += new_bytes;
+                self.total_pdu_len = new_total;
+            } else {
+                unreachable!()
             }
-            builder.set_nexthop_ll(addr);
-            self.attributes_len += new_bytes;
-            self.total_pdu_len = new_total;
         } else {
-            let builder = MpReachNlriBuilder::new(
-                AFI::Ipv6, SAFI::Unicast, NextHop::Ipv6LL(0.into(), addr),
-                false
-            );
-            let new_bytes = builder.compose_len_empty();
-            let new_total = self.total_pdu_len + new_bytes;
-            if new_total > Self::MAX_PDU {
-                return Err(ComposeError::PduTooLarge(new_total));
-            }
-            self.attributes_len += new_bytes;
-            self.total_pdu_len = new_total;
-            self.mp_reach_nlri_builder = Some(builder);
+            self.add_attribute(new_pas::MpReachNlri::new(
+                MpReachNlriBuilder::new(
+                    AFI::Ipv6, SAFI::Unicast, NextHop::Ipv6LL(0.into(), addr),
+                    false
+                )
+            ).into())?;
         }
 
         Ok(())
@@ -400,55 +388,44 @@ impl<Target: OctetsBuilder> UpdateBuilder<Target> {
                     // Nlri::Unicast only holds IPv4 and IPv6, so this must be
                     // IPv6 unicast.
 
-                    let new_bytes_num = match self.mp_reach_nlri_builder {
-                        None => {
-                            let nexthop = NextHop::Ipv6(0.into());
-                            let builder = MpReachNlriBuilder::new(
+                    if !self.attributes.contains_key(&PathAttributeType::MpReachNlri) {
+                        self.add_attribute(new_pas::MpReachNlri::new(
+                            MpReachNlriBuilder::new(
                                 AFI::Ipv6, SAFI::Unicast,
-                                nexthop,
-                                b.is_addpath()
-                            );
-                            let res = builder.compose_len_empty() + 
-                                builder.compose_len(announcement);
-                            self.mp_reach_nlri_builder = Some(builder);
-                            res
-                            
-                        }
-                        Some(ref builder) => {
-                            //TODO we should allow multicast here, but then we
-                            //should also check whether a prefix is_multicast.
-                            //Similarly, should we check for is_unicast?
-                            //Or should we handle anything other than unicast
-                            //in the outer match anyway, as that is never a
-                            //conventional announcement anyway?
-                            
-                            if !builder.valid_combination(
-                                AFI::Ipv6, SAFI::Unicast, b.is_addpath()
-                            ) {
-                                return Err(ComposeError::IllegalCombination);
-                            }
-
-                            builder.compose_len(announcement)
-                        }
-                    };
-
-                    let new_total = self.total_pdu_len + new_bytes_num;
-
-                    if new_total > Self::MAX_PDU {
-                        return Err(ComposeError::PduTooLarge(new_total));
+                                NextHop::Ipv6(0.into()), b.is_addpath()
+                            )
+                        ).into())?;
                     }
+                    let pa = self.attributes.get_mut(&PathAttributeType::MpReachNlri)
+                        .unwrap(); // Just added it, so we know it is there.
+            
+                    if let PathAttribute::MpReachNlri(ref mut pa) = pa {
+                        let builder = pa.as_mut();
 
-                    if let Some(ref mut builder) = self.mp_reach_nlri_builder {
+                        let new_bytes = builder.compose_len(announcement);
+                        let new_total = self.total_pdu_len + new_bytes;
+                        if new_total > Self::MAX_PDU {
+                            return Err(ComposeError::PduTooLarge(new_total));
+                        }
+                        if !builder.valid_combination(
+                            AFI::Ipv6, SAFI::Unicast, b.is_addpath()
+                        ) {
+                            // We are already constructing a
+                            // MP_UNREACH_NLRI but for a different
+                            // AFI,SAFI than the prefix in `announcement`,
+                            // or we are mixing addpath with non-addpath.
+                            return Err(ComposeError::IllegalCombination);
+                        }
+
                         builder.add_announcement(announcement);
-                        self.attributes_len += new_bytes_num;
                         self.total_pdu_len = new_total;
+                        self.attributes_len += new_bytes;
                     } else {
-                        // We always have Some builder at this point.
                         unreachable!()
                     }
                 }
             }
-            _ => todo!() // TODO use MpReachNlriBuilder once we have that.
+            _ => todo!() // TODO
         }
 
         Ok(())
@@ -692,18 +669,30 @@ where
     fn is_valid(&self) -> Result<(), ComposeError> {
         // If we have builders for MP_(UN)REACH_NLRI, they should carry
         // prefixes.
-        if let Some(ref builder) = self.mp_reach_nlri_builder {
-            if builder.is_empty() {
-                return Err(ComposeError::EmptyMpReachNlri);
+
+        if let Some(pa) = self.attributes.get(
+            &PathAttributeType::MpReachNlri
+        ) {
+            if let PathAttribute::MpReachNlri(pa) = pa {
+                if pa.as_ref().is_empty() {
+                    return Err(ComposeError::EmptyMpReachNlri);
+                }
+            } else {
+                unreachable!()
             }
         }
-        // FIXME now that we moved the MpUnreachNlriBuilder into the attributes
-        // BTreeMap
-        //if let Some(ref builder) = self.mp_unreach_nlri_builder {
-        //    if builder.is_empty() {
-        //        return Err(ComposeError::EmptyMpUnreachNlri);
-        //    }
-        //}
+
+        if let Some(pa) = self.attributes.get(
+            &PathAttributeType::MpUnreachNlri
+        ) {
+            if let PathAttribute::MpUnreachNlri(pa) = pa {
+                if pa.as_ref().is_empty() {
+                    return Err(ComposeError::EmptyMpUnreachNlri);
+                }
+            } else {
+                unreachable!()
+            }
+        }
 
         Ok(())
     }
@@ -757,10 +746,6 @@ where
             |(_tc, pa)| pa.compose(&mut self.target)
         ) {
             unreachable!("{e}");
-        }
-
-        if let Some(builder) = self.mp_reach_nlri_builder {
-            builder.compose(&mut self.target)?
         }
 
         // XXX Here, in the conventional NLRI field at the end of the PDU, we
@@ -826,12 +811,17 @@ pub struct MpReachNlriBuilder {
 }
 
 impl MpReachNlriBuilder {
-
+    // MP_REACH_NLRI and MP_UNREACH_NLRI can only occur once (like any path
+    // attribute), and can carry only a single tuple of (AFI, SAFI).
+    // My interpretation of RFC4760 means one can mix conventional
+    // NLRI/withdrawals (so, v4 unicast) with one other (AFI, SAFI) in an
+    // MP_(UN)REACH_NLRI path attribute.
+    // Question is: can one also put (v4, unicast) in an MP_* attribute, and,
+    // then also in the conventional part (at the end of the PDU)? 
 
     // Minimal required size for a meaningful MP_REACH_NLRI. This comprises
     // the attribute flags/size/type (3 bytes), a IPv6 nexthop (17), reserved
     // byte (1) and then space for at least an IPv6 /48 announcement (7)
-    //pub const MIN_SIZE: usize = 3 + 17 + 1 + 7;
 
     pub(crate) fn new(
         afi: AFI,
@@ -1690,13 +1680,11 @@ mod tests {
         let mut builder = UpdateBuilder::new_vec();
         builder.set_origin(OriginType::Igp).unwrap();
         builder.set_nexthop("fe80:1:2:3::".parse().unwrap()).unwrap();
-        assert!(builder.mp_reach_nlri_builder.is_some());
         let path = HopPath::from([
              Asn::from_u32(100),
              Asn::from_u32(200),
              Asn::from_u32(300),
         ]);
-        //builder.set_aspath::<Vec<u8>>(path.to_as_path().unwrap()).unwrap();
         builder.set_aspath(path).unwrap();
 
         assert!(matches!(
@@ -1748,13 +1736,11 @@ mod tests {
         builder.set_origin(OriginType::Igp).unwrap();
         //builder.set_nexthop("2001:db8::1".parse().unwrap()).unwrap();
         builder.set_nexthop_ll("fe80:1:2:3::".parse().unwrap()).unwrap();
-        assert!(builder.mp_reach_nlri_builder.is_some());
         let path = HopPath::from([
              Asn::from_u32(100),
              Asn::from_u32(200),
              Asn::from_u32(300),
         ]);
-        //builder.set_aspath::<Vec<u8>>(path.to_as_path().unwrap()).unwrap();
         builder.set_aspath(path).unwrap();
 
         assert!(matches!(
