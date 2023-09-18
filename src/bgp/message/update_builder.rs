@@ -5,7 +5,7 @@ use std::net::{IpAddr, Ipv6Addr};
 use std::collections::BTreeMap;
 
 use bytes::BytesMut;
-use octseq::{FreezeBuilder, Octets, OctetsBuilder, ShortBuf};
+use octseq::{FreezeBuilder, Octets, OctetsBuilder, OctetsFrom, OctetsInto, ShortBuf};
 
 use crate::bgp::aspath::HopPath;
 use crate::bgp::communities::StandardCommunity;
@@ -79,7 +79,11 @@ impl<Target: OctetsBuilder> UpdateBuilder<Target> {
         pdu: UpdateMessage<Octs>, 
         _session_config: SessionConfig,
         target: Target
-    ) -> Result<UpdateBuilder<Target>, ComposeError> {
+    ) -> Result<UpdateBuilder<Target>, ComposeError>
+    where
+        //for <'a> Octs::Range<'a>: OctetsInto<Vec<u8>>
+        Vec<u8>: for <'b> OctetsFrom<Octs::Range<'b>>
+    {
         
         let mut builder = UpdateBuilder::from_target(target)
             .map_err(|_| ComposeError::ShortBuf)?;
@@ -104,8 +108,14 @@ impl<Target: OctetsBuilder> UpdateBuilder<Target> {
 
     //--- Withdrawals
 
-    pub fn add_withdrawal(&mut self, withdrawal: &Nlri<Vec<u8>>)
-        -> Result<(), ComposeError>
+    //pub fn add_withdrawal(&mut self, withdrawal: &Nlri<Vec<u8>>)
+    pub fn add_withdrawal<T>(
+        &mut self,
+        withdrawal: &Nlri<T>
+    ) -> Result<(), ComposeError>
+        where
+            T: OctetsInto<Vec<u8>> + AsRef<[u8]>, // + Clone,
+            Vec<u8>: From<T>
     {
         match *withdrawal {
             Nlri::Unicast(b) => {
@@ -123,7 +133,7 @@ impl<Target: OctetsBuilder> UpdateBuilder<Target> {
                     if new_total > Self::MAX_PDU {
                         return Err(ComposeError::PduTooLarge(new_total));
                     }
-                    self.withdrawals.push(withdrawal.clone());
+                    self.withdrawals.push(withdrawal.octets_into());
                     self.withdrawals_len += new_bytes_num;
                     self.total_pdu_len = new_total;
                 } else {
@@ -354,8 +364,11 @@ impl<Target: OctetsBuilder> UpdateBuilder<Target> {
 
     //--- Announcements
 
-    pub fn add_announcement(&mut self, announcement: &Nlri<Vec<u8>>)
+    pub fn add_announcement<T>(&mut self, announcement: &Nlri<T>)
         -> Result<(), ComposeError>
+    where
+        T: OctetsInto<Vec<u8>> + AsRef<[u8]>, // + Clone,
+        Vec<u8>: From<T>
     {
         match *announcement {
             Nlri::Unicast(b) => {
@@ -373,7 +386,7 @@ impl<Target: OctetsBuilder> UpdateBuilder<Target> {
                     if new_total > Self::MAX_PDU {
                         return Err(ComposeError::PduTooLarge(new_total));
                     }
-                    self.announcements.push(announcement.clone());
+                    self.announcements.push(announcement.octets_into());
                     self.announcements_len += new_bytes_num;
                     self.total_pdu_len = new_total;
                     
@@ -881,19 +894,23 @@ impl MpReachNlriBuilder {
              || self.addpath_enabled == is_addpath)
     }
 
-    pub(crate) fn add_announcement(&mut self, announcement: &Nlri<Vec<u8>>)
-        //-> Result<(), ComposeError>
+    pub(crate) fn add_announcement<T>(&mut self, announcement: &Nlri<T>)
+    where
+        //T: Into<Vec<u8>>,
+        Vec<u8>: OctetsFrom<T>,
+        //Nlri<Vec<u8>>: OctetsFrom<Nlri<T>>,
     {
         let announcement_len = announcement.compose_len();
         if !self.extended && self.len + announcement_len > 255 {
             self.extended = true;
         }
         self.len += announcement_len;
-        self.announcements.push(announcement.clone());
+        self.announcements.push(announcement.octets_into());
         //Ok(())
     }
 
-    pub(crate) fn compose_len(&self, announcement: &Nlri<Vec<u8>>) -> usize {
+    //pub(crate) fn compose_len(&self, announcement: &Nlri<Vec<u8>>) -> usize {
+    pub(crate) fn compose_len<T>(&self, announcement: &Nlri<T>) -> usize {
         let announcement_len = announcement.compose_len();
         if !self.extended && self.len + announcement_len > 255 {
             // Adding this announcement would make the path attribute exceed
@@ -1023,19 +1040,22 @@ impl MpUnreachNlriBuilder {
              || self.addpath_enabled == is_addpath)
     }
 
-    pub(crate) fn add_withdrawal(&mut self, withdrawal: &Nlri<Vec<u8>>)
-        //-> Result<(), ComposeError>
+    pub(crate) fn add_withdrawal<T>(&mut self, withdrawal: &Nlri<T>)
+    where
+        //T: OctetsInto<Vec<u8>>
+        Vec<u8>: OctetsFrom<T>
+
     {
         let withdrawal_len = withdrawal.compose_len();
         if !self.extended && self.len + withdrawal_len > 255 {
             self.extended = true;
         }
         self.len += withdrawal_len;
-        self.withdrawals.push(withdrawal.clone());
+        self.withdrawals.push(withdrawal.octets_into());
         //Ok(())
     }
 
-    pub(crate) fn compose_len(&self, withdrawal: &Nlri<Vec<u8>>) -> usize {
+    pub(crate) fn compose_len<T: AsRef<[u8]>>(&self, withdrawal: &Nlri<T>) -> usize {
         let withdrawal_len = withdrawal.compose_len();
 
         if !self.extended && self.len + withdrawal_len > 255 {
@@ -1822,6 +1842,37 @@ mod tests {
     }
 
     #[test]
+    fn parse_build_compare() {
+        fn check(raw: &[u8])
+            //where 
+            //    Vec<u8>: From<<T as Octets>::Range<'_>>
+        {
+            let sc = SessionConfig::modern();
+            let original =
+                if let Ok(msg) = UpdateMessage::from_octets(&raw, sc) {
+                    msg
+                } else {
+                    eprintln!("failed to parse input");
+                    print_pcap(&raw);
+                    return;
+                };
+
+            let target = BytesMut::new();
+            let mut builder = UpdateBuilder::from_update_message(
+                original.clone(), sc, target
+            ).unwrap();
+            for w in original.withdrawals().iter() {
+                //let _: bool = w;
+                //let w2: Nlri<Vec<u8>> = w.octets_into();
+                //builder.add_withdrawal(&w.octets_into().unwrap()).unwrap();
+                builder.add_withdrawal(&w);
+            }
+
+        }
+    }
+
+
+    #[test]
     #[allow(deprecated)]
     fn build_acs() {
         use crate::bgp::aspath::HopPath;
@@ -1858,7 +1909,4 @@ mod tests {
         let _msg = builder.build_acs(acs).unwrap();
         //print_pcap(&msg);
     }
-
-
-
 }

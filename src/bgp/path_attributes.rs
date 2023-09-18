@@ -2,7 +2,7 @@ use std::fmt;
 use std::net::Ipv4Addr;
 
 use log::debug;
-use octseq::{Octets, OctetsBuilder, Parser};
+use octseq::{Octets, OctetsBuilder, OctetsFrom, Parser};
 
 use crate::asn::Asn;
 use crate::bgp::aspath::HopPath;
@@ -263,7 +263,11 @@ macro_rules! path_attributes {
             // XXX this method is the reason we have fn parse as part of
             // the trait, forcing us the pass a SessionConfig to all of
             // the parse() implementations.
-            pub fn to_owned(&self) -> Result<PathAttribute, ParseError> {
+            pub fn to_owned(&self) -> Result<PathAttribute, ParseError>
+                where
+                    //for <'b> Octs::Range<'b>: OctetsInto<Vec<u8>>
+                    Vec<u8>: for <'b> OctetsFrom<Octs::Range<'b>>
+                {
                 match self {
                     $(
                     WireformatPathAttribute::$name(p, sc) => {
@@ -557,7 +561,11 @@ pub trait Attribute: AttributeHeader {
 
     fn parse<Octs: Octets>(parser: &mut Parser<Octs>, sc: SessionConfig) 
         -> Result<Self, ParseError>
-    where Self: Sized;
+    where 
+        Self: Sized,
+        //for <'a> Octs::Range<'a>: OctetsInto<Vec<u8>>,
+        Vec<u8>: for <'b> OctetsFrom<Octs::Range<'b>>
+    ;
     
 }
 
@@ -1031,6 +1039,9 @@ impl Attribute for MpReachNlri {
 
     fn parse<Octs: Octets>(parser: &mut Parser<Octs>, sc: SessionConfig) 
         -> Result<MpReachNlri, ParseError>
+    where
+        //for <'a> Octs::Range<'a>: OctetsInto<Vec<u8>>
+        Vec<u8>: for <'b> OctetsFrom<Octs::Range<'b>>
     {
         let afi: AFI = parser.parse_u16_be()?.into();
         let safi: SAFI = parser.parse_u8()?.into();
@@ -1053,17 +1064,10 @@ impl Attribute for MpReachNlri {
         // returns Item = Nlri<Octs::Range<'_>>.
         // Perhaps add_announcement should take Nlri<T> where T:
         // OctetsInto<Vec<u8>> or something like that?
-        use crate::bgp::message::nlri::{Nlri, BasicNlri};
+        use crate::bgp::message::nlri::Nlri;
         for nlri in nlri_iter {
             match nlri {
-                Nlri::Unicast(b) => {
-                    builder.add_announcement(
-                        &Nlri::Unicast(BasicNlri {
-                            prefix: b.prefix,
-                            path_id: b.path_id
-                        })
-                    )
-                },
+                Nlri::Unicast(_b) => { builder.add_announcement(&nlri) },
                 _ => unimplemented!()
             }
         }
@@ -1101,6 +1105,9 @@ impl Attribute for MpUnreachNlri {
 
     fn parse<Octs: Octets>(parser: &mut Parser<Octs>, sc: SessionConfig) 
         -> Result<MpUnreachNlri, ParseError>
+    where
+        //for <'a> Octs::Range<'a>: OctetsInto<Vec<u8>>
+        Vec<u8>: for <'b> OctetsFrom<Octs::Range<'b>>
     {
         let afi: AFI = parser.parse_u16_be()?.into();
         let safi: SAFI = parser.parse_u8()?.into();
@@ -1117,15 +1124,18 @@ impl Attribute for MpUnreachNlri {
 
         // FIXME
         // see note at MpReachNlri above
-        use crate::bgp::message::nlri::{Nlri, BasicNlri};
+        // FIXME can we do without the `match nlri` and just do
+        // for nlri in iter { builder.add_w(&nlri); } ?
+        use crate::bgp::message::nlri::Nlri;
         for nlri in nlri_iter {
             match nlri {
-                Nlri::Unicast(b) => {
+                Nlri::Unicast(_b) => {
                     builder.add_withdrawal(
-                        &Nlri::Unicast(BasicNlri {
-                            prefix: b.prefix,
-                            path_id: b.path_id
-                        })
+                        &nlri
+                        //&Nlri::Unicast(BasicNlri {
+                        //    prefix: b.prefix,
+                        //    path_id: b.path_id
+                        //})
                     );
                 },
                 _ => unimplemented!()
