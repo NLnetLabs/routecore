@@ -5,7 +5,7 @@ use crate::addr::Prefix;
 use crate::util::parser::{parse_ipv4addr, parse_ipv6addr, ParseError};
 use crate::bgp::message::update::{AddPath, SessionConfig};
 use crate::flowspec::Component;
-use octseq::{Octets, OctetsBuilder, Parser};
+use octseq::{Octets, OctetsBuilder, OctetsFrom, Parser};
 use log::warn;
 
 use std::fmt;
@@ -433,6 +433,38 @@ impl<Octs: Octets> fmt::Display for Nlri<Octs> {
         Ok(())
     }
 }
+
+impl<Octs, SrcOcts> OctetsFrom<Nlri<SrcOcts>> for Nlri<Octs> 
+where
+    Octs: OctetsFrom<SrcOcts>
+{
+    //type Error = Octs::Error;
+    type Error = std::convert::Infallible;
+
+    fn try_octets_from(source: Nlri<SrcOcts>) -> Result<Self, Self::Error> {
+        match source {
+            Nlri::Unicast(b) => Ok(Nlri::Unicast(b)),
+            Nlri::Multicast(b) => Ok(Nlri::Multicast(b)),
+            _ => todo!()
+        }
+    }
+}
+
+impl<'a, Octs, SrcOcts: 'a> OctetsFrom<&'a Nlri<SrcOcts>> for Nlri<Octs> 
+where
+    Octs: OctetsFrom<SrcOcts>
+{
+    type Error = std::convert::Infallible;
+
+    fn try_octets_from(source: &'a Nlri<SrcOcts>) -> Result<Self, Self::Error> {
+        match *source {
+            Nlri::Unicast(b) => Ok(Nlri::Unicast(b)),
+            Nlri::Multicast(b) => Ok(Nlri::Multicast(b)),
+            _ => todo!()
+        }
+    }
+}
+
 impl<Octets> Nlri<Octets> {
     /// Returns the MPLS [`Labels`], if any.
     ///
