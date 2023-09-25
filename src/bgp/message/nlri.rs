@@ -497,6 +497,7 @@ pub struct VplsNlri {
 #[derive(Clone, Debug)]
 pub struct FlowSpecNlri<Octets> {
     #[allow(dead_code)]
+    afi: AFI,
     raw: Octets,
 }
 
@@ -1179,7 +1180,7 @@ impl VplsNlri {
 }
 
 impl FlowSpecNlri<()> {
-    pub fn check(parser: &mut Parser<[u8]>)
+    pub fn check(parser: &mut Parser<[u8]>, afi: AFI)
         -> Result<(), ParseError>
     {
         let len1 = parser.parse_u8()?;
@@ -1190,17 +1191,25 @@ impl FlowSpecNlri<()> {
             len1 as u16
         };
         let mut pp = parser.parse_parser(len.into())?;
-        while pp.remaining() > 0 {
-            // TODO implement Component::check()
-            Component::parse(&mut pp)?;
-        }
+        match afi {
+            AFI::Ipv4 => {
+                while pp.remaining() > 0 {
+                    Component::parse(&mut pp)?;
+                }
+                Ok(())
+            }
+            AFI::Ipv6 => {
+                warn!("FlowSpec v6 not implemented yet");
+                Ok(())
+            }
+            _ => Err(ParseError::form_error("illegal AFI for FlowSpec"))
 
-        Ok(())
+        }
     }
 }
 
 impl<Octs: Octets> FlowSpecNlri<Octs> {
-    pub fn parse<'a, R>(parser: &mut Parser<'a, R>)
+    pub fn parse<'a, R>(parser: &mut Parser<'a, R>, afi: AFI)
         -> Result<Self, ParseError>
     where
         R: Octets<Range<'a> = Octs>
@@ -1213,17 +1222,32 @@ impl<Octs: Octets> FlowSpecNlri<Octs> {
         } else {
             len1 as u16
         };
-        while parser.pos() < pos + len as usize {
-            Component::parse(parser)?;
-        }
+        assert_eq!(len as usize, parser.remaining());
 
-        
+        match afi {
+            AFI::Ipv4 => {
+                while parser.pos() < pos + len as usize {
+                    Component::parse(parser)?;
+                }
+            }
+            AFI::Ipv6 => {
+                warn!("FlowSpec v6 not implemented yet, \
+                      returning unchecked NLRI"
+                );
+            }
+            _ => {
+                return Err(ParseError::form_error("illegal AFI for FlowSpec"))
+            }
+        }
+                
         let raw_len = parser.pos() - pos;
         parser.seek(pos)?;
-        let raw = parser.parse_octets(raw_len)?;
+        //let raw = parser.parse_octets(raw_len)?;
+        let raw = parser.parse_octets(len as usize)?;
 
         Ok(
             FlowSpecNlri {
+                afi,
                 raw
             }
         )

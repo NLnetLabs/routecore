@@ -1826,9 +1826,9 @@ impl<'a, Octs: Octets> NlriIterMp<'a, Octs> {
                         &mut self.parser
                 )?)
             },
-            (AFI::Ipv4, SAFI::FlowSpec) => {
+            (AFI::Ipv4 | AFI::Ipv6, SAFI::FlowSpec) => {
                 Nlri::FlowSpec(FlowSpecNlri::parse(
-                        &mut self.parser
+                        &mut self.parser, self.afi
                 )?)
             },
             (AFI::Ipv4, SAFI::RouteTarget) => {
@@ -1874,8 +1874,8 @@ impl<'a> Nlris<'a, [u8]> {
                 (AFI::L2Vpn, SAFI::Vpls) => {
                     VplsNlri::check(parser)?;
                 }
-                (AFI::Ipv4, SAFI::FlowSpec) => {
-                    FlowSpecNlri::check(parser)?;
+                (AFI::Ipv4 | AFI::Ipv6, SAFI::FlowSpec) => {
+                    FlowSpecNlri::check(parser, afi)?;
                 },
                 (AFI::Ipv4, SAFI::RouteTarget) => {
                     RouteTargetNlri::check(parser)?;
@@ -1945,8 +1945,8 @@ impl<'a, Octs: Octets> Nlris<'a, Octs> {
                 (AFI::L2Vpn, SAFI::Vpls) => {
                     VplsNlri::parse(parser)?;
                 }
-                (AFI::Ipv4, SAFI::FlowSpec) => {
-                    FlowSpecNlri::parse(parser)?;
+                (AFI::Ipv4 | AFI::Ipv6, SAFI::FlowSpec) => {
+                    FlowSpecNlri::parse(parser, afi)?;
                 },
                 (AFI::Ipv4, SAFI::RouteTarget) => {
                     RouteTargetNlri::parse(parser)?;
