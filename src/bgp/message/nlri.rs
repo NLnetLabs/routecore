@@ -669,6 +669,44 @@ impl<Octs: AsRef<[u8]>> Eq for Nlri<Octs> { }
 
 
 impl<Octets> Nlri<Octets> {
+
+    /// Returns the tuple of (AFI, SAFI) for this Nlri.
+    pub fn afi_safi(&self) -> (AFI, SAFI) {
+        match self {
+            Self::Unicast(b) => {
+                if b.is_v4() {
+                    (AFI::Ipv4, SAFI::Unicast)
+                } else {
+                    (AFI::Ipv6, SAFI::Unicast)
+                }
+            }
+            Self::Multicast(b) => {
+                if b.is_v4() {
+                    (AFI::Ipv4, SAFI::Multicast)
+                } else {
+                    (AFI::Ipv6, SAFI::Multicast)
+                }
+            }
+            Self::Mpls(n) => {
+                if n.basic.is_v4() {
+                    (AFI::Ipv4, SAFI::MplsUnicast)
+                } else {
+                    (AFI::Ipv6, SAFI::MplsUnicast)
+                }
+            }
+            Self::MplsVpn(n) => {
+                if n.basic.is_v4() {
+                    (AFI::Ipv4, SAFI::MplsVpnUnicast)
+                } else {
+                    (AFI::Ipv6, SAFI::MplsVpnUnicast)
+                }
+            }
+            Self::Vpls(_) => (AFI::L2Vpn, SAFI::Vpls),
+            Self::FlowSpec(n) => (n.afi, SAFI::FlowSpec) ,
+            Self::RouteTarget(_) => (AFI::Ipv4, SAFI::RouteTarget)
+        }
+    }
+
     /// Returns the MPLS [`Labels`], if any.
     ///
     /// Applicable to MPLS and MPLS-VPN NLRI.
