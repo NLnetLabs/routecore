@@ -53,6 +53,8 @@ pub enum ParseError {
 
     /// Required stateful information was not provided.
     StateRequired,
+
+    Unsupported,
 }
 
 impl ParseError {
@@ -83,7 +85,8 @@ impl fmt::Display for ParseError {
         match *self {
             ParseError::ShortInput => f.write_str("unexpected end of input"),
             ParseError::Form(ref err) => err.fmt(f),
-            ParseError::StateRequired => f.write_str("required stateful parsing info missing")
+            ParseError::StateRequired => f.write_str("required stateful parsing info missing"),
+            ParseError::Unsupported => f.write_str("parsing unsupported")
         }
     }
 }

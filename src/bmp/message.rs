@@ -1762,7 +1762,7 @@ mod tests {
         // NLRI
         let nlris = bgp_update.nlris();
         let mut nlris = nlris.iter();
-        if let Some(Nlri::Unicast(n1)) = nlris.next() {
+        if let Some(Ok(Nlri::Unicast(n1))) = nlris.next() {
             assert_eq!(
                 n1.prefix(),
                 Prefix::from_str("10.10.10.2/32").unwrap()

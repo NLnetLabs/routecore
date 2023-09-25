@@ -75,14 +75,13 @@ impl<Target: OctetsBuilder> UpdateBuilder<Target> {
     /// Creates an UpdateBuilder with Path Attributes from an UpdateMessage
     ///
     ///
-    pub fn from_update_message<Octs: Octets>(
-        pdu: UpdateMessage<Octs>, 
+    pub fn from_update_message<'a, Octs: 'a + Octets>(
+        pdu: &'a UpdateMessage<Octs>, 
         _session_config: SessionConfig,
         target: Target
     ) -> Result<UpdateBuilder<Target>, ComposeError>
     where
-        //for <'a> Octs::Range<'a>: OctetsInto<Vec<u8>>
-        Vec<u8>: for <'b> OctetsFrom<Octs::Range<'b>>
+        Vec<u8>: OctetsFrom<Octs::Range<'a>>
     {
         
         let mut builder = UpdateBuilder::from_target(target)
@@ -102,7 +101,6 @@ impl<Target: OctetsBuilder> UpdateBuilder<Target> {
             }
         }
 
-
         Ok(builder)
     }
 
@@ -114,8 +112,7 @@ impl<Target: OctetsBuilder> UpdateBuilder<Target> {
         withdrawal: &Nlri<T>
     ) -> Result<(), ComposeError>
         where
-            T: OctetsInto<Vec<u8>> + AsRef<[u8]>, // + Clone,
-            Vec<u8>: From<T>
+            Vec<u8>: OctetsFrom<T>
     {
         match *withdrawal {
             Nlri::Unicast(b) => {
@@ -203,13 +200,14 @@ impl<Target: OctetsBuilder> UpdateBuilder<Target> {
         Ok(())
     }
 
-    pub fn append_withdrawals(&mut self, withdrawals: &mut Vec<Nlri<Vec<u8>>>)
+    pub fn append_withdrawals<T>(&mut self, withdrawals: &mut Vec<Nlri<T>>)
         -> Result<(), ComposeError>
+    where
+        Vec<u8>: OctetsFrom<T>,
     {
         for (idx, w) in withdrawals.iter().enumerate() {
             if let Err(e) = self.add_withdrawal(w) {
-
-                *withdrawals = withdrawals[idx..].to_vec();
+                withdrawals.drain(..idx);
                 return Err(e);
             }
         }
@@ -367,8 +365,7 @@ impl<Target: OctetsBuilder> UpdateBuilder<Target> {
     pub fn add_announcement<T>(&mut self, announcement: &Nlri<T>)
         -> Result<(), ComposeError>
     where
-        T: OctetsInto<Vec<u8>> + AsRef<[u8]>, // + Clone,
-        Vec<u8>: From<T>
+        Vec<u8>: OctetsFrom<T>
     {
         match *announcement {
             Nlri::Unicast(b) => {
@@ -431,16 +428,24 @@ impl<Target: OctetsBuilder> UpdateBuilder<Target> {
                     }
                 }
             }
-            _ => todo!() // TODO
+            _ => {
+                // TODO: handle other cases.
+                // Most likely, we need to split up the above and make that
+                // 'else' clause handle everything other than conventional v4
+                // unicast announcements.
+                return Err(ComposeError::todo())
+            }
         }
 
         Ok(())
     }
 
-    pub fn announcements_from_iter<I>(
+    pub fn announcements_from_iter<I, T>(
         &mut self, announcements: &mut Peekable<I>
     ) -> Result<(), ComposeError>
-        where I: Iterator<Item = Nlri<Vec<u8>>>
+    where
+        I: Iterator<Item = Nlri<T>>,
+        Vec<u8>: OctetsFrom<T>
     {
         while let Some(a) = announcements.peek() {
             match self.add_announcement(a) {
@@ -481,6 +486,7 @@ impl<Target: OctetsBuilder> UpdateBuilder<Target> {
     }
 }
 
+/*
 impl<Target: OctetsBuilder + AsMut<[u8]>> UpdateBuilder<Target>
 where Infallible: From<<Target as OctetsBuilder>::AppendError>
 {
@@ -651,6 +657,7 @@ where Infallible: From<<Target as OctetsBuilder>::AppendError>
         Ok(self.target)
     }
 }
+*/
 
 impl<Target> UpdateBuilder<Target>
 where
@@ -1055,7 +1062,7 @@ impl MpUnreachNlriBuilder {
         //Ok(())
     }
 
-    pub(crate) fn compose_len<T: AsRef<[u8]>>(&self, withdrawal: &Nlri<T>) -> usize {
+    pub(crate) fn compose_len<T>(&self, withdrawal: &Nlri<T>) -> usize {
         let withdrawal_len = withdrawal.compose_len();
 
         if !self.extended && self.len + withdrawal_len > 255 {
@@ -1163,7 +1170,15 @@ pub enum ComposeError{
     /// Variant for `octseq::builder::ShortBuf`
     ShortBuf,
     /// Wrapper for util::parser::ParseError, used in `fn into_message`
-    ParseError(ParseError)
+    ParseError(ParseError),
+
+    Todo,
+}
+
+impl ComposeError {
+    fn todo() -> Self {
+        ComposeError::Todo
+    }
 }
 
 impl From<ShortBuf> for ComposeError {
@@ -1213,6 +1228,9 @@ impl fmt::Display for ComposeError {
             }
             ComposeError::ParseError(pe) => {
                 write!(f, "parse error in builder: {}", pe)
+            }
+            ComposeError::Todo => {
+                write!(f, "not implemented yet")
             }
 
         }
@@ -1326,7 +1344,7 @@ mod tests {
             "10.0.0.0/7",
             "10.0.0.0/8",
             "10.0.0.0/9",
-        ].map(|s| Nlri::unicast_from_str(s).unwrap().into())
+        ].map(|s| Nlri::unicast_from_str(s).unwrap().octets_into())
          .into_iter()
          .collect::<Vec<_>>();
 
@@ -1410,7 +1428,7 @@ mod tests {
             "10.0.0.0/7",
             "10.0.0.0/8",
             "10.0.0.0/9",
-        ].iter().enumerate().map(|(idx, s)| Nlri::Unicast(BasicNlri {
+        ].iter().enumerate().map(|(idx, s)| Nlri::<&[u8]>::Unicast(BasicNlri {
             prefix: Prefix::from_str(s).unwrap(),
             path_id: Some(PathId::from_u32(idx.try_into().unwrap()))})
         ).collect::<Vec<_>>();
@@ -1484,7 +1502,7 @@ mod tests {
             &Nlri::unicast_from_str("10.0.0.0/8").unwrap()
         ).unwrap();
         let res = builder.add_withdrawal(
-            &Nlri::Unicast(
+            &Nlri::<&[u8]>::Unicast(
                 (Prefix::from_str("10.0.0.0/8").unwrap(),
                 Some(PathId::from_u32(123))
                 ).into())
@@ -1500,7 +1518,7 @@ mod tests {
             &Nlri::unicast_from_str("2001:db8::/32").unwrap()
         ).unwrap();
         let res = builder.add_withdrawal(
-            &Nlri::Unicast(
+            &Nlri::<&[u8]>::Unicast(
                 (Prefix::from_str("2001:db8::/32").unwrap(),
                 Some(PathId::from_u32(123))
                 ).into())
@@ -1516,7 +1534,7 @@ mod tests {
             &Nlri::unicast_from_str("10.0.0.0/8").unwrap()
         ).unwrap();
         let res = builder.add_withdrawal(
-            &Nlri::Unicast(
+            &Nlri::<&[u8]>::Unicast(
                 (Prefix::from_str("2001:db8::/32").unwrap(),
                 Some(PathId::from_u32(123))
                 ).into())
@@ -1766,7 +1784,7 @@ mod tests {
         let sc = SessionConfig::modern();
         let upd = UpdateMessage::from_octets(&raw, sc).unwrap();
         let target = BytesMut::new();
-        let mut builder = UpdateBuilder::from_update_message(upd, sc, target).unwrap();
+        let mut builder = UpdateBuilder::from_update_message(&upd, sc, target).unwrap();
 
         assert_eq!(builder.attributes.len(), 4);
 
@@ -1799,7 +1817,7 @@ mod tests {
             eprintln!("{:?}", pa.unwrap().to_owned().unwrap());
         }
         let target = BytesMut::new();
-        let mut builder = UpdateBuilder::from_update_message(upd, sc, target).unwrap();
+        let mut builder = UpdateBuilder::from_update_message(&upd, sc, target).unwrap();
 
         
         assert_eq!(builder.attributes.len(), 4);
@@ -1843,35 +1861,83 @@ mod tests {
 
     #[test]
     fn parse_build_compare() {
-        fn check(raw: &[u8])
-            //where 
-            //    Vec<u8>: From<<T as Octets>::Range<'_>>
-        {
+        // TODO also do fn check(raw: Bytes)
+        fn check(raw: &[u8]) {
             let sc = SessionConfig::modern();
             let original =
-                if let Ok(msg) = UpdateMessage::from_octets(&raw, sc) {
-                    msg
-                } else {
-                    eprintln!("failed to parse input");
+                match UpdateMessage::from_octets(&raw, sc) {
+                Ok(msg) => msg,// UpdateMessage::from_octets(&raw, sc) {
+                Err(e) => {
+                    eprintln!("failed to parse input: {e:?}");
                     print_pcap(&raw);
-                    return;
+                    panic!();
+                }
                 };
 
             let target = BytesMut::new();
             let mut builder = UpdateBuilder::from_update_message(
-                original.clone(), sc, target
+                &original, sc, target
             ).unwrap();
             for w in original.withdrawals().iter() {
-                //let _: bool = w;
-                //let w2: Nlri<Vec<u8>> = w.octets_into();
-                //builder.add_withdrawal(&w.octets_into().unwrap()).unwrap();
-                builder.add_withdrawal(&w);
+                builder.add_withdrawal(&w).unwrap();
+            }
+            //for a in original.unicast_announcements() {
+            //for a in original.announcements().unwrap() {
+            //    builder.add_announcement(&a.unwrap()).unwrap();
+            //}
+            for a in original.nlris().iter() {
+                builder.add_announcement(&a.unwrap()).unwrap();
             }
 
+            let composed = builder.into_message().unwrap();
+            assert_eq!(raw, composed.as_ref());
         }
+        check(&[
+        // BGP UPDATE, single conventional announcement, MultiExitDisc
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0x00, 0x37, 0x02, 0x00, 0x00, 0x00, 0x1b, 0x40,
+            0x01, 0x01, 0x00, 0x40, 0x02, 0x06, 0x02, 0x01,
+            0x00, 0x01, 0x00, 0x00, 0x40, 0x03, 0x04, 0x0a,
+            0xff, 0x00, 0x65, 0x80, 0x04, 0x04, 0x00, 0x00,
+            0x00, 0x01, 0x20, 0x0a, 0x0a, 0x0a, 0x02
+        ]);
+
+        // TODO
+        /*
+        check(&[
+            // BGP UPDATE, Ipv4 FlowSpec, empty AS_PATH, ext communities
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0x00, 0x46, 0x02, 0x00, 0x00, 0x00, 0x2f, 0x90,
+            0x0e, 0x00, 0x12, 0x00, 0x01, 0x85, 0x00, 0x00,
+            0x0c, 0x07, 0x81, 0x08, 0x08, 0x81, 0x00, 0x0b,
+            0x81, 0x08, 0x0c, 0x81, 0x01, 0x40, 0x01, 0x01,
+            0x00, 0x40, 0x02, 0x00, 0x40, 0x05, 0x04, 0x00,
+            0x00, 0x00, 0x64, 0xc0, 0x10, 0x08, 0x80, 0x09,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x10
+        ]);
+        */
+
+        check(&[
+            // BGP UPDATE, IPv4 Multicast, NEXT_HOP, et al.
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0x00, 0x52, 0x02, 0x00, 0x00, 0x00, 0x3b, 0x80,
+            0x0e, 0x1d, 0x00, 0x01, 0x02, 0x04, 0x0a, 0x09,
+            0x0a, 0x09, 0x00, 0x1a, 0xc6, 0x33, 0x64, 0x00,
+            0x1a, 0xc6, 0x33, 0x64, 0x40, 0x1a, 0xc6, 0x33,
+            0x64, 0x80, 0x1a, 0xc6, 0x33, 0x64, 0xc0, 0x40,
+            0x01, 0x01, 0x00, 0x40, 0x02, 0x06, 0x02, 0x01,
+            0x00, 0x00, 0x01, 0xf4, 0x40, 0x03, 0x04, 0x0a,
+            0x09, 0x0a, 0x09, 0x80, 0x04, 0x04, 0x00, 0x00,
+            0x00, 0x00
+        ]);
+
     }
 
 
+/*
     #[test]
     #[allow(deprecated)]
     fn build_acs() {
@@ -1909,4 +1975,5 @@ mod tests {
         let _msg = builder.build_acs(acs).unwrap();
         //print_pcap(&msg);
     }
+*/
 }

@@ -14,6 +14,137 @@ use std::net::IpAddr;
 #[cfg(feature = "serde")]
 use serde::{Serialize, Deserialize};
 
+
+//------------ FixedNlriIter -------------------------------------------------
+//
+// This is an alternative iterator for parsing wireformat encoded NLRI. Where
+// the 'normal' iterator will match on afi/safi every time next() is called,
+// the FixedNlriIter is generic over a type implementing AfiSafiParse. That
+// trait has explicit implementations for every afi/safi pair, so the whole
+// matching is lifted up one level.
+// The normal iterator is nicer in terms of API, the fixed one might be a bit
+// more performant in certain cases.
+
+pub struct FixedNlriIter<'a, T, AS> {
+    parser: Parser<'a, T>,
+    afisafi: AS,
+}
+
+impl<'a, T: 'a + Octets, AS: AfiSafiParse > FixedNlriIter<'a, T, AS> {
+    pub fn new(parser: &mut Parser<'a, T>, afisafi: AS) -> Self {
+        FixedNlriIter { parser: *parser, afisafi }
+    }
+
+    fn get_nlri(&mut self) -> Result<Nlri<T::Range<'a>>, ParseError> {
+        AS::parse_nlri(&mut self.parser)
+    }
+}
+
+//------------ Ipv4Unicast ---------------------------------------------------
+
+pub(crate) struct Ipv4Unicast;
+impl AfiSafiParse for Ipv4Unicast {
+    fn parse_nlri<'a, Octs: Octets>(
+        parser: &mut Parser<'a, Octs>
+    ) -> Result<Nlri<Octs::Range<'a>>, ParseError> {
+        Ok(
+            Nlri::Unicast(BasicNlri::new(parse_prefix(parser, AFI::Ipv4)?))
+        )
+    }
+}
+
+impl<'a, T: 'a + Octets> FixedNlriIter<'a, T, Ipv4Unicast> {
+    pub(crate) fn ipv4unicast(parser: &mut Parser<'a, T>) -> Self {
+        FixedNlriIter::new( parser, Ipv4Unicast{} )
+    }
+}
+
+//------------ Ipv4UnicastAddPath --------------------------------------------
+
+pub(crate) struct Ipv4UnicastAddPath;
+impl AfiSafiParse for Ipv4UnicastAddPath {
+    fn parse_nlri<'a, Octs: Octets>(
+        parser: &mut Parser<'a, Octs>
+    ) -> Result<Nlri<Octs::Range<'a>>, ParseError> {
+        let path_id = PathId::parse(parser)?;
+        Ok(
+            Nlri::Unicast(BasicNlri::with_path_id(
+                parse_prefix(parser, AFI::Ipv4)?,
+                path_id
+            ))
+        )
+    }
+}
+
+impl<'a, T: 'a + Octets> FixedNlriIter<'a, T, Ipv4UnicastAddPath> {
+    pub(crate) fn ipv4unicast_addpath(parser: &mut Parser<'a, T>) -> Self {
+        FixedNlriIter::new( parser, Ipv4UnicastAddPath{} )
+    }
+}
+
+//------------ Ipv6Unicast ---------------------------------------------------
+
+pub(crate) struct Ipv6Unicast;
+impl AfiSafiParse for Ipv6Unicast {
+    fn parse_nlri<'a, Octs: Octets>(
+        parser: &mut Parser<'a, Octs>
+    ) -> Result<Nlri<Octs::Range<'a>>, ParseError> {
+        Ok(
+            Nlri::Unicast(BasicNlri::new(parse_prefix(parser, AFI::Ipv6)?))
+        )
+    }
+}
+
+impl<'a, T: 'a + Octets> FixedNlriIter<'a, T, Ipv6Unicast> {
+    pub(crate) fn ipv6unicast(parser: &mut Parser<'a, T>) -> Self {
+        FixedNlriIter::new( parser, Ipv6Unicast{} )
+    }
+}
+
+//------------ Ipv6UnicastAddPath --------------------------------------------
+
+pub(crate) struct Ipv6UnicastAddPath;
+impl AfiSafiParse for Ipv6UnicastAddPath {
+    fn parse_nlri<'a, Octs: Octets>(
+        parser: &mut Parser<'a, Octs>
+    ) -> Result<Nlri<Octs::Range<'a>>, ParseError> {
+        let path_id = PathId::parse(parser)?;
+        Ok(
+            Nlri::Unicast(BasicNlri::with_path_id(
+                parse_prefix(parser, AFI::Ipv6)?,
+                path_id
+            ))
+        )
+    }
+}
+
+impl<'a, T: 'a + Octets> FixedNlriIter<'a, T, Ipv6UnicastAddPath> {
+    pub(crate) fn ipv6unicast_addpath(parser: &mut Parser<'a, T>) -> Self {
+        FixedNlriIter::new( parser, Ipv6UnicastAddPath{} )
+    }
+}
+
+//------------ AfiSafiParse --------------------------------------------------
+
+pub trait AfiSafiParse {
+    fn parse_nlri<'a, Octs: Octets>(
+        parser: &mut Parser<'a, Octs>
+    ) -> Result<Nlri<Octs::Range<'a>>, ParseError>;
+}
+
+//------------ Iterator ------------------------------------------------------
+
+impl<'a, T: Octets, AS: AfiSafiParse> Iterator for FixedNlriIter<'a, T, AS> {
+    type Item = Result<Nlri<T::Range<'a>>, ParseError>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.parser.remaining() == 0 {
+            return None;
+        }
+        Some(self.get_nlri())
+    }
+}
+
 //--- NextHop in MP_REACH_NLRI -----------------------------------------------
 impl NextHop {
     pub fn check(parser: &mut Parser<[u8]>, afi: AFI, safi: SAFI)
@@ -148,10 +279,22 @@ impl fmt::Display for PathId {
 }
 
 /// MPLS labels, part of [`MplsNlri`] and [`MplsVpnNlri`].
-#[derive(Copy, Clone, Eq, Debug, PartialEq)]
-pub struct Labels<Octets: ?Sized> {
-    octets: Octets
+#[derive(Copy, Clone, Debug)]
+pub struct Labels<Octs> {
+    octets: Octs
 }
+
+impl<Octs, Other> PartialEq<Labels<Other>> for Labels<Octs>
+where Octs: AsRef<[u8]>,
+      Other: AsRef<[u8]>
+{
+    fn eq(&self, other: &Labels<Other>) -> bool {
+        self.octets.as_ref() == other.octets.as_ref()
+    }
+}
+
+impl<Octs: AsRef<[u8]>> Eq for Labels<Octs> { }
+
 
 impl<Octs: Octets> Labels<Octs> {
     fn len(&self) -> usize {
@@ -303,19 +446,39 @@ pub struct BasicNlri {
 }
 
 /// NLRI comprised of a [`BasicNlri`] and MPLS `Labels`.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct MplsNlri<Octets> {
     basic: BasicNlri,
     labels: Labels<Octets>,
 }
 
+impl<Octs, Other> PartialEq<MplsNlri<Other>> for MplsNlri<Octs>
+where Octs: AsRef<[u8]>,
+      Other: AsRef<[u8]>
+{
+    fn eq(&self, other: &MplsNlri<Other>) -> bool {
+        self.basic == other.basic && self.labels == other.labels
+    }
+}
+
 /// NLRI comprised of a [`BasicNlri`], MPLS `Labels` and a VPN
 /// `RouteDistinguisher`.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct MplsVpnNlri<Octets> {
     basic: BasicNlri,
     labels: Labels<Octets>,
     rd: RouteDistinguisher,
+}
+
+impl<Octs, Other> PartialEq<MplsVpnNlri<Other>> for MplsVpnNlri<Octs>
+where Octs: AsRef<[u8]>,
+      Other: AsRef<[u8]>
+{
+    fn eq(&self, other: &MplsVpnNlri<Other>) -> bool {
+        self.basic == other.basic
+            && self.labels == other.labels
+            && self.rd == other.rd
+    }
 }
 
 /// VPLS Information as defined in RFC4761.
@@ -331,23 +494,41 @@ pub struct VplsNlri {
 /// NLRI containing a FlowSpec v1 specification.
 ///
 /// Also see [`crate::flowspec`].
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct FlowSpecNlri<Octets> {
     #[allow(dead_code)]
     raw: Octets,
 }
 
+impl<Octs, Other> PartialEq<FlowSpecNlri<Other>> for FlowSpecNlri<Octs>
+where Octs: AsRef<[u8]>,
+      Other: AsRef<[u8]>
+{
+    fn eq(&self, other: &FlowSpecNlri<Other>) -> bool {
+        self.raw.as_ref() == other.raw.as_ref()
+    }
+}
+
 /// NLRI containing a Route Target membership as defined in RFC4684.
 ///
 /// **TODO**: implement accessor methods for the contents of this NLRI.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct RouteTargetNlri<Octets> {
+#[derive(Clone, Debug)]
+pub struct RouteTargetNlri<Octs> {
     #[allow(dead_code)]
-    raw: Octets,
+    raw: Octs,
+}
+
+impl<Octs, Other> PartialEq<RouteTargetNlri<Other>> for RouteTargetNlri<Octs>
+where Octs: AsRef<[u8]>,
+      Other: AsRef<[u8]>
+{
+    fn eq(&self, other: &RouteTargetNlri<Other>) -> bool {
+        self.raw.as_ref() == other.raw.as_ref()
+    }
 }
 
 /// Conventional and BGP-MP NLRI variants.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug)]
 pub enum Nlri<Octets> {                     // (AFIs  , SAFIs):
     Unicast(BasicNlri),                     // (v4/v6, unicast)
     Multicast(BasicNlri),                   // (v4/v6, multicast)
@@ -465,6 +646,27 @@ where
     }
 }
 
+impl<Octs, Other> PartialEq<Nlri<Other>> for Nlri<Octs>
+where Octs: AsRef<[u8]>,
+      Other: AsRef<[u8]>
+{
+    fn eq(&self, other: &Nlri<Other>) -> bool {
+        match (self, other) {
+            (Self::Unicast(s), Nlri::Unicast(o)) |
+            (Self::Multicast(s), Nlri::Multicast(o)) => s == o,
+            (Self::Mpls(s), Nlri::Mpls(o)) => s == o,
+            (Self::MplsVpn(s), Nlri::MplsVpn(o)) => s == o,
+            (Self::Vpls(s), Nlri::Vpls(o)) => s == o,
+            (Self::FlowSpec(s), Nlri::FlowSpec(o)) => s == o,
+            (Self::RouteTarget(s), Nlri::RouteTarget(o)) => s == o,
+            _ => false
+        }
+    }
+}
+
+impl<Octs: AsRef<[u8]>> Eq for Nlri<Octs> { }
+
+
 impl<Octets> Nlri<Octets> {
     /// Returns the MPLS [`Labels`], if any.
     ///
@@ -535,13 +737,16 @@ impl<Octets> Nlri<Octets> {
 
 
 use std::str::FromStr;
-impl<Octs> Nlri<Octs> {
+// XXX While Nlri<()> might make more sense, it clashes with trait bounds
+// like Vec<u8>: OctetsFrom<T> elsewhere, as, From<()> is not implemented for
+// Vec<u8>. Similarly, () is not AsRef<[u8]>.
+impl Nlri<&[u8]> {
     /// Creates a `Nlri::Unicast` for `prefix`.
     ///
     /// This returns the error thrown by `Prefix::from_str` if `prefix` does
     /// not represent a valid IPv6 or IPv4 prefix.
     pub fn unicast_from_str(prefix: &str)
-        -> Result<Nlri<Octs>, <Prefix as FromStr>::Err>
+        -> Result<Nlri<&[u8]>, <Prefix as FromStr>::Err>
     {
         Ok(
             Nlri::Unicast(BasicNlri::new(
@@ -583,14 +788,20 @@ fn check_prefix(
         },
         (AFI::Ipv6, _) => { parser.advance(prefix_bytes)?; },
         (_, _) => {
-            panic!("unimplemented")
+            return Err(
+                ParseError::form_error("unknown prefix format")
+            )
         }
     };
 
     Ok(())
 }
 
-fn parse_prefix<R: Octets>(parser: &mut Parser<'_, R>, prefix_bits: u8, afi: AFI)
+fn parse_prefix_for_len<R: Octets>(
+    parser: &mut Parser<'_, R>,
+    prefix_bits: u8,
+    afi: AFI
+)
     -> Result<Prefix, ParseError>
 {
     let prefix_bytes = prefix_bits_to_bytes(prefix_bits);
@@ -599,7 +810,9 @@ fn parse_prefix<R: Octets>(parser: &mut Parser<'_, R>, prefix_bits: u8, afi: AFI
             Prefix::new_v4(0.into(), 0)?
         },
         (AFI::Ipv4, _b @ 5..) => { 
-            return Err(ParseError::form_error("illegal byte size for IPv4 NLRI"))
+            return Err(
+                ParseError::form_error("illegal byte size for IPv4 NLRI")
+            )
         },
         (AFI::Ipv4, _) => {
             let mut b = [0u8; 4];
@@ -613,7 +826,56 @@ fn parse_prefix<R: Octets>(parser: &mut Parser<'_, R>, prefix_bits: u8, afi: AFI
             Prefix::new_v6(0.into(), 0)?
         },
         (AFI::Ipv6, _b @ 17..) => { 
-            return Err(ParseError::form_error("illegal byte size for IPv6 NLRI"))
+            return Err(
+                ParseError::form_error("illegal byte size for IPv6 NLRI")
+            )
+        },
+        (AFI::Ipv6, _) => {
+            let mut b = [0u8; 16];
+            b[..prefix_bytes].copy_from_slice(parser.peek(prefix_bytes)?);
+            parser.advance(prefix_bytes)?;
+            Prefix::new(IpAddr::from(b), prefix_bits).map_err(|_e| 
+                    ParseError::form_error("prefix parsing failed")
+            )?
+        },
+        (_, _) => {
+            return Err(
+                ParseError::form_error("unknown prefix format")
+            )
+        }
+    };
+    Ok(prefix)
+}
+
+fn parse_prefix<R: Octets>(parser: &mut Parser<'_, R>, afi: AFI)
+    -> Result<Prefix, ParseError>
+{
+    let prefix_bits = parser.parse_u8()?;
+    let prefix_bytes = prefix_bits_to_bytes(prefix_bits);
+    let prefix = match (afi, prefix_bytes) {
+        (AFI::Ipv4, 0) => {
+            Prefix::new_v4(0.into(), 0)?
+        },
+        (AFI::Ipv4, _b @ 5..) => { 
+            return Err(
+                ParseError::form_error("illegal byte size for IPv4 NLRI")
+            )
+        },
+        (AFI::Ipv4, _) => {
+            let mut b = [0u8; 4];
+            b[..prefix_bytes].copy_from_slice(parser.peek(prefix_bytes)?);
+            parser.advance(prefix_bytes)?;
+            Prefix::new(IpAddr::from(b), prefix_bits).map_err(|_e| 
+                    ParseError::form_error("prefix parsing failed")
+            )?
+        }
+        (AFI::Ipv6, 0) => {
+            Prefix::new_v6(0.into(), 0)?
+        },
+        (AFI::Ipv6, _b @ 17..) => { 
+            return Err(
+                ParseError::form_error("illegal byte size for IPv6 NLRI")
+            )
         },
         (AFI::Ipv6, _) => {
             let mut b = [0u8; 16];
@@ -656,7 +918,7 @@ impl BasicNlri {
             _ => None
         };
         let prefix_bits = parser.parse_u8()?;
-        let prefix = parse_prefix(parser, prefix_bits, afi)?;
+        let prefix = parse_prefix_for_len(parser, prefix_bits, afi)?;
         
         Ok(
             BasicNlri {
@@ -806,7 +1068,7 @@ impl<Octs: Octets> MplsVpnNlri<Octs> {
         let rd = RouteDistinguisher::parse(parser)?;
         prefix_bits -= 8*std::mem::size_of::<RouteDistinguisher>() as u8;
 
-        let prefix = parse_prefix(parser, prefix_bits, afi)?;
+        let prefix = parse_prefix_for_len(parser, prefix_bits, afi)?;
 
         let basic = BasicNlri{ prefix, path_id };
         Ok(MplsVpnNlri{ basic, labels, rd })
@@ -870,7 +1132,7 @@ impl<Octs: Octets> MplsNlri<Octs> {
 
         prefix_bits -= 8 * labels.len() as u8;
 
-        let prefix = parse_prefix(parser, prefix_bits, afi)?;
+        let prefix = parse_prefix_for_len(parser, prefix_bits, afi)?;
         let basic = BasicNlri { prefix, path_id };
         Ok(
             MplsNlri {
@@ -927,10 +1189,10 @@ impl FlowSpecNlri<()> {
         } else {
             len1 as u16
         };
-        let pp = parser.parse_parser(len.into())?;
+        let mut pp = parser.parse_parser(len.into())?;
         while pp.remaining() > 0 {
             // TODO implement Component::check()
-            Component::parse(parser)?;
+            Component::parse(&mut pp)?;
         }
 
         Ok(())

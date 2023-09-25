@@ -263,11 +263,10 @@ macro_rules! path_attributes {
             // XXX this method is the reason we have fn parse as part of
             // the trait, forcing us the pass a SessionConfig to all of
             // the parse() implementations.
-            pub fn to_owned(&self) -> Result<PathAttribute, ParseError>
-                where
-                    //for <'b> Octs::Range<'b>: OctetsInto<Vec<u8>>
-                    Vec<u8>: for <'b> OctetsFrom<Octs::Range<'b>>
-                {
+            pub fn to_owned(&self) -> Result<PathAttribute, ParseError> 
+            where
+                Vec<u8>: OctetsFrom<Octs::Range<'a>>
+            {
                 match self {
                     $(
                     WireformatPathAttribute::$name(p, sc) => {
@@ -305,6 +304,17 @@ macro_rules! path_attributes {
                     WireformatPathAttribute::Invalid(_, tc, _) => {
                         PathAttributeType::Invalid(*tc)
                     }
+                }
+            }
+
+            pub fn into_value_parser(self) -> Result<Parser<'a, Octs>, ParseError> {
+                match self {
+                $(
+                    Self::$name(mut p, _) => {
+                        Ok(p)
+                    }
+                ),+,
+                    _ => todo!()
                 }
             }
         }
@@ -559,12 +569,11 @@ pub trait Attribute: AttributeHeader {
     )
         -> Result<(), ParseError>;
 
-    fn parse<Octs: Octets>(parser: &mut Parser<Octs>, sc: SessionConfig) 
+    fn parse<'a, Octs: 'a + Octets>(parser: &mut Parser<'a, Octs>, sc: SessionConfig) 
         -> Result<Self, ParseError>
     where 
         Self: Sized,
-        //for <'a> Octs::Range<'a>: OctetsInto<Vec<u8>>,
-        Vec<u8>: for <'b> OctetsFrom<Octs::Range<'b>>
+        Vec<u8>: OctetsFrom<Octs::Range<'a>>
     ;
     
 }
@@ -583,7 +592,7 @@ impl<'a, Octs> Clone for PathAttributes<'a, Octs> {
 impl<'a, Octs> Copy for PathAttributes<'a, Octs> { }
 
 impl<'a, Octs: Octets> PathAttributes<'a, Octs> {
-    pub fn new(parser: Parser<'a, Octs>, session_config: SessionConfig)
+    pub fn new(parser: Parser<'_, Octs>, session_config: SessionConfig)
         -> PathAttributes<'_, Octs>
     {
         PathAttributes { parser, session_config }
@@ -646,7 +655,7 @@ impl Attribute for Origin {
         target.append_slice(&[self.0.into()]) 
     }
 
-    fn parse<Octs: Octets>(parser: &mut Parser<Octs>, _sc: SessionConfig) 
+    fn parse<'a, Octs: 'a + Octets>(parser: &mut Parser<'_, Octs>, _sc: SessionConfig) 
         -> Result<Origin, ParseError>
     {
         Ok(Origin(parser.parse_u8()?.into()))
@@ -677,7 +686,7 @@ impl Attribute for AsPath {
         )
     }
 
-    fn parse<Octs: Octets>(parser: &mut Parser<Octs>, sc: SessionConfig) 
+    fn parse<'a, Octs: 'a + Octets>(parser: &mut Parser<'a, Octs>, sc: SessionConfig) 
         -> Result<AsPath, ParseError>
     {
         // XXX reusing the old/existing AsPath here for the time being
@@ -724,7 +733,7 @@ impl Attribute for NextHop {
         target.append_slice(&self.0.octets())
     }
 
-    fn parse<Octs: Octets>(parser: &mut Parser<Octs>, _sc: SessionConfig) 
+    fn parse<'a, Octs: 'a + Octets>(parser: &mut Parser<'a, Octs>, _sc: SessionConfig) 
         -> Result<NextHop, ParseError>
     {
         Ok(NextHop(parse_ipv4addr(parser)?))
@@ -750,7 +759,7 @@ impl Attribute for MultiExitDisc {
         target.append_slice(&self.0.to_be_bytes()) 
     }
 
-    fn parse<Octs: Octets>(parser: &mut Parser<Octs>, _sc: SessionConfig) 
+    fn parse<'a, Octs: 'a + Octets>(parser: &mut Parser<'a, Octs>, _sc: SessionConfig) 
         -> Result<MultiExitDisc, ParseError>
     {
         Ok(MultiExitDisc(parser.parse_u32_be()?))
@@ -776,7 +785,7 @@ impl Attribute for LocalPref {
         target.append_slice(&self.0.to_be_bytes()) 
     }
 
-    fn parse<Octs: Octets>(parser: &mut Parser<Octs>, _sc: SessionConfig) 
+    fn parse<'a, Octs: 'a + Octets>(parser: &mut Parser<'a, Octs>, _sc: SessionConfig) 
         -> Result<LocalPref, ParseError>
     {
         Ok(LocalPref(parser.parse_u32_be()?))
@@ -802,7 +811,7 @@ impl Attribute for AtomicAggregate {
         Ok(())
     }
 
-    fn parse<Octs: Octets>(_parser: &mut Parser<Octs>, _sc: SessionConfig) 
+    fn parse<'a, Octs: 'a + Octets>(_parser: &mut Parser<'a, Octs>, _sc: SessionConfig) 
         -> Result<AtomicAggregate, ParseError>
     {
         Ok(AtomicAggregate(()))
@@ -854,7 +863,7 @@ impl Attribute for Aggregator {
         target.append_slice(&self.0.address().octets())
     }
 
-    fn parse<Octs: Octets>(parser: &mut Parser<Octs>, sc: SessionConfig) 
+    fn parse<'a, Octs: 'a + Octets>(parser: &mut Parser<'a, Octs>, sc: SessionConfig) 
         -> Result<Aggregator, ParseError>
     {
         let asn = if sc.has_four_octet_asn() {
@@ -900,7 +909,7 @@ impl Attribute for Communities {
         Ok(())
     }
 
-    fn parse<Octs: Octets>(parser: &mut Parser<Octs>, _sc: SessionConfig) 
+    fn parse<'a, Octs: 'a + Octets>(parser: &mut Parser<'a, Octs>, _sc: SessionConfig) 
         -> Result<Communities, ParseError>
     {
         let mut builder = StandardCommunitiesBuilder::with_capacity(
@@ -938,7 +947,7 @@ impl Attribute for OriginatorId {
         target.append_slice(&self.0.octets())
     }
 
-    fn parse<Octs: Octets>(parser: &mut Parser<Octs>, _sc: SessionConfig) 
+    fn parse<'a, Octs: 'a + Octets>(parser: &mut Parser<'a, Octs>, _sc: SessionConfig) 
         -> Result<OriginatorId, ParseError>
     {
         Ok(OriginatorId(parse_ipv4addr(parser)?))
@@ -1001,7 +1010,7 @@ impl Attribute for ClusterList {
         Ok(())
     }
 
-    fn parse<Octs: Octets>(parser: &mut Parser<Octs>, _sc: SessionConfig) 
+    fn parse<'a, Octs: 'a + Octets>(parser: &mut Parser<'a, Octs>, _sc: SessionConfig) 
         -> Result<ClusterList, ParseError>
     {
         let mut cluster_ids = Vec::with_capacity(parser.remaining() / 4);
@@ -1025,6 +1034,7 @@ impl Attribute for ClusterList {
     }
 }
 
+use crate::bgp::message::nlri::{FixedNlriIter, Ipv4Unicast};
 //--- MpReachNlri
 impl Attribute for MpReachNlri {
     fn value_len(&self) -> usize { 
@@ -1037,11 +1047,10 @@ impl Attribute for MpReachNlri {
         self.0.compose_value(target)
     }
 
-    fn parse<Octs: Octets>(parser: &mut Parser<Octs>, sc: SessionConfig) 
+    fn parse<'a, Octs: 'a + Octets>(parser: &mut Parser<'a, Octs>, sc: SessionConfig) 
         -> Result<MpReachNlri, ParseError>
-    where
-        //for <'a> Octs::Range<'a>: OctetsInto<Vec<u8>>
-        Vec<u8>: for <'b> OctetsFrom<Octs::Range<'b>>
+        where
+            Vec<u8>: OctetsFrom<Octs::Range<'a>>
     {
         let afi: AFI = parser.parse_u16_be()?.into();
         let safi: SAFI = parser.parse_u8()?.into();
@@ -1050,27 +1059,35 @@ impl Attribute for MpReachNlri {
         let mut builder = MpReachNlriBuilder::new(
             afi, safi, nexthop, sc.addpath_enabled()
         );
-        let nlri_iter = crate::bgp::message::update::Nlris::new(
-            *parser,
-            sc,
-            afi,
-            safi
-        ).iter();
 
-        // FIXME
-        // MpReachNlriBuilder works with Nlri<Vec<u8>>
-        // but that is somewhat limiting. Here, we reuse the existing
-        // Nlris iter from bgp::message::update, where the iterator
-        // returns Item = Nlri<Octs::Range<'_>>.
-        // Perhaps add_announcement should take Nlri<T> where T:
-        // OctetsInto<Vec<u8>> or something like that?
-        use crate::bgp::message::nlri::Nlri;
-        for nlri in nlri_iter {
-            match nlri {
-                Nlri::Unicast(_b) => { builder.add_announcement(&nlri) },
-                _ => unimplemented!()
+        use crate::bgp::message::nlri::{BasicNlri, Nlri, FlowSpecNlri};
+        // TODO all other match arms
+        match(afi, safi, sc.addpath_enabled()) {
+            (AFI::Ipv4, SAFI::Unicast, false) => {
+                for n in FixedNlriIter::ipv4unicast(parser) {
+                    builder.add_announcement(&n?)
+                }
+            }
+            (AFI::Ipv4, SAFI::Unicast, true) => {
+                for n in FixedNlriIter::ipv4unicast_addpath(parser) {
+                    builder.add_announcement(&n?)
+                }
+            }
+            (AFI::Ipv6, SAFI::Unicast, false) => {
+                for n in FixedNlriIter::ipv6unicast(parser) {
+                    builder.add_announcement(&n?)
+                }
+            }
+            (AFI::Ipv6, SAFI::Unicast, true) => {
+                for n in FixedNlriIter::ipv6unicast_addpath(parser) {
+                    builder.add_announcement(&n?)
+                }
+            }
+            _ => {
+                todo!("afi safi {:?} {:?}", afi, safi);
             }
         }
+
         Ok(MpReachNlri(builder))
     }
 
@@ -1103,11 +1120,12 @@ impl Attribute for MpUnreachNlri {
         self.0.compose_value(target)
     }
 
-    fn parse<Octs: Octets>(parser: &mut Parser<Octs>, sc: SessionConfig) 
+    fn parse<'a, Octs: 'a + Octets>(parser: &mut Parser<'a, Octs>, sc: SessionConfig) 
         -> Result<MpUnreachNlri, ParseError>
     where
         //for <'a> Octs::Range<'a>: OctetsInto<Vec<u8>>
-        Vec<u8>: for <'b> OctetsFrom<Octs::Range<'b>>
+        //Vec<u8>: for <'b> OctetsFrom<Octs::Range<'b>>
+        //Vec<u8>: OctetsFrom<Octs::Range<'a>>
     {
         let afi: AFI = parser.parse_u16_be()?.into();
         let safi: SAFI = parser.parse_u8()?.into();
@@ -1115,18 +1133,21 @@ impl Attribute for MpUnreachNlri {
         let mut builder = MpUnreachNlriBuilder::new(
             afi, safi, sc.addpath_enabled()
         );
+        /*
         let nlri_iter = crate::bgp::message::update::Nlris::new(
             *parser,
             sc,
             afi,
             safi
         ).iter();
+        */
 
         // FIXME
         // see note at MpReachNlri above
         // FIXME can we do without the `match nlri` and just do
         // for nlri in iter { builder.add_w(&nlri); } ?
-        use crate::bgp::message::nlri::Nlri;
+        use crate::bgp::message::nlri::{BasicNlri, Nlri};
+        /*
         for nlri in nlri_iter {
             match nlri {
                 Nlri::Unicast(_b) => {
@@ -1141,7 +1162,11 @@ impl Attribute for MpUnreachNlri {
                 _ => unimplemented!()
             }
         }
-
+        */
+        while parser.remaining() > 0 {
+            let n: Nlri<Vec<u8>> = Nlri::Unicast(BasicNlri::parse(parser, sc, afi)?);
+            builder.add_withdrawal(&n);
+        }
         Ok(MpUnreachNlri(builder))
     }
 
@@ -1197,7 +1222,7 @@ impl Attribute for ExtendedCommunities {
         Ok(())
     }
 
-    fn parse<Octs: Octets>(parser: &mut Parser<Octs>, _sc: SessionConfig) 
+    fn parse<'a, Octs: 'a + Octets>(parser: &mut Parser<'a, Octs>, _sc: SessionConfig) 
         -> Result<ExtendedCommunities, ParseError>
     {
         let mut communities = Vec::with_capacity(parser.remaining() / 8);
@@ -1238,7 +1263,7 @@ impl Attribute for As4Path {
         )
     }
 
-    fn parse<Octs: Octets>(parser: &mut Parser<Octs>, sc: SessionConfig) 
+    fn parse<'a, Octs: 'a + Octets>(parser: &mut Parser<'a, Octs>, sc: SessionConfig) 
         -> Result<As4Path, ParseError>
     {
         // XXX Same as with AsPath, reusing the old/existing As4Path here
@@ -1281,7 +1306,7 @@ impl Attribute for As4Aggregator {
         target.append_slice(&self.0.address().octets())
     }
 
-    fn parse<Octs: Octets>(parser: &mut Parser<Octs>, _sc: SessionConfig) 
+    fn parse<'a, Octs: 'a + Octets>(parser: &mut Parser<'a, Octs>, _sc: SessionConfig) 
         -> Result<As4Aggregator, ParseError>
     {
         let asn = Asn::from_u32(parser.parse_u32_be()?);
@@ -1310,7 +1335,7 @@ impl Attribute for Connector {
         target.append_slice(&self.0.octets())
     }
 
-    fn parse<Octs: Octets>(parser: &mut Parser<Octs>, _sc: SessionConfig) 
+    fn parse<'a, Octs: 'a + Octets>(parser: &mut Parser<'a, Octs>, _sc: SessionConfig) 
         -> Result<Connector, ParseError>
     {
         Ok(Connector(parse_ipv4addr(parser)?))
@@ -1351,7 +1376,7 @@ impl Attribute for AsPathLimit {
         target.append_slice(&self.0.attacher.to_raw())
     }
 
-    fn parse<Octs: Octets>(parser: &mut Parser<Octs>, _sc: SessionConfig) 
+    fn parse<'a, Octs: 'a + Octets>(parser: &mut Parser<'a, Octs>, _sc: SessionConfig) 
         -> Result<AsPathLimit, ParseError>
     {
         let info = AsPathLimitInfo {
@@ -1408,7 +1433,7 @@ impl Attribute for Ipv6ExtendedCommunities {
         Ok(())
     }
 
-    fn parse<Octs: Octets>(parser: &mut Parser<Octs>, _sc: SessionConfig) 
+    fn parse<'a, Octs: 'a + Octets>(parser: &mut Parser<'a, Octs>, _sc: SessionConfig) 
         -> Result<Ipv6ExtendedCommunities, ParseError>
     {
         let mut communities = Vec::with_capacity(parser.remaining() / 20);
@@ -1469,7 +1494,7 @@ impl Attribute for LargeCommunities {
         Ok(())
     }
 
-    fn parse<Octs: Octets>(parser: &mut Parser<Octs>, _sc: SessionConfig) 
+    fn parse<'a, Octs: 'a + Octets>(parser: &mut Parser<'a, Octs>, _sc: SessionConfig) 
         -> Result<LargeCommunities, ParseError>
     {
         let mut communities = Vec::with_capacity(parser.remaining() / 12);
@@ -1506,7 +1531,7 @@ impl Attribute for Otc {
         target.append_slice(&self.0.to_raw())
     }
 
-    fn parse<Octs: Octets>(parser: &mut Parser<Octs>, _sc: SessionConfig) 
+    fn parse<'a, Octs: 'a + Octets>(parser: &mut Parser<'a, Octs>, _sc: SessionConfig) 
         -> Result<Otc, ParseError>
     {
         Ok(Otc(Asn::from_u32(parser.parse_u32_be()?)))
@@ -1549,7 +1574,7 @@ impl Attribute for AttrSet {
         target.append_slice(&self.0.attributes)
     }
 
-    fn parse<Octs: Octets>(parser: &mut Parser<Octs>, _sc: SessionConfig) 
+    fn parse<'a, Octs: 'a + Octets>(parser: &mut Parser<'a, Octs>, _sc: SessionConfig) 
         -> Result<AttrSet, ParseError>
     {
         let origin = Asn::from_u32(parser.parse_u32_be()?);
@@ -1600,7 +1625,7 @@ impl Attribute for Reserved {
         target.append_slice(&self.0.raw)
     }
 
-    fn parse<Octs: Octets>(parser: &mut Parser<Octs>, _sc: SessionConfig) 
+    fn parse<'a, Octs: 'a + Octets>(parser: &mut Parser<'a, Octs>, _sc: SessionConfig) 
         -> Result<Reserved, ParseError>
     {
         let raw = parser.peek_all().to_vec();

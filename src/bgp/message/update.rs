@@ -252,7 +252,7 @@ impl<Octs: Octets> UpdateMessage<Octs> {
     
     /// Iterator over both conventional NLRI and unicast MP_REACH_NLRI.
     pub fn unicast_announcements(&self)
-        -> impl Iterator<Item = Nlri<Octs::Range<'_>>>
+        -> impl Iterator<Item = Result<Nlri<Octs::Range<'_>>, ParseError>>
     {
         let mp_iter = self.path_attributes().into_iter().find(|pa|
             pa.type_code() == PathAttributeType::MpReachNlri
@@ -1791,59 +1791,62 @@ pub struct NlriIterMp<'a, Ref: ?Sized> {
 }
 
 impl<'a, Octs: Octets> NlriIterMp<'a, Octs> {
-    fn get_nlri(&mut self) -> Nlri<Octs::Range<'a>> {
-        match (self.afi, self.safi) {
+    fn get_nlri(&mut self) -> Result<Nlri<Octs::Range<'a>>, ParseError> {
+        let res = match (self.afi, self.safi) {
             (AFI::Ipv4 | AFI::Ipv6, SAFI::Unicast) => {
                 Nlri::Unicast(BasicNlri::parse(
                         &mut self.parser,
                         self.session_config,
                         self.afi
-                ).expect("parsed before"))
+                )?)
             }
             (AFI::Ipv4 | AFI::Ipv6, SAFI::Multicast) => {
                 Nlri::Multicast(BasicNlri::parse(
                         &mut self.parser,
                         self.session_config,
                         self.afi
-                ).expect("parsed before"))
+                )?)
             }
             (AFI::Ipv4 | AFI::Ipv6, SAFI::MplsVpnUnicast) => {
                 Nlri::MplsVpn(MplsVpnNlri::parse(
                         &mut self.parser,
                         self.session_config,
                         self.afi
-                ).expect("parsed before"))
+                )?)
             },
             (AFI::Ipv4 | AFI::Ipv6, SAFI::MplsUnicast) => {
                 Nlri::Mpls(MplsNlri::parse(
                         &mut self.parser,
                         self.session_config,
                         self.afi
-                ).expect("parsed before"))
+                )?)
             },
             (AFI::L2Vpn, SAFI::Vpls) => {
                 Nlri::Vpls(VplsNlri::parse(
                         &mut self.parser
-                ).expect("parsed before"))
+                )?)
             },
             (AFI::Ipv4, SAFI::FlowSpec) => {
                 Nlri::FlowSpec(FlowSpecNlri::parse(
                         &mut self.parser
-                ).expect("parsed before"))
+                )?)
             },
             (AFI::Ipv4, SAFI::RouteTarget) => {
                 Nlri::RouteTarget(RouteTargetNlri::parse(
                         &mut self.parser
-                ).expect("parsed before"))
+                )?)
             },
             (_, _) => {
                 error!("trying to iterate over NLRI \
                        for unknown AFI/SAFI combination {}/{}",
                        self.afi, self.safi
                 );
-                panic!("unsupported AFI/SAFI in NLRI get_nlri()")
+                //panic!("unsupported AFI/SAFI in NLRI get_nlri()")
+                return Err(ParseError::Unsupported)
+
             }
-        }
+        };
+        Ok(res)
     }
 }
 
@@ -1901,7 +1904,7 @@ impl<'a, Octs: Octets> Nlris<'a, Octs> {
         let len = parser.pos() - pos;
         parser.seek(pos)?;
 
-        let pp = Parser::parse_parser(parser, len).expect("parsed before");
+        let pp = Parser::parse_parser(parser, len)?;
 
         Ok(
             Nlris {
@@ -1972,7 +1975,7 @@ impl<'a, Octs: Octets> Nlris<'a, Octs> {
 
 
 impl<'a, Octs: Octets> Iterator for NlriIterMp<'a, Octs> {
-    type Item = Nlri<Octs::Range<'a>>;
+    type Item = Result<Nlri<Octs::Range<'a>>, ParseError>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.parser.remaining() == 0 {
@@ -2208,7 +2211,7 @@ mod tests {
         let nlris = update.nlris();
         let mut nlri_iter = nlris.iter();
         let nlri1 = nlri_iter.next().unwrap();
-        assert_eq!(nlri1, Nlri::unicast_from_str("10.10.10.2/32").unwrap());
+        assert_eq!(nlri1.unwrap(), Nlri::unicast_from_str("10.10.10.2/32").unwrap());
         assert!(nlri_iter.next().is_none());
     }
 
@@ -2237,7 +2240,7 @@ mod tests {
         let prefixes = ["10.10.10.9/32", "192.168.97.0/30"]
             .map(|p| Nlri::unicast_from_str(p).unwrap());
 
-        assert!(prefixes.into_iter().eq(update.nlris().iter()));
+        assert!(prefixes.into_iter().eq(update.nlris().iter().map(|n| n.unwrap())));
 
     }
 
@@ -2288,7 +2291,7 @@ mod tests {
             "2001:db8:ffff:3::/64",
         ].map(|p| Nlri::unicast_from_str(p).unwrap());
 
-        assert!(prefixes.into_iter().eq(update.nlris().iter()));
+        assert!(prefixes.into_iter().eq(update.nlris().iter().map(|n| n.unwrap())));
 
     }
 
@@ -2519,8 +2522,8 @@ mod tests {
 
         let nlri1 = upd.nlris().iter().next().unwrap();
         assert_eq!(
-            nlri1,
-            Nlri::Unicast(BasicNlri::with_path_id(
+            nlri1.unwrap(),
+            Nlri::<&[u8]>::Unicast(BasicNlri::with_path_id(
                     Prefix::from_str("198.51.100.0/25").unwrap(),
                     PathId::from_u32(1)
                     ))
@@ -2706,9 +2709,9 @@ mod tests {
             "198.51.100.64/26",
             "198.51.100.128/26",
             "198.51.100.192/26",
-        ].map(|p| Nlri::Multicast(Prefix::from_str(p).unwrap().into()));
+        ].map(|p| Nlri::<&[u8]>::Multicast(Prefix::from_str(p).unwrap().into()));
 
-        assert!(prefixes.into_iter().eq(upd.nlris().iter()));
+        assert!(prefixes.into_iter().eq(upd.nlris().iter().map(|n| n.unwrap())));
     }
 
     #[test]
