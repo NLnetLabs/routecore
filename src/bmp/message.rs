@@ -298,17 +298,17 @@ impl<Octs: Octets> CommonHeader<Octs> {
     }
 
     /// Returns the BMP version of the message.
-	pub fn version(self) -> u8 {
-		self.octets.as_ref()[0]
-	}
+    pub fn version(&self) -> u8 {
+        self.octets.as_ref()[0]
+    }
 
     /// Returns the length of the message, including headers.
-	pub fn length(&self) -> u32 {
-		u32::from_be_bytes(self.octets.as_ref()[1..5].try_into().unwrap())
-	}
+    pub fn length(&self) -> u32 {
+        u32::from_be_bytes(self.octets.as_ref()[1..5].try_into().unwrap())
+    }
 
     /// Returns the message type.
-    pub fn msg_type(self) -> MessageType { // XXX why does &self break here?
+    pub fn msg_type(&self) -> MessageType { // XXX why does &self break here?
         self.octets.as_ref()[5].into()
     }
 
