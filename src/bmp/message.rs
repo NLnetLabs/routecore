@@ -195,17 +195,17 @@ impl<Octs: Octets> Message<Octs>
     }
 
     /// Return the length of the message, including headers.
-	pub fn length(&self) -> u32 {
-		self.common_header().length()
-	}
+    pub fn length(&self) -> u32 {
+        self.common_header().length()
+    }
 
     /// Return the BMP version of the message.
-	pub fn version(self) -> u8 {
-		self.common_header().version()
-	}
+    pub fn version(&self) -> u8 {
+        self.common_header().version()
+    }
 
     /// Return the message type.
-    pub fn msg_type(self) -> MessageType {
+    pub fn msg_type(&self) -> MessageType {
         self.common_header().msg_type()
     }
 }
