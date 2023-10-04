@@ -279,6 +279,35 @@ impl<Octs: Octets> UpdateMessage<Octs> {
 
     }
 
+    // using the new PathAttributes (iterator)
+    pub fn announcements(&self)
+        -> Result<
+            impl Iterator<Item = Result<Nlri<Octs::Range<'_>>, ParseError>>,
+            ParseError
+            >
+    {
+        let pa = self.new_path_attributes()?.get(
+            new_pas::PathAttributeType::MpReachNlri
+        );
+
+        let mp_iter = if let Some(pa) = pa { 
+            Some(Nlris::parse(&mut pa.into_value_parser()?, self.session_config)?.iter())
+        } else {
+            None
+        };
+
+        let wrl = self.withdrawn_routes_len() as usize;
+        let tpal = self.total_path_attribute_len() as usize;
+        let mut parser = Parser::from_ref(self.octets());
+        parser.advance(COFF+2+wrl+2+tpal).expect("parsed before");
+        let conventional_iter = Nlris::parse_conventional(
+                &mut parser, self.session_config
+            )?.iter();
+
+        Ok(mp_iter.into_iter().flatten().chain(conventional_iter))
+
+    }
+
     pub fn has_conventional_nlri(&self) -> bool {
         let wrl = self.withdrawn_routes_len() as usize;
         let tpal = self.total_path_attribute_len() as usize;

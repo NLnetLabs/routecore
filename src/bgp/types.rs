@@ -99,6 +99,7 @@ impl std::fmt::Display for LocalPref {
 /// Conventional and BGP-MP Next Hop variants.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+// XXX introduce unicast/multicast variants for v4 and v6 here?
 pub enum NextHop {
     Ipv4(Ipv4Addr),
     Ipv6(Ipv6Addr),

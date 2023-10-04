@@ -10,6 +10,7 @@ use log::warn;
 
 use std::fmt;
 use std::net::IpAddr;
+use std::str::FromStr;
 
 #[cfg(feature = "serde")]
 use serde::{Serialize, Deserialize};
@@ -27,12 +28,12 @@ use serde::{Serialize, Deserialize};
 
 pub struct FixedNlriIter<'a, T, AS> {
     parser: Parser<'a, T>,
-    afisafi: AS,
+    _afisafi: AS,
 }
 
 impl<'a, T: 'a + Octets, AS: AfiSafiParse > FixedNlriIter<'a, T, AS> {
-    pub fn new(parser: &mut Parser<'a, T>, afisafi: AS) -> Self {
-        FixedNlriIter { parser: *parser, afisafi }
+    pub fn new(parser: &mut Parser<'a, T>, _afisafi: AS) -> Self {
+        FixedNlriIter { parser: *parser, _afisafi }
     }
 
     fn get_nlri(&mut self) -> Result<Nlri<T::Range<'a>>, ParseError> {
@@ -446,10 +447,10 @@ pub struct BasicNlri {
 }
 
 /// NLRI comprised of a [`BasicNlri`] and MPLS `Labels`.
-#[derive(Clone, Debug)]
-pub struct MplsNlri<Octets> {
+#[derive(Copy, Clone, Debug)]
+pub struct MplsNlri<Octs> {
     basic: BasicNlri,
-    labels: Labels<Octets>,
+    labels: Labels<Octs>,
 }
 
 impl<Octs, Other> PartialEq<MplsNlri<Other>> for MplsNlri<Octs>
@@ -463,10 +464,10 @@ where Octs: AsRef<[u8]>,
 
 /// NLRI comprised of a [`BasicNlri`], MPLS `Labels` and a VPN
 /// `RouteDistinguisher`.
-#[derive(Clone, Debug)]
-pub struct MplsVpnNlri<Octets> {
+#[derive(Copy, Clone, Debug)]
+pub struct MplsVpnNlri<Octs> {
     basic: BasicNlri,
-    labels: Labels<Octets>,
+    labels: Labels<Octs>,
     rd: RouteDistinguisher,
 }
 
@@ -482,7 +483,7 @@ where Octs: AsRef<[u8]>,
 }
 
 /// VPLS Information as defined in RFC4761.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub struct VplsNlri {
     rd: RouteDistinguisher,
     ve_id: u16,
@@ -494,11 +495,11 @@ pub struct VplsNlri {
 /// NLRI containing a FlowSpec v1 specification.
 ///
 /// Also see [`crate::flowspec`].
-#[derive(Clone, Debug)]
-pub struct FlowSpecNlri<Octets> {
+#[derive(Copy, Clone, Debug)]
+pub struct FlowSpecNlri<Octs> {
     #[allow(dead_code)]
     afi: AFI,
-    raw: Octets,
+    raw: Octs,
 }
 
 impl<Octs, Other> PartialEq<FlowSpecNlri<Other>> for FlowSpecNlri<Octs>
@@ -513,7 +514,7 @@ where Octs: AsRef<[u8]>,
 /// NLRI containing a Route Target membership as defined in RFC4684.
 ///
 /// **TODO**: implement accessor methods for the contents of this NLRI.
-#[derive(Clone, Debug)]
+#[derive(Copy, Clone, Debug)]
 pub struct RouteTargetNlri<Octs> {
     #[allow(dead_code)]
     raw: Octs,
@@ -529,7 +530,7 @@ where Octs: AsRef<[u8]>,
 }
 
 /// Conventional and BGP-MP NLRI variants.
-#[derive(Clone, Debug)]
+#[derive(Copy, Clone, Debug)]
 pub enum Nlri<Octets> {                     // (AFIs  , SAFIs):
     Unicast(BasicNlri),                     // (v4/v6, unicast)
     Multicast(BasicNlri),                   // (v4/v6, multicast)
@@ -617,33 +618,103 @@ impl<Octs: Octets> fmt::Display for Nlri<Octs> {
 }
 
 impl<Octs, SrcOcts> OctetsFrom<Nlri<SrcOcts>> for Nlri<Octs> 
-where
-    Octs: OctetsFrom<SrcOcts>
+    where Octs: OctetsFrom<SrcOcts>,
 {
-    //type Error = Octs::Error;
-    type Error = std::convert::Infallible;
+    type Error = Octs::Error;
 
     fn try_octets_from(source: Nlri<SrcOcts>) -> Result<Self, Self::Error> {
         match source {
             Nlri::Unicast(b) => Ok(Nlri::Unicast(b)),
             Nlri::Multicast(b) => Ok(Nlri::Multicast(b)),
+            Nlri::FlowSpec(m) => Ok(Nlri::FlowSpec(FlowSpecNlri {
+                    afi: m.afi,
+                    raw: Octs::try_octets_from(m.raw)?
+            })),
             _ => todo!()
         }
     }
 }
 
-impl<'a, Octs, SrcOcts: 'a> OctetsFrom<&'a Nlri<SrcOcts>> for Nlri<Octs> 
+/*
+impl<'a, Octs, SrcOcts: 'a + Octets> OctetsFrom<&'a Nlri<SrcOcts>> for Nlri<Octs> 
 where
-    Octs: OctetsFrom<SrcOcts>
+    Octs: OctetsFrom<SrcOcts>,
+    //SrcOcts: Clone,
+    //Infallible: From<Octs::Error>
 {
-    type Error = std::convert::Infallible;
+    type Error = Octs::Error;
+    //type Error = std::convert::Infallible;
 
     fn try_octets_from(source: &'a Nlri<SrcOcts>) -> Result<Self, Self::Error> {
-        match *source {
-            Nlri::Unicast(b) => Ok(Nlri::Unicast(b)),
-            Nlri::Multicast(b) => Ok(Nlri::Multicast(b)),
+        match source {
+            Nlri::Unicast(b) => Ok(Nlri::Unicast(*b)),
+            Nlri::Multicast(b) => Ok(Nlri::Multicast(*b)),
+            //Nlri::FlowSpec(m) => Ok(Nlri::FlowSpec(FlowSpecNlri::try_octets_from(m)?)),
+            //Nlri::FlowSpec(_) => Ok(Nlri::try_octets_from(*source)?),
+            Nlri::FlowSpec(m) => Ok(Nlri::FlowSpec(FlowSpecNlri {
+                    afi: m.afi,
+                    raw: Octs::try_octets_from(m.raw.as_ref())?
+            })),
             _ => todo!()
         }
+    }
+}
+*/
+
+impl<'a, SrcOcts: 'a + Octets> OctetsFrom<&'a Nlri<SrcOcts>> for Nlri<Vec<u8>> 
+    where Vec<u8>: OctetsFrom<SrcOcts>,
+{
+    type Error = <Vec<u8> as OctetsFrom<SrcOcts>>::Error;
+
+    fn try_octets_from(source: &'a Nlri<SrcOcts>) -> Result<Self, Self::Error> {
+        match source {
+            Nlri::Unicast(b) => Ok(Nlri::Unicast(*b)),
+            Nlri::Multicast(b) => Ok(Nlri::Multicast(*b)),
+            Nlri::FlowSpec(m) => Ok(Nlri::FlowSpec(FlowSpecNlri {
+                    afi: m.afi,
+                    raw: m.raw.as_ref().to_vec()
+            })),
+            _ => todo!()
+        }
+    }
+}
+
+impl<Octs, SrcOcts: Octets> OctetsFrom<FlowSpecNlri<SrcOcts>> for FlowSpecNlri<Octs>
+    where Octs: OctetsFrom<SrcOcts>,
+{
+    type Error = Octs::Error;
+
+    fn try_octets_from(
+        source: FlowSpecNlri<SrcOcts>
+    ) -> Result<Self, Self::Error> {
+        Ok(FlowSpecNlri { afi: source.afi, raw: Octs::try_octets_from(source.raw)? } )
+    }
+}
+
+/*
+impl<'a, Octs, SrcOcts: 'a + Octets> OctetsFrom<&'a FlowSpecNlri<SrcOcts>> for FlowSpecNlri<Octs>
+    where Octs: OctetsFrom<SrcOcts>,
+{
+    type Error = Octs::Error;
+
+    fn try_octets_from(
+        source: &'a FlowSpecNlri<SrcOcts>
+    ) -> Result<Self, Self::Error> {
+        Ok(FlowSpecNlri { afi: source.afi, raw: Octs::try_octets_from(source.raw)? } )
+    }
+}
+*/
+
+impl<'a, SrcOcts: 'a + Octets> OctetsFrom<&'a FlowSpecNlri<SrcOcts>> for FlowSpecNlri<Vec<u8>>
+    where Vec<u8>: OctetsFrom<SrcOcts>,
+          Vec<u8>: From<SrcOcts>
+{
+    type Error = <Vec<u8> as OctetsFrom<SrcOcts>>::Error;
+
+    fn try_octets_from(
+        source: &'a FlowSpecNlri<SrcOcts>
+    ) -> Result<Self, Self::Error> {
+        Ok(FlowSpecNlri { afi: source.afi, raw: source.raw.as_ref().to_vec() } )
     }
 }
 
@@ -668,7 +739,7 @@ where Octs: AsRef<[u8]>,
 impl<Octs: AsRef<[u8]>> Eq for Nlri<Octs> { }
 
 
-impl<Octets> Nlri<Octets> {
+impl<Octs: AsRef<[u8]>> Nlri<Octs> {
 
     /// Returns the tuple of (AFI, SAFI) for this Nlri.
     pub fn afi_safi(&self) -> (AFI, SAFI) {
@@ -710,7 +781,7 @@ impl<Octets> Nlri<Octets> {
     /// Returns the MPLS [`Labels`], if any.
     ///
     /// Applicable to MPLS and MPLS-VPN NLRI.
-    pub fn labels(&self) -> Option<&Labels<Octets>> {
+    pub fn labels(&self) -> Option<&Labels<Octs>> {
         match &self {
             Nlri::Mpls(n) => Some(&n.labels),
             Nlri::MplsVpn(n) => Some(&n.labels),
@@ -768,14 +839,14 @@ impl<Octets> Nlri<Octets> {
 
     pub fn compose_len(&self) -> usize {
         match self {
-            Nlri::Unicast(b) => b.compose_len(),
-            _ => unimplemented!()
+            Nlri::Unicast(b) | Nlri::Multicast(b) => b.compose_len(),
+            Nlri::FlowSpec(f) => f.compose_len(),
+            _ => todo!()
         }
     }
 }
 
 
-use std::str::FromStr;
 // XXX While Nlri<()> might make more sense, it clashes with trait bounds
 // like Vec<u8>: OctetsFrom<T> elsewhere, as, From<()> is not implemented for
 // Vec<u8>. Similarly, () is not AsRef<[u8]>.
@@ -1252,7 +1323,6 @@ impl<Octs: Octets> FlowSpecNlri<Octs> {
     where
         R: Octets<Range<'a> = Octs>
     {
-        let pos = parser.pos();
         let len1 = parser.parse_u8()?;
         let len: u16 = if len1 >= 0xf0 {
             let len2 = parser.parse_u8()? as u16;
@@ -1260,6 +1330,7 @@ impl<Octs: Octets> FlowSpecNlri<Octs> {
         } else {
             len1 as u16
         };
+        let pos = parser.pos();
         assert_eq!(len as usize, parser.remaining());
 
         match afi {
@@ -1278,9 +1349,7 @@ impl<Octs: Octets> FlowSpecNlri<Octs> {
             }
         }
                 
-        let raw_len = parser.pos() - pos;
         parser.seek(pos)?;
-        //let raw = parser.parse_octets(raw_len)?;
         let raw = parser.parse_octets(len as usize)?;
 
         Ok(
@@ -1289,6 +1358,33 @@ impl<Octs: Octets> FlowSpecNlri<Octs> {
                 raw
             }
         )
+    }
+
+    pub(crate) fn compose<Target: OctetsBuilder>(&self, target: &mut Target)
+        -> Result<(), Target::AppendError> {
+        let len = self.raw.as_ref().len();
+        if len >= 240 {
+            todo!(); //FIXME properly encode into 0xfnnn for 239 < len < 4095
+            /*
+            target.append_slice(
+                &u16::try_from(self.compose_len()).unwrap_or(u16::MAX)
+                .to_be_bytes()
+            )?;
+            */
+        } else {
+            // We know len < 255 so we can safely unwrap.
+            target.append_slice(&[u8::try_from(len).unwrap()])?;
+        }
+        target.append_slice(self.raw.as_ref())
+    }
+}
+
+
+impl<Octs: AsRef<[u8]>> FlowSpecNlri<Octs> {
+    pub(crate) fn compose_len(&self) -> usize {
+        let value_len = self.raw.as_ref().len();
+        let len_len = if value_len >= 240 { 2 } else { 1 } ;
+        len_len + value_len
     }
 }
 

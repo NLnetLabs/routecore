@@ -6,6 +6,7 @@ use octseq::{Octets, OctetsBuilder, OctetsFrom, Parser};
 
 use crate::asn::Asn;
 use crate::bgp::aspath::HopPath;
+use crate::bgp::message::nlri::FixedNlriIter;
 use crate::bgp::message::update_builder::{
     MpReachNlriBuilder,
     MpUnreachNlriBuilder
@@ -310,7 +311,7 @@ macro_rules! path_attributes {
             pub fn into_value_parser(self) -> Result<Parser<'a, Octs>, ParseError> {
                 match self {
                 $(
-                    Self::$name(mut p, _) => {
+                    Self::$name(p, _) => {
                         Ok(p)
                     }
                 ),+,
@@ -1034,7 +1035,6 @@ impl Attribute for ClusterList {
     }
 }
 
-use crate::bgp::message::nlri::{FixedNlriIter, Ipv4Unicast};
 //--- MpReachNlri
 impl Attribute for MpReachNlri {
     fn value_len(&self) -> usize { 
@@ -1060,7 +1060,6 @@ impl Attribute for MpReachNlri {
             afi, safi, nexthop, sc.addpath_enabled()
         );
 
-        use crate::bgp::message::nlri::{BasicNlri, Nlri, FlowSpecNlri};
         // TODO all other match arms
         match(afi, safi, sc.addpath_enabled()) {
             (AFI::Ipv4, SAFI::Unicast, false) => {
