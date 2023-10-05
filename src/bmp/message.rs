@@ -140,9 +140,13 @@ impl<Octets: AsRef<[u8]>> AsRef<[u8]> for RouteMirroring<Octets> {
 
 impl<'a, Octs: Octets + 'a> Message<Octs> {
     pub fn from_octets(octets: Octs) -> Result<Self, ParseError> {
-        let mut parser = Parser::from_ref(&octets);
-        let ch = CommonHeader::parse(&mut parser)?;
-        match ch.msg_type() {
+        let msg_type = {
+            let mut parser = Parser::from_ref(&octets);
+            let ch = CommonHeader::parse(&mut parser)?;
+            ch.msg_type()
+        };
+
+        match msg_type {
             MessageType::RouteMonitoring =>
                 Ok(Message::RouteMonitoring(RouteMonitoring::from_octets(octets)?)),
             MessageType::StatisticsReport =>
