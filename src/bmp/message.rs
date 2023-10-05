@@ -312,7 +312,7 @@ impl<Octs: Octets> CommonHeader<Octs> {
     }
 
     /// Returns the message type.
-    pub fn msg_type(&self) -> MessageType { // XXX why does &self break here?
+    pub fn msg_type(&self) -> MessageType {
         self.octets.as_ref()[5].into()
     }
 
