@@ -140,9 +140,13 @@ impl<Octets: AsRef<[u8]>> AsRef<[u8]> for RouteMirroring<Octets> {
 
 impl<'a, Octs: Octets + 'a> Message<Octs> {
     pub fn from_octets(octets: Octs) -> Result<Self, ParseError> {
-        let mut parser = Parser::from_ref(&octets);
-        let ch = CommonHeader::parse(&mut parser)?;
-        match ch.msg_type() {
+        let msg_type = {
+            let mut parser = Parser::from_ref(&octets);
+            let ch = CommonHeader::parse(&mut parser)?;
+            ch.msg_type()
+        };
+
+        match msg_type {
             MessageType::RouteMonitoring =>
                 Ok(Message::RouteMonitoring(RouteMonitoring::from_octets(octets)?)),
             MessageType::StatisticsReport =>
@@ -196,17 +200,17 @@ impl<Octs: Octets> Message<Octs>
     }
 
     /// Return the length of the message, including headers.
-	pub fn length(&self) -> u32 {
-		self.common_header().length()
-	}
+    pub fn length(&self) -> u32 {
+        self.common_header().length()
+    }
 
     /// Return the BMP version of the message.
-	pub fn version(self) -> u8 {
-		self.common_header().version()
-	}
+    pub fn version(&self) -> u8 {
+        self.common_header().version()
+    }
 
     /// Return the message type.
-    pub fn msg_type(self) -> MessageType {
+    pub fn msg_type(&self) -> MessageType {
         self.common_header().msg_type()
     }
 }
@@ -298,17 +302,17 @@ impl<Octs: Octets> CommonHeader<Octs> {
     }
 
     /// Returns the BMP version of the message.
-	pub fn version(self) -> u8 {
-		self.octets.as_ref()[0]
-	}
+    pub fn version(&self) -> u8 {
+        self.octets.as_ref()[0]
+    }
 
     /// Returns the length of the message, including headers.
-	pub fn length(&self) -> u32 {
-		u32::from_be_bytes(self.octets.as_ref()[1..5].try_into().unwrap())
-	}
+    pub fn length(&self) -> u32 {
+        u32::from_be_bytes(self.octets.as_ref()[1..5].try_into().unwrap())
+    }
 
     /// Returns the message type.
-    pub fn msg_type(self) -> MessageType { // XXX why does &self break here?
+    pub fn msg_type(&self) -> MessageType {
         self.octets.as_ref()[5].into()
     }
 
