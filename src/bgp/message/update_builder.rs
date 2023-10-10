@@ -5,6 +5,7 @@ use std::collections::BTreeMap;
 
 use bytes::BytesMut;
 use octseq::{FreezeBuilder, Octets, OctetsBuilder, OctetsFrom, OctetsInto, ShortBuf};
+use log::warn;
 
 use crate::bgp::aspath::HopPath;
 use crate::bgp::communities::StandardCommunity;
@@ -92,6 +93,10 @@ impl<Target: OctetsBuilder> UpdateBuilder<Target> {
                 if pa.typecode() != PathAttributeType::MpReachNlri
                     && pa.typecode() != PathAttributeType::MpUnreachNlri
                 {
+                    if let PathAttributeType::Invalid(n) = pa.typecode() {
+                        warn!("invalid PA {}", n);
+                        pdu.print_pcap();
+                    }
                     builder.add_attribute(pa.to_owned()?)?;
                 }
             } else {
@@ -228,6 +233,12 @@ impl<Target: OctetsBuilder> UpdateBuilder<Target> {
     pub fn add_attribute(&mut self, pa: PathAttribute)
         -> Result<(), ComposeError>
     {
+        if let PathAttribute::Invalid(..) = pa {
+            warn!(
+                "adding Invalid attribute to UpdateBuilder: {}",
+                  &pa.typecode()
+            );
+        }
         if let Some(existing_pa) = self.attributes.get_mut(&pa.typecode()) {
 
             let new_total = self.total_pdu_len
