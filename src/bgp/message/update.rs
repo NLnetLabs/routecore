@@ -547,6 +547,10 @@ impl<Octs: Octets> UpdateMessage<Octs> {
         })
     }
 
+    pub fn into_octets(self) -> Octs {
+        self.octets
+    }
+
     fn check(octets: &[u8], config: SessionConfig) -> Result<(), ParseError> {
         let mut parser = Parser::from_ref(octets);
         Header::check(&mut parser)?;
