@@ -335,11 +335,12 @@ impl<Target: OctetsBuilder> UpdateBuilder<Target> {
         ) {
             if let PathAttribute::MpReachNlri(ref mut pa) = pa {
                 let builder = pa.as_mut();
-                let new_bytes = match builder.get_nexthop() {
-                    NextHop::Ipv6(_) => 16,
-                    NextHop::Ipv6LL(_,_) => 0,
-                    _ => unreachable!()
-                };
+                match builder.get_nexthop() {
+                    NextHop::Ipv6(_) | NextHop::Ipv6LL(_,_) => { },
+                    _ => return Err(ComposeError::IllegalCombination),
+                }
+                
+                let new_bytes = builder.compose_len_nh_ll();
 
                 let new_total = self.total_pdu_len + new_bytes;
                 if new_total > Self::MAX_PDU {
@@ -945,6 +946,23 @@ impl MpReachNlriBuilder {
         }
         announcement_len
     }
+
+    pub(crate) fn compose_len_nh_ll(&self/*, nexthop: Ipv6Addr*/) -> usize {
+        let nh_len = match self.nexthop {
+            NextHop::Ipv6(_) => 16,
+            NextHop::Ipv6LL(_,_) => 0,
+            _ => unreachable!()
+        };
+        if !self.extended && self.len + nh_len > 255 {
+            // Adding this announcement would make the path attribute exceed
+            // 255 and thus require the Extended Length bit to be set.
+            // This adds a second byte to the path attribute length field,
+            // so we need to account for that.
+            return nh_len + 1;
+        }
+        nh_len
+    }
+
 
     pub(crate) fn compose_value<Target: OctetsBuilder>(
         &self,
