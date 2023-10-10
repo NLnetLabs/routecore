@@ -423,7 +423,7 @@ impl<Octs: Octets> UpdateMessage<Octs> {
     //--- Non-mandatory path attribute helpers -------------------------------
 
     /// Returns the Multi-Exit Discriminator value, if any.
-    pub fn multi_exit_desc(&self) -> Option<MultiExitDisc> {
+    pub fn multi_exit_disc(&self) -> Option<MultiExitDisc> {
         self.path_attributes().iter().find(|pa|
             pa.type_code() == PathAttributeType::MultiExitDisc
         ).map(|pa| {
@@ -2232,7 +2232,7 @@ mod tests {
         assert!(!pa4.is_extended_length());
         assert_eq!(pa4.length(), 4);
         assert_eq!(pa4.value().as_ref(), &[0x00, 0x00, 0x00, 0x01]);
-        assert_eq!(update.multi_exit_desc(), Some(MultiExitDisc(1)));
+        assert_eq!(update.multi_exit_disc(), Some(MultiExitDisc(1)));
 
         assert!(pa_iter.next().is_none());
 
@@ -2422,7 +2422,7 @@ mod tests {
             &buf,
             Some(SessionConfig::modern())
             ).unwrap().try_into().unwrap();
-        assert_eq!(update.multi_exit_desc(), Some(MultiExitDisc(0)));
+        assert_eq!(update.multi_exit_disc(), Some(MultiExitDisc(0)));
         assert_eq!(update.local_pref(), Some(LocalPref(100)));
     }
 
