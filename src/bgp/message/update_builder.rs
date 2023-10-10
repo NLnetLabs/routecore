@@ -689,14 +689,11 @@ where Infallible: From<<Target as OctetsBuilder>::AppendError>
 */
 
 impl<Target> UpdateBuilder<Target>
-where
-    Target: OctetsBuilder + FreezeBuilder + AsMut<[u8]>,
-    <Target as FreezeBuilder>::Octets: Octets,
 {
     pub fn into_message(self) ->
         Result<UpdateMessage<<Target as FreezeBuilder>::Octets>, ComposeError>
     where
-        Target: FreezeBuilder,
+        Target: OctetsBuilder + FreezeBuilder + AsMut<[u8]>,
         <Target as FreezeBuilder>::Octets: Octets,
     {
         self.is_valid()?;
@@ -741,6 +738,8 @@ where
 
     fn finish(mut self)
         -> Result<<Target as FreezeBuilder>::Octets, Target::AppendError>
+    where
+        Target: OctetsBuilder + FreezeBuilder + AsMut<[u8]>
     {
         let mut header = Header::for_slice_mut(self.target.as_mut());
         header.set_length(u16::try_from(self.total_pdu_len).unwrap());
@@ -1092,7 +1091,6 @@ impl MpUnreachNlriBuilder {
 
     pub(crate) fn add_withdrawal<T>(&mut self, withdrawal: &Nlri<T>)
     where
-        //T: OctetsInto<Vec<u8>>
         Vec<u8>: OctetsFrom<T>,
         T: Octets,
 
@@ -1102,11 +1100,9 @@ impl MpUnreachNlriBuilder {
             self.extended = true;
         }
         self.len += withdrawal_len;
-        //self.withdrawals.push(withdrawal.octets_into());
         self.withdrawals.push(
             <&Nlri<T> as OctetsInto<Nlri<Vec<u8>>>>::try_octets_into(withdrawal).map_err(|_| ComposeError::todo() ).unwrap()
             );
-        //Ok(())
     }
 
     pub(crate) fn compose_len<T>(&self, withdrawal: &Nlri<T>) -> usize
