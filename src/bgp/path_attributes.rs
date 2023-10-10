@@ -892,13 +892,13 @@ impl Attribute for Aggregator {
     }
 
     fn validate<Octs: Octets>(
-        flags: Flags,
+        _flags: Flags,
         parser: &mut Parser<'_, Octs>,
         session_config: SessionConfig
     ) -> Result<(), ParseError> {
-        if flags != Self::FLAGS.into() {
-                return Err(ParseError::form_error("invalid flags"));
-        }
+        //if flags != Self::FLAGS.into() {
+        //        return Err(ParseError::form_error("invalid flags"));
+        //}
         if session_config.has_four_octet_asn() {
             check_len_exact!(parser, 8, "AGGREGATOR")?;
         } else {
