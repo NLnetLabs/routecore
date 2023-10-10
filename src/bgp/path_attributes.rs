@@ -1,7 +1,7 @@
 use std::fmt;
 use std::net::Ipv4Addr;
 
-use log::debug;
+use log::{debug, warn};
 use octseq::{Octets, OctetsBuilder, OctetsFrom, Parser};
 
 use crate::asn::Asn;
@@ -152,21 +152,26 @@ macro_rules! path_attributes {
             pub fn compose<Target: OctetsBuilder>(
                 &self,
                 target: &mut Target
-            ) -> Result<(), ComposeError> {
+            ) -> Result<(), Target::AppendError> {
 
                 match self {
                 $(
                     PathAttribute::$name(i) => {
                         i.compose(target)
-                            .map_err(|_| ComposeError::ShortBuf)
                     }
                 ),+
                     PathAttribute::Unimplemented(u) => {
                         u.compose(target)
-                            .map_err(|_| ComposeError::ShortBuf)
                     }
-                    PathAttribute::Invalid(_,_,_) => {
-                        Err(ComposeError::InvalidAttribute)
+                    PathAttribute::Invalid(flags, tc, val) => {
+                        warn!("composing invalid path attribute {tc}");
+                        target.append_slice(&[flags.0 | Flags::PARTIAL, *tc])?;
+                        if val.len() > 255 {
+                            target.append_slice(&u16::try_from(val.len()).unwrap_or(u16::MAX).to_be_bytes())?;
+                        } else {
+                            target.append_slice(&u8::try_from(val.len()).unwrap_or(u8::MAX).to_be_bytes())?;
+                        }
+                        target.append_slice(&val)
                     }
                 }
             }
@@ -177,7 +182,12 @@ macro_rules! path_attributes {
                         PathAttribute::$name(i) => i.compose_len()
                     ),+,
                     PathAttribute::Unimplemented(u) => u.compose_len(),
-                    PathAttribute::Invalid(_, _, _) => 0
+                    PathAttribute::Invalid(_, _, val) => if val.len() > 255 {
+                        2 + 2 + val.len()
+                    } else {
+                        2 + 1 + val.len()
+
+                    }
                 }
             }
 
@@ -241,7 +251,7 @@ macro_rules! path_attributes {
                             flags.into(), &mut pp, sc
                         ) {
                             debug!("failed to parse path attribute: {e}");
-                            pp.seek(start_pos)?;
+                            pp.seek(start_pos + header_len)?;
                             WireformatPathAttribute::Invalid(
                                 $flags.into(), $typecode, pp
                             )
@@ -252,10 +262,14 @@ macro_rules! path_attributes {
                     }
                     ),+
                     ,
-                    _ => WireformatPathAttribute::Unimplemented(
-                        UnimplementedWireformat::new(
-                            flags.into(), typecode, pp
-                        ))
+                    _ => {
+                        pp.seek(start_pos + header_len)?;
+                        WireformatPathAttribute::Unimplemented(
+                            UnimplementedWireformat::new(
+                                flags.into(), typecode, pp
+                            )
+                        )
+                    }
                 };
 
                 Ok(res)
