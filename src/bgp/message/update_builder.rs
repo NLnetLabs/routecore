@@ -109,7 +109,6 @@ impl<Target: OctetsBuilder> UpdateBuilder<Target> {
 
     //--- Withdrawals
 
-    //pub fn add_withdrawal(&mut self, withdrawal: &Nlri<Vec<u8>>)
     pub fn add_withdrawal<T>(
         &mut self,
         withdrawal: &Nlri<T>
@@ -777,12 +776,9 @@ where
             &u16::try_from(self.attributes_len).unwrap().to_be_bytes()
         );
 
-        // XXX again them struggles with Target::AppendError and converting..
-        if let Err(e) = self.attributes.iter().try_for_each(
+        self.attributes.iter().try_for_each(
             |(_tc, pa)| pa.compose(&mut self.target)
-        ) {
-            unreachable!("{e}");
-        }
+        )?;
 
         // XXX Here, in the conventional NLRI field at the end of the PDU, we
         // write IPv4 Unicast announcements. But what if we have agreed to do
@@ -936,7 +932,6 @@ impl MpReachNlriBuilder {
         );
     }
 
-    //pub(crate) fn compose_len(&self, announcement: &Nlri<Vec<u8>>) -> usize {
     pub(crate) fn compose_len<T>(&self, announcement: &Nlri<T>) -> usize
         where T: AsRef<[u8]>
     {
