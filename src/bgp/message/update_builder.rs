@@ -659,6 +659,18 @@ impl<Target> UpdateBuilder<Target>
         res
     }
 
+    fn larger_than(&self, max: usize) -> bool {
+        // TODO add more 'quick returns' here, e.g. for MpUnreachNlri or
+        // conventional withdrawals/announcements.
+
+        if let Some(PathAttribute::MpReachNlri(b)) = self.attributes.get(&PathAttributeType::MpReachNlri) {
+            if b.as_ref().announcements.len() * 2 > max {
+                return true
+            }
+        }
+        self.calculate_pdu_length() > max
+    }
+
     /// Compose the PDU, returns the builder if it exceeds the max PDU size.
     ///
     /// 
@@ -670,9 +682,9 @@ impl<Target> UpdateBuilder<Target>
         Target: Clone + OctetsBuilder + FreezeBuilder + AsMut<[u8]> + octseq::Truncate,
         <Target as FreezeBuilder>::Octets: Octets
     {
-        let pdu_len = self.calculate_pdu_length();
-        if pdu_len <= Self::MAX_PDU {
+        if !self.larger_than(Self::MAX_PDU) {
             return (self.into_message(), None)
+
         }
 
         // It does not fit in a single PDU. Figure out where to split things.
@@ -770,9 +782,16 @@ impl<Target> UpdateBuilder<Target>
         // At this point, we have no conventional withdrawals/announcements or
         // MP_UNREACH_NLRI path attribute.
 
+        // FIXME this works, but is still somewhat slow for very large input
+        // sets. The first PDUs take longer to construct than the later ones.
+        // Flamegraph currently hints at the fn split on MpReachNlriBuilder.
+
+        // FIXME this does not yet take into account the size of the other
+        // attributes, which must be copied to every PDU. So the magical 4000
+        // below needs to be something smarter.
         let maybe_pdu = 
-            if let Some(PathAttribute::MpReachNlri(b)) = self.attributes.get_mut(&PathAttributeType::MpReachNlri) {
-                let reach_builder = b.as_mut();
+            if let Some(PathAttribute::MpReachNlri(b)) = self.attributes.remove(&PathAttributeType::MpReachNlri) {
+                let mut reach_builder = b.inner();
                 let mut split_at = 0;
                 if !reach_builder.announcements.is_empty() {
                     let mut compose_len = 0;
@@ -786,8 +805,8 @@ impl<Target> UpdateBuilder<Target>
 
                     let this_batch = reach_builder.split(split_at);
                     let mut builder = Self::from_target(self.target.clone()).unwrap();
-                    // XXX the MP_REACH_NLRI is unnecessarily cloned here..
                     builder.attributes = self.attributes.clone();
+                    self.add_attribute(new_pas::MpReachNlri::new(reach_builder).into()).unwrap();
                     builder.add_attribute(new_pas::MpReachNlri::new(this_batch).into()).unwrap();
 
                     Some(builder.into_message())
@@ -803,21 +822,21 @@ impl<Target> UpdateBuilder<Target>
         }
 
 
+        // If we end up here, there is something other than
+        // announcements/withdrawals causing very large PDUs. The only thing
+        // that comes to mind is any type of Communities, but we can not split
+        // those without altering the information that the user intends to
+        // convey. So, we error out.
 
-        todo!()
-        
+        let pdu_len = self.calculate_pdu_length();
+        (Err(ComposeError::PduTooLarge(pdu_len)), None)
 
-
-
-        // 
-
-        //(Err(ComposeError::todo()), Some(self))
-
-        // calc length
-        // if < Self::MAX_PDU, output 1 and be done
-        // otherwise
-        // output 1 and the remainder of the builder?
     }
+
+
+    // TODO we need a lazy version of into_messages 
+    // so something something iterator.
+
 
     fn into_messages(self) -> Result<
         Vec<UpdateMessage<<Target as FreezeBuilder>::Octets>>,
@@ -827,8 +846,9 @@ impl<Target> UpdateBuilder<Target>
         Target: Clone + OctetsBuilder + FreezeBuilder + AsMut<[u8]> + octseq::Truncate,
         <Target as FreezeBuilder>::Octets: Octets
     {
-        let mut remainder = Some(self);
+        //let mut res = Vec::with_capacity(self.calculate_pdu_length() / Self::MAX_PDU);
         let mut res = Vec::new();
+        let mut remainder = Some(self);
         loop {
             if remainder.is_none() {
                 return Ok(res);
@@ -1715,14 +1735,16 @@ mod tests {
     #[test]
     fn into_messages_many_announcements_mp() {
         let mut builder = UpdateBuilder::new_vec();
-        let prefixes_num = 9024;
+        let prefixes_num = 1_000_000;
         for i in 0..prefixes_num {
             builder.add_announcement(
-                &Nlri::unicast_from_str(&format!("2001:db:{:04}::/48", i))
-                    .unwrap()
+                &Nlri::<&[u8]>::Unicast(BasicNlri::new(Prefix::new_v6((i << 96).into(), 32).unwrap()))
+                //&Nlri::unicast_from_str(&format!("2001:db:{:04}::/48", i))
+                //    .unwrap()
             ).unwrap();
         }
         builder.set_local_pref(new_pas::LocalPref::new(123)).unwrap();
+        dbg!("builder done");
 
         let mut a_cnt = 0;
         for pdu in builder.into_messages().unwrap() {
@@ -1730,7 +1752,7 @@ mod tests {
             assert!(pdu.local_pref().is_some());
         }
 
-        assert_eq!(a_cnt, prefixes_num);
+        assert_eq!(a_cnt, prefixes_num.try_into().unwrap());
     }
 
 
