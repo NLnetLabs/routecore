@@ -726,6 +726,25 @@ impl<Target> UpdateBuilder<Target>
         Ok(())
     }
 
+    fn calculate_pdu_length(&self) -> usize {
+        // Marker, length and type.
+        let mut res: usize = 16 + 2 + 1;
+
+        // Withdrawals, 2 bytes for length + N bytes for NLRI:
+        res += 2 + self.withdrawals.iter()
+            .fold(0, |sum, w| sum + w.compose_len());
+
+        // Path attributes, 2 bytes for length + N bytes for attributes:
+        res += 2 + self.attributes.values()
+            .fold(0, |sum, pa| sum + pa.compose_len());
+
+        // Announcements, no length bytes:
+        res += self.announcements.iter()
+            .fold(0, |sum, a| sum + a.compose_len());
+
+        res
+    }
+
     fn finish(mut self)
         -> Result<<Target as FreezeBuilder>::Octets, Target::AppendError>
     where
@@ -1990,6 +2009,10 @@ mod tests {
             //eprintln!("--");
             //panic!("hard stop");
 
+
+            let calculated_len = builder.calculate_pdu_length();
+
+
             let composed = match builder.into_message() {
                 Ok(msg) => msg,
                 Err(e) => {
@@ -1997,6 +2020,10 @@ mod tests {
                     panic!("error: {e}");
                 }
             };
+
+            assert_eq!(composed.as_ref().len(), calculated_len);
+
+
             //let new_len = builder.encode_all().unwrap();
             //let composed = match UpdateMessage::from_octets(
             //    &target[..new_len], sc
