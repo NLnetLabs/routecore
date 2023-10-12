@@ -805,6 +805,34 @@ impl<Target> UpdateBuilder<Target>
         // output 1 and the remainder of the builder?
     }
 
+    fn into_messages(self) -> Result<
+        Vec<UpdateMessage<<Target as FreezeBuilder>::Octets>>,
+        ComposeError
+    >
+    where
+        Target: Clone + OctetsBuilder + FreezeBuilder + AsMut<[u8]> + octseq::Truncate,
+        <Target as FreezeBuilder>::Octets: Octets
+    {
+        let mut remainder = Some(self);
+        let mut res = Vec::new();
+        loop {
+            if remainder.is_none() {
+                return Ok(res);
+            }
+            let (pdu, new_remainder) = remainder.take().unwrap().take_message();
+            match pdu {
+                Ok(pdu) => {
+                    res.push(pdu);
+                    remainder = new_remainder;
+                }
+                Err(e) => {
+                    warn!("error in into_messages(): {}", e);
+                    return Err(e)
+                }
+            }
+        }
+    }
+
     fn finish(mut self)
         -> Result<<Target as FreezeBuilder>::Octets, Target::AppendError>
     where
@@ -1650,15 +1678,38 @@ mod tests {
             if remainder.is_none() {
                 break
             }
-            if let (pdu, new_remainder) = remainder.take().unwrap().take_message() {
-                match pdu {
-                    Ok(pdu) => {
-                        w_cnt += pdu.withdrawals().iter().count();
-                        remainder = new_remainder;
-                    }
-                    Err(e) => panic!("{}", e)
+            let (pdu, new_remainder) = remainder.take().unwrap().take_message();
+            match pdu {
+                Ok(pdu) => {
+                    w_cnt += pdu.withdrawals().iter().count();
+                    remainder = new_remainder;
                 }
+                Err(e) => panic!("{}", e)
             }
+        }
+
+        assert_eq!(w_cnt, prefixes_len);
+    }
+    #[test]
+    fn into_messages() {
+        let mut builder = UpdateBuilder::new_vec();
+        let mut prefixes: Vec<Nlri<Vec<u8>>> = vec![];
+        for i in 1..1500_u32 {
+            prefixes.push(
+                Nlri::Unicast(
+                    Prefix::new_v4(
+                        Ipv4Addr::from((i << 10).to_be_bytes()),
+                        22
+                    ).unwrap().into()
+                )
+            );
+        }
+        let prefixes_len = prefixes.len();
+        builder.append_withdrawals(&mut prefixes).unwrap();
+
+        let mut w_cnt = 0;
+        for pdu in builder.into_messages().unwrap() {
+            w_cnt += pdu.withdrawals().iter().count();
         }
 
         assert_eq!(w_cnt, prefixes_len);
