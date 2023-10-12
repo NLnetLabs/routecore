@@ -82,7 +82,7 @@ macro_rules! attribute {
      $typecode:expr
      ) => {
 
-        #[derive(Debug, Eq, PartialEq)]
+        #[derive(Clone, Debug, Eq, PartialEq)]
         pub struct $name($data);
         impl $name {
             pub fn new(data: $data) -> $name {
@@ -138,7 +138,7 @@ macro_rules! path_attributes {
 
 //------------ PathAttribute -------------------------------------------------
 
-        #[derive(Debug, Eq, PartialEq)]
+        #[derive(Clone, Debug, Eq, PartialEq)]
         pub enum PathAttribute {
             $( $name($name) ),+,
             Unimplemented(UnimplementedPathAttribute),
@@ -434,7 +434,7 @@ path_attributes!(
 
 );
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct UnimplementedPathAttribute {
     flags: Flags,
     typecode: u8,
@@ -523,7 +523,7 @@ impl<'a, Octs: Octets> UnimplementedWireformat<'a, Octs> {
 }
 
 
-pub trait Attribute: AttributeHeader {
+pub trait Attribute: AttributeHeader + Clone {
 
     fn compose_len(&self) -> usize {
         self.header_len() + self.value_len()

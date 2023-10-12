@@ -27,7 +27,6 @@ pub struct UpdateBuilder<Target> {
     //config: AgreedConfig, //FIXME this lives in rotonda_fsm, but that
     //depends on routecore. Sounds like a depedency hell.
     announcements: Vec<Nlri<Vec<u8>>>,
-    announcements_len: usize,
     withdrawals: Vec<Nlri<Vec<u8>>>,
     addpath_enabled: Option<bool>, // for conventional nlri (unicast v4)
                                    //
@@ -58,7 +57,6 @@ where Target: octseq::Truncate
         Ok(UpdateBuilder {
             target,
             announcements: Vec::new(),
-            announcements_len: 0,
             withdrawals: Vec::new(),
             addpath_enabled: None,
 
@@ -402,16 +400,9 @@ where Target: octseq::Truncate
                     self.addpath_enabled = Some(b.is_addpath());
                 }
 
-                let new_bytes_num = announcement.compose_len();
-                let new_total = self.total_pdu_len + new_bytes_num;
-                if new_total > Self::MAX_PDU {
-                    return Err(ComposeError::PduTooLarge(new_total));
-                }
                 self.announcements.push(
                     <&Nlri<T> as OctetsInto<Nlri<Vec<u8>>>>::try_octets_into(announcement).map_err(|_| ComposeError::todo() ).unwrap()
                 );
-                self.announcements_len += new_bytes_num;
-                self.total_pdu_len = new_total;
             }
             n => {
                 if !self.attributes.contains_key(&PathAttributeType::MpReachNlri) {
@@ -750,8 +741,7 @@ impl<Target> UpdateBuilder<Target>
         <Target as FreezeBuilder>::Octets: Octets
     {
         let pdu_len = self.calculate_pdu_length();
-       // if pdu_len <= Self::MAX_PDU {
-        if pdu_len <= 1000 { // TMP FIXME for testing
+        if pdu_len <= Self::MAX_PDU {
             return (self.into_message(), None)
         }
 
@@ -771,7 +761,7 @@ impl<Target> UpdateBuilder<Target>
         // path attribute.
 
 
-        // Attempt 1: many conventional withdrawals
+        // Scenario 1: many conventional withdrawals
         // If we have any withdrawals, they can go by themselves.
         // First naive approach: we split off at most 450 NLRI. In the extreme
         // case of AddPathed /32's this would still fit in a 4096 PDU.
@@ -779,10 +769,8 @@ impl<Target> UpdateBuilder<Target>
         if !self.withdrawals.is_empty() {
             let withdrawal_len = self.withdrawals.iter()
                 .fold(0, |sum, w| sum + w.compose_len());
-            dbg!(withdrawal_len);
 
             let split_at = std::cmp::min(self.withdrawals.len() / 2,  450);
-            dbg!(split_at);
             let this_batch = self.withdrawals.drain(..split_at);
             let mut builder = Self::from_target(self.target.clone()).unwrap();
             
@@ -790,6 +778,28 @@ impl<Target> UpdateBuilder<Target>
 
             return (builder.into_message(), Some(self));
         }
+
+        // Scenario 2: many conventional announcements
+        // Similar but different to the scenario of many withdrawals, as
+        // announcements are tied to the attributes. At this point, we know we
+        // have no conventional withdrawals left.
+
+        if !self.announcements.is_empty() {
+            let announcement_len = self.announcements.iter()
+                .fold(0, |sum, a| sum + a.compose_len());
+
+            let split_at = std::cmp::min(self.announcements.len() / 2,  450);
+            let this_batch = self.announcements.drain(..split_at);
+            let mut builder = Self::from_target(self.target.clone()).unwrap();
+
+            builder.announcements = this_batch.collect();
+            builder.attributes = self.attributes.clone();
+
+            return (builder.into_message(), Some(self));
+
+        }
+
+
         todo!()
         
 
@@ -849,8 +859,6 @@ impl<Target> UpdateBuilder<Target>
         self.target.append_slice(
             &u16::try_from(withdrawals_len).unwrap().to_be_bytes()
         )?;
-
-        dbg!(withdrawals_len);
 
         for w in &self.withdrawals {
             match w {
@@ -919,7 +927,7 @@ impl UpdateBuilder<BytesMut> {
 // size allowed on the BGP session.
 
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MpReachNlriBuilder {
     announcements: Vec<Nlri<Vec<u8>>>,
     len: usize, // size of value, excluding path attribute flags+typecode+len
@@ -1186,7 +1194,7 @@ impl NextHop {
 //    add_withdrawal should check whether the remote side is able to receive
 //    path ids if the Nlri passed to add_withdrawal contains Some(PathId).
 //
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MpUnreachNlriBuilder {
     withdrawals: Vec<Nlri<Vec<u8>>>,
     len: usize, // size of value, excluding path attribute flags+typecode+len
@@ -1284,7 +1292,7 @@ impl MpUnreachNlriBuilder {
 //
 //
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StandardCommunitiesBuilder {
     communities: Vec<StandardCommunity>,
     len: usize, // size of value, excluding path attribute flags+typecode+len
@@ -1603,7 +1611,7 @@ mod tests {
     fn take_message_many_withdrawals() {
         let mut builder = UpdateBuilder::new_vec();
         let mut prefixes: Vec<Nlri<Vec<u8>>> = vec![];
-        for i in 1..500_u32 {
+        for i in 1..1500_u32 {
             prefixes.push(
                 Nlri::Unicast(
                     Prefix::new_v4(
@@ -1690,8 +1698,9 @@ mod tests {
 
         assert_eq!(w_cnt, prefixes_len);
     }
+
     #[test]
-    fn into_messages() {
+    fn into_messages_many_withdrawals() {
         let mut builder = UpdateBuilder::new_vec();
         let mut prefixes: Vec<Nlri<Vec<u8>>> = vec![];
         for i in 1..1500_u32 {
@@ -1710,6 +1719,33 @@ mod tests {
         let mut w_cnt = 0;
         for pdu in builder.into_messages().unwrap() {
             w_cnt += pdu.withdrawals().iter().count();
+        }
+
+        assert_eq!(w_cnt, prefixes_len);
+    }
+
+    #[test]
+    fn into_messages_many_announcements() {
+        let mut builder = UpdateBuilder::new_vec();
+        let mut prefixes: Vec<Nlri<Vec<u8>>> = vec![];
+        for i in 1..1500_u32 {
+            prefixes.push(
+                Nlri::Unicast(
+                    Prefix::new_v4(
+                        Ipv4Addr::from((i << 10).to_be_bytes()),
+                        22
+                    ).unwrap().into()
+                )
+            );
+        }
+        let prefixes_len = prefixes.len();
+        prefixes.iter().by_ref().for_each(|p|
+            builder.add_announcement(p).unwrap()
+        );
+
+        let mut w_cnt = 0;
+        for pdu in builder.into_messages().unwrap() {
+            w_cnt += pdu.announcements().unwrap().count();
         }
 
         assert_eq!(w_cnt, prefixes_len);
