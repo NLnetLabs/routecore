@@ -154,11 +154,6 @@ where Target: octseq::Truncate
                     if let PathAttribute::MpUnreachNlri(ref mut pa) = pa {
                         let builder = pa.as_mut();
 
-                        let new_bytes = builder.compose_len(withdrawal);
-                        let new_total = self.total_pdu_len + new_bytes;
-                        if new_total > Self::MAX_PDU {
-                            return Err(ComposeError::PduTooLarge(new_total));
-                        }
                         if !builder.valid_combination(
                             AFI::Ipv6, SAFI::Unicast, b.is_addpath()
                         ) {
@@ -170,8 +165,7 @@ where Target: octseq::Truncate
                         }
 
                         builder.add_withdrawal(withdrawal);
-                        self.total_pdu_len = new_total;
-                        self.attributes_len += new_bytes;
+
                     } else {
                         unreachable!()
                     }
@@ -230,26 +224,8 @@ where Target: octseq::Truncate
             );
         }
         if let Some(existing_pa) = self.attributes.get_mut(&pa.typecode()) {
-
-            let new_total = self.total_pdu_len
-                - existing_pa.compose_len()
-                + pa.compose_len();
-            if new_total > Self::MAX_PDU {
-                return Err(ComposeError::PduTooLarge(new_total));
-            }
-            self.attributes_len -=  existing_pa.compose_len();
-            self.attributes_len += pa.compose_len();
-            self.total_pdu_len = new_total;
             *existing_pa = pa;
         } else {
-            let new_bytes = pa.compose_len();
-            let new_total = self.total_pdu_len + new_bytes;
-            if new_total > Self::MAX_PDU {
-                return Err(ComposeError::PduTooLarge(new_total));
-            }
-            self.total_pdu_len = new_total;
-            self.attributes_len += new_bytes;
-
             self.attributes.insert(pa.typecode(), pa);
         }
         
@@ -799,6 +775,43 @@ impl<Target> UpdateBuilder<Target>
 
         }
 
+        // Scenario 3: many withdrawals in MP_UNREACH_NLRI
+        // At this point, we have no conventional withdrawals, no conventional
+        // announcements. FIXME but we have possibly send out multiple
+        // MP_UNREACH_NLRI in Scenario 2... reorder this when done.
+        
+        
+        let maybe_pdu = 
+            if let Some(PathAttribute::MpUnreachNlri(b)) = self.attributes.get_mut(&PathAttributeType::MpUnreachNlri) {
+                let unreach_builder = b.as_mut();
+                let mut split_at = 0;
+                if !unreach_builder.withdrawals.is_empty() {
+                    let mut compose_len = 0;
+                    for (idx, w) in unreach_builder.withdrawals.iter().enumerate() {
+                        compose_len += w.compose_len();
+                        if compose_len > 4000 {
+                            split_at = idx;
+                            break;
+                        }
+                    }
+
+                    let this_batch = unreach_builder.split(split_at);
+                    let mut builder = Self::from_target(self.target.clone()).unwrap();
+                    builder.add_attribute(new_pas::MpUnreachNlri::new(this_batch).into()).unwrap();
+
+                    Some(builder.into_message())
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        ;
+        // Bit of a clumsy workaround as we can not return Some(self) from
+        // within the if let ... self.attributes.get_mut above
+        if let Some(pdu) = maybe_pdu {
+            return (pdu, Some(self))
+        }
 
         todo!()
         
@@ -874,8 +887,10 @@ impl<Target> UpdateBuilder<Target>
 
         // attributes_len` is checked to be <= 4096 or <= 65535
         // so it will always fit in a u16.
+        let attributes_len = self.attributes.values()
+            .fold(0, |sum, a| sum + a.compose_len());
         let _ = self.target.append_slice(
-            &u16::try_from(self.attributes_len).unwrap().to_be_bytes()
+            &u16::try_from(attributes_len).unwrap().to_be_bytes()
         );
 
         self.attributes.iter().try_for_each(
@@ -1197,8 +1212,6 @@ impl NextHop {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MpUnreachNlriBuilder {
     withdrawals: Vec<Nlri<Vec<u8>>>,
-    len: usize, // size of value, excluding path attribute flags+typecode+len
-    extended: bool,
     afi: AFI,
     safi: SAFI,
     addpath_enabled: bool,
@@ -1208,16 +1221,23 @@ impl MpUnreachNlriBuilder {
     pub(crate) fn new(afi: AFI, safi: SAFI, addpath_enabled: bool) -> Self {
         MpUnreachNlriBuilder {
             withdrawals: vec![],
-            len: 3, // 3 bytes for AFI+SAFI
-            extended: false,
             afi,
             safi,
             addpath_enabled
         }
     }
 
+    pub(crate) fn split(&mut self, n: usize) -> Self {
+        let this_batch = self.withdrawals.drain(..n).collect();
+        let this_builder = MpUnreachNlriBuilder {
+            withdrawals: this_batch,
+            ..*self
+        };
+        this_builder
+    }
+
     pub(crate) fn value_len(&self) -> usize {
-        self.len
+        3 + self.withdrawals.iter().fold(0, |sum, w| sum + w.compose_len())
     }
 
     pub(crate) fn is_empty(&self) -> bool {
@@ -1239,29 +1259,9 @@ impl MpUnreachNlriBuilder {
         T: Octets,
 
     {
-        let withdrawal_len = withdrawal.compose_len();
-        if !self.extended && self.len + withdrawal_len > 255 {
-            self.extended = true;
-        }
-        self.len += withdrawal_len;
         self.withdrawals.push(
             <&Nlri<T> as OctetsInto<Nlri<Vec<u8>>>>::try_octets_into(withdrawal).map_err(|_| ComposeError::todo() ).unwrap()
             );
-    }
-
-    pub(crate) fn compose_len<T>(&self, withdrawal: &Nlri<T>) -> usize
-        where T: AsRef<[u8]>
-    {
-        let withdrawal_len = withdrawal.compose_len();
-
-        if !self.extended && self.len + withdrawal_len > 255 {
-            // Adding this withdrawal would make the path attribute exceed
-            // 255 and thus require the Extended Length bit to be set.
-            // This adds a second byte to the path attribute length field,
-            // so we need to account for that.
-            return withdrawal_len + 1;
-        }
-        withdrawal_len
     }
 
     pub(crate) fn compose_value<Target: OctetsBuilder>(&self, target: &mut Target)
@@ -1750,6 +1750,27 @@ mod tests {
 
         assert_eq!(w_cnt, prefixes_len);
     }
+
+    #[test]
+    fn into_messages_many_withdrawals_mp() {
+        let mut builder = UpdateBuilder::new_vec();
+        let prefixes_num = 1024;
+        for i in 0..prefixes_num {
+            builder.add_withdrawal(
+                &Nlri::unicast_from_str(&format!("2001:db:{:04}::/48", i))
+                    .unwrap()
+            ).unwrap();
+        }
+
+        let mut w_cnt = 0;
+        for pdu in builder.into_messages().unwrap() {
+            w_cnt += pdu.withdrawals().iter().count();
+        }
+
+        assert_eq!(w_cnt, prefixes_num);
+    }
+
+
 
     #[test]
     fn build_withdrawals_basic_v4_addpath() {
