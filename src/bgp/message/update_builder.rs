@@ -1637,6 +1637,44 @@ mod tests {
     }
 
     #[test]
+    fn take_message_many_withdrawals_2() {
+        let mut builder = UpdateBuilder::new_vec();
+        let mut prefixes: Vec<Nlri<Vec<u8>>> = vec![];
+        for i in 1..1500_u32 {
+            prefixes.push(
+                Nlri::Unicast(
+                    Prefix::new_v4(
+                        Ipv4Addr::from((i << 10).to_be_bytes()),
+                        22
+                    ).unwrap().into()
+                )
+            );
+        }
+        let prefixes_len = prefixes.len();
+        builder.append_withdrawals(&mut prefixes).unwrap();
+
+        let mut w_cnt = 0;
+        let mut remainder = Some(builder);
+        loop {
+            if let (pdu, new_remainder) = remainder.take().unwrap().take_message() {
+                match pdu {
+                    Ok(pdu) => {
+                        w_cnt += pdu.withdrawals().iter().count();
+                        if let Some(next_builder) = new_remainder {
+                            remainder = Some(next_builder);
+                        } else {
+                            break
+                        }
+                    }
+                    Err(e) => panic!("{}", e)
+                }
+            }
+        }
+
+        assert_eq!(w_cnt, prefixes_len);
+    }
+
+    #[test]
     fn build_withdrawals_basic_v4_addpath() {
         use crate::bgp::message::nlri::PathId;
         let mut builder = UpdateBuilder::new_vec();
