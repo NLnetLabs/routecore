@@ -761,20 +761,12 @@ impl<Target> UpdateBuilder<Target>
 
         for w in &self.withdrawals {
             match w {
-                Nlri::Unicast(b) => {
-                    if b.is_v4() {
-                        b.compose(&mut self.target)?;
-                    } else {
-                        // Other withdrawals should not go here, but in
-                        // MP_UNREACH_NLRI. Handling these ones below in the
-                        // path attributes.
-                    }
+                Nlri::Unicast(b) if b.is_v4() => {
+                    b.compose(&mut self.target)?;
                 },
                 _ => todo!(),
             }
         }
-
-
 
         // We can do these unwraps because of the checks in the add/append
         // methods.
@@ -795,14 +787,8 @@ impl<Target> UpdateBuilder<Target>
         // MP_REACH_NLRI attribute then instead?
         for a in &self.announcements {
             match a {
-                Nlri::Unicast(b) => {
-                    if b.is_v4() {
+                Nlri::Unicast(b) if b.is_v4() => {
                         b.compose(&mut self.target)?;
-                    } else {
-                        // Other announcements should not go here, but in
-                        // MP_REACH_NLRI, handled before in the path
-                        // attributes.
-                    }
                 },
                 _ => unreachable!(),
             }
