@@ -290,41 +290,52 @@ impl<Target: OctetsBuilder> UpdateBuilder<Target> {
         self.add_attribute(new_pas::AsPath::new(aspath).into())
     }
 
-    //FIXME we don't know whether we are dealing with unicast or multicast
-    //here.
-    //This matters, as for multicast v4 the nexthop goes in the MP_REACH_NLRI
-    //instead of the conventional NEXT_HOP attribute.
-    pub fn set_nexthop(&mut self, addr: IpAddr) -> Result<(), ComposeError> {
+    pub fn set_nexthop(
+        &mut self,
+        nexthop: NextHop
+    ) -> Result<(), ComposeError> {
         // Depending on the variant of `addr` we add/update either:
         // - the conventional NEXT_HOP path attribute (IPv4); or
         // - we update/create a MpReachNlriBuilder (IPv6)
-        match addr {
-            IpAddr::V4(a) => {
+
+        match nexthop {
+            NextHop::Unicast(IpAddr::V4(a)) => {
                 self.add_attribute(new_pas::NextHop::new(a).into())?;
             }
-            IpAddr::V6(a) => {
-                if let Some(ref mut pa) = self.attributes.get_mut(
+            n => {
+                if let Some(PathAttribute::MpReachNlri(ref mut pa)) = self.attributes.get_mut(
                     &PathAttributeType::MpReachNlri
                 ) {
-                    if let PathAttribute::MpReachNlri(ref mut pa) = pa {
-                        let builder = pa.as_mut();
-                        builder.set_nexthop(a);
-                    } else {
-                        unreachable!()
+                    let builder = pa.as_mut();
+
+                    let len_diff = builder.compose_diff_nh(&nexthop);
+                    // XXX we need to get rid of compose_diff_nh, which will
+                    // also make all this super nasty conversions nonsense go
+                    // away.
+                    let new_total: usize = (isize::try_from(self.total_pdu_len).unwrap() + len_diff).try_into().unwrap();
+                    if new_total > Self::MAX_PDU {
+                        return Err(ComposeError::PduTooLarge(new_total));
                     }
+
+                    builder.set_nexthop(n)?;
+
+                    self.attributes_len = (isize::try_from(self.attributes_len).unwrap() + len_diff).try_into().unwrap();
+                    self.total_pdu_len = new_total;
                 } else {
                     self.add_attribute(new_pas::MpReachNlri::new(
-                        MpReachNlriBuilder::new(
-                            AFI::Ipv6, SAFI::Unicast, NextHop::Ipv6(a), false
-                        )
+                        MpReachNlriBuilder::new_for_nexthop(n)
                     ).into())?;
                 }
             }
+
         }
         Ok(())
     }
+    pub fn set_nexthop_unicast(&mut self, addr: IpAddr) -> Result<(), ComposeError> {
+        self.set_nexthop(NextHop::Unicast(addr))
+    }
 
-    pub fn set_nexthop_ll(&mut self, addr: Ipv6Addr)
+    pub fn set_nexthop_ll_addr(&mut self, addr: Ipv6Addr)
         -> Result<(), ComposeError>
     {
         // We could/should check for addr.is_unicast_link_local() once that
@@ -336,7 +347,8 @@ impl<Target: OctetsBuilder> UpdateBuilder<Target> {
             if let PathAttribute::MpReachNlri(ref mut pa) = pa {
                 let builder = pa.as_mut();
                 match builder.get_nexthop() {
-                    NextHop::Ipv6(_) | NextHop::Ipv6LL(_,_) => { },
+                    NextHop::Unicast(a) if a.is_ipv6() => { } ,
+                    NextHop::Ipv6LL(_,_) => { },
                     _ => return Err(ComposeError::IllegalCombination),
                 }
                 
@@ -346,7 +358,7 @@ impl<Target: OctetsBuilder> UpdateBuilder<Target> {
                 if new_total > Self::MAX_PDU {
                     return Err(ComposeError::PduTooLarge(new_total));
                 }
-                builder.set_nexthop_ll(addr);
+                builder.set_nexthop_ll_addr(addr);
                 self.attributes_len += new_bytes;
                 self.total_pdu_len = new_total;
             } else {
@@ -409,32 +421,12 @@ impl<Target: OctetsBuilder> UpdateBuilder<Target> {
                 self.total_pdu_len = new_total;
             }
             n => {
-                // These go into an MP_REACH_NLRI path attribute.
-                let (afi, safi) = n.afi_safi();
-                let (is_addpath, nexthop) = match n {
-                    Nlri::Unicast(b) | Nlri::Multicast(b) => {
-                        (b.is_addpath(), if b.is_v4() {
-                                NextHop::Ipv4(0.into())
-                            } else {
-                                NextHop::Ipv6(0.into())
-                            }
-                        )
-                    }
-                    Nlri::Mpls(_) => todo!(),
-                    Nlri::MplsVpn(_) => todo!(),
-                    Nlri::Vpls(_) => todo!(),
-                    Nlri::FlowSpec(_) => (false, NextHop::Empty) ,
-                    Nlri::RouteTarget(_) => todo!(),
-                };
-
                 if !self.attributes.contains_key(&PathAttributeType::MpReachNlri) {
                     self.add_attribute(new_pas::MpReachNlri::new(
-                        MpReachNlriBuilder::new(
-                            afi, safi,
-                            nexthop, is_addpath
-                        )
+                            MpReachNlriBuilder::new_for_nlri(&n)
                     ).into())?;
                 }
+
                 let pa = self.attributes.get_mut(&PathAttributeType::MpReachNlri)
                     .unwrap(); // Just added it, so we know it is there.
         
@@ -446,9 +438,7 @@ impl<Target: OctetsBuilder> UpdateBuilder<Target> {
                     if new_total > Self::MAX_PDU {
                         return Err(ComposeError::PduTooLarge(new_total));
                     }
-                    if !builder.valid_combination(
-                        afi, safi, is_addpath
-                    ) {
+                    if !builder.valid_combination(n) {
                         // We are already constructing a
                         // MP_UNREACH_NLRI but for a different
                         // AFI,SAFI than the prefix in `announcement`,
@@ -873,6 +863,22 @@ impl MpReachNlriBuilder {
         }
     }
 
+    fn new_for_nlri<T>( nlri: &Nlri<T>) -> Self
+    where T: Octets,
+          Vec<u8>: OctetsFrom<T>
+    {
+        let (afi, safi) = nlri.afi_safi();
+        let addpath_enabled = nlri.is_addpath();
+        let nexthop = NextHop::new(afi, safi);
+        Self::new(afi, safi, nexthop, addpath_enabled)
+    }
+
+    fn new_for_nexthop(nexthop: NextHop) -> Self {
+        let (afi, safi) = nexthop.afi_safi();
+        let addpath_enabled = false;
+        Self::new(afi, safi, nexthop, addpath_enabled)
+    }
+
     pub(crate) fn value_len(&self) -> usize {
         self.len
     }
@@ -885,19 +891,23 @@ impl MpReachNlriBuilder {
         &self.nexthop
     }
 
-    pub(crate) fn set_nexthop(&mut self, addr: Ipv6Addr) {
-        match self.nexthop {
-            NextHop::Ipv6(_) => self.nexthop = NextHop::Ipv6(addr),
-            NextHop::Ipv6LL(_, ll) => {
-                self.nexthop = NextHop::Ipv6LL(addr, ll)
-            }
-            _ => unimplemented!()
+    pub(crate) fn set_nexthop(&mut self, nexthop: NextHop) -> Result<(), ComposeError> {
+
+        if !self.announcements.is_empty() &&
+            self.nexthop.afi_safi() != nexthop.afi_safi()
+        {
+                return Err(ComposeError::IllegalCombination);
         }
+
+        self.len -= self.nexthop.compose_len();
+        self.nexthop = nexthop;
+        self.len += self.nexthop.compose_len();
+        Ok(())
     }
 
-    pub(crate) fn set_nexthop_ll(&mut self, addr: Ipv6Addr) {
+    pub(crate) fn set_nexthop_ll_addr(&mut self, addr: Ipv6Addr) {
         match self.nexthop {
-            NextHop::Ipv6(a) => {
+            NextHop::Unicast(IpAddr::V6(a)) => {
                 self.nexthop = NextHop::Ipv6LL(a, addr);
                 self.len += 16;
             }
@@ -908,13 +918,12 @@ impl MpReachNlriBuilder {
         }
     }
 
-    pub(crate) fn valid_combination(
-        &self, afi: AFI, safi: SAFI, is_addpath: bool
+     fn valid_combination<T>(
+        &self, nlri: &Nlri<T>
     ) -> bool {
-        self.afi == afi
-        && self.safi == safi
+        (self.afi, self.safi) == nlri.afi_safi()
         && (self.announcements.is_empty()
-             || self.addpath_enabled == is_addpath)
+             || self.addpath_enabled == nlri.is_addpath())
     }
 
     pub(crate) fn add_announcement<T>(&mut self, announcement: &Nlri<T>)
@@ -948,7 +957,7 @@ impl MpReachNlriBuilder {
 
     pub(crate) fn compose_len_nh_ll(&self/*, nexthop: Ipv6Addr*/) -> usize {
         let nh_len = match self.nexthop {
-            NextHop::Ipv6(_) => 16,
+            NextHop::Unicast(IpAddr::V6(_)) => 16,
             NextHop::Ipv6LL(_,_) => 0,
             _ => unreachable!()
         };
@@ -960,6 +969,33 @@ impl MpReachNlriBuilder {
             return nh_len + 1;
         }
         nh_len
+    }
+
+    // FIXME this one is temporary (no really) and has to go with all the
+    // dirty unwrapping. All the length checks should be moved to a different
+    // step in the PDU creation process.
+    pub(crate) fn compose_diff_nh(&self, nexthop: &NextHop) -> isize {
+        let curr_nh = self.nexthop.compose_len();
+        let new_nh = nexthop.compose_len();
+        let diff = new_nh - curr_nh;
+
+        if diff == 0 {
+            return 0;
+        }
+
+        if self.extended && self.len + diff <= 255 {
+            // We were in extended length territory, but not anymore. This
+            // means we switch from a 2-byte to a 1-byte length field for the
+            // attribute.
+            //self.extended = false;
+            return (diff - 1).try_into().unwrap();
+        }
+        if !self.extended && self.len + diff > 255 {
+            //self.extended = true;
+            return (diff + 1).try_into().unwrap();
+        }
+
+        return diff.try_into().unwrap();
     }
 
 
@@ -1004,14 +1040,14 @@ impl NextHop {
     fn compose_len(&self) -> usize {
         // 1 byte for the length, plus:
         1 + match *self {
-            NextHop::Ipv4(_) => 4, 
-            NextHop::Ipv6(_) => 16,
+            NextHop::Unicast(IpAddr::V4(_)) | NextHop::Multicast(IpAddr::V4(_)) => 4, 
+            NextHop::Unicast(IpAddr::V6(_)) | NextHop::Multicast(IpAddr::V6(_)) => 16, 
             NextHop::Ipv6LL(_, _) => 32,
             //NextHop::Ipv4MplsVpnUnicast(RouteDistinguisher, Ipv4Addr),
             //NextHop::Ipv6MplsVpnUnicast(RouteDistinguisher, Ipv6Addr),
             NextHop::Empty => 0, // FlowSpec
             //NextHop::Unimplemented(AFI, SAFI),
-            _ => unimplemented!()
+            n => unimplemented!("{}", n)
         }
     }
 
@@ -1020,8 +1056,10 @@ impl NextHop {
     {
         target.append_slice(&[u8::try_from(self.compose_len()).unwrap() - 1])?;
         match *self {
-            NextHop::Ipv4(a) => target.append_slice(&a.octets())?,
-            NextHop::Ipv6(a) => target.append_slice(&a.octets())?,
+            NextHop::Unicast(IpAddr::V4(a)) | NextHop::Multicast(IpAddr::V4(a)) => 
+                target.append_slice(&a.octets())?,
+            NextHop::Unicast(IpAddr::V6(a)) | NextHop::Multicast(IpAddr::V6(a)) => 
+                target.append_slice(&a.octets())?,
             NextHop::Ipv6LL(a, ll) => {
                 target.append_slice(&a.octets())?;
                 target.append_slice(&ll.octets())?;
@@ -1287,8 +1325,12 @@ impl fmt::Display for ComposeError {
 #[cfg(test)]
 mod tests {
 
+    use std::collections::BTreeSet;
     use std::net::Ipv4Addr;
     use std::str::FromStr;
+
+    use octseq::Parser;
+
     use crate::addr::Prefix;
     use crate::asn::Asn;
     //use crate::bgp::communities::Wellknown;
@@ -1635,7 +1677,7 @@ mod tests {
         let mut iter = prefixes.into_iter().peekable();
         builder.announcements_from_iter(&mut iter).unwrap();
         builder.set_origin(OriginType::Igp).unwrap();
-        builder.set_nexthop("1.2.3.4".parse().unwrap()).unwrap();
+        builder.set_nexthop_unicast(Ipv4Addr::from_str("1.2.3.4").unwrap().into()).unwrap();
         let path = HopPath::from([
              Asn::from_u32(123); 70
         ]);
@@ -1663,7 +1705,7 @@ mod tests {
         let mut iter = prefixes.into_iter().peekable();
         builder.announcements_from_iter(&mut iter).unwrap();
         builder.set_origin(OriginType::Igp).unwrap();
-        builder.set_nexthop("fe80:1:2:3::".parse().unwrap()).unwrap();
+        builder.set_nexthop_unicast(Ipv6Addr::from_str("fe80:1:2:3::").unwrap().into()).unwrap();
         let path = HopPath::from([
              Asn::from_u32(100),
              Asn::from_u32(200),
@@ -1682,7 +1724,7 @@ mod tests {
 
         let mut builder = UpdateBuilder::new_vec();
         builder.set_origin(OriginType::Igp).unwrap();
-        builder.set_nexthop("fe80:1:2:3::".parse().unwrap()).unwrap();
+        builder.set_nexthop_unicast(Ipv6Addr::from_str("fe80:1:2:3::").unwrap().into()).unwrap();
         let path = HopPath::from([
              Asn::from_u32(100),
              Asn::from_u32(200),
@@ -1713,8 +1755,7 @@ mod tests {
 
         builder.announcements_from_iter(&mut iter).unwrap();
         builder.set_origin(OriginType::Igp).unwrap();
-        //builder.set_nexthop("2001:db8::1".parse().unwrap()).unwrap();
-        builder.set_nexthop_ll("fe80:1:2:3::".parse().unwrap()).unwrap();
+        builder.set_nexthop_ll_addr("fe80:1:2:3::".parse().unwrap()).unwrap();
 
 
         let path = HopPath::from([
@@ -1738,7 +1779,7 @@ mod tests {
         let mut builder = UpdateBuilder::new_vec();
         builder.set_origin(OriginType::Igp).unwrap();
         //builder.set_nexthop("2001:db8::1".parse().unwrap()).unwrap();
-        builder.set_nexthop_ll("fe80:1:2:3::".parse().unwrap()).unwrap();
+        builder.set_nexthop_ll_addr("fe80:1:2:3::".parse().unwrap()).unwrap();
         let path = HopPath::from([
              Asn::from_u32(100),
              Asn::from_u32(200),
@@ -1765,7 +1806,7 @@ mod tests {
         let mut iter = prefixes.into_iter().peekable();
         builder.announcements_from_iter(&mut iter).unwrap();
         builder.set_origin(OriginType::Igp).unwrap();
-        builder.set_nexthop("1.2.3.4".parse().unwrap()).unwrap();
+        builder.set_nexthop_unicast("1.2.3.4".parse::<Ipv4Addr>().unwrap().into()).unwrap();
         let path = HopPath::from([
              Asn::from_u32(100),
              Asn::from_u32(200),
@@ -1799,7 +1840,7 @@ mod tests {
         let mut iter = prefixes.into_iter().peekable();
         builder.announcements_from_iter(&mut iter).unwrap();
         builder.set_origin(OriginType::Igp).unwrap();
-        builder.set_nexthop("1.2.3.4".parse().unwrap()).unwrap();
+        builder.set_nexthop_unicast(Ipv4Addr::from_str("1.2.3.4").unwrap().into()).unwrap();
         let path = HopPath::from([
              Asn::from_u32(100),
              Asn::from_u32(200),
@@ -1904,20 +1945,27 @@ mod tests {
         assert_eq!(pdu.communities().unwrap().count(), 2);
     }
 
-    #[test]
-    fn parse_build_compare() {
-        // TODO also do fn check(raw: Bytes)
-        fn check(raw: &[u8]) {
-            let sc = SessionConfig::modern();
-            let original =
-                match UpdateMessage::from_octets(&raw, sc) {
+    enum PbcResult {
+        Identical,
+        Equivalent,
+        Different,
+        InvalidInput,
+    }
+    // TODO also do fn check(raw: Bytes)
+    fn parse_build_compare(raw: &[u8]) -> PbcResult {
+        let sc = SessionConfig::modern();
+        let original =
+            match UpdateMessage::from_octets(&raw, sc) {
                 Ok(msg) => msg,// UpdateMessage::from_octets(&raw, sc) {
-                Err(e) => {
-                    eprintln!("failed to parse input: {e:?}");
-                    print_pcap(&raw);
-                    panic!();
+                Err(_e) => {
+                    //TODO get the ShortInput ones (and retry with a different
+                    //SessionConfig)
+                    //eprintln!("failed to parse input: {e:?}");
+                    //print_pcap(&raw);
+                    return PbcResult::InvalidInput;
+                    //panic!();
                 }
-                };
+            };
 
             let target = BytesMut::new();
             let mut builder = UpdateBuilder::from_update_message(
@@ -1933,23 +1981,34 @@ mod tests {
             }
 
             if let Some(nh) = original.next_hop() {
-                match nh {
-                    NextHop::Ipv4(a) => builder.set_nexthop(a.into()).unwrap(),
-                    NextHop::Ipv6(a) => builder.set_nexthop(a.into()).unwrap(),
-                    NextHop::Empty => { },
-                    _ => unimplemented!()
-                };
+                builder.set_nexthop(nh).unwrap();
             }
 
             //eprintln!("--");
             //print_pcap(&raw);
             //print_pcap(builder.finish().unwrap());
             //eprintln!("--");
+            //panic!("hard stop");
 
-            let composed = builder.into_message().unwrap();
+            let composed = match builder.into_message() {
+                Ok(msg) => msg,
+                Err(e) => {
+                    print_pcap(raw);
+                    panic!("error: {e}");
+                }
+            };
+            //let new_len = builder.encode_all().unwrap();
+            //let composed = match UpdateMessage::from_octets(
+            //    &target[..new_len], sc
+            //) {
+            //    Ok(msg) => msg,
+            //    Err(e) => {
+            //        print_pcap(raw);
+            //        panic!("error: {e}");
+            //    }
+            //};
 
-            print_pcap(raw);
-            print_pcap(composed.as_ref());
+            //print_pcap(composed.as_ref());
 
             // XXX there are several possible reasons why our composed pdu
             // differs from the original input, especially if the attributes
@@ -1958,17 +2017,85 @@ mod tests {
             //assert_eq!(raw, composed.as_ref());
 
 
+            // compare as much as possible:
+            if std::panic::catch_unwind(|| {
+            assert_eq!(original.origin(), composed.origin());
+            //assert_eq!(original.aspath(), composed.aspath());
             assert_eq!(original.next_hop(), composed.next_hop());
+            assert_eq!(original.multi_exit_disc(), composed.multi_exit_disc());
+            assert_eq!(original.local_pref(), composed.local_pref());
+
+            /*
+            assert_eq!(
+              original.path_attributes().iter().count(),
+              composed.new_path_attributes().unwrap().count()
+            );
+            */
+
+            let orig_pas = BTreeSet::from(
+                original.new_path_attributes().unwrap()
+                .map(|pa| pa.unwrap().typecode()).collect::<BTreeSet<_>>()
+            );
+            let composed_pas = BTreeSet::from(
+                composed.new_path_attributes().unwrap()
+                .map(|pa| pa.unwrap().typecode()).collect::<BTreeSet<_>>()
+            );
+            let diff_pas: Vec<_> = orig_pas.symmetric_difference(
+                &composed_pas
+            ).collect();
+            if !diff_pas.is_empty() {
+                dbg!(&diff_pas);
+                for d in diff_pas {
+                    match d {
+                        PathAttributeType::MpUnreachNlri => {
+                            assert!({
+                                let mpu = original.new_path_attributes().unwrap().get(PathAttributeType::MpUnreachNlri).unwrap();
+                                if let PathAttribute::MpUnreachNlri(b) = mpu.to_owned().unwrap() {
+                                    b.inner().withdrawals.len() == 0
+                                } else {
+                                    false
+                                }
+                            });
+
+                        }
+                        _ => panic!("unclear why PAs differ"),
+                    }
+                }
+            }
+
+
+
+            assert_eq!(
+              original.announcements().unwrap().count(),
+              composed.announcements().unwrap().count(),
+            );
+            assert_eq!(
+              original.withdrawals().iter().count(),
+              composed.withdrawals().iter().count(),
+            );
+
+            }).is_err() {
+                eprintln!("--");
+                print_pcap(&raw);
+                print_pcap(composed.as_ref());
+
+                eprintln!("--");
+                panic!("tmp");
+            }
 
             if raw == composed.as_ref() {
-                eprint!("✓");
+                //eprint!("✓");
+                PbcResult::Identical
             } else {
-                eprint!("×");
+                //eprint!("×");
+                PbcResult::Equivalent
             }
-        }
+    }
 
+    #[test]
+    fn parse_build_compare_1() {
         eprintln!("");
-        check(&[
+        parse_build_compare(&[
         // BGP UPDATE, single conventional announcement, MultiExitDisc
             0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
             0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
@@ -1977,9 +2104,10 @@ mod tests {
             0x00, 0x01, 0x00, 0x00, 0x40, 0x03, 0x04, 0x0a,
             0xff, 0x00, 0x65, 0x80, 0x04, 0x04, 0x00, 0x00,
             0x00, 0x01, 0x20, 0x0a, 0x0a, 0x0a, 0x02
-        ]);
+        ]
+        );
 
-        check(&[
+        parse_build_compare(&[
             // BGP UPDATE, Ipv4 FlowSpec, empty AS_PATH, ext communities
             0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
             0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
@@ -1990,10 +2118,11 @@ mod tests {
             0x00, 0x40, 0x02, 0x00, 0x40, 0x05, 0x04, 0x00,
             0x00, 0x00, 0x64, 0xc0, 0x10, 0x08, 0x80, 0x09,
             0x00, 0x00, 0x00, 0x00, 0x00, 0x10
-        ]);
+        ]
+        );
 
         // FIXME: the NextHop in MP_REACH_NLRI gets lost
-        check(&[
+        parse_build_compare(&[
             // BGP UPDATE, IPv4 Multicast, NEXT_HOP, et al.
             0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
             0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
@@ -2006,7 +2135,8 @@ mod tests {
             0x00, 0x00, 0x01, 0xf4, 0x40, 0x03, 0x04, 0x0a,
             0x09, 0x0a, 0x09, 0x80, 0x04, 0x04, 0x00, 0x00,
             0x00, 0x00
-        ]);
+        ]
+        );
         eprintln!("");
 
     }

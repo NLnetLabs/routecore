@@ -198,7 +198,9 @@ impl NextHop {
         let len = parser.parse_u8()?;
         let res = match (len, afi, safi) {
             (16, AFI::Ipv6, SAFI::Unicast | SAFI::MplsUnicast) =>
-                NextHop::Ipv6(parse_ipv6addr(parser)?),
+                NextHop::Unicast(parse_ipv6addr(parser)?.into()),
+            (16, AFI::Ipv6, SAFI::Multicast) =>
+                NextHop::Multicast(parse_ipv6addr(parser)?.into()),
             (32, AFI::Ipv6, SAFI::Unicast | SAFI::Multicast) =>
                 NextHop::Ipv6LL(
                     parse_ipv6addr(parser)?,
@@ -209,8 +211,10 @@ impl NextHop {
                     RouteDistinguisher::parse(parser)?,
                     parse_ipv6addr(parser)?
                 ),
-            (4, AFI::Ipv4, SAFI::Unicast | SAFI::Multicast | SAFI::MplsUnicast ) =>
-                NextHop::Ipv4(parse_ipv4addr(parser)?),
+            (4, AFI::Ipv4, SAFI::Unicast | SAFI::MplsUnicast ) =>
+                NextHop::Unicast(parse_ipv4addr(parser)?.into()),
+            (4, AFI::Ipv4, SAFI::Multicast) => 
+                NextHop::Multicast(parse_ipv4addr(parser)?.into()),
             (12, AFI::Ipv4, SAFI::MplsVpnUnicast) =>
                 NextHop::Ipv4MplsVpnUnicast(
                     RouteDistinguisher::parse(parser)?,
@@ -219,9 +223,9 @@ impl NextHop {
             // RouteTarget is always AFI/SAFI 1/132, so, IPv4,
             // but the Next Hop can be IPv6.
             (4, AFI::Ipv4, SAFI::RouteTarget) =>
-                NextHop::Ipv4(parse_ipv4addr(parser)?),
+                NextHop::Unicast(parse_ipv4addr(parser)?.into()),
             (16, AFI::Ipv4, SAFI::RouteTarget) =>
-                NextHop::Ipv6(parse_ipv6addr(parser)?),
+                NextHop::Unicast(parse_ipv6addr(parser)?.into()),
             (0, AFI::Ipv4, SAFI::FlowSpec) =>
                 NextHop::Empty,
             _ => {
@@ -738,9 +742,19 @@ where Octs: AsRef<[u8]>,
 
 impl<Octs: AsRef<[u8]>> Eq for Nlri<Octs> { }
 
+impl<T> Nlri<T> {
+    /// Returns true if this NLRI contains a Path Id. 
+    pub fn is_addpath(&self) -> bool {
+        match self {
+            Self::Unicast(b) | Self::Multicast(b) => b.is_addpath(),
+            Self::Mpls(m) => m.basic.is_addpath(),
+            Self::MplsVpn(m) => m.basic.is_addpath(),
+            Self::Vpls(_) | Self::FlowSpec(_) | Self::RouteTarget(_) => false,
+        }
+    }
+}
 
-impl<Octs: AsRef<[u8]>> Nlri<Octs> {
-
+impl<T> Nlri<T> {
     /// Returns the tuple of (AFI, SAFI) for this Nlri.
     pub fn afi_safi(&self) -> (AFI, SAFI) {
         match self {
@@ -777,6 +791,10 @@ impl<Octs: AsRef<[u8]>> Nlri<Octs> {
             Self::RouteTarget(_) => (AFI::Ipv4, SAFI::RouteTarget)
         }
     }
+
+}
+
+impl<Octs: AsRef<[u8]>> Nlri<Octs> {
 
     /// Returns the MPLS [`Labels`], if any.
     ///

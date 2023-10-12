@@ -1,5 +1,5 @@
 use crate::typeenum; // from util::macros
-use std::net::{Ipv4Addr, Ipv6Addr};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 use crate::bgp::message::nlri::RouteDistinguisher;
 
@@ -99,27 +99,57 @@ impl std::fmt::Display for LocalPref {
 /// Conventional and BGP-MP Next Hop variants.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-// XXX introduce unicast/multicast variants for v4 and v6 here?
+// XXX introduce v4/v6 specific Empty for FlowSpec? it does not carry
+// anything, but when creating the NextHop in
+// MpReachNlriBuilder::new_for_nexthop() we need both an AFI and a SAFI.
 pub enum NextHop {
-    Ipv4(Ipv4Addr),
-    Ipv6(Ipv6Addr),
-    Ipv6LL(Ipv6Addr, Ipv6Addr),
+    Unicast(IpAddr),
+    Multicast(IpAddr),
+    Ipv6LL(Ipv6Addr, Ipv6Addr), // is this always unicast?
+
+    // XXX can we consolidate these two into one with IpAddr?
     Ipv4MplsVpnUnicast(RouteDistinguisher, Ipv4Addr),
     Ipv6MplsVpnUnicast(RouteDistinguisher, Ipv6Addr),
+
     Empty, // FlowSpec
     Unimplemented(AFI, SAFI),
+}
+
+impl NextHop {
+    pub fn new(afi: AFI, safi: SAFI) -> Self {
+        match (afi, safi) {
+            (AFI::Ipv4, SAFI::Unicast) => Self::Unicast(Ipv4Addr::from(0).into()),
+            (AFI::Ipv6, SAFI::Unicast) => Self::Unicast(Ipv6Addr::from(0).into()),
+            (AFI::Ipv4, SAFI::Multicast) => Self::Multicast(Ipv4Addr::from(0).into()),
+            (AFI::Ipv6, SAFI::Multicast) => Self::Multicast(Ipv6Addr::from(0).into()),
+            (AFI::Ipv4 | AFI::Ipv6, SAFI::FlowSpec) => Self::Empty,
+
+            (_, _) => Self::Unimplemented(afi, safi)
+        }
+    }
+
+    pub fn afi_safi(&self) -> (AFI, SAFI) {
+        match self {
+            Self::Unicast(IpAddr::V4(_)) => (AFI::Ipv4, SAFI::Unicast),
+            Self::Unicast(IpAddr::V6(_)) => (AFI::Ipv6, SAFI::Unicast),
+            Self::Multicast(IpAddr::V4(_)) => (AFI::Ipv4, SAFI::Multicast),
+            Self::Multicast(IpAddr::V6(_)) => (AFI::Ipv6, SAFI::Multicast),
+            Self::Ipv6LL(..) => (AFI::Ipv6, SAFI::Unicast), // always unicast?
+            Self::Empty => (AFI::Ipv4, SAFI::FlowSpec),
+            _ => todo!("{}", &self)
+        }
+    }
 }
 
 impl std::fmt::Display for NextHop {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            NextHop::Ipv4(ip) => write!(f, "{}", ip),
-            NextHop::Ipv6(ip) => write!(f, "{}", ip),
-            NextHop::Ipv6LL(ip1, ip2) => write!(f, "{} {} ", ip1, ip2),
-            NextHop::Ipv4MplsVpnUnicast(rd, ip) => write!(f, "rd {} {}", rd, ip),
-            NextHop::Ipv6MplsVpnUnicast(rd, ip) => write!(f, "rd {} {}", rd, ip),
-            NextHop::Empty => write!(f, "empty"),
-            NextHop::Unimplemented(afi, safi) => write!(f, "unimplemented for AFI {} /SAFI {}", afi, safi),
+            Self::Unicast(ip) | Self::Multicast(ip)  => write!(f, "{}", ip),
+            Self::Ipv6LL(ip1, ip2) => write!(f, "{} {} ", ip1, ip2),
+            Self::Ipv4MplsVpnUnicast(rd, ip) => write!(f, "rd {} {}", rd, ip),
+            Self::Ipv6MplsVpnUnicast(rd, ip) => write!(f, "rd {} {}", rd, ip),
+            Self::Empty => write!(f, "empty"),
+            Self::Unimplemented(afi, safi) => write!(f, "unimplemented for AFI {} /SAFI {}", afi, safi),
         }
     }
 }

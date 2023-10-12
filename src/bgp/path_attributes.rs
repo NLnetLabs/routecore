@@ -15,10 +15,7 @@ use crate::bgp::message::SessionConfig;
 use crate::bgp::types::{AFI, SAFI};
 use crate::util::parser::{ParseError, parse_ipv4addr};
 
-use crate::bgp::message::update_builder::{
-    ComposeError,
-    StandardCommunitiesBuilder
-};
+use crate::bgp::message::update_builder::StandardCommunitiesBuilder;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub struct Flags(u8);
@@ -1810,7 +1807,7 @@ mod tests {
             let mut builder = MpReachNlriBuilder::new(
                 AFI::Ipv6,
                 SAFI::Unicast,
-                NextHop::Ipv6("2001:db8::1234".parse().unwrap()),
+                NextHop::Unicast("2001:db8::1234".parse().unwrap()),
                 false // no addpath
             );
             builder.add_announcement(

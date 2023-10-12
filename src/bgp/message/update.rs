@@ -409,13 +409,13 @@ impl<Octs: Octets> UpdateMessage<Octs> {
         self.path_attributes().iter().find(|pa|
             pa.type_code() == PathAttributeType::NextHop
         ).map(|pa|
-            NextHop::Ipv4(
+            NextHop::Unicast(
                 Ipv4Addr::new(
                     pa.value().as_ref()[0],
                     pa.value().as_ref()[1],
                     pa.value().as_ref()[2],
                     pa.value().as_ref()[3],
-                )
+                ).into()
             )
         )
     }
@@ -2224,7 +2224,7 @@ mod tests {
         assert_eq!(pa3.value().as_ref(), &[10, 255, 0, 101]);
         assert_eq!(
             update.next_hop(),
-            Some(NextHop::Ipv4(Ipv4Addr::new(10, 255, 0, 101)))
+            Some(NextHop::Unicast(Ipv4Addr::new(10, 255, 0, 101).into()))
             );
 
         let pa4 = pa_iter.next().unwrap();
