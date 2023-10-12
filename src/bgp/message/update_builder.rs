@@ -675,6 +675,8 @@ impl<Target> UpdateBuilder<Target>
             &PathAttributeType::MpUnreachNlri
         ) {
             if let PathAttribute::MpUnreachNlri(pa) = pa {
+                // FIXME an empty MP_UNREACH_NLRI can be valid when signaling
+                // EoR, but then it has to be the only path attribute.
                 if pa.as_ref().is_empty() {
                     return Err(ComposeError::EmptyMpUnreachNlri);
                 }
