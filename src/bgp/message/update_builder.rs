@@ -31,14 +31,7 @@ pub struct UpdateBuilder<Target> {
     addpath_enabled: Option<bool>, // for conventional nlri (unicast v4)
                                    //
     // attributes:
-    //attributes: Vec<new_pas::PathAttribute>,
     attributes: BTreeMap<PathAttributeType, new_pas::PathAttribute>,
-
-    //standard_communities_builder: Option<StandardCommunitiesBuilder>,
-
-    attributes_len: usize,
-    total_pdu_len: usize,
-
 }
 
 impl<Target: OctetsBuilder> UpdateBuilder<Target>
@@ -59,13 +52,7 @@ where Target: octseq::Truncate
             announcements: Vec::new(),
             withdrawals: Vec::new(),
             addpath_enabled: None,
-
-            //attributes:
             attributes: BTreeMap::new(),
-            //standard_communities_builder: None,
-
-            attributes_len: 0,
-            total_pdu_len: 19 + 2 + 2,
         })
     }
 
@@ -274,20 +261,7 @@ where Target: octseq::Truncate
                     &PathAttributeType::MpReachNlri
                 ) {
                     let builder = pa.as_mut();
-
-                    let len_diff = builder.compose_diff_nh(&nexthop);
-                    // XXX we need to get rid of compose_diff_nh, which will
-                    // also make all this super nasty conversions nonsense go
-                    // away.
-                    let new_total: usize = (isize::try_from(self.total_pdu_len).unwrap() + len_diff).try_into().unwrap();
-                    if new_total > Self::MAX_PDU {
-                        return Err(ComposeError::PduTooLarge(new_total));
-                    }
-
                     builder.set_nexthop(n)?;
-
-                    self.attributes_len = (isize::try_from(self.attributes_len).unwrap() + len_diff).try_into().unwrap();
-                    self.total_pdu_len = new_total;
                 } else {
                     self.add_attribute(new_pas::MpReachNlri::new(
                         MpReachNlriBuilder::new_for_nexthop(n)
@@ -319,15 +293,7 @@ where Target: octseq::Truncate
                     _ => return Err(ComposeError::IllegalCombination),
                 }
                 
-                let new_bytes = builder.compose_len_nh_ll();
-
-                let new_total = self.total_pdu_len + new_bytes;
-                if new_total > Self::MAX_PDU {
-                    return Err(ComposeError::PduTooLarge(new_total));
-                }
                 builder.set_nexthop_ll_addr(addr);
-                self.attributes_len += new_bytes;
-                self.total_pdu_len = new_total;
             } else {
                 unreachable!()
             }
@@ -393,11 +359,6 @@ where Target: octseq::Truncate
                 if let PathAttribute::MpReachNlri(ref mut pa) = pa {
                     let builder = pa.as_mut();
 
-                    let new_bytes = builder.compose_len(announcement);
-                    let new_total = self.total_pdu_len + new_bytes;
-                    if new_total > Self::MAX_PDU {
-                        return Err(ComposeError::PduTooLarge(new_total));
-                    }
                     if !builder.valid_combination(n) {
                         // We are already constructing a
                         // MP_UNREACH_NLRI but for a different
@@ -407,8 +368,6 @@ where Target: octseq::Truncate
                     }
 
                     builder.add_announcement(announcement);
-                    self.total_pdu_len = new_total;
-                    self.attributes_len += new_bytes;
                 } else {
                     unreachable!()
                 }
@@ -450,14 +409,7 @@ where Target: octseq::Truncate
             
         if let PathAttribute::Communities(ref mut pa) = pa {
             let builder = pa.as_mut();
-            let new_bytes = builder.compose_len(community);
-            let new_total = self.total_pdu_len + new_bytes;
-            if new_total > Self::MAX_PDU {
-                return Err(ComposeError::PduTooLarge(new_total));
-            }
             builder.add_community(community);
-            self.total_pdu_len = new_total;
-            self.attributes_len += new_bytes;
             Ok(())
         } else {
             unreachable!()
@@ -757,31 +709,8 @@ impl<Target> UpdateBuilder<Target>
             return (builder.into_message(), Some(self));
         }
 
-        // Scenario 2: many conventional announcements
-        // Similar but different to the scenario of many withdrawals, as
-        // announcements are tied to the attributes. At this point, we know we
-        // have no conventional withdrawals left.
-
-        if !self.announcements.is_empty() {
-            //let announcement_len = self.announcements.iter()
-            //    .fold(0, |sum, a| sum + a.compose_len());
-
-            let split_at = std::cmp::min(self.announcements.len() / 2,  450);
-            let this_batch = self.announcements.drain(..split_at);
-            let mut builder = Self::from_target(self.target.clone()).unwrap();
-
-            builder.announcements = this_batch.collect();
-            builder.attributes = self.attributes.clone();
-
-            return (builder.into_message(), Some(self));
-
-        }
-
-        // Scenario 3: many withdrawals in MP_UNREACH_NLRI
-        // At this point, we have no conventional withdrawals, no conventional
-        // announcements. FIXME but we have possibly send out multiple
-        // MP_UNREACH_NLRI in Scenario 2... reorder this when done.
-        
+        // Scenario 2: many withdrawals in MP_UNREACH_NLRI
+        // At this point, we have no conventional withdrawals anymore.
         
         let maybe_pdu = 
             if let Some(PathAttribute::MpUnreachNlri(b)) = self.attributes.get_mut(&PathAttributeType::MpUnreachNlri) {
@@ -814,6 +743,66 @@ impl<Target> UpdateBuilder<Target>
         if let Some(pdu) = maybe_pdu {
             return (pdu, Some(self))
         }
+
+        // Scenario 3: many conventional announcements
+        // Similar but different to the scenario of many withdrawals, as
+        // announcements are tied to the attributes. At this point, we know we
+        // have no conventional withdrawals left, and no MP_UNREACH_NLRI.
+
+        if !self.announcements.is_empty() {
+            //let announcement_len = self.announcements.iter()
+            //    .fold(0, |sum, a| sum + a.compose_len());
+
+            let split_at = std::cmp::min(self.announcements.len() / 2,  450);
+            let this_batch = self.announcements.drain(..split_at);
+            let mut builder = Self::from_target(self.target.clone()).unwrap();
+
+            builder.announcements = this_batch.collect();
+            builder.attributes = self.attributes.clone();
+
+            return (builder.into_message(), Some(self));
+
+        }
+
+        // Scenario 4: many MP_REACH_NLRI announcements
+        // This is tricky: we need to split the MP_REACH_NLRI attribute, and
+        // clone the other attributes.
+        // At this point, we have no conventional withdrawals/announcements or
+        // MP_UNREACH_NLRI path attribute.
+
+        let maybe_pdu = 
+            if let Some(PathAttribute::MpReachNlri(b)) = self.attributes.get_mut(&PathAttributeType::MpReachNlri) {
+                let reach_builder = b.as_mut();
+                let mut split_at = 0;
+                if !reach_builder.announcements.is_empty() {
+                    let mut compose_len = 0;
+                    for (idx, a) in reach_builder.announcements.iter().enumerate() {
+                        compose_len += a.compose_len();
+                        if compose_len > 4000 {
+                            split_at = idx;
+                            break;
+                        }
+                    }
+
+                    let this_batch = reach_builder.split(split_at);
+                    let mut builder = Self::from_target(self.target.clone()).unwrap();
+                    // XXX the MP_REACH_NLRI is unnecessarily cloned here..
+                    builder.attributes = self.attributes.clone();
+                    builder.add_attribute(new_pas::MpReachNlri::new(this_batch).into()).unwrap();
+
+                    Some(builder.into_message())
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        ;
+        if let Some(pdu) = maybe_pdu {
+            return (pdu, Some(self))
+        }
+
+
 
         todo!()
         
@@ -987,6 +976,14 @@ impl MpReachNlriBuilder {
         }
     }
 
+    pub(crate) fn split(&mut self, n: usize) -> Self {
+        let this_batch = self.announcements.drain(..n).collect();
+        MpReachNlriBuilder {
+            announcements: this_batch,
+            ..*self
+        }
+    }
+
     fn new_for_nlri<T>( nlri: &Nlri<T>) -> Self
     where T: Octets,
           Vec<u8>: OctetsFrom<T>
@@ -1004,7 +1001,9 @@ impl MpReachNlriBuilder {
     }
 
     pub(crate) fn value_len(&self) -> usize {
-        self.len
+        2 + 1 + 1  // afi, safi + 1 reserved byte
+          + self.nexthop.compose_len() 
+          + self.announcements.iter().fold(0, |sum, w| sum + w.compose_len())
     }
 
     pub(crate) fn is_empty(&self) -> bool {
@@ -1064,64 +1063,6 @@ impl MpReachNlriBuilder {
             <&Nlri<T> as OctetsInto<Nlri<Vec<u8>>>>::try_octets_into(announcement).map_err(|_| ComposeError::todo() ).unwrap()
         );
     }
-
-    pub(crate) fn compose_len<T>(&self, announcement: &Nlri<T>) -> usize
-        where T: AsRef<[u8]>
-    {
-        let announcement_len = announcement.compose_len();
-        if !self.extended && self.len + announcement_len > 255 {
-            // Adding this announcement would make the path attribute exceed
-            // 255 and thus require the Extended Length bit to be set.
-            // This adds a second byte to the path attribute length field,
-            // so we need to account for that.
-            return announcement_len + 1;
-        }
-        announcement_len
-    }
-
-    pub(crate) fn compose_len_nh_ll(&self/*, nexthop: Ipv6Addr*/) -> usize {
-        let nh_len = match self.nexthop {
-            NextHop::Unicast(IpAddr::V6(_)) => 16,
-            NextHop::Ipv6LL(_,_) => 0,
-            _ => unreachable!()
-        };
-        if !self.extended && self.len + nh_len > 255 {
-            // Adding this announcement would make the path attribute exceed
-            // 255 and thus require the Extended Length bit to be set.
-            // This adds a second byte to the path attribute length field,
-            // so we need to account for that.
-            return nh_len + 1;
-        }
-        nh_len
-    }
-
-    // FIXME this one is temporary (no really) and has to go with all the
-    // dirty unwrapping. All the length checks should be moved to a different
-    // step in the PDU creation process.
-    pub(crate) fn compose_diff_nh(&self, nexthop: &NextHop) -> isize {
-        let curr_nh = self.nexthop.compose_len();
-        let new_nh = nexthop.compose_len();
-        let diff = new_nh - curr_nh;
-
-        if diff == 0 {
-            return 0;
-        }
-
-        if self.extended && self.len + diff <= 255 {
-            // We were in extended length territory, but not anymore. This
-            // means we switch from a 2-byte to a 1-byte length field for the
-            // attribute.
-            //self.extended = false;
-            return (diff - 1).try_into().unwrap();
-        }
-        if !self.extended && self.len + diff > 255 {
-            //self.extended = true;
-            return (diff + 1).try_into().unwrap();
-        }
-
-        diff.try_into().unwrap()
-    }
-
 
     pub(crate) fn compose_value<Target: OctetsBuilder>(
         &self,
@@ -1770,6 +1711,26 @@ mod tests {
         }
 
         assert_eq!(w_cnt, prefixes_num);
+    }
+    #[test]
+    fn into_messages_many_announcements_mp() {
+        let mut builder = UpdateBuilder::new_vec();
+        let prefixes_num = 9024;
+        for i in 0..prefixes_num {
+            builder.add_announcement(
+                &Nlri::unicast_from_str(&format!("2001:db:{:04}::/48", i))
+                    .unwrap()
+            ).unwrap();
+        }
+        builder.set_local_pref(new_pas::LocalPref::new(123)).unwrap();
+
+        let mut a_cnt = 0;
+        for pdu in builder.into_messages().unwrap() {
+            a_cnt += pdu.announcements().unwrap().count();
+            assert!(pdu.local_pref().is_some());
+        }
+
+        assert_eq!(a_cnt, prefixes_num);
     }
 
 
