@@ -43,12 +43,14 @@ pub struct UpdateBuilder<Target> {
 
 }
 
-impl<Target: OctetsBuilder> UpdateBuilder<Target> {
+impl<Target: OctetsBuilder> UpdateBuilder<Target>
+where Target: octseq::Truncate
+{
 
     const MAX_PDU: usize = 4096; // XXX should come from NegotiatedConfig
 
     pub fn from_target(mut target: Target) -> Result<Self, ShortBuf> {
-        //target.truncate(0);
+        target.truncate(0);
         let mut h = Header::<&[u8]>::new();
         h.set_length(19 + 2 + 2);
         h.set_type(MsgType::Update);
@@ -683,7 +685,7 @@ impl<Target> UpdateBuilder<Target>
     pub fn into_message(self) ->
         Result<UpdateMessage<<Target as FreezeBuilder>::Octets>, ComposeError>
     where
-        Target: OctetsBuilder + FreezeBuilder + AsMut<[u8]>,
+        Target: OctetsBuilder + FreezeBuilder + AsMut<[u8]> + octseq::Truncate,
         <Target as FreezeBuilder>::Octets: Octets,
     {
         self.is_valid()?;
@@ -745,19 +747,91 @@ impl<Target> UpdateBuilder<Target>
         res
     }
 
+    /// Compose the PDU, returns the builder if it exceeds the max PDU size.
+    ///
+    /// 
+    pub fn take_message(mut self) -> (
+        Result<UpdateMessage<<Target as FreezeBuilder>::Octets>, ComposeError>,
+        Option<Self>
+    )
+    where
+        Target: Clone + OctetsBuilder + FreezeBuilder + AsMut<[u8]> + octseq::Truncate,
+        <Target as FreezeBuilder>::Octets: Octets
+    {
+        let pdu_len = self.calculate_pdu_length();
+       // if pdu_len <= Self::MAX_PDU {
+        if pdu_len <= 1000 { // TMP FIXME for testing
+            return (self.into_message(), None)
+        }
+
+        // It does not fit in a single PDU. Figure out where to split things.
+        //
+        // Scenarios where we can expect large PDUs:
+        // - many withdrawals of an entire RIB (e.g. when a session goes down)
+        // - many announcements when a new session is established, or doing a
+        // route refresh
+        //
+        // There might be specific scenarios where both many withdrawals and
+        // announcements need to be built. But we should be able to split
+        // those up in withdrawal-only and announcement-only PDUs, presumably?
+
+        // Withdrawals come without path attributes. But, MP_UNREACH_NLRI
+        // contains (non v4-unicast) withdrawals which are... represented as a
+        // path attribute.
+
+
+        // Attempt 1: many conventional withdrawals
+        // If we have any withdrawals, they can go by themselves.
+        // First naive approach: we split off at most 450 NLRI. In the extreme
+        // case of AddPathed /32's this would still fit in a 4096 PDU.
+
+        if !self.withdrawals.is_empty() {
+            let withdrawal_len = self.withdrawals.iter()
+                .fold(0, |sum, w| sum + w.compose_len());
+            dbg!(withdrawal_len);
+
+            let split_at = std::cmp::min(self.withdrawals.len() / 2,  450);
+            dbg!(split_at);
+            let this_batch = self.withdrawals.drain(..split_at);
+            let mut builder = Self::from_target(self.target.clone()).unwrap();
+            
+            builder.withdrawals = this_batch.collect();
+
+            return (builder.into_message(), Some(self));
+        }
+        todo!()
+        
+
+
+
+        // 
+
+        //(Err(ComposeError::todo()), Some(self))
+
+        // calc length
+        // if < Self::MAX_PDU, output 1 and be done
+        // otherwise
+        // output 1 and the remainder of the builder?
+    }
+
     fn finish(mut self)
         -> Result<<Target as FreezeBuilder>::Octets, Target::AppendError>
     where
-        Target: OctetsBuilder + FreezeBuilder + AsMut<[u8]>
+        Target: OctetsBuilder + FreezeBuilder + AsMut<[u8]> + octseq::Truncate
     {
+        let total_pdu_len = self.calculate_pdu_length();
         let mut header = Header::for_slice_mut(self.target.as_mut());
-        header.set_length(u16::try_from(self.total_pdu_len).unwrap());
+        header.set_length(u16::try_from(total_pdu_len).unwrap());
 
         // `withdrawals_len` is checked to be <= 4096 or <= 65535
         // so it will always fit in a u16.
+        let withdrawals_len = self.withdrawals.iter()
+            .fold(0, |sum, w| sum + w.compose_len());
         self.target.append_slice(
-            &u16::try_from(self.withdrawals_len).unwrap().to_be_bytes()
+            &u16::try_from(withdrawals_len).unwrap().to_be_bytes()
         )?;
+
+        dbg!(withdrawals_len);
 
         for w in &self.withdrawals {
             match w {
@@ -1506,6 +1580,61 @@ mod tests {
     }
 
 
+    #[test]
+    fn take_message_many_withdrawals() {
+        let mut builder = UpdateBuilder::new_vec();
+        let mut prefixes: Vec<Nlri<Vec<u8>>> = vec![];
+        for i in 1..500_u32 {
+            prefixes.push(
+                Nlri::Unicast(
+                    Prefix::new_v4(
+                        Ipv4Addr::from((i << 10).to_be_bytes()),
+                        22
+                    ).unwrap().into()
+                )
+            );
+        }
+        let prefixes_len = prefixes.len();
+        builder.append_withdrawals(&mut prefixes).unwrap();
+
+        let mut w_cnt = 0;
+        let remainder = if let (pdu1, Some(remainder)) = builder.take_message() {
+            match pdu1 {
+                Ok(pdu) => {
+                    w_cnt += pdu.withdrawals().iter().count();
+                    remainder
+                }
+                Err(e) => panic!("{}", e)
+            }
+        } else {
+            panic!("wrong");
+        };
+
+        let remainder2 = if let (pdu2, Some(remainder2)) = remainder.take_message() {
+            match pdu2 {
+                Ok(pdu) => {
+                    w_cnt += pdu.withdrawals().iter().count();
+                    remainder2
+                }
+                Err(e) => panic!("{}", e)
+            }
+        } else {
+            panic!("wrong");
+        };
+
+        if let (pdu3, None) = remainder2.take_message() {
+            match pdu3 {
+                Ok(pdu) => {
+                    w_cnt += pdu.withdrawals().iter().count();
+                }
+                Err(e) => panic!("{}", e)
+            }
+        } else {
+            panic!("wrong");
+        };
+
+        assert_eq!(w_cnt, prefixes_len);
+    }
 
     #[test]
     fn build_withdrawals_basic_v4_addpath() {
