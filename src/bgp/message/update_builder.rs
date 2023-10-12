@@ -383,7 +383,7 @@ where Target: octseq::Truncate
             n => {
                 if !self.attributes.contains_key(&PathAttributeType::MpReachNlri) {
                     self.add_attribute(new_pas::MpReachNlri::new(
-                            MpReachNlriBuilder::new_for_nlri(&n)
+                            MpReachNlriBuilder::new_for_nlri(n)
                     ).into())?;
                 }
 
@@ -743,8 +743,8 @@ impl<Target> UpdateBuilder<Target>
         // case of AddPathed /32's this would still fit in a 4096 PDU.
 
         if !self.withdrawals.is_empty() {
-            let withdrawal_len = self.withdrawals.iter()
-                .fold(0, |sum, w| sum + w.compose_len());
+            //let withdrawal_len = self.withdrawals.iter()
+            //    .fold(0, |sum, w| sum + w.compose_len());
 
             let split_at = std::cmp::min(self.withdrawals.len() / 2,  450);
             let this_batch = self.withdrawals.drain(..split_at);
@@ -761,8 +761,8 @@ impl<Target> UpdateBuilder<Target>
         // have no conventional withdrawals left.
 
         if !self.announcements.is_empty() {
-            let announcement_len = self.announcements.iter()
-                .fold(0, |sum, a| sum + a.compose_len());
+            //let announcement_len = self.announcements.iter()
+            //    .fold(0, |sum, a| sum + a.compose_len());
 
             let split_at = std::cmp::min(self.announcements.len() / 2,  450);
             let this_batch = self.announcements.drain(..split_at);
@@ -881,6 +881,7 @@ impl<Target> UpdateBuilder<Target>
                 _ => todo!(),
             }
         }
+
 
         // We can do these unwraps because of the checks in the add/append
         // methods.
@@ -1116,7 +1117,7 @@ impl MpReachNlriBuilder {
             return (diff + 1).try_into().unwrap();
         }
 
-        return diff.try_into().unwrap();
+        diff.try_into().unwrap()
     }
 
 
@@ -1229,11 +1230,10 @@ impl MpUnreachNlriBuilder {
 
     pub(crate) fn split(&mut self, n: usize) -> Self {
         let this_batch = self.withdrawals.drain(..n).collect();
-        let this_builder = MpUnreachNlriBuilder {
+        MpUnreachNlriBuilder {
             withdrawals: this_batch,
             ..*self
-        };
-        this_builder
+        }
     }
 
     pub(crate) fn value_len(&self) -> usize {
@@ -1956,7 +1956,7 @@ mod tests {
         builder.set_aspath(path).unwrap();
 
         let raw = builder.finish().unwrap();
-        print_pcap(&raw);
+        print_pcap(raw);
 
         //let pdu = builder.into_message().unwrap();
         //print_pcap(pdu);
@@ -1985,7 +1985,7 @@ mod tests {
         builder.set_aspath(path).unwrap();
 
         let raw = builder.finish().unwrap();
-        print_pcap(&raw);
+        print_pcap(raw);
     }
 
     #[test]
@@ -2296,6 +2296,7 @@ mod tests {
 
 
             // compare as much as possible:
+            #[allow(clippy::blocks_in_if_conditions)]
             if std::panic::catch_unwind(|| {
             assert_eq!(original.origin(), composed.origin());
             //assert_eq!(original.aspath(), composed.aspath());
@@ -2310,14 +2311,12 @@ mod tests {
             );
             */
 
-            let orig_pas = BTreeSet::from(
-                original.new_path_attributes().unwrap()
-                .map(|pa| pa.unwrap().typecode()).collect::<BTreeSet<_>>()
-            );
-            let composed_pas = BTreeSet::from(
-                composed.new_path_attributes().unwrap()
-                .map(|pa| pa.unwrap().typecode()).collect::<BTreeSet<_>>()
-            );
+            let orig_pas = original.new_path_attributes().unwrap()
+                .map(|pa| pa.unwrap().typecode()).collect::<BTreeSet<_>>();
+
+            let composed_pas = composed.new_path_attributes().unwrap()
+                .map(|pa| pa.unwrap().typecode()).collect::<BTreeSet<_>>();
+
             let diff_pas: Vec<_> = orig_pas.symmetric_difference(
                 &composed_pas
             ).collect();
@@ -2329,7 +2328,7 @@ mod tests {
                             assert!({
                                 let mpu = original.new_path_attributes().unwrap().get(PathAttributeType::MpUnreachNlri).unwrap();
                                 if let PathAttribute::MpUnreachNlri(b) = mpu.to_owned().unwrap() {
-                                    b.inner().withdrawals.len() == 0
+                                    b.inner().withdrawals.is_empty()
                                 } else {
                                     false
                                 }
@@ -2354,7 +2353,7 @@ mod tests {
 
             }).is_err() {
                 eprintln!("--");
-                print_pcap(&raw);
+                print_pcap(raw);
                 print_pcap(composed.as_ref());
 
                 eprintln!("--");
@@ -2372,7 +2371,7 @@ mod tests {
 
     #[test]
     fn parse_build_compare_1() {
-        eprintln!("");
+        eprintln!();
         parse_build_compare(&[
         // BGP UPDATE, single conventional announcement, MultiExitDisc
             0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
