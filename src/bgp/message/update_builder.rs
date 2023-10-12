@@ -29,7 +29,6 @@ pub struct UpdateBuilder<Target> {
     announcements: Vec<Nlri<Vec<u8>>>,
     announcements_len: usize,
     withdrawals: Vec<Nlri<Vec<u8>>>,
-    withdrawals_len: usize,
     addpath_enabled: Option<bool>, // for conventional nlri (unicast v4)
                                    //
     // attributes:
@@ -61,7 +60,6 @@ where Target: octseq::Truncate
             announcements: Vec::new(),
             announcements_len: 0,
             withdrawals: Vec::new(),
-            withdrawals_len: 0,
             addpath_enabled: None,
 
             //attributes:
@@ -130,16 +128,9 @@ where Target: octseq::Truncate
                         self.addpath_enabled = Some(b.is_addpath());
                     }
 
-                    let new_bytes_num = withdrawal.compose_len();
-                    let new_total = self.total_pdu_len + new_bytes_num;
-                    if new_total > Self::MAX_PDU {
-                        return Err(ComposeError::PduTooLarge(new_total));
-                    }
                     self.withdrawals.push(
                         <&Nlri<T> as OctetsInto<Nlri<Vec<u8>>>>::try_octets_into(withdrawal).map_err(|_| ComposeError::todo() )?
                     );
-                    self.withdrawals_len += new_bytes_num;
-                    self.total_pdu_len = new_total;
                 } else {
                     // Nlri::Unicast only holds IPv4 and IPv6, so this must be
                     // IPv6.
@@ -1656,15 +1647,14 @@ mod tests {
         let mut w_cnt = 0;
         let mut remainder = Some(builder);
         loop {
+            if remainder.is_none() {
+                break
+            }
             if let (pdu, new_remainder) = remainder.take().unwrap().take_message() {
                 match pdu {
                     Ok(pdu) => {
                         w_cnt += pdu.withdrawals().iter().count();
-                        if let Some(next_builder) = new_remainder {
-                            remainder = Some(next_builder);
-                        } else {
-                            break
-                        }
+                        remainder = new_remainder;
                     }
                     Err(e) => panic!("{}", e)
                 }
