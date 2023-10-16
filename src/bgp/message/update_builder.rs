@@ -34,11 +34,13 @@ pub struct UpdateBuilder<Target> {
     attributes: BTreeMap<PathAttributeType, new_pas::PathAttribute>,
 }
 
+impl<T> UpdateBuilder<T> {
+    const MAX_PDU: usize = 4096; // XXX should come from NegotiatedConfig
+}
+
 impl<Target: OctetsBuilder> UpdateBuilder<Target>
 where Target: octseq::Truncate
 {
-
-    const MAX_PDU: usize = 4096; // XXX should come from NegotiatedConfig
 
     pub fn from_target(mut target: Target) -> Result<Self, ShortBuf> {
         target.truncate(0);
@@ -786,18 +788,24 @@ impl<Target> UpdateBuilder<Target>
         // sets. The first PDUs take longer to construct than the later ones.
         // Flamegraph currently hints at the fn split on MpReachNlriBuilder.
 
-        // FIXME this does not yet take into account the size of the other
-        // attributes, which must be copied to every PDU. So the magical 4000
-        // below needs to be something smarter.
         let maybe_pdu = 
             if let Some(PathAttribute::MpReachNlri(b)) = self.attributes.remove(&PathAttributeType::MpReachNlri) {
                 let mut reach_builder = b.inner();
                 let mut split_at = 0;
+
+                let other_attrs_len = self.attributes.values().fold(0, |sum, pa| sum + pa.compose_len());
+                let limit = Self::MAX_PDU 
+                    // marker/len/type, wdraw len, total pa len
+                    - (16 + 2 + 1 + 2 + 2)
+                    // MP_REACH_NLRI flags/type/len/afi/safi/rsrved, next_hop
+                    - 8 - reach_builder.get_nexthop().compose_len()
+                    - other_attrs_len;
+
                 if !reach_builder.announcements.is_empty() {
                     let mut compose_len = 0;
                     for (idx, a) in reach_builder.announcements.iter().enumerate() {
                         compose_len += a.compose_len();
-                        if compose_len > 4000 {
+                        if compose_len > limit {
                             split_at = idx;
                             break;
                         }
@@ -1732,6 +1740,7 @@ mod tests {
 
         assert_eq!(w_cnt, prefixes_num);
     }
+    use crate::bgp::communities::{StandardCommunity, Tag};
     #[test]
     fn into_messages_many_announcements_mp() {
         let mut builder = UpdateBuilder::new_vec();
@@ -1744,12 +1753,18 @@ mod tests {
             ).unwrap();
         }
         builder.set_local_pref(new_pas::LocalPref::new(123)).unwrap();
-        dbg!("builder done");
+        builder.set_multi_exit_disc(new_pas::MultiExitDisc::new(123)).unwrap();
+        (1..=300).for_each(|n| {
+            builder.add_community(StandardCommunity::new(n.into(), Tag::new(123))).unwrap();
+        });
 
         let mut a_cnt = 0;
         for pdu in builder.into_messages().unwrap() {
+            assert!(pdu.as_ref().len() <= UpdateBuilder::<()>::MAX_PDU);
             a_cnt += pdu.announcements().unwrap().count();
             assert!(pdu.local_pref().is_some());
+            assert!(pdu.multi_exit_disc().is_some());
+            assert_eq!(pdu.communities().unwrap().count(), 300);
         }
 
         assert_eq!(a_cnt, prefixes_num.try_into().unwrap());
