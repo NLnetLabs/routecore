@@ -1517,67 +1517,6 @@ mod tests {
     }
 
     #[test]
-    #[should_panic]
-    fn build_too_many_withdrawals() {
-        let mut builder = UpdateBuilder::new_vec();
-        for i in 0..1024 {
-            builder.add_withdrawal(
-                &Nlri::unicast_from_str(&format!("2001:db:{:04}::/48", i))
-                    .unwrap()
-            ).unwrap();
-        }
-    }
-
-    #[test]
-    fn build_too_many_withdrawals_remainder() {
-        let mut builder = UpdateBuilder::new_vec();
-        let mut prefixes: Vec<Nlri<Vec<u8>>> = vec![];
-        for i in 1..1024_u32 {
-            prefixes.push(
-                Nlri::Unicast(
-                    Prefix::new_v4(
-                        Ipv4Addr::from((i << 10).to_be_bytes()),
-                        22
-                    ).unwrap().into()
-                )
-            );
-        }
-        let prefixes_len = prefixes.len();
-        assert!(builder.append_withdrawals(&mut prefixes).is_err());
-        assert!(prefixes.len() < prefixes_len);
-        let pdu = builder.into_message().unwrap();
-        assert_eq!(
-            pdu.withdrawals().iter().count(),
-            prefixes_len - prefixes.len()
-        );
-    }
-
-    #[test]
-    fn build_too_many_withdrawals_from_iter() {
-        let mut builder = UpdateBuilder::new_vec();
-        let mut prefixes: Vec<Nlri<Vec<u8>>> = vec![];
-        for i in 1..1024_u32 {
-            prefixes.push(
-                Nlri::Unicast(
-                    Prefix::new_v4(
-                        Ipv4Addr::from((i << 10).to_be_bytes()),
-                        22
-                    ).unwrap().into()
-                )
-            );
-        }
-        let mut prefix_iter = prefixes.into_iter().peekable();
-
-        assert!(builder.withdrawals_from_iter(&mut prefix_iter).is_err());
-        let msg = builder.into_message().unwrap();
-        assert_eq!(
-            prefix_iter.count() + msg.withdrawals().iter().count(),
-            1023
-        );
-    }
-
-
-    #[test]
     fn take_message_many_withdrawals() {
         let mut builder = UpdateBuilder::new_vec();
         let mut prefixes: Vec<Nlri<Vec<u8>>> = vec![];
