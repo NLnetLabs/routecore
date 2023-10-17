@@ -125,6 +125,15 @@ impl<Octs: Octets> UpdateMessage<Octs> {
         println!();
     }
 
+    pub fn fmt_pcap_string(&self) -> String {
+        let mut res = String::with_capacity(7 + self.octets.as_ref().len() * 3);
+        res.push_str("000000 ");
+        for b in self.octets.as_ref() {
+            res.push_str(&format!("{:02x} ", b));
+        }
+        res
+    }
+
 	pub fn withdrawn_routes_len(&self) -> u16 {
         u16::from_be_bytes([
             self.octets.as_ref()[COFF],

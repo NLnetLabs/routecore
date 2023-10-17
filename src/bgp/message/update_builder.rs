@@ -81,8 +81,7 @@ where Target: octseq::Truncate
                     && pa.typecode() != PathAttributeType::MpUnreachNlri
                 {
                     if let PathAttributeType::Invalid(n) = pa.typecode() {
-                        warn!("invalid PA {}", n);
-                        pdu.print_pcap();
+                        warn!("invalid PA {}:\n{}", n, pdu.fmt_pcap_string());
                     }
                     builder.add_attribute(pa.to_owned()?)?;
                 }
