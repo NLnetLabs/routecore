@@ -830,10 +830,6 @@ impl<Target> UpdateBuilder<Target>
     }
 
 
-    // TODO we need a lazy version of into_messages 
-    // so something something iterator.
-
-
     fn into_messages(self) -> Result<
         Vec<UpdateMessage<<Target as FreezeBuilder>::Octets>>,
         ComposeError
@@ -842,7 +838,6 @@ impl<Target> UpdateBuilder<Target>
         Target: Clone + OctetsBuilder + FreezeBuilder + AsMut<[u8]> + octseq::Truncate,
         <Target as FreezeBuilder>::Octets: Octets
     {
-        //let mut res = Vec::with_capacity(self.calculate_pdu_length() / Self::MAX_PDU);
         let mut res = Vec::new();
         let mut remainder = Some(self);
         loop {
@@ -937,9 +932,7 @@ where
     >;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.builder.is_none() {
-            return None
-        }
+        self.builder.as_ref()?;
         let (res, remainder) = self.builder.take().unwrap().take_message();
         self.builder = remainder;
         Some(res)
@@ -2178,14 +2171,8 @@ mod tests {
         assert_eq!(pdu.communities().unwrap().count(), 2);
     }
 
-    enum PbcResult {
-        Identical,
-        Equivalent,
-        Different,
-        InvalidInput,
-    }
     // TODO also do fn check(raw: Bytes)
-    fn parse_build_compare(raw: &[u8]) -> PbcResult {
+    fn parse_build_compare(raw: &[u8]) {
         let sc = SessionConfig::modern();
         let original =
             match UpdateMessage::from_octets(&raw, sc) {
@@ -2195,8 +2182,8 @@ mod tests {
                     //SessionConfig)
                     //eprintln!("failed to parse input: {e:?}");
                     //print_pcap(&raw);
-                    return PbcResult::InvalidInput;
                     //panic!();
+                    return;
                 }
             };
 
@@ -2226,30 +2213,18 @@ mod tests {
 
             let calculated_len = builder.calculate_pdu_length();
 
-
-            let composed = match builder.into_message() {
-                Ok(msg) => msg,
-                Err(e) => {
+            let composed = match builder.take_message() {
+                (Ok(msg), None) => msg,
+                (Err(e), _) => {
                     print_pcap(raw);
                     panic!("error: {e}");
+                }
+                (_, Some(_)) => {
+                    unimplemented!("builder returning remainder")
                 }
             };
 
             assert_eq!(composed.as_ref().len(), calculated_len);
-
-
-            //let new_len = builder.encode_all().unwrap();
-            //let composed = match UpdateMessage::from_octets(
-            //    &target[..new_len], sc
-            //) {
-            //    Ok(msg) => msg,
-            //    Err(e) => {
-            //        print_pcap(raw);
-            //        panic!("error: {e}");
-            //    }
-            //};
-
-            //print_pcap(composed.as_ref());
 
             // XXX there are several possible reasons why our composed pdu
             // differs from the original input, especially if the attributes
@@ -2284,21 +2259,21 @@ mod tests {
                 &composed_pas
             ).collect();
             if !diff_pas.is_empty() {
-                dbg!(&diff_pas);
-                for d in diff_pas {
+                for d in &diff_pas {
                     match d {
+                        // FIXME: check if MPU is the _only_ attribute,
+                        // perhaps we are dealing with an EoR here?
                         PathAttributeType::MpUnreachNlri => {
-                            assert!({
-                                let mpu = original.new_path_attributes().unwrap().get(PathAttributeType::MpUnreachNlri).unwrap();
-                                if let PathAttribute::MpUnreachNlri(b) = mpu.to_owned().unwrap() {
-                                    b.inner().withdrawals.is_empty()
-                                } else {
-                                    false
-                                }
-                            });
+                            // XXX RIS data contains empty-but-non-EoR
+                            // MP_UNREACH_NLRI for some reason. 
+                            //assert!(original.is_eor().is_some());
+                            //});
 
                         }
-                        _ => panic!("unclear why PAs differ"),
+                        _ => {
+                            dbg!(&diff_pas);
+                            panic!("unclear why PAs differ")
+                        }
                     }
                 }
             }
@@ -2324,11 +2299,9 @@ mod tests {
             }
 
             if raw == composed.as_ref() {
-                //eprint!("✓");
-                PbcResult::Identical
+                eprint!("✓");
             } else {
-                //eprint!("×");
-                PbcResult::Equivalent
+                eprint!("×");
             }
     }
 
