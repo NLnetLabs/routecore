@@ -1,5 +1,4 @@
 use std::fmt;
-use std::iter::Peekable;
 use std::net::{IpAddr, Ipv6Addr};
 use std::collections::BTreeMap;
 
@@ -165,16 +164,11 @@ where Target: octseq::Truncate
         Ok(())
     }
 
-    pub fn withdrawals_from_iter<I>(&mut self, withdrawals: &mut Peekable<I>)
+    pub fn withdrawals_from_iter<I>(&mut self, withdrawals: I)
         -> Result<(), ComposeError>
-    where I: Iterator<Item = Nlri<Vec<u8>>>
+    where I: IntoIterator<Item = Nlri<Vec<u8>>>
     {
-        while let Some(w) = withdrawals.peek() {
-            match self.add_withdrawal(w) {
-                Ok(_) => { withdrawals.next(); }
-                Err(e) => return Err(e)
-            }
-        }
+        withdrawals.into_iter().try_for_each(|w| self.add_withdrawal(&w) )?;
         Ok(())
     }
 
@@ -379,19 +373,14 @@ where Target: octseq::Truncate
     }
 
     pub fn announcements_from_iter<I, T>(
-        &mut self, announcements: &mut Peekable<I>
+        &mut self, announcements: I
     ) -> Result<(), ComposeError>
     where
-        I: Iterator<Item = Nlri<T>>,
+        I: IntoIterator<Item = Nlri<T>>,
         Vec<u8>: OctetsFrom<T>,
         T: Octets,
     {
-        while let Some(a) = announcements.peek() {
-            match self.add_announcement(a) {
-                Ok(_) => { announcements.next(); }
-                Err(e) => return Err(e)
-            }
-        }
+        announcements.into_iter().try_for_each(|w| self.add_announcement(&w) )?;
         Ok(())
     }
 
@@ -1511,7 +1500,7 @@ mod tests {
          .into_iter()
          .collect::<Vec<_>>();
 
-        let _ = builder.withdrawals_from_iter(&mut withdrawals.into_iter().peekable());
+        let _ = builder.withdrawals_from_iter(withdrawals);
         let msg = builder.into_message().unwrap();
         print_pcap(msg);
     }
@@ -1531,7 +1520,7 @@ mod tests {
             );
         }
         let prefixes_len = prefixes.len();
-        builder.append_withdrawals(&mut prefixes).unwrap();
+        builder.withdrawals_from_iter(prefixes).unwrap();
 
         let mut w_cnt = 0;
         let remainder = if let (pdu1, Some(remainder)) = builder.take_message() {
@@ -1768,7 +1757,7 @@ mod tests {
             );
         }
 
-        let _ = builder.withdrawals_from_iter(&mut withdrawals.into_iter().peekable());
+        let _ = builder.withdrawals_from_iter(withdrawals);
         let raw = builder.finish().unwrap();
         print_pcap(&raw);
         UpdateMessage::from_octets(&raw, SessionConfig::modern()).unwrap();
@@ -1882,8 +1871,7 @@ mod tests {
             "1.0.3.0/24",
             "1.0.4.0/24",
         ].map(|p| Nlri::unicast_from_str(p).unwrap());
-        let mut iter = prefixes.into_iter().peekable();
-        builder.announcements_from_iter(&mut iter).unwrap();
+        builder.announcements_from_iter(prefixes).unwrap();
         builder.set_origin(OriginType::Igp).unwrap();
         builder.set_nexthop_unicast(Ipv4Addr::from_str("1.2.3.4").unwrap().into()).unwrap();
         let path = HopPath::from([
@@ -1910,8 +1898,7 @@ mod tests {
             "2001:db8:2::/48",
             "2001:db8:3::/48",
         ].map(|p| Nlri::unicast_from_str(p).unwrap());
-        let mut iter = prefixes.into_iter().peekable();
-        builder.announcements_from_iter(&mut iter).unwrap();
+        builder.announcements_from_iter(prefixes).unwrap();
         builder.set_origin(OriginType::Igp).unwrap();
         builder.set_nexthop_unicast(Ipv6Addr::from_str("fe80:1:2:3::").unwrap().into()).unwrap();
         let path = HopPath::from([
@@ -1958,10 +1945,7 @@ mod tests {
             "2001:db8:3::/48",
         ].map(|p| Nlri::unicast_from_str(p).unwrap());
 
-
-        let mut iter = prefixes.into_iter().peekable();
-
-        builder.announcements_from_iter(&mut iter).unwrap();
+        builder.announcements_from_iter(prefixes).unwrap();
         builder.set_origin(OriginType::Igp).unwrap();
         builder.set_nexthop_ll_addr("fe80:1:2:3::".parse().unwrap()).unwrap();
 
@@ -2011,8 +1995,7 @@ mod tests {
             "1.0.3.0/24",
             "1.0.4.0/24",
         ].map(|p| Nlri::unicast_from_str(p).unwrap());
-        let mut iter = prefixes.into_iter().peekable();
-        builder.announcements_from_iter(&mut iter).unwrap();
+        builder.announcements_from_iter(prefixes).unwrap();
         builder.set_origin(OriginType::Igp).unwrap();
         builder.set_nexthop_unicast("1.2.3.4".parse::<Ipv4Addr>().unwrap().into()).unwrap();
         let path = HopPath::from([
@@ -2045,8 +2028,7 @@ mod tests {
             "1.0.3.0/24",
             "1.0.4.0/24",
         ].map(|p| Nlri::unicast_from_str(p).unwrap());
-        let mut iter = prefixes.into_iter().peekable();
-        builder.announcements_from_iter(&mut iter).unwrap();
+        builder.announcements_from_iter(prefixes).unwrap();
         builder.set_origin(OriginType::Igp).unwrap();
         builder.set_nexthop_unicast(Ipv4Addr::from_str("1.2.3.4").unwrap().into()).unwrap();
         let path = HopPath::from([
