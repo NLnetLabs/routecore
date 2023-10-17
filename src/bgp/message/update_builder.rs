@@ -922,6 +922,47 @@ impl<Target> UpdateBuilder<Target>
     }
 }
 
+pub struct PduIterator<Target> {
+    builder: Option<UpdateBuilder<Target>>
+}
+
+impl<Target> Iterator for PduIterator<Target>
+where
+    Target: Clone + OctetsBuilder + FreezeBuilder + AsMut<[u8]> + octseq::Truncate,
+    <Target as FreezeBuilder>::Octets: Octets
+{
+    type Item = Result<
+        UpdateMessage<<Target as FreezeBuilder>::Octets>,
+        ComposeError
+    >;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.builder.is_none() {
+            return None
+        }
+        let (res, remainder) = self.builder.take().unwrap().take_message();
+        self.builder = remainder;
+        Some(res)
+    }
+
+}
+impl<Target> IntoIterator for UpdateBuilder<Target>
+    where
+    Target: Clone + OctetsBuilder + FreezeBuilder + AsMut<[u8]> + octseq::Truncate,
+    <Target as FreezeBuilder>::Octets: Octets
+{
+    type Item = Result<
+        UpdateMessage<<Target as FreezeBuilder>::Octets>,
+        ComposeError
+    >;
+    type IntoIter = PduIterator<Target>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        PduIterator { builder: Some(self) }
+    }
+
+}
+
 impl UpdateBuilder<Vec<u8>> {
     pub fn new_vec() -> Self {
         Self::from_target(Vec::with_capacity(23)).unwrap()
@@ -1686,7 +1727,9 @@ mod tests {
         });
 
         let mut a_cnt = 0;
-        for pdu in builder.into_messages().unwrap() {
+        for pdu in builder {
+            //eprint!(".");
+            let pdu = pdu.unwrap();
             assert!(pdu.as_ref().len() <= UpdateBuilder::<()>::MAX_PDU);
             a_cnt += pdu.announcements().unwrap().count();
             assert!(pdu.local_pref().is_some());
