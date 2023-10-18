@@ -1894,7 +1894,7 @@ mod tests {
         print_pcap(upd.as_ref());
 
         assert!(upd.has_conventional_nlri() && upd.has_mp_nlri());
-        assert_eq!(upd.unicast_announcements().count(), 7);
+        assert_eq!(upd.unicast_announcements().unwrap().count(), 7);
     }
 
     #[test]

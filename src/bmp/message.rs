@@ -1760,8 +1760,7 @@ mod tests {
 
 
         // NLRI
-        let nlris = bgp_update.nlris();
-        let mut nlris = nlris.iter();
+        let mut nlris = bgp_update.announcements().unwrap();
         if let Some(Ok(Nlri::Unicast(n1))) = nlris.next() {
             assert_eq!(
                 n1.prefix(),

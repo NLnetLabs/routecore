@@ -241,83 +241,77 @@ impl<Octs: Octets> UpdateMessage<Octs> {
         Ok(new_pas::PathAttributes::new(pp, self.session_config))
     }
 
-    /// Iterator over the reachable NLRIs.
-    ///
-    /// If present, the NLRIs are taken from the MP_REACH_NLRI path attribute.
-    /// Otherwise, they are taken from their conventional place at the end of
-    /// the message.
-    /// **NB**: this is 
-    // FIXME an UPDATE PDU possibly contains NLRI in both the conventional
-    // part as well as in an MP_REACH_NLRI path attribute. We need to chain
-    // two iterators.
-    pub fn nlris(&self) -> Nlris<Octs> {
-        if let Some(ref mut pa) = self.path_attributes().into_iter().find(|pa|
-            pa.type_code() == PathAttributeType::MpReachNlri
-        ) {
-            let mut p = pa.value_into_parser();
-            Nlris::parse(&mut p, self.session_config).expect("parsed before")
-        } else {
-            let wrl = self.withdrawn_routes_len() as usize;
-            let tpal = self.total_path_attribute_len() as usize;
-            let mut parser = Parser::from_ref(self.octets());
-            parser.advance(COFF+2+wrl+2+tpal).expect("parsed before");
-            Nlris::parse_conventional(&mut parser, self.session_config).expect("parsed before")
-        }
-    }
-    
-    /// Iterator over both conventional NLRI and unicast MP_REACH_NLRI.
-    pub fn unicast_announcements(&self)
-        -> impl Iterator<Item = Result<Nlri<Octs::Range<'_>>, ParseError>>
+    /// Returns the conventional announcements.
+    pub fn conventional_announcements(&self)
+        -> Result<Nlris<Octs>, ParseError>
     {
-        let mp_iter = self.path_attributes().into_iter().find(|pa|
-            pa.type_code() == PathAttributeType::MpReachNlri
-        ).as_mut().map(|pa|
-           Nlris::parse(
-               &mut pa.value_into_parser(),
-               self.session_config
-            ).expect("parsed before")
-        ).filter(|nlris|
-            matches!((nlris.afi(), nlris.safi()), 
-                     (AFI::Ipv4 | AFI::Ipv6, SAFI::Unicast)
-            )
-        ).map(|nlris| nlris.iter());
-
         let wrl = self.withdrawn_routes_len() as usize;
         let tpal = self.total_path_attribute_len() as usize;
         let mut parser = Parser::from_ref(self.octets());
-        parser.advance(COFF+2+wrl+2+tpal).expect("parsed before");
-        let conventional_iter = Nlris::parse_conventional(
-                &mut parser, self.session_config
-            ).expect("parsed before").iter();
+        parser.advance(COFF+2+wrl+2+tpal)?;
 
-        mp_iter.into_iter().flatten().chain(conventional_iter)
+        let iter = Nlris {
+            parser,
+            session_config: self.session_config,
+            afi: AFI::Ipv4,
+            safi: SAFI::Unicast
+        };
 
+        Ok(iter)
     }
 
-    // using the new PathAttributes (iterator)
+    /// Returns the announcements from the MP_UNREACH_NLRI attribute, if any.
+    pub fn mp_announcements(&self) -> Result<Option< Nlris<Octs>>, ParseError>
+    {
+        if let Some(new_pas::WireformatPathAttribute::MpReachNlri(pa, _sc)) = self.new_path_attributes()?.get(
+            new_pas::PathAttributeType::MpReachNlri
+        ){
+            let mut parser = pa.clone();
+            let afi = parser.parse_u16_be()?.into();
+            let safi = parser.parse_u8()?.into();
+            NextHop::skip(&mut parser)?;
+            parser.advance(1)?; // 1 reserved byte
+            return Ok(Some(Nlris{
+                parser, 
+                session_config: self.session_config,
+                afi,
+                safi
+            }))
+        }
+
+       Ok(None)
+    }
+
+    /// Returns a combined iterator of conventional and MP_REACH_NLRI.
+    ///
+    /// Note that this iterator might contain NLRI of different AFI/SAFI
+    /// types.
     pub fn announcements(&self)
         -> Result<
             impl Iterator<Item = Result<Nlri<Octs::Range<'_>>, ParseError>>,
             ParseError
             >
     {
-        let pa = self.new_path_attributes()?.get(
-            new_pas::PathAttributeType::MpReachNlri
-        );
+        let mp_iter = self.mp_announcements()?.map(|i| i.iter());
+        let conventional_iter = self.conventional_announcements()?.iter();
 
-        let mp_iter = if let Some(pa) = pa { 
-            Some(Nlris::parse(&mut pa.into_value_parser()?, self.session_config)?.iter())
-        } else {
-            None
-        };
+        Ok(mp_iter.into_iter().flatten().chain(conventional_iter))
+    }
 
-        let wrl = self.withdrawn_routes_len() as usize;
-        let tpal = self.total_path_attribute_len() as usize;
-        let mut parser = Parser::from_ref(self.octets());
-        parser.advance(COFF+2+wrl+2+tpal).expect("parsed before");
-        let conventional_iter = Nlris::parse_conventional(
-                &mut parser, self.session_config
-            )?.iter();
+    /// Returns a combined iterator of conventional and unicast MP_REACH_NLRI.
+    pub fn unicast_announcements(&self)
+        -> Result<
+            impl Iterator<Item = Result<Nlri<Octs::Range<'_>>, ParseError>>,
+            ParseError
+        >
+    {
+        let mp_iter = self.mp_announcements()?.filter(|nlris|
+            matches!((nlris.afi(), nlris.safi()), 
+                     (AFI::Ipv4 | AFI::Ipv6, SAFI::Unicast)
+            )
+        ).map(|nlris| nlris.iter());
+
+        let conventional_iter = self.conventional_announcements()?.iter();
 
         Ok(mp_iter.into_iter().flatten().chain(conventional_iter))
 
@@ -1919,28 +1913,6 @@ impl<'a> Nlris<'a, [u8]> {
 }
 
 impl<'a, Octs: Octets> Nlris<'a, Octs> {
-    // XXX remove, make like Withdrawals
-    fn parse_conventional(parser: &mut Parser<'a, Octs>, config: SessionConfig) -> Result<Self, ParseError>
-    {
-        let pos = parser.pos();
-        while parser.remaining() > 0 {
-            BasicNlri::parse(parser, config, AFI::Ipv4)?;
-        }
-        let len = parser.pos() - pos;
-        parser.seek(pos)?;
-
-        let pp = Parser::parse_parser(parser, len)?;
-
-        Ok(
-            Nlris {
-                parser: pp,
-                session_config: config,
-                afi: AFI::Ipv4,
-                safi: SAFI::Unicast,
-            }
-        )
-    }
-
     fn parse(parser: &mut Parser<'a, Octs>, config: SessionConfig)
         -> Result<Self, ParseError>
     {
@@ -2232,9 +2204,7 @@ mod tests {
 
         assert!(pa_iter.next().is_none());
 
-        //let mut nlri_iter = update.nlris().iter();
-        let nlris = update.nlris();
-        let mut nlri_iter = nlris.iter();
+        let mut nlri_iter = update.announcements().unwrap();
         let nlri1 = nlri_iter.next().unwrap();
         assert_eq!(nlri1.unwrap(), Nlri::unicast_from_str("10.10.10.2/32").unwrap());
         assert!(nlri_iter.next().is_none());
@@ -2260,12 +2230,12 @@ mod tests {
             ).unwrap().try_into().unwrap();
 
         assert_eq!(update.total_path_attribute_len(), 27);
-        assert_eq!(update.nlris().iter().count(), 2);
+        assert_eq!(update.announcements().unwrap().count(), 2);
 
         let prefixes = ["10.10.10.9/32", "192.168.97.0/30"]
             .map(|p| Nlri::unicast_from_str(p).unwrap());
 
-        assert!(prefixes.into_iter().eq(update.nlris().iter().map(|n| n.unwrap())));
+        assert!(prefixes.into_iter().eq(update.announcements().unwrap().map(|n| n.unwrap())));
 
     }
 
@@ -2304,8 +2274,8 @@ mod tests {
         assert!(!update.has_conventional_nlri());
         assert!(update.has_mp_nlri());
 
-        let nlris = update.nlris();
-        let nlri_iter = nlris.iter();
+        
+        let nlri_iter = update.announcements().unwrap();
         assert_eq!(nlri_iter.count(), 5);
 
         let prefixes = [
@@ -2316,7 +2286,7 @@ mod tests {
             "2001:db8:ffff:3::/64",
         ].map(|p| Nlri::unicast_from_str(p).unwrap());
 
-        assert!(prefixes.into_iter().eq(update.nlris().iter().map(|n| n.unwrap())));
+        assert!(prefixes.into_iter().eq(update.announcements().unwrap().map(|n| n.unwrap())));
 
     }
 
@@ -2545,7 +2515,7 @@ mod tests {
         let upd: UpdateMessage<_> = Message::from_octets(&buf, Some(sc))
             .unwrap().try_into().unwrap();
 
-        let nlri1 = upd.nlris().iter().next().unwrap();
+        let nlri1 = upd.announcements().unwrap().next().unwrap();
         assert_eq!(
             nlri1.unwrap(),
             Nlri::<&[u8]>::Unicast(BasicNlri::with_path_id(
@@ -2727,8 +2697,8 @@ mod tests {
         let sc = SessionConfig::modern();
         let upd: UpdateMessage<_> = Message::from_octets(&buf, Some(sc))
             .unwrap().try_into().unwrap();
-        assert_eq!(upd.nlris().afi(), AFI::Ipv4);
-        assert_eq!(upd.nlris().safi(), SAFI::Multicast);
+        assert_eq!(upd.mp_announcements().unwrap().unwrap().afi(), AFI::Ipv4);
+        assert_eq!(upd.mp_announcements().unwrap().unwrap().safi(), SAFI::Multicast);
         let prefixes = [
             "198.51.100.0/26",
             "198.51.100.64/26",
@@ -2736,7 +2706,7 @@ mod tests {
             "198.51.100.192/26",
         ].map(|p| Nlri::<&[u8]>::Multicast(Prefix::from_str(p).unwrap().into()));
 
-        assert!(prefixes.into_iter().eq(upd.nlris().iter().map(|n| n.unwrap())));
+        assert!(prefixes.into_iter().eq(upd.announcements().unwrap().map(|n| n.unwrap())));
     }
 
     #[test]
