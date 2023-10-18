@@ -327,38 +327,35 @@ impl<Octs: Octets> UpdateMessage<Octs> {
         (pdu_len - 16 - 2 - 1 - 2 - wrl - 2 - tpal) > 0
     }
 
-    pub fn has_mp_nlri(&self) -> bool {
-        self.path_attributes().into_iter().any(|pa|
-            pa.type_code() == PathAttributeType::MpReachNlri
+    pub fn has_mp_nlri(&self) -> Result<bool, ParseError> {
+        Ok(
+            self.new_path_attributes()?
+                .get(new_pas::PathAttributeType::MpReachNlri).is_some()
         )
     }
 
     /// Returns `Option<(AFI, SAFI)>` if this UPDATE represents the End-of-RIB
     /// marker for a AFI/SAFI combination.
-    pub fn is_eor(&self) -> Option<(AFI, SAFI)> {
+    pub fn is_eor(&self) -> Result<Option<(AFI, SAFI)>, ParseError> {
         // Conventional BGP
         if self.length() == 23 {
             // minimum length for a BGP UPDATE indicates EOR
             // (no annoucements, no withdrawals)
-            return Some((AFI::Ipv4, SAFI::Unicast));
+            return Ok(Some((AFI::Ipv4, SAFI::Unicast)));
         }
 
         // Based on MP_UNREACH_NLRI
-        if self.total_path_attribute_len() > 0
-            && self.path_attributes().iter().all(|pa|
-                pa.type_code() == PathAttributeType::MpUnreachNlri
-                && pa.length() == 3 // only AFI/SAFI, no NLRI
-            ) {
-                let pa = self.path_attributes().into_iter().next().unwrap();
-                return Some((
-                    u16::from_be_bytes(
-                            [pa.value().as_ref()[0], pa.value().as_ref()[1]]
-                    ).into(),
-                    pa.value().as_ref()[2].into()
-                ));
 
+        let mut pas = self.new_path_attributes()?;
+        if let Some(Ok(new_pas::WireformatPathAttribute::MpUnreachNlri(mut pa, _sc))) = pas.next() {
+            if pa.remaining() == 3 && pas.next().is_none() {
+                let afi = pa.parse_u16_be()?.into();
+                let safi = pa.parse_u8()?.into();
+                return Ok(Some((afi, safi)))
             }
-        None
+        }
+
+        Ok(None)
     }
 
     //--- Methods to access mandatory path attributes ------------------------
@@ -2287,7 +2284,7 @@ mod tests {
         assert_eq!(update.total_path_attribute_len(), 113);
 
         assert!(!update.has_conventional_nlri());
-        assert!(update.has_mp_nlri());
+        assert!(update.has_mp_nlri().unwrap());
 
         
         let nlri_iter = update.announcements().unwrap();

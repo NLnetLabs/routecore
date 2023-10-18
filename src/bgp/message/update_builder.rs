@@ -1893,7 +1893,7 @@ mod tests {
         let upd = UpdateMessage::from_octets(&buf, SessionConfig::modern()).unwrap();
         print_pcap(upd.as_ref());
 
-        assert!(upd.has_conventional_nlri() && upd.has_mp_nlri());
+        assert!(upd.has_conventional_nlri() && upd.has_mp_nlri().unwrap());
         assert_eq!(upd.unicast_announcements().unwrap().count(), 7);
     }
 
