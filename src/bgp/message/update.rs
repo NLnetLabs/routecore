@@ -143,55 +143,61 @@ impl<Octs: Octets> UpdateMessage<Octs> {
 }
 
 impl<Octs: Octets> UpdateMessage<Octs> {
-    // FIXME same issue as with NLRI, an UPDATE PDU can contain both
-    // conventional and MP_UNREACH_NLRI.
-    pub fn withdrawals(&self) -> Withdrawals<'_, Octs> {
-        if let Some(ref mut pa) = self.path_attributes().into_iter().find(|pa|
-            pa.type_code() == PathAttributeType::MpUnreachNlri
-        ) {
-            Withdrawals::parse(
-                &mut pa.value_into_parser(),
-                self.session_config
-            ).expect("parsed before")
-        } else {
-            let len = self.withdrawn_routes_len() as usize;
-            let mut parser = Parser::from_ref(self.octets());
-            parser.advance(COFF+2).expect("parsed before");
-            let pp = Parser::parse_parser(&mut parser, len)
-                .expect("parsed before");
 
-            Withdrawals {
-                parser: pp,
-                session_config: self.session_config,
-                afi: AFI::Ipv4,
-                safi: SAFI::Unicast
-            }
-        }
-    }
-
-    pub fn all_withdrawals_iter(&self) -> impl Iterator<Item = Nlri<Octs::Range<'_>>> {
-        let mp_iter = self.path_attributes().into_iter().find(|pa|
-            pa.type_code() == PathAttributeType::MpUnreachNlri
-        ).as_mut().map(|pa|
-            Withdrawals::parse(
-                &mut pa.value_into_parser(),
-                self.session_config
-            ).expect("parsed before").iter()
-        );
-
-        let len = self.withdrawn_routes_len() as usize;
+    /// Returns the conventional withdrawals.
+    pub fn conventional_withdrawals(&self) -> Result<Nlris<Octs>, ParseError>
+    {
+        let wrl = self.withdrawn_routes_len() as usize;
         let mut parser = Parser::from_ref(self.octets());
-        parser.advance(COFF+2).expect("parsed before");
-        let pp = Parser::parse_parser(&mut parser, len)
-            .expect("parsed before");
+        parser.advance(COFF+2)?;
+        let pp = parser.parse_parser(wrl)?;
 
-        let conventional_iter = Withdrawals {
+        let iter = Nlris {
             parser: pp,
             session_config: self.session_config,
             afi: AFI::Ipv4,
             safi: SAFI::Unicast
-        }.iter();
-        mp_iter.into_iter().flatten().chain(conventional_iter)
+        };
+
+        Ok(iter)
+
+    }
+
+    /// Returns the withdrawals from the MP_UNREACH_NLRI attribute, if any.
+    pub fn mp_withdrawals(&self) -> Result<Option< Nlris<Octs>>, ParseError>
+    {
+        if let Some(new_pas::WireformatPathAttribute::MpUnreachNlri(pa, _sc)) = self.new_path_attributes()?.get(
+            new_pas::PathAttributeType::MpUnreachNlri
+        ){
+            let mut parser = pa.clone();
+            let afi = parser.parse_u16_be()?.into();
+            let safi = parser.parse_u8()?.into();
+            return Ok(Some(Nlris{
+                parser, 
+                session_config: self.session_config,
+                afi,
+                safi
+            }))
+        }
+
+       Ok(None)
+    }
+
+    /// Returns a combined iterator of conventional and MP_UNREACH_NLRI.
+    ///
+    /// Note that this iterator might contain NLRI of different AFI/SAFI
+    /// types.
+    pub fn withdrawals(&self)
+        -> Result<
+            impl Iterator<Item = Result<Nlri<Octs::Range<'_>>, ParseError>>,
+            ParseError
+            >
+    {
+        let mp_iter = self.mp_withdrawals()?.map(|i| i.iter());
+        let conventional_iter = self.conventional_withdrawals()?.iter();
+
+        Ok(mp_iter.into_iter().flatten().chain(conventional_iter))
+
     }
 
     // RFC4271: A value of 0 indicates that neither the Network Layer
@@ -1701,29 +1707,6 @@ impl<'a> Withdrawals<'a, [u8]> {
 }
 
 impl<'a, Octs: Octets> Withdrawals<'a, Octs> {
-    // XXX remove?
-    fn _parse_conventional(parser: &mut Parser<'a, Octs>, config: SessionConfig)
-        -> Result<Self, ParseError>
-    {
-        let pos = parser.pos();
-        while parser.remaining() > 0 {
-            BasicNlri::parse(parser, config, AFI::Ipv4)?;
-        }
-        let len = parser.pos() - pos;
-        parser.seek(pos)?;
-
-        let pp = Parser::parse_parser(parser, len).expect("parsed before");
-        
-        Ok(
-            Withdrawals {
-                parser: pp,
-                session_config: config,
-                afi: AFI::Ipv4,
-                safi: SAFI::Unicast,
-            }
-        )
-    }
-
     fn parse(parser: &mut Parser<'a, Octs>,  config: SessionConfig)
         -> Result<Self, ParseError>
     {
@@ -1801,8 +1784,8 @@ impl<'a, Octs: Octets> Nlris<'a, Octs> {
         Nlris { parser, session_config, afi, safi }
     }
 
-    pub fn iter(&self) -> NlriIterMp<'a, Octs> {
-        NlriIterMp {
+    pub fn iter(&self) -> NlriIter<'a, Octs> {
+        NlriIter {
             parser: self.parser,
             session_config: self.session_config,
             afi: self.afi,
@@ -1825,14 +1808,14 @@ impl<'a, Octs: Octets> Nlris<'a, Octs> {
 ///
 /// Returns items of the enum [`Nlri`], thus both conventional and
 /// BGP MultiProtocol (RFC4760) NLRIs.
-pub struct NlriIterMp<'a, Ref: ?Sized> {
+pub struct NlriIter<'a, Ref: ?Sized> {
     parser: Parser<'a, Ref>,
     session_config: SessionConfig,
     afi: AFI,
     safi: SAFI,
 }
 
-impl<'a, Octs: Octets> NlriIterMp<'a, Octs> {
+impl<'a, Octs: Octets> NlriIter<'a, Octs> {
     fn get_nlri(&mut self) -> Result<Nlri<Octs::Range<'a>>, ParseError> {
         let res = match (self.afi, self.safi) {
             (AFI::Ipv4 | AFI::Ipv6, SAFI::Unicast) => {
@@ -2016,7 +1999,7 @@ impl<'a, Octs: Octets> Nlris<'a, Octs> {
 }
 
 
-impl<'a, Octs: Octets> Iterator for NlriIterMp<'a, Octs> {
+impl<'a, Octs: Octets> Iterator for NlriIter<'a, Octs> {
     type Item = Result<Nlri<Octs::Range<'a>>, ParseError>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -2359,7 +2342,7 @@ mod tests {
             Some(SessionConfig::modern())
             ).unwrap().try_into().unwrap();
 
-        assert_eq!(update.withdrawals().iter().count(), 12);
+        assert_eq!(update.withdrawals().unwrap().count(), 12);
 
         let ws = [
             "10.10.10.10/32",
@@ -2374,9 +2357,9 @@ mod tests {
             "192.168.98.0/30",
             "192.168.0.16/30",
             "192.168.99.0/30",
-        ].map(|w| Nlri::unicast_from_str(w).unwrap());
+        ].map(|w| Ok(Nlri::unicast_from_str(w).unwrap()));
 
-        assert!(ws.into_iter().eq(update.withdrawals().iter()));
+        assert!(ws.into_iter().eq(update.withdrawals().unwrap()));
     }
 
     #[test]
@@ -2399,15 +2382,15 @@ mod tests {
             Some(SessionConfig::modern())
             ).unwrap().try_into().unwrap();
 
-        assert_eq!(update.withdrawals().iter().count(), 4);
+        assert_eq!(update.withdrawals().unwrap().count(), 4);
 
         let ws = [
             "2001:db8:ffff::/64",
             "2001:db8:ffff:1::/64",
             "2001:db8:ffff:2::/64",
             "2001:db8:ffff:3::/64",
-        ].map(|w| Nlri::unicast_from_str(w).unwrap());
-        assert!(ws.into_iter().eq(update.withdrawals().iter()));
+        ].map(|w| Ok(Nlri::unicast_from_str(w).unwrap()));
+        assert!(ws.into_iter().eq(update.withdrawals().unwrap()));
     }
 
     //--- Path Attributes ------------------------------------------------
@@ -2768,9 +2751,9 @@ mod tests {
         let sc = SessionConfig::modern();
         let upd: UpdateMessage<_> = Message::from_octets(&buf, Some(sc))
             .unwrap().try_into().unwrap();
-        assert_eq!(upd.withdrawals().afi(), AFI::Ipv4);
-        assert_eq!(upd.withdrawals().safi(), SAFI::Multicast);
-        assert_eq!(upd.withdrawals().iter().count(), 1);
+        assert_eq!(upd.mp_withdrawals().unwrap().unwrap().afi(), AFI::Ipv4);
+        assert_eq!(upd.mp_withdrawals().unwrap().unwrap().safi(), SAFI::Multicast);
+        assert_eq!(upd.mp_withdrawals().unwrap().iter().count(), 1);
     }
 
 }

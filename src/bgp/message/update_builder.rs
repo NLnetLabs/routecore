@@ -1454,7 +1454,7 @@ mod tests {
 
         let msg = builder.into_message().unwrap();
         print_pcap(msg.as_ref());
-        assert_eq!(msg.all_withdrawals_iter().count(), 1);
+        assert_eq!(msg.withdrawals().unwrap().count(), 1);
 
         let mut builder2 = UpdateBuilder::new_vec();
         builder2.add_withdrawal(
@@ -1463,7 +1463,7 @@ mod tests {
 
         let msg2 = builder2.into_message().unwrap();
         print_pcap(msg2.as_ref());
-        assert_eq!(msg2.all_withdrawals_iter().count(), 1);
+        assert_eq!(msg2.withdrawals().unwrap().count(), 1);
     }
 
     #[test]
@@ -1560,7 +1560,7 @@ mod tests {
         let remainder = if let (pdu1, Some(remainder)) = builder.take_message() {
             match pdu1 {
                 Ok(pdu) => {
-                    w_cnt += pdu.withdrawals().iter().count();
+                    w_cnt += pdu.withdrawals().unwrap().count();
                     remainder
                 }
                 Err(e) => panic!("{}", e)
@@ -1572,7 +1572,7 @@ mod tests {
         let remainder2 = if let (pdu2, Some(remainder2)) = remainder.take_message() {
             match pdu2 {
                 Ok(pdu) => {
-                    w_cnt += pdu.withdrawals().iter().count();
+                    w_cnt += pdu.withdrawals().unwrap().count();
                     remainder2
                 }
                 Err(e) => panic!("{}", e)
@@ -1584,7 +1584,7 @@ mod tests {
         if let (pdu3, None) = remainder2.take_message() {
             match pdu3 {
                 Ok(pdu) => {
-                    w_cnt += pdu.withdrawals().iter().count();
+                    w_cnt += pdu.withdrawals().unwrap().count();
                 }
                 Err(e) => panic!("{}", e)
             }
@@ -1621,7 +1621,7 @@ mod tests {
             let (pdu, new_remainder) = remainder.take().unwrap().take_message();
             match pdu {
                 Ok(pdu) => {
-                    w_cnt += pdu.withdrawals().iter().count();
+                    w_cnt += pdu.withdrawals().unwrap().count();
                     remainder = new_remainder;
                 }
                 Err(e) => panic!("{}", e)
@@ -1650,7 +1650,7 @@ mod tests {
 
         let mut w_cnt = 0;
         for pdu in builder.into_messages().unwrap() {
-            w_cnt += pdu.withdrawals().iter().count();
+            w_cnt += pdu.withdrawals().unwrap().count();
         }
 
         assert_eq!(w_cnt, prefixes_len);
@@ -1696,7 +1696,7 @@ mod tests {
 
         let mut w_cnt = 0;
         for pdu in builder.into_messages().unwrap() {
-            w_cnt += pdu.withdrawals().iter().count();
+            w_cnt += pdu.withdrawals().unwrap().count();
         }
 
         assert_eq!(w_cnt, prefixes_num);
@@ -1811,7 +1811,7 @@ mod tests {
         let msg = builder.into_message().unwrap();
         print_pcap(msg.as_ref());
 
-        assert_eq!(msg.all_withdrawals_iter().count(), 2);
+        assert_eq!(msg.withdrawals().unwrap().count(), 2);
     }
 
     #[test]
@@ -2192,8 +2192,8 @@ mod tests {
                 &original, sc, target
             ).unwrap();
 
-            for w in original.withdrawals().iter() {
-                builder.add_withdrawal(&w).unwrap();
+            for w in original.withdrawals().unwrap() {
+                builder.add_withdrawal(&w.unwrap()).unwrap();
             }
 
             for a in original.announcements().unwrap() {
