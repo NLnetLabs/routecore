@@ -374,31 +374,29 @@ impl<Octs: Octets> UpdateMessage<Octs> {
     }
 
     /// Returns the AS4_PATH attribute.
-    pub fn as4path(&self) -> Option<AsPath<Octs::Range<'_>>> {
-        self.path_attributes().into_iter().find(|pa|
-            pa.type_code() == PathAttributeType::As4Path
-        ).map(|pa| {
-            unsafe {
-                AsPath::new_unchecked(pa.into_value(), true)
-            }
-        })
+    pub fn as4path(&self) -> Result<
+        Option<AsPath<Octs::Range<'_>>>,
+        ParseError
+    > {
+        if let Some(new_pas::WireformatPathAttribute::As4Path(mut pa, _sc)) = self.new_path_attributes()?.get(new_pas::PathAttributeType::As4Path) {
+            Ok(Some(AsPath::new(pa.parse_octets(pa.remaining())?, true)?))
+        } else {
+            Ok(None)
+        }
     }
 
 
     /// Returns the AS_PATH path attribute.
     //
     // NOTE: This is now the AS PATH and only the AS_PATH.
-    pub fn aspath(&self) -> Option<AsPath<Octs::Range<'_>>> {
-        self.path_attributes().into_iter().find(|pa|
-            pa.type_code() == PathAttributeType::AsPath
-        ).map(|pa| {
-            unsafe {
-                AsPath::new_unchecked(
-                    pa.into_value(),
-                    self.session_config.has_four_octet_asn(),
-                )
-            }
-        })
+    pub fn aspath(&self)
+        -> Result<Option<AsPath<Octs::Range<'_>>>, ParseError>
+    {
+        if let Some(new_pas::WireformatPathAttribute::AsPath(mut pa, sc)) = self.new_path_attributes()?.get(new_pas::PathAttributeType::AsPath) {
+            Ok(Some(AsPath::new(pa.parse_octets(pa.remaining())?, sc.has_four_octet_asn())?))
+        } else {
+            Ok(None)
+        }
     }
 
     /// Returns the NEXT_HOP path attribute, or the equivalent from
@@ -2485,14 +2483,14 @@ mod tests {
         }
 
         assert_eq!(
-            update.aspath().unwrap().hops().collect::<Vec<_>>(),
+            update.aspath().unwrap().unwrap().hops().collect::<Vec<_>>(),
             AsPath::vec_from_asns([
                 0xfbf0, 0xfbf1, 0xfbf2, 0xfbf3, 0x5ba0, 0x5ba0,
                 0x5ba0, 0x5ba0, 0x5ba0, 0x5ba0
             ]).hops().collect::<Vec<_>>(),
         );
         assert_eq!(
-            update.as4path().unwrap().hops().collect::<Vec<_>>(),
+            update.as4path().unwrap().unwrap().hops().collect::<Vec<_>>(),
             AsPath::vec_from_asns([
                 0xfbf0, 0xfbf1, 0xfbf2, 0xfbf3, 0x10000, 0x10000,
                 0x10000, 0x10000, 0x10001, 0x1000a,
