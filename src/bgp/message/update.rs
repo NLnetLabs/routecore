@@ -365,10 +365,12 @@ impl<Octs: Octets> UpdateMessage<Octs> {
     // Also note that these are only present in announced routes. A BGP UPDATE
     // with only withdrawals will not have any of these mandatory path
     // attributes present.
-    pub fn origin(&self) -> Option<OriginType> {
-        self.path_attributes().iter().find(|pa|
-            pa.type_code() == PathAttributeType::Origin
-        ).map(|pa| pa.value().as_ref()[0].into() )
+    pub fn origin(&self) -> Result<Option<OriginType>, ParseError> {
+        if let Some(new_pas::WireformatPathAttribute::Origin(mut pa, _sc)) = self.new_path_attributes()?.get(new_pas::PathAttributeType::Origin) {
+            Ok(Some(pa.parse_u8()?.into()))
+        } else {
+            Ok(None)
+        }
     }
 
     /// Returns the AS4_PATH attribute.
