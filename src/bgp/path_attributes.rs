@@ -847,7 +847,7 @@ pub struct AggregatorInfo {
 }
 
 impl AggregatorInfo {
-    fn new(asn: Asn, address: Ipv4Addr) -> AggregatorInfo {
+    pub fn new(asn: Asn, address: Ipv4Addr) -> AggregatorInfo {
         AggregatorInfo { asn, address }
     }
     pub fn asn(&self) -> Asn {

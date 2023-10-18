@@ -9,6 +9,8 @@ pub use crate::bgp::types::{
     AFI, SAFI, LocalPref, MultiExitDisc, NextHop, OriginType, PathAttributeType
 };
 
+use crate::bgp::path_attributes::AggregatorInfo;
+
 use crate::bgp::message::nlri::{
     Nlri, BasicNlri, MplsNlri, MplsVpnNlri, VplsNlri, FlowSpecNlri,
     RouteTargetNlri
@@ -432,32 +434,36 @@ impl<Octs: Octets> UpdateMessage<Octs> {
     //--- Non-mandatory path attribute helpers -------------------------------
 
     /// Returns the Multi-Exit Discriminator value, if any.
-    pub fn multi_exit_disc(&self) -> Option<MultiExitDisc> {
-        self.path_attributes().iter().find(|pa|
-            pa.type_code() == PathAttributeType::MultiExitDisc
-        ).map(|pa| {
-            MultiExitDisc(u32::from_be_bytes(
-                pa.value().as_ref()[0..4].try_into().expect("parsed before")
-            ))
-        })
+    pub fn multi_exit_disc(&self)
+        -> Result<Option<MultiExitDisc>, ParseError>
+    {
+        if let Some(new_pas::WireformatPathAttribute::MultiExitDisc(mut pa, _sc)) = self.new_path_attributes()?.get(
+            new_pas::PathAttributeType::MultiExitDisc
+        ){
+            Ok(Some(MultiExitDisc(pa.parse_u32_be()?)))
+        } else {
+            Ok(None)
+        }
+
     }
 
     /// Returns the Local Preference value, if any.
-    pub fn local_pref(&self) -> Option<LocalPref> {
-        self.path_attributes().iter().find(|pa|
-            pa.type_code() == PathAttributeType::LocalPref
-        ).map(|pa|
-            LocalPref(u32::from_be_bytes(
-                pa.value().as_ref()[0..4].try_into().expect("parsed before")
-            ))
-        )
+    pub fn local_pref(&self) -> Result<Option<LocalPref>, ParseError> {
+        if let Some(new_pas::WireformatPathAttribute::LocalPref(mut pa, _sc)) = self.new_path_attributes()?.get(
+            new_pas::PathAttributeType::LocalPref
+        ){
+            Ok(Some(LocalPref(pa.parse_u32_be()?)))
+        } else {
+            Ok(None)
+        }
     }
 
     /// Returns true if this UPDATE contains the ATOMIC_AGGREGATE path
     /// attribute.
-    pub fn is_atomic_aggregate(&self) -> bool {
-        self.path_attributes().iter().any(|pa|
-            pa.type_code() == PathAttributeType::AtomicAggregate
+    pub fn is_atomic_aggregate(&self) -> Result<bool, ParseError> {
+        Ok(
+            self.new_path_attributes()?
+                .get(new_pas::PathAttributeType::AtomicAggregate).is_some()
         )
     }
 
@@ -470,15 +476,24 @@ impl<Octs: Octets> UpdateMessage<Octs> {
     // As such, we can determine whether there is a 2-octet or 4-octet ASN
     // based on the size of the attribute itself.
     // 
-    pub fn aggregator(&self) -> Option<Aggregator> {
-        self.path_attributes().iter().find(|pa| {
-            pa.type_code() == PathAttributeType::Aggregator
-        }).map(|mut pa| {
-            Aggregator::parse(
-                &mut pa.value_into_parser(),
-                self.session_config
-            ).expect("parsed before")
-        })
+    pub fn aggregator(&self) -> Result<Option<new_pas::AggregatorInfo>, ParseError> {
+
+        if let Some(new_pas::WireformatPathAttribute::Aggregator(mut pa, sc)) = self.new_path_attributes()?.get(
+            new_pas::PathAttributeType::Aggregator
+        ){
+            // XXX not nice that we have to do this here, also it is exactly
+            // the same as in the fn parse in path_attributes.rs
+            let asn = if sc.has_four_octet_asn() {
+                Asn::from_u32(pa.parse_u32_be()?)
+            } else {
+                Asn::from_u32(pa.parse_u16_be()?.into())
+            };
+
+            let address = parse_ipv4addr(&mut pa)?;
+            Ok(Some(AggregatorInfo::new(asn, address)))
+        } else {
+            Ok(None)
+        }
     }
 
 
@@ -2200,7 +2215,7 @@ mod tests {
         assert!(!pa4.is_extended_length());
         assert_eq!(pa4.length(), 4);
         assert_eq!(pa4.value().as_ref(), &[0x00, 0x00, 0x00, 0x01]);
-        assert_eq!(update.multi_exit_disc(), Some(MultiExitDisc(1)));
+        assert_eq!(update.multi_exit_disc().unwrap(), Some(MultiExitDisc(1)));
 
         assert!(pa_iter.next().is_none());
 
@@ -2388,8 +2403,8 @@ mod tests {
             &buf,
             Some(SessionConfig::modern())
             ).unwrap().try_into().unwrap();
-        assert_eq!(update.multi_exit_disc(), Some(MultiExitDisc(0)));
-        assert_eq!(update.local_pref(), Some(LocalPref(100)));
+        assert_eq!(update.multi_exit_disc().unwrap(), Some(MultiExitDisc(0)));
+        assert_eq!(update.local_pref().unwrap(), Some(LocalPref(100)));
     }
 
     #[test]
@@ -2413,10 +2428,10 @@ mod tests {
             ).unwrap().try_into().unwrap();
         let aggr = update.aggregator().unwrap();
 
-        assert!(update.is_atomic_aggregate());
-        assert_eq!(aggr.asn(), Asn::from(101));
+        assert!(update.is_atomic_aggregate().unwrap());
+        assert_eq!(aggr.unwrap().asn(), Asn::from(101));
         assert_eq!(
-            aggr.speaker(),
+            aggr.unwrap().address(),
             Ipv4Addr::from_str("198.51.100.1").unwrap()
             );
     }

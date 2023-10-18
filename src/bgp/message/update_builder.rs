@@ -1725,8 +1725,8 @@ mod tests {
             let pdu = pdu.unwrap();
             assert!(pdu.as_ref().len() <= UpdateBuilder::<()>::MAX_PDU);
             a_cnt += pdu.announcements().unwrap().count();
-            assert!(pdu.local_pref().is_some());
-            assert!(pdu.multi_exit_disc().is_some());
+            assert!(pdu.local_pref().unwrap().is_some());
+            assert!(pdu.multi_exit_disc().unwrap().is_some());
             assert_eq!(pdu.communities().unwrap().count(), 300);
         }
 
