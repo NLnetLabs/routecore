@@ -1727,7 +1727,7 @@ mod tests {
             a_cnt += pdu.announcements().unwrap().count();
             assert!(pdu.local_pref().unwrap().is_some());
             assert!(pdu.multi_exit_disc().unwrap().is_some());
-            assert_eq!(pdu.communities().unwrap().count(), 300);
+            assert_eq!(pdu.communities().unwrap().unwrap().count(), 300);
         }
 
         assert_eq!(a_cnt, prefixes_num.try_into().unwrap());
@@ -2168,7 +2168,7 @@ mod tests {
             assert!(prev_typecode < typecode);
             prev_typecode = typecode; 
         }
-        assert_eq!(pdu.communities().unwrap().count(), 2);
+        assert_eq!(pdu.communities().unwrap().unwrap().count(), 2);
     }
 
     // TODO also do fn check(raw: Bytes)

@@ -497,55 +497,60 @@ impl<Octs: Octets> UpdateMessage<Octs> {
     //--- Communities --------------------------------------------------------
 
     /// Returns an iterator over Standard Communities (RFC1997), if any.
-    pub fn communities(&self) -> Option<CommunityIter<Octs::Range<'_>>> {
-        self.path_attributes().into_iter().find(|pa|
-            pa.type_code() == PathAttributeType::Communities
-        ).map(|pa| CommunityIter::new(pa.into_value()))
+    pub fn communities(&self)
+        -> Result<Option<CommunityIter<Octs::Range<'_>>>, ParseError>
+    {
+        if let Some(new_pas::WireformatPathAttribute::Communities(mut pa, _sc)) = self.new_path_attributes()?.get(new_pas::PathAttributeType::Communities) {
+            Ok(Some(CommunityIter::new(pa.parse_octets(pa.remaining())?)))
+        } else {
+            Ok(None)
+        }
     }
 
     /// Returns an iterator over Extended Communities (RFC4360), if any.
-    pub fn ext_communities(&self) -> Option<ExtCommunityIter<Octs::Range<'_>>>
+    pub fn ext_communities(&self)
+        -> Result<Option<ExtCommunityIter<Octs::Range<'_>>>, ParseError>
     {
-        self.path_attributes().into_iter().find(|pa|
-            pa.type_code() == PathAttributeType::ExtendedCommunities
-        ).map(|pa| ExtCommunityIter::new(pa.into_value()))
+        if let Some(new_pas::WireformatPathAttribute::ExtendedCommunities(mut pa, _sc)) = self.new_path_attributes()?.get(new_pas::PathAttributeType::ExtendedCommunities) {
+            Ok(Some(ExtCommunityIter::new(pa.parse_octets(pa.remaining())?)))
+        } else {
+            Ok(None)
+        }
     }
 
     /// Returns an iterator over Large Communities (RFC8092), if any.
     pub fn large_communities(&self)
-        -> Option<LargeCommunityIter<Octs::Range<'_>>>
+        -> Result<Option<LargeCommunityIter<Octs::Range<'_>>>, ParseError>
     {
-        self.path_attributes().into_iter().find(|pa|
-            pa.type_code() == PathAttributeType::LargeCommunities
-        ).map(|pa| LargeCommunityIter::new(pa.into_value()))
+        if let Some(new_pas::WireformatPathAttribute::LargeCommunities(mut pa, _sc)) = self.new_path_attributes()?.get(new_pas::PathAttributeType::LargeCommunities) {
+            Ok(Some(LargeCommunityIter::new(pa.parse_octets(pa.remaining())?)))
+        } else {
+            Ok(None)
+        }
     }
 
     /// Returns an optional `Vec` containing all conventional, Extended and
     /// Large communities, if any, or None if none of the three appear in the
     /// path attributes of this message.
-    pub fn all_communities(&self) -> Option<Vec<Community>> {
+    pub fn all_communities(&self) -> Result<Option<Vec<Community>>, ParseError> {
         let mut res = Vec::<Community>::new();
 
         // We can use unwrap safely because the is_some check.
 
-        if self.communities().is_some() {
-            res.append(&mut self.communities().unwrap().collect::<Vec<_>>());
+        if let Some(c) = self.communities()? {
+            res.append(&mut c.collect::<Vec<_>>());
         }
-        if self.ext_communities().is_some() {
-            res.append(&mut self.ext_communities().unwrap()
-                .map(Community::Extended)
-                .collect::<Vec<_>>());
+        if let Some(c) = self.ext_communities()? {
+            res.append(&mut c.map(Community::Extended).collect::<Vec<_>>());
         }
-        if self.large_communities().is_some() {
-            res.append(&mut self.large_communities().unwrap()
-                .map(Community::Large)
-                .collect::<Vec<_>>());
+        if let Some(c) = self.large_communities()? {
+            res.append(&mut c.map(Community::Large).collect::<Vec<_>>());
         }
 
         if res.is_empty() {
-            None
+            Ok(None)
         } else {
-            Some(res)
+            Ok(Some(res))
         }
     }
     
@@ -2536,18 +2541,20 @@ mod tests {
                     ))
         );
 
-        assert!(upd.communities().is_some());
-        for c in upd.communities().unwrap() { 
+        assert!(upd.communities().unwrap().is_some());
+        for c in upd.communities().unwrap().unwrap() { 
             println!("{:?}", c);
         }
-        assert!(upd.communities().unwrap().eq([
-                                              Community::Standard(StandardCommunity::new(42.into(), Tag::new(518))),
-                                              Wellknown::NoExport.into(),
-                                              Wellknown::NoExportSubconfed.into()
-        ]));
+        assert!(upd.communities().unwrap().unwrap()
+            .eq([
+                StandardCommunity::new(42.into(), Tag::new(518)).into(),
+                Wellknown::NoExport.into(),
+                Wellknown::NoExportSubconfed.into()
+            ])
+        );
 
-        assert!(upd.ext_communities().is_some());
-        let mut ext_comms = upd.ext_communities().unwrap();
+        assert!(upd.ext_communities().unwrap().is_some());
+        let mut ext_comms = upd.ext_communities().unwrap().unwrap();
         let ext_comm1 = ext_comms.next().unwrap();
         assert!(ext_comm1.is_transitive());
 
@@ -2595,7 +2602,7 @@ mod tests {
             Some(SessionConfig::modern())
             ).unwrap().try_into().unwrap();
 
-        let mut lcs = update.large_communities().unwrap();
+        let mut lcs = update.large_communities().unwrap().unwrap();
         let lc1 = lcs.next().unwrap();
         assert_eq!(lc1.global(), 65536);
         assert_eq!(lc1.local1(), 1);
@@ -2642,17 +2649,17 @@ mod tests {
         let upd: UpdateMessage<_> = Message::from_octets(&buf, Some(sc))
             .unwrap().try_into().unwrap();
 
-        for c in upd.all_communities().unwrap() {
+        for c in upd.all_communities().unwrap().unwrap() {
             println!("{}", c);
         }
-        assert!(upd.all_communities().unwrap().eq(&[
-              Community::Standard(StandardCommunity::new(42.into(), Tag::new(518))),
-              Wellknown::NoExport.into(),
-              Wellknown::NoExportSubconfed.into(),
-              [0x00, 0x06, 0x00, 0x00, 0x44, 0x9c, 0x40, 0x00].into(),
-              [0x40, 0x04, 0x00, 0x00, 0x44, 0x9c, 0x40, 0x00].into(),
+        assert!(upd.all_communities().unwrap().unwrap()
+            .eq(&[
+                StandardCommunity::new(42.into(), Tag::new(518)).into(),
+                Wellknown::NoExport.into(),
+                Wellknown::NoExportSubconfed.into(),
+                [0x00, 0x06, 0x00, 0x00, 0x44, 0x9c, 0x40, 0x00].into(),
+                [0x40, 0x04, 0x00, 0x00, 0x44, 0x9c, 0x40, 0x00].into(),
         ]))
-
     }
 
     #[test]
