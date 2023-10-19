@@ -2200,7 +2200,10 @@ mod tests {
                 builder.add_announcement(&a.unwrap()).unwrap();
             }
 
-            if let Some(nh) = original.next_hop() {
+            if let Some(nh) = original.conventional_next_hop().unwrap() {
+                builder.set_nexthop(nh).unwrap();
+            }
+            if let Some(nh) = original.mp_next_hop().unwrap() {
                 builder.set_nexthop(nh).unwrap();
             }
 
@@ -2238,7 +2241,8 @@ mod tests {
             if std::panic::catch_unwind(|| {
             assert_eq!(original.origin(), composed.origin());
             //assert_eq!(original.aspath(), composed.aspath());
-            assert_eq!(original.next_hop(), composed.next_hop());
+            assert_eq!(original.conventional_next_hop(), composed.conventional_next_hop());
+            assert_eq!(original.mp_next_hop(), composed.mp_next_hop());
             assert_eq!(original.multi_exit_disc(), composed.multi_exit_disc());
             assert_eq!(original.local_pref(), composed.local_pref());
 

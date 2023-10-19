@@ -263,7 +263,7 @@ impl<Octs: Octets> UpdateMessage<Octs> {
     }
 
     /// Returns the announcements from the MP_UNREACH_NLRI attribute, if any.
-    pub fn mp_announcements(&self) -> Result<Option< Nlris<Octs>>, ParseError>
+    pub fn mp_announcements(&self) -> Result<Option<Nlris<Octs>>, ParseError>
     {
         if let Some(new_pas::WireformatPathAttribute::MpReachNlri(pa, _sc)) = self.new_path_attributes()?.get(
             new_pas::PathAttributeType::MpReachNlri
@@ -399,33 +399,29 @@ impl<Octs: Octets> UpdateMessage<Octs> {
         }
     }
 
-    /// Returns the NEXT_HOP path attribute, or the equivalent from
-    /// MP_REACH_NLRI.
-    pub fn next_hop(&self) -> Option<NextHop> {
-        if let Some(pa) = self.path_attributes().iter().find(|pa|
-            pa.type_code() == PathAttributeType::MpReachNlri
-        ) {
-            // TODO value_into_parser ?
-            let v = pa.value();
-            let mut parser = Parser::from_ref(&v);
-            let afi: AFI = parser.parse_u16_be().expect("parsed before").into();
-            let safi: SAFI = parser.parse_u8().expect("parsed before").into();
+    /// Returns NextHop information from the NEXT_HOP path attribute, if any.
+    pub fn conventional_next_hop(&self)
+        -> Result<Option<NextHop>, ParseError>
+    {
+        if let Some(new_pas::WireformatPathAttribute::NextHop(mut pa, _sc)) = self.new_path_attributes()?.get(new_pas::PathAttributeType::NextHop) {
+            Ok(Some(NextHop::Unicast(Ipv4Addr::from(pa.parse_u32_be()?).into())))
+        } else {
+            Ok(None)
+        }
+    }
 
-            return Some(NextHop::parse(&mut parser, afi, safi).expect("parsed before"));
-        } 
+    /// Returns NextHop information from the MP_REACH_NLRI, if any.
+    pub fn mp_next_hop(&self) -> Result<Option<NextHop>, ParseError> {
+        if let Some(new_pas::WireformatPathAttribute::MpReachNlri(mut pa, _sc)) = self.new_path_attributes()?.get(
+            new_pas::PathAttributeType::MpReachNlri
+        ){
+            let afi = pa.parse_u16_be()?.into();
+            let safi = pa.parse_u8()?.into();
+            Ok(Some(NextHop::parse(&mut pa, afi, safi)?))
+        } else {
+            Ok(None)
+        }
 
-        self.path_attributes().iter().find(|pa|
-            pa.type_code() == PathAttributeType::NextHop
-        ).map(|pa|
-            NextHop::Unicast(
-                Ipv4Addr::new(
-                    pa.value().as_ref()[0],
-                    pa.value().as_ref()[1],
-                    pa.value().as_ref()[2],
-                    pa.value().as_ref()[3],
-                ).into()
-            )
-        )
     }
 
     //--- Non-mandatory path attribute helpers -------------------------------
@@ -890,15 +886,15 @@ impl<'a, Octs: Octets> PathAttribute<'a, Octs> {
         self.parser.parse_octets(self.parser.remaining()).expect("parsed before")
     }
 
-    fn value_into_parser(&mut self) -> Parser<'a, Octs> {
-        let start = self.hdr_len();
-        //let mut p = Parser::from_ref(&self.octets);
-        //p.advance(start).expect("parsed before");
-        self.parser.advance(start).expect("parsed before");
+    //fn value_into_parser(&mut self) -> Parser<'a, Octs> {
+    //    let start = self.hdr_len();
+    //    //let mut p = Parser::from_ref(&self.octets);
+    //    //p.advance(start).expect("parsed before");
+    //    self.parser.advance(start).expect("parsed before");
 
-        //Parser::parse_parser(&mut p, self.length() as usize).expect("parsed before")
-        self.parser
-    }
+    //    //Parser::parse_parser(&mut p, self.length() as usize).expect("parsed before")
+    //    self.parser
+    //}
 }
 
 impl<'a> PathAttribute<'a, [u8]> {
@@ -2204,7 +2200,7 @@ mod tests {
         assert_eq!(pa3.length(), 4);
         assert_eq!(pa3.value().as_ref(), &[10, 255, 0, 101]);
         assert_eq!(
-            update.next_hop(),
+            update.conventional_next_hop().unwrap(),
             Some(NextHop::Unicast(Ipv4Addr::new(10, 255, 0, 101).into()))
             );
 
