@@ -220,8 +220,62 @@ macro_rules! path_attributes {
 //------------ WireformatPathAttribute --------------------------------------
 
         #[derive(Debug)]
+        pub struct EncodedPathAttribute<'a, Octs: Octets> {
+            parser: Parser<'a, Octs>,
+            session_config: SessionConfig,
+        }
+        impl<'a, Octs: Octets> EncodedPathAttribute<'a, Octs> {
+            fn new(
+                parser: Parser<'a, Octs>,
+                session_config: SessionConfig
+            ) -> Self {
+                Self { parser, session_config }
+            }
+
+            pub fn session_config(&self) -> SessionConfig {
+                self.session_config
+            }
+
+            fn flags(&self) -> Flags {
+                self.parser.peek_all()[0].into()
+            }
+
+            fn length(&self) -> usize {
+                if self.flags().is_extended_length() {
+                    let raw = self.parser.peek(4).unwrap();
+                    u16::from_be_bytes([raw[2], raw[3]]).into()
+                } else {
+                    self.parser.peek_all()[2].into()
+                }
+            }
+
+            //pub fn value(&self) -> Octs::Range<'_> {
+            //    let mut p = self.value_into_parser();
+            //    p.parse_octets(p.remaining()).unwrap()
+            //}
+
+            pub fn value_into_parser(&self) -> Parser<'a, Octs> {
+                let mut res = self.parser;
+                if self.flags().is_extended_length() {
+                    res.advance(4).unwrap();
+                } else {
+                    res.advance(3).unwrap();
+                }
+                res
+            }
+
+        }
+
+        impl<'a, Octs: Octets> AsRef<[u8]> for EncodedPathAttribute<'a, Octs> {
+            fn as_ref(&self) -> &[u8] {
+                self.parser.peek_all()
+            }
+        }
+
+        #[derive(Debug)]
         pub enum WireformatPathAttribute<'a, Octs: Octets> {
-            $( $name(Parser<'a, Octs>, SessionConfig) ),+,
+            //$( $name(Parser<'a, Octs>, SessionConfig) ),+,
+            $( $name(EncodedPathAttribute<'a, Octs>) ),+, 
             Unimplemented(UnimplementedWireformat<'a, Octs>),
             Invalid(Flags, u8, Parser<'a, Octs>),
         }
@@ -247,20 +301,23 @@ macro_rules! path_attributes {
                         if let Err(e) = $name::validate(
                             flags.into(), &mut pp, sc
                         ) {
-                            debug!("failed to parse path attribute: {e}");
+                            warn!("failed to parse path attribute: {e}");
                             pp.seek(start_pos + header_len)?;
                             WireformatPathAttribute::Invalid(
                                 $flags.into(), $type_code, pp
                             )
                         } else {
-                            pp.seek(start_pos + header_len)?;
-                            WireformatPathAttribute::$name(pp, sc)
+                            pp.seek(start_pos/* + header_len */)?;
+                            //WireformatPathAttribute::$name(pp, sc)
+                            WireformatPathAttribute::$name(
+                                EncodedPathAttribute::new(pp, sc)
+                            )
                         }
                     }
                     ),+
                     ,
                     _ => {
-                        pp.seek(start_pos + header_len)?;
+                        pp.seek(start_pos /* + header_len */)?;
                         WireformatPathAttribute::Unimplemented(
                             UnimplementedWireformat::new(
                                 flags.into(), type_code, pp
@@ -281,9 +338,14 @@ macro_rules! path_attributes {
             {
                 match self {
                     $(
-                    WireformatPathAttribute::$name(p, sc) => {
+                    //WireformatPathAttribute::$name(p, sc) => {
+                    WireformatPathAttribute::$name(epa) => {
                         Ok(PathAttribute::$name(
-                            $name::parse(&mut p.clone(), *sc)?
+                            //$name::parse(&mut p.clone(), *sc)?
+                            $name::parse(
+                                &mut epa.value_into_parser(),
+                                epa.session_config()
+                            )?
                         ))
                     }
                     ),+,
@@ -307,7 +369,7 @@ macro_rules! path_attributes {
             pub fn type_code(&self) -> PathAttributeType {
                 match self {
                     $(
-                        WireformatPathAttribute::$name(_,_) =>
+                        WireformatPathAttribute::$name(..) =>
                             PathAttributeType::$name
                     ),+,
                     WireformatPathAttribute::Unimplemented(u) => {
@@ -321,34 +383,26 @@ macro_rules! path_attributes {
 
             pub fn flags(&self) -> Flags {
                 match self {
-                    $(
-                     // FIXME wrong, this is the first byt of the value
-                        Self::$name(mut pa, _sc) => {
-                            if pa.remaining() <= 255 {
-                                pa.seek(pa.pos() - 3).unwrap();
-                                pa.parse_u8().unwrap().into()
-                            } else {
-                                pa.seek(pa.pos() - 4).unwrap();
-                                pa.parse_u8().unwrap().into()
-                            }
-                        }
-                    ),+,
+                    $( Self::$name(epa) => { epa.flags() }),+,
                     Self::Unimplemented(u) => u.flags,
                     Self::Invalid(f, _, _) => *f,
                 }
             }
 
+            /// Returns the length of the value.
             pub fn length(&self) -> usize {
                 match self {
                     $(
-                        Self::$name(pa, _sc) => pa.remaining()
+                        //Self::$name(pa, _sc) => pa.remaining()
+                        Self::$name(epa) => epa.length()
                     ),+,
                     Self::Unimplemented(u) => u.value.len(),
                     Self::Invalid(_, _, v) => v.remaining() //FIXME incorrect
                 }
             }
 
-            pub fn into_value_parser(self) -> Result<Parser<'a, Octs>, ParseError> {
+            /*
+            pub fn _into_value_parser(self) -> Result<Parser<'a, Octs>, ParseError> {
                 match self {
                 $(
                     Self::$name(p, _) => {
@@ -358,15 +412,17 @@ macro_rules! path_attributes {
                     _ => todo!()
                 }
             }
+            */
         }
 
         impl<'a, Octs: Octets> AsRef<[u8]> for WireformatPathAttribute<'a, Octs> {
             fn as_ref(&self) -> &[u8] {
                 match self {
                     $(
-                        WireformatPathAttribute::$name(p, _) => {
+                        WireformatPathAttribute::$name(epa) => {
                             // this one is maybe fixed this way?
-                        p.peek_all()
+                        //p.peek_all()
+                        epa.as_ref()
                     }
                     ),+,
                         WireformatPathAttribute::Unimplemented(u) => {
@@ -528,7 +584,11 @@ impl<'a, Octs: Octets> UnimplementedWireformat<'a, Octs> {
     }
 
     pub fn value(&self) -> &[u8] {
-        self.value.peek_all()
+        if self.flags().is_extended_length() {
+            &self.value.peek_all()[4..]
+        } else {
+            &self.value.peek_all()[3..]
+        }
     }
 
     /* TODO move these to all (wireformat)pathattributes
