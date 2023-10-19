@@ -73,13 +73,13 @@ where Target: octseq::Truncate
             .map_err(|_| ComposeError::ShortBuf)?;
 
         // Add all path attributes, except for MP_(UN)REACH_NLRI, ordered by
-        // their typecode.
-        for pa in pdu.new_path_attributes()? {
+        // their type_code.
+        for pa in pdu.path_attributes()? {
             if let Ok(pa) = pa {
-                if pa.typecode() != PathAttributeType::MpReachNlri
-                    && pa.typecode() != PathAttributeType::MpUnreachNlri
+                if pa.type_code() != PathAttributeType::MpReachNlri
+                    && pa.type_code() != PathAttributeType::MpUnreachNlri
                 {
-                    if let PathAttributeType::Invalid(n) = pa.typecode() {
+                    if let PathAttributeType::Invalid(n) = pa.type_code() {
                         warn!("invalid PA {}:\n{}", n, pdu.fmt_pcap_string());
                     }
                     builder.add_attribute(pa.to_owned()?)?;
@@ -202,13 +202,13 @@ where Target: octseq::Truncate
         if let PathAttribute::Invalid(..) = pa {
             warn!(
                 "adding Invalid attribute to UpdateBuilder: {}",
-                  &pa.typecode()
+                  &pa.type_code()
             );
         }
-        if let Some(existing_pa) = self.attributes.get_mut(&pa.typecode()) {
+        if let Some(existing_pa) = self.attributes.get_mut(&pa.type_code()) {
             *existing_pa = pa;
         } else {
-            self.attributes.insert(pa.typecode(), pa);
+            self.attributes.insert(pa.type_code(), pa);
         }
         
         Ok(())
@@ -438,16 +438,16 @@ where Infallible: From<<Target as OctetsBuilder>::AppendError>
 
         if let Some(origin) = acs.origin_type.into_opt() {
             let attr_flags = 0b0100_0000;
-            let attr_typecode = PathAttributeType::Origin.into();
+            let attr_type_code = PathAttributeType::Origin.into();
             let attr_len = 1_u8; 
             let _ = self.target.append_slice(
-                &[attr_flags, attr_typecode, attr_len, origin.into()]);
+                &[attr_flags, attr_type_code, attr_len, origin.into()]);
             total_pa_len += 2 + 1 + usize::from(attr_len);
         }
 
         if let Some(as_path) = acs.as_path.into_opt() {
             let attr_flags = 0b0101_0000;
-            let attr_typecode = PathAttributeType::AsPath.into();
+            let attr_type_code = PathAttributeType::AsPath.into();
             let asp = as_path.into_inner();
             let attr_len = asp.len();
             if u16::try_from(attr_len).is_err() {
@@ -456,7 +456,7 @@ where Infallible: From<<Target as OctetsBuilder>::AppendError>
                     attr_len
                 ));
             }
-            let _ = self.target.append_slice(&[attr_flags, attr_typecode]);
+            let _ = self.target.append_slice(&[attr_flags, attr_type_code]);
             let _ = self.target.append_slice(&(attr_len as u16).to_be_bytes());
             let _ = self.target.append_slice(&asp);
 
@@ -472,11 +472,11 @@ where Infallible: From<<Target as OctetsBuilder>::AppendError>
             match next_hop {
                 NextHop::Ipv4(v4addr) => {
                     let attr_flags = 0b0100_0000;
-                    let attr_typecode = PathAttributeType::NextHop.into();
+                    let attr_type_code = PathAttributeType::NextHop.into();
                     let attr_len = 4_u8; 
 
                     let _ = self.target.append_slice(
-                        &[attr_flags, attr_typecode, attr_len]
+                        &[attr_flags, attr_type_code, attr_len]
                     );
                     let _ = self.target.append_slice(&v4addr.octets());
 
@@ -489,7 +489,7 @@ where Infallible: From<<Target as OctetsBuilder>::AppendError>
 
         if let Some(comms) = acs.standard_communities.into_opt() {
             let attr_flags = 0b0100_0000;
-            let attr_typecode = PathAttributeType::Communities.into();
+            let attr_type_code = PathAttributeType::Communities.into();
             let attr_len = match u8::try_from(4 * comms.len()) {
                 Ok(n) => n,
                 Err(..) => {
@@ -501,7 +501,7 @@ where Infallible: From<<Target as OctetsBuilder>::AppendError>
             };
 
             let _ = self.target.append_slice(
-                &[attr_flags, attr_typecode, attr_len]
+                &[attr_flags, attr_type_code, attr_len]
             );
 
             for c in comms {
@@ -987,7 +987,7 @@ impl UpdateBuilder<BytesMut> {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MpReachNlriBuilder {
     announcements: Vec<Nlri<Vec<u8>>>,
-    len: usize, // size of value, excluding path attribute flags+typecode+len
+    len: usize, // size of value, excluding path attribute flags+type_code+len
     extended: bool,
     afi: AFI,
     safi: SAFI,
@@ -1288,7 +1288,7 @@ impl MpUnreachNlriBuilder {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StandardCommunitiesBuilder {
     communities: Vec<StandardCommunity>,
-    len: usize, // size of value, excluding path attribute flags+typecode+len
+    len: usize, // size of value, excluding path attribute flags+type_code+len
     extended: bool,
 }
 
@@ -1347,7 +1347,7 @@ pub enum ComposeError{
     EmptyMpUnreachNlri,
     WrongAddressType,
 
-    InvalidAttribute, // XXX perhaps carry the typecode here?
+    InvalidAttribute, // XXX perhaps carry the type_code here?
 
     /// Variant for `octseq::builder::ShortBuf`
     ShortBuf,
@@ -2125,7 +2125,7 @@ mod tests {
         ];
         let sc = SessionConfig::modern();
         let upd = UpdateMessage::from_octets(&raw, sc).unwrap();
-        for pa in upd.clone().new_path_attributes().unwrap() {
+        for pa in upd.clone().path_attributes().unwrap() {
             eprintln!("{:?}", pa.unwrap().to_owned().unwrap());
         }
         let target = BytesMut::new();
@@ -2162,11 +2162,11 @@ mod tests {
         assert_eq!(builder.attributes.len(), 2);
 
         let pdu = builder.into_message().unwrap();
-        let mut prev_typecode = 0_u8;
-        for pa in pdu.new_path_attributes().unwrap() {
-            let typecode = u8::from(pa.unwrap().typecode());
-            assert!(prev_typecode < typecode);
-            prev_typecode = typecode; 
+        let mut prev_type_code = 0_u8;
+        for pa in pdu.path_attributes().unwrap() {
+            let type_code = u8::from(pa.unwrap().type_code());
+            assert!(prev_type_code < type_code);
+            prev_type_code = type_code; 
         }
         assert_eq!(pdu.communities().unwrap().unwrap().count(), 2);
     }
@@ -2249,15 +2249,15 @@ mod tests {
             /*
             assert_eq!(
               original.path_attributes().iter().count(),
-              composed.new_path_attributes().unwrap().count()
+              composed.path_attributes().unwrap().count()
             );
             */
 
-            let orig_pas = original.new_path_attributes().unwrap()
-                .map(|pa| pa.unwrap().typecode()).collect::<BTreeSet<_>>();
+            let orig_pas = original.path_attributes().unwrap()
+                .map(|pa| pa.unwrap().type_code()).collect::<BTreeSet<_>>();
 
-            let composed_pas = composed.new_path_attributes().unwrap()
-                .map(|pa| pa.unwrap().typecode()).collect::<BTreeSet<_>>();
+            let composed_pas = composed.path_attributes().unwrap()
+                .map(|pa| pa.unwrap().type_code()).collect::<BTreeSet<_>>();
 
             let diff_pas: Vec<_> = orig_pas.symmetric_difference(
                 &composed_pas

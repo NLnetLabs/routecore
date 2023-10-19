@@ -1615,7 +1615,8 @@ mod tests {
     use bytes::Bytes;
     use std::str::FromStr;
     use crate::addr::Prefix;
-    use crate::bgp::types::{AFI, SAFI, PathAttributeType};
+    use crate::bgp::types::{AFI, SAFI};
+    use crate::bgp::path_attributes::PathAttributeType;
     use crate::bgp::message::nlri::Nlri;
     use crate::bgp::message::update::{AddPath, FourOctetAsn, SessionConfig};
 
@@ -1730,31 +1731,30 @@ mod tests {
         assert_eq!(bgp_update.as_ref().len(), 55);
         assert_eq!(bgp_update.withdrawn_routes_len(), 0);
         
-        let pas = bgp_update.path_attributes();
-        let mut pas = pas.iter();
-        let pa1 = pas.next().unwrap();
+        let mut pas = bgp_update.path_attributes().unwrap().into_iter();
+        let pa1 = pas.next().unwrap().unwrap();
         assert_eq!(pa1.type_code(), PathAttributeType::Origin);
-        assert_eq!(pa1.flags(), 0x40);
-        assert!(pa1.is_transitive());
-        assert!(!pa1.is_optional());
+        assert_eq!(pa1.flags(), 0x40.into());
+        assert!( pa1.flags().is_transitive());
+        assert!(!pa1.flags().is_optional());
         //TODO implement enum for Origins
-        assert_eq!(pa1.value().as_ref(), [0x00]); 
+        assert_eq!(pa1.as_ref(), [0x00]); 
         
-        let pa2 = pas.next().unwrap();
+        let pa2 = pas.next().unwrap().unwrap();
         assert_eq!(pa2.type_code(), PathAttributeType::AsPath);
-        assert_eq!(pa2.flags(), 0x40);
+        assert_eq!(pa2.flags(), 0x40.into());
         // TODO check actual AS_PATH contents
 
-        let pa3 = pas.next().unwrap();
+        let pa3 = pas.next().unwrap().unwrap();
         assert_eq!(pa3.type_code(), PathAttributeType::NextHop);
-        assert_eq!(pa3.flags(), 0x40);
-        assert_eq!(pa3.value().as_ref(), [10, 255, 0, 101]); 
+        assert_eq!(pa3.flags(), 0x40.into());
+        assert_eq!(pa3.as_ref(), [10, 255, 0, 101]); 
 
-        let pa4 = pas.next().unwrap();
+        let pa4 = pas.next().unwrap().unwrap();
         assert_eq!(pa4.type_code(), PathAttributeType::MultiExitDisc);
-        assert_eq!(pa4.flags(), 0x80);
-        assert!(pa4.is_optional());
-        assert_eq!(pa4.value().as_ref(), [0, 0, 0, 1]); 
+        assert_eq!(pa4.flags(), 0x80.into());
+        assert!(pa4.flags().is_optional());
+        assert_eq!(pa4.as_ref(), [0, 0, 0, 1]); 
 
         assert!(pas.next().is_none());
 

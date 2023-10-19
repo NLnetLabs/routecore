@@ -73,13 +73,13 @@ impl From<Flags> for u8 {
 
 pub trait AttributeHeader {
     const FLAGS: u8;
-    const TYPECODE: u8;
+    const TYPE_CODE: u8;
 }
 
 macro_rules! attribute {
     ($name:ident($data:ty),
      $flags:expr,
-     $typecode:expr
+     $type_code:expr
      ) => {
 
         #[derive(Clone, Debug, Eq, PartialEq)]
@@ -124,7 +124,7 @@ macro_rules! attribute {
 
         impl AttributeHeader for $name {
             const FLAGS: u8 = $flags;
-            const TYPECODE: u8 = $typecode;
+            const TYPE_CODE: u8 = $type_code;
         }
     }
 }
@@ -132,7 +132,7 @@ macro_rules! attribute {
 macro_rules! path_attributes {
     (
         $(
-            $typecode:expr => $name:ident($data:ty), $flags:expr
+            $type_code:expr => $name:ident($data:ty), $flags:expr
         ),+ $(,)*
     ) => {
 
@@ -188,14 +188,14 @@ macro_rules! path_attributes {
                 }
             }
 
-            pub fn typecode(&self) -> PathAttributeType {
+            pub fn type_code(&self) -> PathAttributeType {
                 match self {
                     $(
                     PathAttribute::$name(_) =>
                         PathAttributeType::$name
                     ),+,
                     PathAttribute::Unimplemented(u) => {
-                        PathAttributeType::Unimplemented(u.typecode())
+                        PathAttributeType::Unimplemented(u.type_code())
                     }
                     PathAttribute::Invalid(_, tc, _) => {
                         PathAttributeType::Invalid(*tc)
@@ -233,7 +233,7 @@ macro_rules! path_attributes {
             {
                 let start_pos = parser.pos();
                 let flags = parser.parse_u8()?;
-                let typecode = parser.parse_u8()?;
+                let type_code = parser.parse_u8()?;
                 let (header_len, len) = match flags & 0x10 == 0x10 {
                     true => (4, parser.parse_u16_be()? as usize),
                     false => (3, parser.parse_u8()? as usize),
@@ -241,16 +241,16 @@ macro_rules! path_attributes {
 
                 let mut pp = parser.parse_parser(len)?;
 
-                let res = match typecode {
+                let res = match type_code {
                     $(
-                    $typecode => {
+                    $type_code => {
                         if let Err(e) = $name::validate(
                             flags.into(), &mut pp, sc
                         ) {
                             debug!("failed to parse path attribute: {e}");
                             pp.seek(start_pos + header_len)?;
                             WireformatPathAttribute::Invalid(
-                                $flags.into(), $typecode, pp
+                                $flags.into(), $type_code, pp
                             )
                         } else {
                             pp.seek(start_pos + header_len)?;
@@ -263,7 +263,7 @@ macro_rules! path_attributes {
                         pp.seek(start_pos + header_len)?;
                         WireformatPathAttribute::Unimplemented(
                             UnimplementedWireformat::new(
-                                flags.into(), typecode, pp
+                                flags.into(), type_code, pp
                             )
                         )
                     }
@@ -291,7 +291,7 @@ macro_rules! path_attributes {
                         Ok(PathAttribute::Unimplemented(
                             UnimplementedPathAttribute::new(
                                 u.flags(),
-                                u.typecode(),
+                                u.type_code(),
                                 u.value().to_vec()
                             )
                         ))
@@ -304,18 +304,47 @@ macro_rules! path_attributes {
                 }
             }
 
-            pub fn typecode(&self) -> PathAttributeType {
+            pub fn type_code(&self) -> PathAttributeType {
                 match self {
                     $(
                         WireformatPathAttribute::$name(_,_) =>
                             PathAttributeType::$name
                     ),+,
                     WireformatPathAttribute::Unimplemented(u) => {
-                        PathAttributeType::Unimplemented(u.typecode())
+                        PathAttributeType::Unimplemented(u.type_code())
                     }
                     WireformatPathAttribute::Invalid(_, tc, _) => {
                         PathAttributeType::Invalid(*tc)
                     }
+                }
+            }
+
+            pub fn flags(&self) -> Flags {
+                match self {
+                    $(
+                     // FIXME wrong, this is the first byt of the value
+                        Self::$name(mut pa, _sc) => {
+                            if pa.remaining() <= 255 {
+                                pa.seek(pa.pos() - 3).unwrap();
+                                pa.parse_u8().unwrap().into()
+                            } else {
+                                pa.seek(pa.pos() - 4).unwrap();
+                                pa.parse_u8().unwrap().into()
+                            }
+                        }
+                    ),+,
+                    Self::Unimplemented(u) => u.flags,
+                    Self::Invalid(f, _, _) => *f,
+                }
+            }
+
+            pub fn length(&self) -> usize {
+                match self {
+                    $(
+                        Self::$name(pa, _sc) => pa.remaining()
+                    ),+,
+                    Self::Unimplemented(u) => u.value.len(),
+                    Self::Invalid(_, _, v) => v.remaining() //FIXME incorrect
                 }
             }
 
@@ -382,7 +411,7 @@ macro_rules! path_attributes {
         impl From<u8> for PathAttributeType {
             fn from(code: u8) -> PathAttributeType {
                 match code {
-                    $( $typecode => PathAttributeType::$name ),+,
+                    $( $type_code => PathAttributeType::$name ),+,
                     u => PathAttributeType::Unimplemented(u)
                 }
             }
@@ -391,7 +420,7 @@ macro_rules! path_attributes {
         impl From<PathAttributeType> for u8 {
             fn from(pat: PathAttributeType) -> u8 {
                 match pat {
-                    $( PathAttributeType::$name => $typecode ),+,
+                    $( PathAttributeType::$name => $type_code ),+,
                     PathAttributeType::Unimplemented(i) => i,
                     PathAttributeType::Invalid(i) => i,
                 }
@@ -399,7 +428,7 @@ macro_rules! path_attributes {
         }
 
         $(
-        attribute!($name($data), $flags, $typecode);
+        attribute!($name($data), $flags, $type_code);
         )+
     }
 }
@@ -437,17 +466,17 @@ path_attributes!(
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct UnimplementedPathAttribute {
     flags: Flags,
-    typecode: u8,
+    type_code: u8,
     value: Vec<u8>,
 }
 
 impl UnimplementedPathAttribute {
-    pub fn new(flags: Flags, typecode: u8, value: Vec<u8>) -> Self {
-        Self { flags, typecode, value }
+    pub fn new(flags: Flags, type_code: u8, value: Vec<u8>) -> Self {
+        Self { flags, type_code, value }
     }
 
-    pub fn typecode(&self) -> u8 {
-        self.typecode
+    pub fn type_code(&self) -> u8 {
+        self.type_code
     }
 
     pub fn flags(&self) -> Flags {
@@ -458,8 +487,12 @@ impl UnimplementedPathAttribute {
         &self.value
     }
 
+    pub fn value_len(&self) -> usize {
+        self.value.len()
+    }
+
     pub fn compose_len(&self) -> usize {
-        let value_len = self.value.len();
+        let value_len = self.value_len();
         if value_len > 255 {
             4 + value_len
         } else {
@@ -470,24 +503,24 @@ impl UnimplementedPathAttribute {
 
 pub struct UnimplementedWireformat<'a, Octs: Octets> {
     flags: Flags,
-    typecode: u8,
+    type_code: u8,
     value: Parser<'a, Octs>,
 }
 
 impl<'a, Octs: Octets> fmt::Debug for UnimplementedWireformat<'a, Octs> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{:08b} {} {:02x?}",
-           u8::from(self.flags()), self.typecode(), self.value()
+           u8::from(self.flags()), self.type_code(), self.value()
         )
     }
 }
 
 impl<'a, Octs: Octets> UnimplementedWireformat<'a, Octs> {
-    pub fn new(flags: Flags, typecode: u8, value: Parser<'a, Octs>) -> Self {
-        Self { flags, typecode, value }
+    pub fn new(flags: Flags, type_code: u8, value: Parser<'a, Octs>) -> Self {
+        Self { flags, type_code, value }
     }
-    pub fn typecode(&self) -> u8 {
-        self.typecode
+    pub fn type_code(&self) -> u8 {
+        self.type_code
     }
 
     pub fn flags(&self) -> Flags {
@@ -556,7 +589,7 @@ pub trait Attribute: AttributeHeader + Clone {
         if self.is_extended() {
             target.append_slice(&[
                 Self::FLAGS | Flags::EXTENDED_LEN,
-                Self::TYPECODE,
+                Self::TYPE_CODE,
             ])?;
             target.append_slice(
                 &u16::try_from(self.value_len()).unwrap_or(u16::MAX)
@@ -565,7 +598,7 @@ pub trait Attribute: AttributeHeader + Clone {
         } else {
             target.append_slice(&[
                 Self::FLAGS,
-                Self::TYPECODE,
+                Self::TYPE_CODE,
                 u8::try_from(self.value_len()).unwrap_or(u8::MAX)
             ])
         }
@@ -616,9 +649,9 @@ impl<'a, Octs: Octets> PathAttributes<'a, Octs> {
         let mut iter = *self;
         iter.find(|pa|
               //XXX We need Rust 1.70 for is_ok_and()
-              //pa.as_ref().is_ok_and(|pa| pa.typecode() == pat)
+              //pa.as_ref().is_ok_and(|pa| pa.type_code() == pat)
               if let Ok(pa) = pa.as_ref() {
-                  pa.typecode() == pat
+                  pa.type_code() == pat
               } else {
                   false
               }
@@ -1659,7 +1692,7 @@ impl Attribute for Reserved {
 // 
 // XXX implementing the Attribute trait requires to implement the
 // AttributeHeader trait to be implemented as well. But, we have no const
-// FLAGS and TYPECODE for an UnimplementedPathAttribute, so that does not
+// FLAGS and type_code for an UnimplementedPathAttribute, so that does not
 // fly.
 //
 // Let's try to go without the trait.
@@ -1670,7 +1703,7 @@ impl UnimplementedPathAttribute {
     {
         let len = self.value().len();
         target.append_slice(
-            &[self.flags().into(), self.typecode()]
+            &[self.flags().into(), self.type_code()]
         )?;
         if self.flags().is_extended_length() {
             target.append_slice(
@@ -1971,7 +2004,7 @@ mod tests {
         let pa = WireformatPathAttribute::parse(&mut parser, sc);
 
         if let Ok(WireformatPathAttribute::Unimplemented(u)) = pa {
-            assert_eq!(u.typecode(), 254);
+            assert_eq!(u.type_code(), 254);
             assert!(u.flags().is_optional());
             assert!(u.flags().is_transitive());
             assert_eq!(u.value(), &[0x01, 0x02, 0x03, 0x04]);

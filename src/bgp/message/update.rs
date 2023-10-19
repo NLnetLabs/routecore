@@ -5,8 +5,9 @@ use log::{debug, error, warn};
 use crate::asn::Asn;
 use crate::bgp::aspath::AsPath;
 use crate::bgp::path_attributes as new_pas;
+use new_pas::{PathAttributes, PathAttributeType};
 pub use crate::bgp::types::{
-    AFI, SAFI, LocalPref, MultiExitDisc, NextHop, OriginType, PathAttributeType
+    AFI, SAFI, LocalPref, MultiExitDisc, NextHop, OriginType,// PathAttributeType
 };
 
 use crate::bgp::path_attributes::AggregatorInfo;
@@ -168,7 +169,7 @@ impl<Octs: Octets> UpdateMessage<Octs> {
     /// Returns the withdrawals from the MP_UNREACH_NLRI attribute, if any.
     pub fn mp_withdrawals(&self) -> Result<Option< Nlris<Octs>>, ParseError>
     {
-        if let Some(new_pas::WireformatPathAttribute::MpUnreachNlri(pa, _sc)) = self.new_path_attributes()?.get(
+        if let Some(new_pas::WireformatPathAttribute::MpUnreachNlri(pa, _sc)) = self.path_attributes()?.get(
             new_pas::PathAttributeType::MpUnreachNlri
         ){
             let mut parser = pa.clone();
@@ -213,7 +214,9 @@ impl<Octs: Octets> UpdateMessage<Octs> {
         ])
 	}
 
-    pub fn path_attributes(&self) -> PathAttributes<'_, Octs> {
+    /*
+    // TODO remove me
+    pub fn old_path_attributes(&self) -> PathAttributes<'_, Octs> {
         let wrl = self.withdrawn_routes_len() as usize;
         let tpal = self.total_path_attribute_len() as usize;
         
@@ -226,8 +229,9 @@ impl<Octs: Octets> UpdateMessage<Octs> {
             session_config: self.session_config
         }
     }
+    */
 
-    pub fn new_path_attributes(&self)
+    pub fn path_attributes(&self)
         -> Result<new_pas::PathAttributes<Octs>, ParseError>
     {
         // XXX eventually the UpdateMessage will have a field
@@ -265,7 +269,7 @@ impl<Octs: Octets> UpdateMessage<Octs> {
     /// Returns the announcements from the MP_UNREACH_NLRI attribute, if any.
     pub fn mp_announcements(&self) -> Result<Option<Nlris<Octs>>, ParseError>
     {
-        if let Some(new_pas::WireformatPathAttribute::MpReachNlri(pa, _sc)) = self.new_path_attributes()?.get(
+        if let Some(new_pas::WireformatPathAttribute::MpReachNlri(pa, _sc)) = self.path_attributes()?.get(
             new_pas::PathAttributeType::MpReachNlri
         ){
             let mut parser = pa.clone();
@@ -329,7 +333,7 @@ impl<Octs: Octets> UpdateMessage<Octs> {
 
     pub fn has_mp_nlri(&self) -> Result<bool, ParseError> {
         Ok(
-            self.new_path_attributes()?
+            self.path_attributes()?
                 .get(new_pas::PathAttributeType::MpReachNlri).is_some()
         )
     }
@@ -346,7 +350,7 @@ impl<Octs: Octets> UpdateMessage<Octs> {
 
         // Based on MP_UNREACH_NLRI
 
-        let mut pas = self.new_path_attributes()?;
+        let mut pas = self.path_attributes()?;
         if let Some(Ok(new_pas::WireformatPathAttribute::MpUnreachNlri(mut pa, _sc))) = pas.next() {
             if pa.remaining() == 3 && pas.next().is_none() {
                 let afi = pa.parse_u16_be()?.into();
@@ -366,7 +370,7 @@ impl<Octs: Octets> UpdateMessage<Octs> {
     // with only withdrawals will not have any of these mandatory path
     // attributes present.
     pub fn origin(&self) -> Result<Option<OriginType>, ParseError> {
-        if let Some(new_pas::WireformatPathAttribute::Origin(mut pa, _sc)) = self.new_path_attributes()?.get(new_pas::PathAttributeType::Origin) {
+        if let Some(new_pas::WireformatPathAttribute::Origin(mut pa, _sc)) = self.path_attributes()?.get(new_pas::PathAttributeType::Origin) {
             Ok(Some(pa.parse_u8()?.into()))
         } else {
             Ok(None)
@@ -378,7 +382,7 @@ impl<Octs: Octets> UpdateMessage<Octs> {
         Option<AsPath<Octs::Range<'_>>>,
         ParseError
     > {
-        if let Some(new_pas::WireformatPathAttribute::As4Path(mut pa, _sc)) = self.new_path_attributes()?.get(new_pas::PathAttributeType::As4Path) {
+        if let Some(new_pas::WireformatPathAttribute::As4Path(mut pa, _sc)) = self.path_attributes()?.get(new_pas::PathAttributeType::As4Path) {
             Ok(Some(AsPath::new(pa.parse_octets(pa.remaining())?, true)?))
         } else {
             Ok(None)
@@ -392,7 +396,7 @@ impl<Octs: Octets> UpdateMessage<Octs> {
     pub fn aspath(&self)
         -> Result<Option<AsPath<Octs::Range<'_>>>, ParseError>
     {
-        if let Some(new_pas::WireformatPathAttribute::AsPath(mut pa, sc)) = self.new_path_attributes()?.get(new_pas::PathAttributeType::AsPath) {
+        if let Some(new_pas::WireformatPathAttribute::AsPath(mut pa, sc)) = self.path_attributes()?.get(new_pas::PathAttributeType::AsPath) {
             Ok(Some(AsPath::new(pa.parse_octets(pa.remaining())?, sc.has_four_octet_asn())?))
         } else {
             Ok(None)
@@ -403,7 +407,7 @@ impl<Octs: Octets> UpdateMessage<Octs> {
     pub fn conventional_next_hop(&self)
         -> Result<Option<NextHop>, ParseError>
     {
-        if let Some(new_pas::WireformatPathAttribute::NextHop(mut pa, _sc)) = self.new_path_attributes()?.get(new_pas::PathAttributeType::NextHop) {
+        if let Some(new_pas::WireformatPathAttribute::NextHop(mut pa, _sc)) = self.path_attributes()?.get(new_pas::PathAttributeType::NextHop) {
             Ok(Some(NextHop::Unicast(Ipv4Addr::from(pa.parse_u32_be()?).into())))
         } else {
             Ok(None)
@@ -412,7 +416,7 @@ impl<Octs: Octets> UpdateMessage<Octs> {
 
     /// Returns NextHop information from the MP_REACH_NLRI, if any.
     pub fn mp_next_hop(&self) -> Result<Option<NextHop>, ParseError> {
-        if let Some(new_pas::WireformatPathAttribute::MpReachNlri(mut pa, _sc)) = self.new_path_attributes()?.get(
+        if let Some(new_pas::WireformatPathAttribute::MpReachNlri(mut pa, _sc)) = self.path_attributes()?.get(
             new_pas::PathAttributeType::MpReachNlri
         ){
             let afi = pa.parse_u16_be()?.into();
@@ -430,7 +434,7 @@ impl<Octs: Octets> UpdateMessage<Octs> {
     pub fn multi_exit_disc(&self)
         -> Result<Option<MultiExitDisc>, ParseError>
     {
-        if let Some(new_pas::WireformatPathAttribute::MultiExitDisc(mut pa, _sc)) = self.new_path_attributes()?.get(
+        if let Some(new_pas::WireformatPathAttribute::MultiExitDisc(mut pa, _sc)) = self.path_attributes()?.get(
             new_pas::PathAttributeType::MultiExitDisc
         ){
             Ok(Some(MultiExitDisc(pa.parse_u32_be()?)))
@@ -442,7 +446,7 @@ impl<Octs: Octets> UpdateMessage<Octs> {
 
     /// Returns the Local Preference value, if any.
     pub fn local_pref(&self) -> Result<Option<LocalPref>, ParseError> {
-        if let Some(new_pas::WireformatPathAttribute::LocalPref(mut pa, _sc)) = self.new_path_attributes()?.get(
+        if let Some(new_pas::WireformatPathAttribute::LocalPref(mut pa, _sc)) = self.path_attributes()?.get(
             new_pas::PathAttributeType::LocalPref
         ){
             Ok(Some(LocalPref(pa.parse_u32_be()?)))
@@ -455,7 +459,7 @@ impl<Octs: Octets> UpdateMessage<Octs> {
     /// attribute.
     pub fn is_atomic_aggregate(&self) -> Result<bool, ParseError> {
         Ok(
-            self.new_path_attributes()?
+            self.path_attributes()?
                 .get(new_pas::PathAttributeType::AtomicAggregate).is_some()
         )
     }
@@ -471,7 +475,7 @@ impl<Octs: Octets> UpdateMessage<Octs> {
     // 
     pub fn aggregator(&self) -> Result<Option<new_pas::AggregatorInfo>, ParseError> {
 
-        if let Some(new_pas::WireformatPathAttribute::Aggregator(mut pa, sc)) = self.new_path_attributes()?.get(
+        if let Some(new_pas::WireformatPathAttribute::Aggregator(mut pa, sc)) = self.path_attributes()?.get(
             new_pas::PathAttributeType::Aggregator
         ){
             // XXX not nice that we have to do this here, also it is exactly
@@ -496,7 +500,7 @@ impl<Octs: Octets> UpdateMessage<Octs> {
     pub fn communities(&self)
         -> Result<Option<CommunityIter<Octs::Range<'_>>>, ParseError>
     {
-        if let Some(new_pas::WireformatPathAttribute::Communities(mut pa, _sc)) = self.new_path_attributes()?.get(new_pas::PathAttributeType::Communities) {
+        if let Some(new_pas::WireformatPathAttribute::Communities(mut pa, _sc)) = self.path_attributes()?.get(new_pas::PathAttributeType::Communities) {
             Ok(Some(CommunityIter::new(pa.parse_octets(pa.remaining())?)))
         } else {
             Ok(None)
@@ -507,7 +511,7 @@ impl<Octs: Octets> UpdateMessage<Octs> {
     pub fn ext_communities(&self)
         -> Result<Option<ExtCommunityIter<Octs::Range<'_>>>, ParseError>
     {
-        if let Some(new_pas::WireformatPathAttribute::ExtendedCommunities(mut pa, _sc)) = self.new_path_attributes()?.get(new_pas::PathAttributeType::ExtendedCommunities) {
+        if let Some(new_pas::WireformatPathAttribute::ExtendedCommunities(mut pa, _sc)) = self.path_attributes()?.get(new_pas::PathAttributeType::ExtendedCommunities) {
             Ok(Some(ExtCommunityIter::new(pa.parse_octets(pa.remaining())?)))
         } else {
             Ok(None)
@@ -518,7 +522,7 @@ impl<Octs: Octets> UpdateMessage<Octs> {
     pub fn large_communities(&self)
         -> Result<Option<LargeCommunityIter<Octs::Range<'_>>>, ParseError>
     {
-        if let Some(new_pas::WireformatPathAttribute::LargeCommunities(mut pa, _sc)) = self.new_path_attributes()?.get(new_pas::PathAttributeType::LargeCommunities) {
+        if let Some(new_pas::WireformatPathAttribute::LargeCommunities(mut pa, _sc)) = self.path_attributes()?.get(new_pas::PathAttributeType::LargeCommunities) {
             Ok(Some(LargeCommunityIter::new(pa.parse_octets(pa.remaining())?)))
         } else {
             Ok(None)
@@ -593,7 +597,8 @@ impl<Octs: Octets> UpdateMessage<Octs> {
             let mut pas_parser = parser.parse_parser(
                 path_attributes_len.into()
             )?;
-            PathAttributes::check(&mut pas_parser, config)?;
+            //FIXME
+            //PathAttributes::new(pas_parser, config).into_iter().try_for_each()?;
         }
 
         while parser.remaining() > 0 {
@@ -625,7 +630,7 @@ impl<Octs: Octets> UpdateMessage<Octs> {
         let total_path_attributes_len = parser.parse_u16_be()?;
         if total_path_attributes_len > 0 {
             let mut pas_parser = parser.parse_parser(total_path_attributes_len.into())?;
-            PathAttributes::parse(&mut pas_parser, config)?;
+            PathAttributes::new(pas_parser, config);
         }
 
         // conventional NLRI, if any
@@ -748,6 +753,8 @@ pub enum AddPath {
     Disabled,
 }
 
+
+/*
 // XXX do we want an intermediary struct PathAttributes with an fn iter() to
 // return a PathAttributesIter ?
 pub struct PathAttributes<'a, Octs: Octets + ?Sized> {
@@ -1410,6 +1417,7 @@ impl<'a, Ref: Octets> IntoIterator for PathAttributes<'a, Ref> {
         }
     }
 }
+*/
 
 //--- Aggregator -------------------------------------------------------------
 /// Path Attribute (7).
@@ -2164,27 +2172,28 @@ mod tests {
         assert_eq!(update.total_path_attribute_len(), 27);
 
         //let mut pa_iter = update.path_attributes().iter();
-        let pas = update.path_attributes();
-        let mut pa_iter = pas.iter();
+        let pas = update.path_attributes().unwrap();
+        let mut pa_iter = pas.into_iter();
 
-        let pa1 = pa_iter.next().unwrap();
+        let pa1 = pa_iter.next().unwrap().unwrap();
         assert_eq!(pa1.type_code(), PathAttributeType::Origin);
-        assert_eq!(pa1.flags(), 0x40);
-        assert!(!pa1.is_optional());
-        assert!(pa1.is_transitive());
-        assert!(!pa1.is_partial());
-        assert!(!pa1.is_extended_length());
+        dbg!(pa1.as_ref());
+        assert_eq!(pa1.flags(), 0x40.into());
+        assert!(!pa1.flags().is_optional());
+        assert!(pa1.flags().is_transitive());
+        assert!(!pa1.flags().is_partial());
+        assert!(!pa1.flags().is_extended_length());
 
         assert_eq!(pa1.length(), 1);
-        assert_eq!(pa1.value().as_ref(), &[0x00]); // TODO enumify Origin types
+        assert_eq!(pa1.as_ref(), &[0x00]); // TODO get inner, into
+                                                   // OriginType
 
-        let pa2 = pa_iter.next().unwrap();
+        let pa2 = pa_iter.next().unwrap().unwrap();
         assert_eq!(pa2.type_code(), PathAttributeType::AsPath);
-        assert_eq!(pa2.flags(), 0x40);
+        assert_eq!(pa2.flags(), 0x40.into());
         assert_eq!(pa2.length(), 6);
 
-        let asp = pa2.value();
-        assert_eq!(asp.as_ref(), [0x02, 0x01, 0x00, 0x01, 0x00, 0x00]);
+        assert_eq!(pa2.as_ref(), [0x02, 0x01, 0x00, 0x01, 0x00, 0x00]);
 
         /*
         let mut pb = AsPathBuilder::new();
@@ -2194,25 +2203,25 @@ mod tests {
 
         //assert_eq!(update.aspath().unwrap(), asp);
 
-        let pa3 = pa_iter.next().unwrap();
+        let pa3 = pa_iter.next().unwrap().unwrap();
         assert_eq!(pa3.type_code(), PathAttributeType::NextHop);
-        assert_eq!(pa3.flags(), 0x40);
+        assert_eq!(pa3.flags(), 0x40.into());
         assert_eq!(pa3.length(), 4);
-        assert_eq!(pa3.value().as_ref(), &[10, 255, 0, 101]);
+        assert_eq!(pa3.as_ref(), &[10, 255, 0, 101]);
         assert_eq!(
             update.conventional_next_hop().unwrap(),
             Some(NextHop::Unicast(Ipv4Addr::new(10, 255, 0, 101).into()))
             );
 
-        let pa4 = pa_iter.next().unwrap();
+        let pa4 = pa_iter.next().unwrap().unwrap();
         assert_eq!(pa4.type_code(), PathAttributeType::MultiExitDisc);
-        assert_eq!(pa4.flags(), 0x80);
-        assert!(pa4.is_optional());
-        assert!(!pa4.is_transitive());
-        assert!(!pa4.is_partial());
-        assert!(!pa4.is_extended_length());
+        assert_eq!(pa4.flags(), 0x80.into());
+        assert!( pa4.flags().is_optional());
+        assert!(!pa4.flags().is_transitive());
+        assert!(!pa4.flags().is_partial());
+        assert!(!pa4.flags().is_extended_length());
         assert_eq!(pa4.length(), 4);
-        assert_eq!(pa4.value().as_ref(), &[0x00, 0x00, 0x00, 0x01]);
+        assert_eq!(pa4.as_ref(), &[0x00, 0x00, 0x00, 0x01]);
         assert_eq!(update.multi_exit_disc().unwrap(), Some(MultiExitDisc(1)));
 
         assert!(pa_iter.next().is_none());
@@ -2461,22 +2470,22 @@ mod tests {
             .unwrap().try_into().unwrap();
 
         update.path_attributes().iter();//.count();
-        if let Some(aspath) = update.path_attributes().iter().find(|pa|
-                                                                   pa.type_code() == PathAttributeType::AsPath
-                                                                  ){
-            assert_eq!(aspath.flags(), 0x50);
-            assert!(aspath.is_transitive());
-            assert!(aspath.is_extended_length());
+        if let Some(Ok(aspath)) = update.path_attributes().unwrap()
+            .find(|pa| pa.as_ref().unwrap().type_code() == PathAttributeType::AsPath)
+        {
+            assert_eq!(aspath.flags(), 0x50.into());
+            assert!(aspath.flags().is_transitive());
+            assert!(aspath.flags().is_extended_length());
             assert_eq!(aspath.length(), 22);
             //TODO check actual aspath
         } else {
             panic!("ASPATH path attribute not found")
         }
 
-        if let Some(as4path) = update.path_attributes().iter().find(|pa|
-                                                                    pa.type_code() == PathAttributeType::As4Path
-                                                                   ){
-            assert_eq!(as4path.flags(), 0xd0);
+        if let Some(Ok(as4path)) = update.path_attributes().unwrap()
+            .find(|pa| pa.as_ref().unwrap().type_code() == PathAttributeType::As4Path)
+        {
+            assert_eq!(as4path.flags(), 0xd0.into());
             assert_eq!(as4path.length(), 42);
             //TODO check actual aspath
         } else {
