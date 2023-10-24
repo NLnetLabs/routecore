@@ -4,8 +4,10 @@ use log::{debug, error, warn};
 
 use crate::asn::Asn;
 use crate::bgp::aspath::AsPath;
-use crate::bgp::path_attributes as new_pas;
-use new_pas::{PathAttributes, PathAttributeType};
+use crate::bgp::path_attributes::{
+    Aggregator, AggregatorInfo,
+    PathAttributes, PathAttributeType, WireformatPathAttribute
+};
 pub use crate::bgp::types::{
     AFI, SAFI, LocalPref, MultiExitDisc, NextHop, OriginType,// PathAttributeType
 };
@@ -167,8 +169,8 @@ impl<Octs: Octets> UpdateMessage<Octs> {
     /// Returns the withdrawals from the MP_UNREACH_NLRI attribute, if any.
     pub fn mp_withdrawals(&self) -> Result<Option< Nlris<Octs>>, ParseError>
     {
-        if let Some(new_pas::WireformatPathAttribute::MpUnreachNlri(epa)) = self.path_attributes()?.get(
-            new_pas::PathAttributeType::MpUnreachNlri
+        if let Some(WireformatPathAttribute::MpUnreachNlri(epa)) = self.path_attributes()?.get(
+            PathAttributeType::MpUnreachNlri
         ){
             //let mut parser = pa.clone();
             let mut parser = epa.value_into_parser();
@@ -214,7 +216,7 @@ impl<Octs: Octets> UpdateMessage<Octs> {
 	}
 
     pub fn path_attributes(&self)
-        -> Result<new_pas::PathAttributes<Octs>, ParseError>
+        -> Result<PathAttributes<Octs>, ParseError>
     {
         // XXX eventually the UpdateMessage will have a field
         // PathAttributesParser that points to the right place directly.
@@ -226,7 +228,7 @@ impl<Octs: Octets> UpdateMessage<Octs> {
         parser.advance(COFF+2+wrl+2).unwrap();
         let pp = Parser::parse_parser(&mut parser, tpal)?;
 
-        Ok(new_pas::PathAttributes::new(pp, self.session_config))
+        Ok(PathAttributes::new(pp, self.session_config))
     }
 
     /// Returns the conventional announcements.
@@ -251,8 +253,8 @@ impl<Octs: Octets> UpdateMessage<Octs> {
     /// Returns the announcements from the MP_UNREACH_NLRI attribute, if any.
     pub fn mp_announcements(&self) -> Result<Option<Nlris<Octs>>, ParseError>
     {
-        if let Some(new_pas::WireformatPathAttribute::MpReachNlri(epa)) = self.path_attributes()?.get(
-            new_pas::PathAttributeType::MpReachNlri
+        if let Some(WireformatPathAttribute::MpReachNlri(epa)) = self.path_attributes()?.get(
+            PathAttributeType::MpReachNlri
         ){
             //let mut parser = pa.clone();
             let mut parser = epa.value_into_parser();
@@ -317,7 +319,7 @@ impl<Octs: Octets> UpdateMessage<Octs> {
     pub fn has_mp_nlri(&self) -> Result<bool, ParseError> {
         Ok(
             self.path_attributes()?
-                .get(new_pas::PathAttributeType::MpReachNlri).is_some()
+                .get(PathAttributeType::MpReachNlri).is_some()
         )
     }
 
@@ -334,7 +336,7 @@ impl<Octs: Octets> UpdateMessage<Octs> {
         // Based on MP_UNREACH_NLRI
 
         let mut pas = self.path_attributes()?;
-        if let Some(Ok(new_pas::WireformatPathAttribute::MpUnreachNlri(epa))) = pas.next() {
+        if let Some(Ok(WireformatPathAttribute::MpUnreachNlri(epa))) = pas.next() {
             let mut pa = epa.value_into_parser();
             if pa.remaining() == 3 && pas.next().is_none() {
                 let afi = pa.parse_u16_be()?.into();
@@ -354,7 +356,7 @@ impl<Octs: Octets> UpdateMessage<Octs> {
     // with only withdrawals will not have any of these mandatory path
     // attributes present.
     pub fn origin(&self) -> Result<Option<OriginType>, ParseError> {
-        if let Some(new_pas::WireformatPathAttribute::Origin(epa)) = self.path_attributes()?.get(new_pas::PathAttributeType::Origin) {
+        if let Some(WireformatPathAttribute::Origin(epa)) = self.path_attributes()?.get(PathAttributeType::Origin) {
             Ok(Some(epa.value_into_parser().parse_u8()?.into()))
         } else {
             Ok(None)
@@ -366,7 +368,7 @@ impl<Octs: Octets> UpdateMessage<Octs> {
         Option<AsPath<Octs::Range<'_>>>,
         ParseError
     > {
-        if let Some(new_pas::WireformatPathAttribute::As4Path(epa)) = self.path_attributes()?.get(new_pas::PathAttributeType::As4Path) {
+        if let Some(WireformatPathAttribute::As4Path(epa)) = self.path_attributes()?.get(PathAttributeType::As4Path) {
             let mut p = epa.value_into_parser();
             Ok(Some(AsPath::new(p.parse_octets(p.remaining())?, true)?))
         } else {
@@ -381,7 +383,7 @@ impl<Octs: Octets> UpdateMessage<Octs> {
     pub fn aspath(&self)
         -> Result<Option<AsPath<Octs::Range<'_>>>, ParseError>
     {
-        if let Some(new_pas::WireformatPathAttribute::AsPath(epa)) = self.path_attributes()?.get(new_pas::PathAttributeType::AsPath) {
+        if let Some(WireformatPathAttribute::AsPath(epa)) = self.path_attributes()?.get(PathAttributeType::AsPath) {
             let mut p = epa.value_into_parser();
             Ok(Some(AsPath::new(p.parse_octets(p.remaining())?,
             epa.session_config().has_four_octet_asn())?))
@@ -394,7 +396,7 @@ impl<Octs: Octets> UpdateMessage<Octs> {
     pub fn conventional_next_hop(&self)
         -> Result<Option<NextHop>, ParseError>
     {
-        if let Some(new_pas::WireformatPathAttribute::NextHop(epa)) = self.path_attributes()?.get(new_pas::PathAttributeType::NextHop) {
+        if let Some(WireformatPathAttribute::NextHop(epa)) = self.path_attributes()?.get(PathAttributeType::NextHop) {
             Ok(Some(NextHop::Unicast(Ipv4Addr::from(epa.value_into_parser().parse_u32_be()?).into())))
         } else {
             Ok(None)
@@ -403,8 +405,8 @@ impl<Octs: Octets> UpdateMessage<Octs> {
 
     /// Returns NextHop information from the MP_REACH_NLRI, if any.
     pub fn mp_next_hop(&self) -> Result<Option<NextHop>, ParseError> {
-        if let Some(new_pas::WireformatPathAttribute::MpReachNlri(epa)) = self.path_attributes()?.get(
-            new_pas::PathAttributeType::MpReachNlri
+        if let Some(WireformatPathAttribute::MpReachNlri(epa)) = self.path_attributes()?.get(
+            PathAttributeType::MpReachNlri
         ){
             let mut p = epa.value_into_parser();
             let afi = p.parse_u16_be()?.into();
@@ -422,8 +424,8 @@ impl<Octs: Octets> UpdateMessage<Octs> {
     pub fn multi_exit_disc(&self)
         -> Result<Option<MultiExitDisc>, ParseError>
     {
-        if let Some(new_pas::WireformatPathAttribute::MultiExitDisc(epa)) = self.path_attributes()?.get(
-            new_pas::PathAttributeType::MultiExitDisc
+        if let Some(WireformatPathAttribute::MultiExitDisc(epa)) = self.path_attributes()?.get(
+            PathAttributeType::MultiExitDisc
         ){
             Ok(Some(MultiExitDisc(epa.value_into_parser().parse_u32_be()?)))
         } else {
@@ -434,8 +436,8 @@ impl<Octs: Octets> UpdateMessage<Octs> {
 
     /// Returns the Local Preference value, if any.
     pub fn local_pref(&self) -> Result<Option<LocalPref>, ParseError> {
-        if let Some(new_pas::WireformatPathAttribute::LocalPref(epa)) = self.path_attributes()?.get(
-            new_pas::PathAttributeType::LocalPref
+        if let Some(WireformatPathAttribute::LocalPref(epa)) = self.path_attributes()?.get(
+            PathAttributeType::LocalPref
         ){
             Ok(Some(LocalPref(epa.value_into_parser().parse_u32_be()?)))
         } else {
@@ -448,7 +450,7 @@ impl<Octs: Octets> UpdateMessage<Octs> {
     pub fn is_atomic_aggregate(&self) -> Result<bool, ParseError> {
         Ok(
             self.path_attributes()?
-                .get(new_pas::PathAttributeType::AtomicAggregate).is_some()
+                .get(PathAttributeType::AtomicAggregate).is_some()
         )
     }
 
@@ -461,10 +463,10 @@ impl<Octs: Octets> UpdateMessage<Octs> {
     // As such, we can determine whether there is a 2-octet or 4-octet ASN
     // based on the size of the attribute itself.
     // 
-    pub fn aggregator(&self) -> Result<Option<new_pas::AggregatorInfo>, ParseError> {
+    pub fn aggregator(&self) -> Result<Option<AggregatorInfo>, ParseError> {
 
-        if let Some(new_pas::WireformatPathAttribute::Aggregator(epa)) = self.path_attributes()?.get(
-            new_pas::PathAttributeType::Aggregator
+        if let Some(WireformatPathAttribute::Aggregator(epa)) = self.path_attributes()?.get(
+            PathAttributeType::Aggregator
         ){
             // XXX not nice that we have to do this here, also it is exactly
             // the same as in the fn parse in path_attributes.rs
@@ -478,7 +480,7 @@ impl<Octs: Octets> UpdateMessage<Octs> {
             let address = parse_ipv4addr(&mut pa)?;
             Ok(Some(AggregatorInfo::new(asn, address)))
             */
-            Ok(Some(new_pas::Aggregator::parse2(&mut epa.value_into_parser(), epa.session_config())?.inner()))
+            Ok(Some(Aggregator::parse2(&mut epa.value_into_parser(), epa.session_config())?.inner()))
         } else {
             Ok(None)
         }
@@ -491,7 +493,7 @@ impl<Octs: Octets> UpdateMessage<Octs> {
     pub fn communities(&self)
         -> Result<Option<CommunityIter<Octs::Range<'_>>>, ParseError>
     {
-        if let Some(new_pas::WireformatPathAttribute::Communities(epa)) = self.path_attributes()?.get(new_pas::PathAttributeType::Communities) {
+        if let Some(WireformatPathAttribute::Communities(epa)) = self.path_attributes()?.get(PathAttributeType::Communities) {
             let mut p = epa.value_into_parser();
             Ok(Some(CommunityIter::new(p.parse_octets(p.remaining())?)))
         } else {
@@ -503,7 +505,7 @@ impl<Octs: Octets> UpdateMessage<Octs> {
     pub fn ext_communities(&self)
         -> Result<Option<ExtCommunityIter<Octs::Range<'_>>>, ParseError>
     {
-        if let Some(new_pas::WireformatPathAttribute::ExtendedCommunities(epa)) = self.path_attributes()?.get(new_pas::PathAttributeType::ExtendedCommunities) {
+        if let Some(WireformatPathAttribute::ExtendedCommunities(epa)) = self.path_attributes()?.get(PathAttributeType::ExtendedCommunities) {
             let mut p = epa.value_into_parser();
             Ok(Some(ExtCommunityIter::new(p.parse_octets(p.remaining())?)))
         } else {
@@ -515,7 +517,7 @@ impl<Octs: Octets> UpdateMessage<Octs> {
     pub fn large_communities(&self)
         -> Result<Option<LargeCommunityIter<Octs::Range<'_>>>, ParseError>
     {
-        if let Some(new_pas::WireformatPathAttribute::LargeCommunities(epa)) = self.path_attributes()?.get(new_pas::PathAttributeType::LargeCommunities) {
+        if let Some(WireformatPathAttribute::LargeCommunities(epa)) = self.path_attributes()?.get(PathAttributeType::LargeCommunities) {
             let mut p = epa.value_into_parser();
             Ok(Some(LargeCommunityIter::new(p.parse_octets(p.remaining())?)))
         } else {
@@ -749,36 +751,36 @@ pub enum AddPath {
 
 
 //--- Aggregator -------------------------------------------------------------
-/// Path Attribute (7).
-#[derive(Debug, Eq, PartialEq, Copy, Clone, Hash)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize))]
-pub struct Aggregator {
-    asn: Asn,
-    speaker: Ipv4Addr,
-}
+///// Path Attribute (7).
+//#[derive(Debug, Eq, PartialEq, Copy, Clone, Hash)]
+//#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+//pub struct Aggregator {
+//    asn: Asn,
+//    speaker: Ipv4Addr,
+//}
+//
+//impl Aggregator {
+//    /// Creates a new Aggregator.
+//    pub fn new(asn: Asn, speaker: Ipv4Addr) -> Self {
+//        Aggregator{ asn, speaker }
+//    }
+//
+//    /// Returns the `Asn`.
+//    pub fn asn(&self) -> Asn {
+//        self.asn
+//    }
+//
+//    /// Returns the speaker IPv4 address.
+//    pub fn speaker(&self) -> Ipv4Addr {
+//        self.speaker
+//    }
+//}
 
-impl Aggregator {
-    /// Creates a new Aggregator.
-    pub fn new(asn: Asn, speaker: Ipv4Addr) -> Self {
-        Aggregator{ asn, speaker }
-    }
-
-    /// Returns the `Asn`.
-    pub fn asn(&self) -> Asn {
-        self.asn
-    }
-
-    /// Returns the speaker IPv4 address.
-    pub fn speaker(&self) -> Ipv4Addr {
-        self.speaker
-    }
-}
-
-impl fmt::Display for Aggregator {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "AS{} Speaker {}", self.asn, self.speaker)        
-    }
-}
+//impl fmt::Display for Aggregator {
+//    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+//        write!(f, "AS{} Speaker {}", self.asn, self.speaker)        
+//    }
+//}
 
 
 /// Iterator for BGP UPDATE Communities.

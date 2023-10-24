@@ -6,7 +6,7 @@ use crate::bgp::communities::{
 };
 
 use crate::bgp::message::update::{
-    Aggregator, LocalPref, MultiExitDisc, NextHop, OriginType,
+    /*Aggregator,*/ LocalPref, MultiExitDisc, NextHop, OriginType,
 };
 
 use crate::bgp::message::nlri::Nlri;

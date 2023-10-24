@@ -4,7 +4,7 @@ pub mod update_builder;
 pub mod nlri;
 pub mod notification;
 pub mod keepalive;
-pub mod attr_change_set;
+//pub mod attr_change_set;
 
 use octseq::{Octets, Parser};
 use crate::util::parser::ParseError;

@@ -16,8 +16,17 @@ use crate::util::parser::ParseError;
 
 //use rotonda_fsm::bgp::session::AgreedConfig;
 
-use crate::bgp::path_attributes as new_pas;
-use new_pas::{PathAttribute, PathAttributeType};
+use crate::bgp::path_attributes::{
+    AsPath,
+    Communities,
+    LocalPref,
+    MpReachNlri,
+    MpUnreachNlri,
+    MultiExitDisc,
+    NextHop as NextHopAttribute,
+    Origin,
+    PathAttribute, PathAttributeType
+};
 
 //------------ UpdateBuilder -------------------------------------------------
 #[derive(Debug)]
@@ -30,7 +39,7 @@ pub struct UpdateBuilder<Target> {
     addpath_enabled: Option<bool>, // for conventional nlri (unicast v4)
                                    //
     // attributes:
-    attributes: BTreeMap<PathAttributeType, new_pas::PathAttribute>,
+    attributes: BTreeMap<PathAttributeType, PathAttribute>,
 }
 
 impl<T> UpdateBuilder<T> {
@@ -128,7 +137,7 @@ where Target: octseq::Truncate
                     if !self.attributes.contains_key(
                         &PathAttributeType::MpUnreachNlri
                     ) {
-                        self.add_attribute(new_pas::MpUnreachNlri::new(
+                        self.add_attribute(MpUnreachNlri::new(
                                 MpUnreachNlriBuilder::new(
                                     AFI::Ipv6, SAFI::Unicast,
                                     b.is_addpath()
@@ -217,7 +226,7 @@ where Target: octseq::Truncate
     pub fn set_origin(&mut self, origin: OriginType)
         -> Result<(), ComposeError>
     {
-        self.add_attribute(new_pas::Origin::new(origin).into())
+        self.add_attribute(Origin::new(origin).into())
     }
 
     pub fn set_aspath(&mut self , aspath: HopPath)
@@ -228,7 +237,7 @@ where Target: octseq::Truncate
         if let Ok(wireformat) = aspath.to_as_path::<Vec<u8>>() {
             if wireformat.compose_len() > u16::MAX.into() {
                 return Err(ComposeError::AttributeTooLarge(
-                     new_pas::PathAttributeType::AsPath,
+                     PathAttributeType::AsPath,
                      wireformat.compose_len()
                 ));
             }
@@ -236,7 +245,7 @@ where Target: octseq::Truncate
             return Err(ComposeError::InvalidAttribute)
         }
 
-        self.add_attribute(new_pas::AsPath::new(aspath).into())
+        self.add_attribute(AsPath::new(aspath).into())
     }
 
     pub fn set_nexthop(
@@ -249,7 +258,7 @@ where Target: octseq::Truncate
 
         match nexthop {
             NextHop::Unicast(IpAddr::V4(a)) => {
-                self.add_attribute(new_pas::NextHop::new(a).into())?;
+                self.add_attribute(NextHopAttribute::new(a).into())?;
             }
             n => {
                 if let Some(PathAttribute::MpReachNlri(ref mut pa)) = self.attributes.get_mut(
@@ -258,7 +267,7 @@ where Target: octseq::Truncate
                     let builder = pa.as_mut();
                     builder.set_nexthop(n)?;
                 } else {
-                    self.add_attribute(new_pas::MpReachNlri::new(
+                    self.add_attribute(MpReachNlri::new(
                         MpReachNlriBuilder::new_for_nexthop(n)
                     ).into())?;
                 }
@@ -293,7 +302,7 @@ where Target: octseq::Truncate
                 unreachable!()
             }
         } else {
-            self.add_attribute(new_pas::MpReachNlri::new(
+            self.add_attribute(MpReachNlri::new(
                 MpReachNlriBuilder::new(
                     AFI::Ipv6, SAFI::Unicast, NextHop::Ipv6LL(0.into(), addr),
                     false
@@ -304,13 +313,13 @@ where Target: octseq::Truncate
         Ok(())
     }
 
-    pub fn set_multi_exit_disc(&mut self, med: new_pas::MultiExitDisc)
+    pub fn set_multi_exit_disc(&mut self, med: MultiExitDisc)
     -> Result<(), ComposeError>
     {
         self.add_attribute(med.into())
     }
 
-    pub fn set_local_pref(&mut self, local_pref: new_pas::LocalPref)
+    pub fn set_local_pref(&mut self, local_pref: LocalPref)
     -> Result<(), ComposeError>
     {
         self.add_attribute(local_pref.into())
@@ -343,7 +352,7 @@ where Target: octseq::Truncate
             }
             n => {
                 if !self.attributes.contains_key(&PathAttributeType::MpReachNlri) {
-                    self.add_attribute(new_pas::MpReachNlri::new(
+                    self.add_attribute(MpReachNlri::new(
                             MpReachNlriBuilder::new_for_nlri(n)
                     ).into())?;
                 }
@@ -390,7 +399,7 @@ where Target: octseq::Truncate
         -> Result<(), ComposeError>
     {
         if !self.attributes.contains_key(&PathAttributeType::Communities) {
-            self.add_attribute(new_pas::Communities::new(
+            self.add_attribute(Communities::new(
                     StandardCommunitiesBuilder::new()
             ).into())?;
         }
@@ -730,7 +739,7 @@ impl<Target> UpdateBuilder<Target>
 
                     let this_batch = unreach_builder.split(split_at);
                     let mut builder = Self::from_target(self.target.clone()).unwrap();
-                    builder.add_attribute(new_pas::MpUnreachNlri::new(this_batch).into()).unwrap();
+                    builder.add_attribute(MpUnreachNlri::new(this_batch).into()).unwrap();
 
                     Some(builder.into_message())
                 } else {
@@ -802,8 +811,8 @@ impl<Target> UpdateBuilder<Target>
                     let this_batch = reach_builder.split(split_at);
                     let mut builder = Self::from_target(self.target.clone()).unwrap();
                     builder.attributes = self.attributes.clone();
-                    self.add_attribute(new_pas::MpReachNlri::new(reach_builder).into()).unwrap();
-                    builder.add_attribute(new_pas::MpReachNlri::new(this_batch).into()).unwrap();
+                    self.add_attribute(MpReachNlri::new(reach_builder).into()).unwrap();
+                    builder.add_attribute(MpReachNlri::new(this_batch).into()).unwrap();
 
                     Some(builder.into_message())
                 } else {
@@ -1340,7 +1349,7 @@ pub enum ComposeError{
     PduTooLarge(usize),
 
     // TODO proper docstrings, first see how/if we actually use these.
-    AttributeTooLarge(new_pas::PathAttributeType, usize),
+    AttributeTooLarge(PathAttributeType, usize),
     AttributesTooLarge(usize),
     IllegalCombination,
     EmptyMpReachNlri,
@@ -1713,8 +1722,8 @@ mod tests {
                 //    .unwrap()
             ).unwrap();
         }
-        builder.set_local_pref(new_pas::LocalPref::new(123)).unwrap();
-        builder.set_multi_exit_disc(new_pas::MultiExitDisc::new(123)).unwrap();
+        builder.set_local_pref(LocalPref::new(123)).unwrap();
+        builder.set_multi_exit_disc(MultiExitDisc::new(123)).unwrap();
         (1..=300).for_each(|n| {
             builder.add_community(StandardCommunity::new(n.into(), Tag::new(123))).unwrap();
         });
@@ -2075,8 +2084,8 @@ mod tests {
         //builder.set_aspath::<Vec<u8>>(path.to_as_path().unwrap()).unwrap();
         builder.set_aspath(path).unwrap();
 
-        builder.set_multi_exit_disc(new_pas::MultiExitDisc::new(1234)).unwrap();
-        builder.set_local_pref(new_pas::LocalPref::new(9876)).unwrap();
+        builder.set_multi_exit_disc(MultiExitDisc::new(1234)).unwrap();
+        builder.set_local_pref(LocalPref::new(9876)).unwrap();
 
         let msg = builder.into_message().unwrap();
         msg.print_pcap();
