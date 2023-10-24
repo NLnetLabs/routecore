@@ -37,7 +37,6 @@ pub struct UpdateBuilder<Target> {
     announcements: Vec<Nlri<Vec<u8>>>,
     withdrawals: Vec<Nlri<Vec<u8>>>,
     addpath_enabled: Option<bool>, // for conventional nlri (unicast v4)
-                                   //
     // attributes:
     attributes: BTreeMap<PathAttributeType, PathAttribute>,
 }

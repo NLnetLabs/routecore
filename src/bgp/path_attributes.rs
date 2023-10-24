@@ -1,7 +1,7 @@
 use std::fmt;
 use std::net::Ipv4Addr;
 
-use log::{debug, warn};
+use log:: warn;
 use octseq::{Octets, OctetsBuilder, OctetsFrom, Parser};
 
 use crate::asn::Asn;

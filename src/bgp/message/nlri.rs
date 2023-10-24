@@ -148,7 +148,7 @@ impl<'a, T: Octets, AS: AfiSafiParse> Iterator for FixedNlriIter<'a, T, AS> {
 
 //--- NextHop in MP_REACH_NLRI -----------------------------------------------
 impl NextHop {
-    pub fn check(parser: &mut Parser<[u8]>, afi: AFI, safi: SAFI)
+    pub fn check<Octs: Octets>(parser: &mut Parser<Octs>, afi: AFI, safi: SAFI)
         -> Result<(), ParseError>
     {
         let len = parser.parse_u8()?;
@@ -255,7 +255,7 @@ impl NextHop {
 pub struct PathId(u32);
 
 impl PathId {
-    pub fn check(parser: &mut Parser<[u8]>)
+    pub fn check<Octs: Octets>(parser: &mut Parser<Octs>)
         -> Result<(), ParseError> 
     {
         parser.advance(4)?;
@@ -385,7 +385,7 @@ pub struct RouteDistinguisher {
 }
 
 impl RouteDistinguisher {
-    pub fn check(parser: &mut Parser<[u8]>)
+    pub fn check<Octs: Octets>(parser: &mut Parser<Octs>)
         -> Result<(), ParseError>
     {
         parser.advance(8)?;
@@ -894,8 +894,8 @@ fn prefix_bits_to_bytes(bits: u8) -> usize {
     }
 }
 
-fn check_prefix(
-    parser: &mut Parser<[u8]>,
+fn check_prefix<Octs: Octets>(
+    parser: &mut Parser<Octs>,
     prefix_bits: u8,
     afi: AFI
 ) -> Result<(), ParseError> {
@@ -1021,8 +1021,8 @@ fn parse_prefix<R: Octets>(parser: &mut Parser<'_, R>, afi: AFI)
 }
 
 impl BasicNlri {
-    pub fn check(
-        parser: &mut Parser<[u8]>,
+    pub fn check<Octs: Octets>(
+        parser: &mut Parser<Octs>,
         config: SessionConfig,
         afi: AFI
     ) -> Result<(), ParseError> {
@@ -1134,9 +1134,9 @@ impl From<(Prefix, Option<PathId>)> for BasicNlri {
 }
 
 
-impl MplsVpnNlri<()> {
+impl<Octs: Octets> MplsVpnNlri<Octs> {
     pub fn check(
-        parser: &mut Parser<[u8]>,
+        parser: &mut Parser<Octs>,
         config: SessionConfig,
         afi: AFI
         ) -> Result<(), ParseError>
@@ -1203,9 +1203,9 @@ impl<Octs: Octets> MplsVpnNlri<Octs> {
     }
 }
 
-impl MplsNlri<()> {
+impl<Octs: Octets> MplsNlri<Octs> {
     pub fn check(
-        parser: &mut Parser<[u8]>,
+        parser: &mut Parser<Octs>,
         config: SessionConfig,
         afi: AFI) -> Result<(), ParseError>
     {
@@ -1272,7 +1272,7 @@ impl<Octs: Octets> MplsNlri<Octs> {
 }
 
 impl VplsNlri {
-    pub fn check(parser: &mut Parser<[u8]>)
+    pub fn check<Octs: Octets>(parser: &mut Parser<Octs>)
         -> Result<(), ParseError>
     {
         parser.advance(2)?; // length, u16
@@ -1306,8 +1306,8 @@ impl VplsNlri {
     }
 }
 
-impl FlowSpecNlri<()> {
-    pub fn check(parser: &mut Parser<[u8]>, afi: AFI)
+impl<Octs: Octets> FlowSpecNlri<Octs> {
+    pub fn check(parser: &mut Parser<Octs>, afi: AFI)
         -> Result<(), ParseError>
     {
         let len1 = parser.parse_u8()?;
@@ -1406,8 +1406,8 @@ impl<Octs: AsRef<[u8]>> FlowSpecNlri<Octs> {
     }
 }
 
-impl RouteTargetNlri<()> {
-    pub fn check(parser: &mut Parser<[u8]>)
+impl<Octs: Octets> RouteTargetNlri<Octs> {
+    pub fn check(parser: &mut Parser<Octs>)
         -> Result<(), ParseError>
     {
         let prefix_bits = parser.parse_u8()?;

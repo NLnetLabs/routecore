@@ -164,7 +164,7 @@ impl<'a, Octs: Octets + 'a> Message<Octs> {
 }
 
 impl<Octs: Octets> Message<Octs> {
-    pub fn check(src: &mut Cursor<&[u8]>) -> Result<u32, MessageError> {
+    pub fn check(src: &mut Cursor<Octs>) -> Result<u32, MessageError> {
         if src.remaining() >= 5 {
             let _version = src.get_u8();
 			let len = src.get_u32();

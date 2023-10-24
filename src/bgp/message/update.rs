@@ -1,6 +1,6 @@
 use crate::bgp::message::Header;
 use octseq::{Octets, Parser};
-use log::{debug, error, warn};
+use log::error;
 
 use crate::asn::Asn;
 use crate::bgp::aspath::AsPath;
@@ -9,7 +9,7 @@ use crate::bgp::path_attributes::{
     PathAttributes, PathAttributeType, WireformatPathAttribute
 };
 pub use crate::bgp::types::{
-    AFI, SAFI, LocalPref, MultiExitDisc, NextHop, OriginType,// PathAttributeType
+    AFI, SAFI, LocalPref, MultiExitDisc, NextHop, OriginType,
 };
 
 use crate::bgp::message::nlri::{
@@ -18,8 +18,7 @@ use crate::bgp::message::nlri::{
 };
 
 use std::net::Ipv4Addr;
-use std::fmt;
-use crate::util::parser::{parse_ipv4addr, ParseError};
+use crate::util::parser::ParseError;
 
 
 use crate::bgp::communities::{
@@ -531,8 +530,6 @@ impl<Octs: Octets> UpdateMessage<Octs> {
     pub fn all_communities(&self) -> Result<Option<Vec<Community>>, ParseError> {
         let mut res = Vec::<Community>::new();
 
-        // We can use unwrap safely because the is_some check.
-
         if let Some(c) = self.communities()? {
             res.append(&mut c.collect::<Vec<_>>());
         }
@@ -562,7 +559,7 @@ impl<Octs: Octets> UpdateMessage<Octs> {
     pub fn from_octets(octets: Octs, config: SessionConfig)
         -> Result<Self, ParseError>
    {
-        Self::check(octets.as_ref(), config)?;
+        Self::check(&octets, config)?;
         Ok(UpdateMessage {
             octets,
             session_config: config
@@ -573,7 +570,7 @@ impl<Octs: Octets> UpdateMessage<Octs> {
         self.octets
     }
 
-    fn check(octets: &[u8], config: SessionConfig) -> Result<(), ParseError> {
+    fn check(octets: &Octs, config: SessionConfig) -> Result<(), ParseError> {
         let mut parser = Parser::from_ref(octets);
         Header::check(&mut parser)?;
 
@@ -593,8 +590,11 @@ impl<Octs: Octets> UpdateMessage<Octs> {
             let pas_parser = parser.parse_parser(
                 path_attributes_len.into()
             )?;
-            //FIXME
-            //PathAttributes::new(pas_parser, config).into_iter().try_for_each()?;
+            // XXX this calls `validate` on every attribute, do we want to
+            // error on that level here?
+            for pa in PathAttributes::new(pas_parser, config).into_iter() {
+               pa?;
+            }
         }
 
         while parser.remaining() > 0 {
@@ -625,8 +625,13 @@ impl<Octs: Octets> UpdateMessage<Octs> {
         }
         let total_path_attributes_len = parser.parse_u16_be()?;
         if total_path_attributes_len > 0 {
-            let mut pas_parser = parser.parse_parser(total_path_attributes_len.into())?;
+            let pas_parser = parser.parse_parser(total_path_attributes_len.into())?;
             PathAttributes::new(pas_parser, config);
+            // XXX this calls `validate` on every attribute, do we want to
+            // error on that level here?
+            for pa in PathAttributes::new(pas_parser, config).into_iter() {
+               pa?;
+            }
         }
 
         // conventional NLRI, if any
@@ -878,101 +883,8 @@ impl<Octs: Octets> Iterator for LargeCommunityIter<Octs> {
     }
 }
 
-pub struct Withdrawals<'a, Octs: Octets + ?Sized> {
-    parser: Parser<'a, Octs>,
-    session_config: SessionConfig,
-    afi: AFI,
-    safi: SAFI,
-}
-
-impl<'a, Octs: Octets> Withdrawals<'a, Octs> {
-    pub fn iter(&self) -> WithdrawalsIterMp<'a, Octs> {
-        WithdrawalsIterMp {
-            parser: self.parser,
-            session_config: self.session_config,
-            afi: self.afi,
-            safi: self.safi
-        }
-    }
-
-    /// Returns the AFI for these withdrawals.
-    pub fn afi(&self) -> AFI {
-        self.afi
-    }
-
-    /// Returns the SAFI for these withdrawals
-    pub fn safi(&self) -> SAFI {
-        self.safi
-    }
-}
-
-/// Iterator over the withdrawn NLRIs.
-///
-/// Returns items of the enum [`Nlri`], thus both conventional and
-/// BGP MultiProtocol (RFC4760) withdrawn NLRIs.
-pub struct WithdrawalsIterMp<'a, Ref: ?Sized> {
-    parser: Parser<'a, Ref>,
-    session_config: SessionConfig,
-    afi: AFI,
-    safi: SAFI,
-}
-
-impl<'a, Octs: 'a + Octets> WithdrawalsIterMp<'a, Octs> {
-    fn get_nlri(&mut self) -> Nlri<Octs::Range<'a>> {
-        match (self.afi, self.safi) {
-            (AFI::Ipv4 | AFI::Ipv6, SAFI::Unicast) => {
-                Nlri::Unicast(BasicNlri::parse(
-                        &mut self.parser,
-                        self.session_config,
-                        self.afi
-                ).expect("parsed before"))
-            }
-            (AFI::Ipv4 | AFI::Ipv6, SAFI::Multicast) => {
-                Nlri::Multicast(BasicNlri::parse(
-                        &mut self.parser,
-                        self.session_config,
-                        self.afi
-                ).expect("parsed before"))
-            }
-            (AFI::Ipv4 | AFI::Ipv6, SAFI::MplsVpnUnicast) => {
-                Nlri::MplsVpn(MplsVpnNlri::parse(
-                        &mut self.parser,
-                        self.session_config,
-                        self.afi
-                ).expect("parsed before"))
-            },
-            (AFI::Ipv4 | AFI::Ipv6, SAFI::MplsUnicast) => {
-                Nlri::Mpls(MplsNlri::parse(
-                        &mut self.parser,
-                        self.session_config,
-                        self.afi
-                ).expect("parsed before"))
-            },
-            (_, _) => {
-                error!("trying to iterate over withdrawals \
-                       for unknown AFI/SAFI combination {}/{}",
-                       self.afi, self.safi
-                );
-                panic!("unsupported AFI/SAFI in withdrawals get_nlri()")
-            }
-        }
-    }
-}
-
-
-impl<'a, Octs: Octets> Iterator for WithdrawalsIterMp<'a, Octs> {
-    type Item = Nlri<Octs::Range<'a>>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.parser.remaining() == 0 {
-            return None;
-        }
-        Some(self.get_nlri())
-    }
-}
-
 /// Represents the announced NLRI in a BGP UPDATE message.
-pub struct Nlris<'a, Octs: Octets + ?Sized> {
+pub struct Nlris<'a, Octs: Octets> {
     parser: Parser<'a, Octs>,
     session_config: SessionConfig,
     afi: AFI,
@@ -1013,8 +925,8 @@ impl<'a, Octs: Octets> Nlris<'a, Octs> {
 ///
 /// Returns items of the enum [`Nlri`], thus both conventional and
 /// BGP MultiProtocol (RFC4760) NLRIs.
-pub struct NlriIter<'a, Ref: ?Sized> {
-    parser: Parser<'a, Ref>,
+pub struct NlriIter<'a, Octs> {
+    parser: Parser<'a, Octs>,
     session_config: SessionConfig,
     afi: AFI,
     safi: SAFI,

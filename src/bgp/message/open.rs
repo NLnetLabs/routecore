@@ -204,9 +204,9 @@ impl<Octs: Octets> OpenMessage<Octs> {
     }
 }
 
-impl OpenMessage<()> {
-    fn check(octets: &[u8]) -> Result<(), ParseError> {
-        let mut parser = Parser::from_ref(octets);
+impl<Octs: Octets> OpenMessage<Octs> {
+    fn check(octets: Octs) -> Result<(), ParseError> {
+        let mut parser = Parser::from_ref(&octets);
         Header::check(&mut parser)?;
         // jump over version, 2-octet ASN, Hold timer and BGP ID
         parser.advance(1 + 2 + 2 + 4)?;
@@ -295,8 +295,8 @@ impl<Octs: Octets> Parameter<Octs> {
     }
 }
 
-impl Parameter<()> {
-    fn check(parser: &mut Parser<[u8]>) -> Result<(), ParseError> {
+impl<Octs: Octets> Parameter<Octs> {
+    fn check(parser: &mut Parser<Octs>) -> Result<(), ParseError> {
         let typ = parser.parse_u8()?;
         let len = parser.parse_u8()? as usize;
         if typ == 2 {
@@ -315,8 +315,8 @@ impl Parameter<()> {
     }
 }
 
-impl Capability<()> {
-    fn check(parser: &mut Parser<[u8]>) -> Result<(), ParseError> {
+impl<Octs: Octets> Capability<Octs> {
+    fn check(parser: &mut Parser<Octs>) -> Result<(), ParseError> {
         let _typ = parser.parse_u8()?;
         let len = parser.parse_u8()? as usize;
         parser.advance(len)?;

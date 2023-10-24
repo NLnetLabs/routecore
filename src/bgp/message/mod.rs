@@ -264,8 +264,8 @@ impl<Octs: Octets> Header<Octs> {
     }
 }
 
-impl Header<()> {
-    pub fn check(parser: &mut Parser<[u8]>) -> Result<(), ParseError> {
+impl<Octs: Octets> Header<Octs> {
+    pub fn check(parser: &mut Parser<'_, Octs>) -> Result<(), ParseError> {
         Marker::check(parser)?;
         let len = parser.parse_u16_be()? as usize;
         if len != parser.len() {
@@ -280,7 +280,7 @@ impl Header<()> {
 
 struct Marker;
 impl Marker {
-    fn check<R: Octets + ?Sized>(parser: &mut Parser<'_, R>)
+    fn check<R: Octets>(parser: &mut Parser<'_, R>)
         -> Result<(), ParseError>
     {
         let mut buf = [0u8; 16];
