@@ -1141,7 +1141,8 @@ impl Attribute for MpReachNlri {
             afi, safi, nexthop, sc.addpath_enabled()
         );
 
-        // TODO all other match arms
+        // This is what using the FixedNlriIter would look like:
+        /*
         match(afi, safi, sc.addpath_enabled()) {
             (AFI::Ipv4, SAFI::Unicast, false) => {
                 for n in FixedNlriIter::ipv4unicast(parser) {
@@ -1166,6 +1167,17 @@ impl Attribute for MpReachNlri {
             _ => {
                 todo!("afi safi {:?} {:?}", afi, safi);
             }
+        }
+        */
+        let nlri_iter = crate::bgp::message::update::Nlris::new(
+            *parser,
+            sc,
+            afi,
+            safi
+        ).iter();
+
+        for nlri in nlri_iter {
+            builder.add_announcement(&nlri?.into());
         }
 
         Ok(MpReachNlri(builder))
@@ -1741,8 +1753,6 @@ mod tests {
     use crate::bgp::message::nlri::Nlri;
     use crate::bgp::message::update::NextHop;
 
-    // FIXME switch to use ::new() for all attributes instead of relying
-    // on non public newtype constructor
     #[test]
     fn wireformat_to_owned_and_back() {
         use super::PathAttribute as PA;
@@ -1757,7 +1767,7 @@ mod tests {
             assert_eq!(target, raw);
         }
 
-        check(vec![0x40, 0x01, 0x01, 0x00], PA::Origin(Origin(0.into())));
+        check(vec![0x40, 0x01, 0x01, 0x00], PA::Origin(Origin::new(0.into())));
 
         check(
             vec![0x40, 0x02, 10,
@@ -1788,7 +1798,7 @@ mod tests {
 
         check(
             vec![0x40, 0x06, 0x00],
-            PA::AtomicAggregate(AtomicAggregate(()))
+            PA::AtomicAggregate(AtomicAggregate::new(()))
         );
         
         check(
@@ -1816,13 +1826,6 @@ mod tests {
                 builder.add_community(Wellknown::NoExportSubconfed.into());
                 PA::Communities(Communities(builder))
             }
-            //PA::Communities(Communities(StandardCommunitiesList::new(
-            //    vec!["AS42:518".parse().unwrap(),
-            //        Wellknown::NoExport.into(),
-            //        Wellknown::NoAdvertise.into(),
-            //        Wellknown::NoExportSubconfed.into(),
-            //    ]
-            //)))
         );
 
         check(
@@ -1886,7 +1889,6 @@ mod tests {
                 "2001:db8:ffff:3::/64",
             ].into_iter().for_each(|s|{
                 builder.add_withdrawal(
-                    //&Nlri::unicast_from_str(s).unwrap()
                     &Nlri::Multicast::<&[u8]>(
                         Prefix::from_str(s).unwrap().into()
                     )
@@ -1908,12 +1910,13 @@ mod tests {
         );
 
         check(
-            vec![0xc0, 0x11, 10,
-            0x02, 0x02, // SEQUENCE of length 2
-            0x00, 0x00, 0x00, 100,
-            0x00, 0x00, 0x00, 200,
+            vec![
+                0xc0, 0x11, 10,
+                0x02, 0x02, // SEQUENCE of length 2
+                0x00, 0x00, 0x00, 100,
+                0x00, 0x00, 0x00, 200,
             ],
-            PA::As4Path(As4Path(HopPath::from(vec![
+            PA::As4Path(As4Path::new(HopPath::from(vec![
                 Asn::from_u32(100),
                 Asn::from_u32(200)]
             )))
@@ -1969,7 +1972,7 @@ mod tests {
 
         check(
             vec![0xc0, 0x23, 0x04, 0x00, 0x00, 0x04, 0xd2],
-            Otc(Asn::from_u32(1234)).into()
+            Otc::new(Asn::from_u32(1234)).into()
         );
 
         // TODO AttrSet
