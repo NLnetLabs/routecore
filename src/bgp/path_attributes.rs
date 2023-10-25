@@ -1226,9 +1226,7 @@ impl Attribute for MpUnreachNlri {
     fn parse<'a, Octs: 'a + Octets>(parser: &mut Parser<'a, Octs>, sc: SessionConfig) 
         -> Result<MpUnreachNlri, ParseError>
     where
-        //for <'a> Octs::Range<'a>: OctetsInto<Vec<u8>>
-        //Vec<u8>: for <'b> OctetsFrom<Octs::Range<'b>>
-        //Vec<u8>: OctetsFrom<Octs::Range<'a>>
+        Vec<u8>: OctetsFrom<Octs::Range<'a>>
     {
         let afi: AFI = parser.parse_u16_be()?.into();
         let safi: SAFI = parser.parse_u8()?.into();
@@ -1236,39 +1234,15 @@ impl Attribute for MpUnreachNlri {
         let mut builder = MpUnreachNlriBuilder::new(
             afi, safi, sc.addpath_enabled()
         );
-        /*
         let nlri_iter = crate::bgp::message::update::Nlris::new(
             *parser,
             sc,
             afi,
             safi
         ).iter();
-        */
 
-        // FIXME
-        // see note at MpReachNlri above
-        // FIXME can we do without the `match nlri` and just do
-        // for nlri in iter { builder.add_w(&nlri); } ?
-        use crate::bgp::message::nlri::{BasicNlri, Nlri};
-        /*
         for nlri in nlri_iter {
-            match nlri {
-                Nlri::Unicast(_b) => {
-                    builder.add_withdrawal(
-                        &nlri
-                        //&Nlri::Unicast(BasicNlri {
-                        //    prefix: b.prefix,
-                        //    path_id: b.path_id
-                        //})
-                    );
-                },
-                _ => unimplemented!()
-            }
-        }
-        */
-        while parser.remaining() > 0 {
-            let n: Nlri<Vec<u8>> = Nlri::Unicast(BasicNlri::parse(parser, sc, afi)?);
-            builder.add_withdrawal(&n);
+            builder.add_withdrawal(&nlri?.into());
         }
         Ok(MpUnreachNlri(builder))
     }
@@ -1913,7 +1887,7 @@ mod tests {
 
         check(
             vec![
-                0x80, 0x0f, 0x27, 0x00, 0x02, 0x01, 0x40, 0x20,
+                0x80, 0x0f, 0x27, 0x00, 0x02, 0x02, 0x40, 0x20,
                 0x01, 0x0d, 0xb8, 0xff, 0xff, 0x00, 0x00, 0x40,
                 0x20, 0x01, 0x0d, 0xb8, 0xff, 0xff, 0x00, 0x01,
                 0x40, 0x20, 0x01, 0x0d, 0xb8, 0xff, 0xff, 0x00,
@@ -1921,9 +1895,11 @@ mod tests {
                 0x00, 0x03
             ],
             {
+                use crate::addr::Prefix;
+                use std::str::FromStr;
             let mut builder = MpUnreachNlriBuilder::new(
                 AFI::Ipv6,
-                SAFI::Unicast,
+                SAFI::Multicast,
                 false // no addpath
             );
             [
@@ -1933,7 +1909,10 @@ mod tests {
                 "2001:db8:ffff:3::/64",
             ].into_iter().for_each(|s|{
                 builder.add_withdrawal(
-                    &Nlri::unicast_from_str(s).unwrap()
+                    //&Nlri::unicast_from_str(s).unwrap()
+                    &Nlri::Multicast::<&[u8]>(
+                        Prefix::from_str(s).unwrap().into()
+                    )
                 );
             });
 

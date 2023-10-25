@@ -1273,14 +1273,23 @@ impl MpUnreachNlriBuilder {
 
         for w in &self.withdrawals {
             match w {
-                Nlri::Unicast(b) => {
-                    if !b.is_v4() {
-                        b.compose(target)?;
-                    } else {
-                        unreachable!();
-                    }
+                Nlri::Unicast(b) if b.is_v4() => {
+                    unreachable!()
                 }
-                _ => unreachable!()
+                //Nlri::Unicast(b) => {
+                //    if !b.is_v4() {
+                //        b.compose(target)?;
+                //    } else {
+                //        unreachable!();
+                //    }
+                //}
+                Nlri::Unicast(b) | Nlri::Multicast(b) => b.compose(target)?,
+                //Nlri::Mpls(m) => m.compose(target)?,
+                //Nlri::MplsVpn(m) => m.compose(target)?,
+                //Nlri::Vpls(v) => v.compose(target)?,
+                Nlri::FlowSpec(f) => f.compose(target)?,
+                //Nlri::RouteTarget(r) => r.compose(target)?,
+                _ => todo!()
             }
         }
 
