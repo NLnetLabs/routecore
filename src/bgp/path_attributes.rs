@@ -590,29 +590,6 @@ impl<'a, Octs: Octets> UnimplementedWireformat<'a, Octs> {
             &self.value.peek_all()[3..]
         }
     }
-
-    /* TODO move these to all (wireformat)pathattributes
-    /// Returns true if the optional flag is set.
-    pub fn is_optional(self) -> bool {
-        self.0 & 0x80 == 0x80
-    }
-
-    /// Returns true if the transitive bit is set.
-    pub fn is_transitive(&self) -> bool {
-        self.flags.is_transitive()
-    }
-
-    /// Returns true if the partial flag is set.
-    pub fn is_partial(&self) -> bool {
-        self.flags.is_partial()
-    }
-
-    /// Returns true if the extended length flag is set.
-    pub fn is_extended_length(&self) -> bool {
-        self.flags.is_extended_length()
-    }
-    */
-
 }
 
 

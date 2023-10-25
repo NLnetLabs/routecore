@@ -1276,13 +1276,6 @@ impl MpUnreachNlriBuilder {
                 Nlri::Unicast(b) if b.is_v4() => {
                     unreachable!()
                 }
-                //Nlri::Unicast(b) => {
-                //    if !b.is_v4() {
-                //        b.compose(target)?;
-                //    } else {
-                //        unreachable!();
-                //    }
-                //}
                 Nlri::Unicast(b) | Nlri::Multicast(b) => b.compose(target)?,
                 //Nlri::Mpls(m) => m.compose(target)?,
                 //Nlri::MplsVpn(m) => m.compose(target)?,
