@@ -17,6 +17,7 @@ use crate::bgp::message::nlri::{
     RouteTargetNlri
 };
 
+use core::ops::Range; 
 use std::net::Ipv4Addr;
 use crate::util::parser::ParseError;
 
@@ -27,13 +28,14 @@ use crate::bgp::communities::{
     LargeCommunity
 };
 
-const COFF: usize = 19; // XXX replace this with .skip()'s?
-
 /// BGP UPDATE message, variant of the [`Message`] enum.
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct UpdateMessage<Octs: Octets> {
     octets: Octs,
+    withdrawals: Range<usize>,
+    attributes: Range<usize>,
+    announcements: Range<usize>,
     session_config: SessionConfig,
 }
 
@@ -44,14 +46,21 @@ impl<Octs: Octets> UpdateMessage<Octs> {
         &self.octets
     }
 
-    /// Returns the [`Header`] for this message.
-    pub fn header(&self) -> Header<&Octs> {
-        Header::for_slice(&self.octets)
-    }
+    ///// Returns the [`Header`] for this message.
+    //pub fn header(&self) -> Header<&Octs> {
+    //    Header::for_slice(&self.octets)
+    //}
 
     /// Returns the length in bytes of the entire BGP message.
-	pub fn length(&self) -> u16 {
-        self.header().length()
+	pub fn length(&self) -> usize {
+        //// marker, length, type
+        16 + 2 + 1  
+        // length of withdrawals
+        + 2 + self.withdrawals.len()
+        // length of path attributes
+        + 2 + self.attributes.len()
+        // remainder is announcements, no explicit length field
+        + self.announcements.len()
 	}
 }
 
@@ -109,38 +118,45 @@ impl<Octs: Octets> AsRef<[u8]> for UpdateMessage<Octs> {
 //  +-----------------------------------------------------+
 
 impl<Octs: Octets> UpdateMessage<Octs> {
-    pub fn for_slice(s: Octs, config: SessionConfig) -> Self {
-        Self {
-            octets: s,
-            session_config: config
-        }
-    }
+    //pub fn for_slice_old(s: Octs, config: SessionConfig) -> Self {
+    //    Self {
+    //        octets: s,
+    //        session_config: config
+    //    }
+    //}
 }
 
 impl<Octs: Octets> UpdateMessage<Octs> {
-    /// Print the Message in a `text2pcap` compatible way.
+    /// Print the UpdateMessage in a `text2pcap` compatible way.
     pub fn print_pcap(&self) {
-        print!("000000 ");
-        for b in self.octets.as_ref() {
-            print!("{:02x} ", b);
-        }
-        println!();
+        println!("{}", self.fmt_pcap_string());
     }
 
+    /// Format the UpdateMessage in a `text2pcap` compatible way.
     pub fn fmt_pcap_string(&self) -> String {
-        let mut res = String::with_capacity(7 + self.octets.as_ref().len() * 3);
-        res.push_str("000000 ");
+        let mut res = String::with_capacity(
+            7 + ((19 + self.octets.as_ref().len()) * 3)
+        );
+
+        res.push_str(
+            "000000 ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff "
+        );
+
+        let len = u16::try_from(self.length())
+            .unwrap_or(u16::MAX)
+            .to_be_bytes();
+
+        res.push_str(&format!("{:02x} {:02x} 02 ", len[0], len[1])); 
+
         for b in self.octets.as_ref() {
             res.push_str(&format!("{:02x} ", b));
         }
+
         res
     }
 
-	pub fn withdrawn_routes_len(&self) -> u16 {
-        u16::from_be_bytes([
-            self.octets.as_ref()[COFF],
-            self.octets.as_ref()[COFF+1]
-        ])
+    pub fn withdrawn_routes_len(&self) -> usize {
+        self.withdrawals.len()
     }
 }
 
@@ -149,10 +165,7 @@ impl<Octs: Octets> UpdateMessage<Octs> {
     /// Returns the conventional withdrawals.
     pub fn conventional_withdrawals(&self) -> Result<Nlris<Octs>, ParseError>
     {
-        let wrl = self.withdrawn_routes_len() as usize;
-        let mut parser = Parser::from_ref(self.octets());
-        parser.advance(COFF+2)?;
-        let pp = parser.parse_parser(wrl)?;
+        let pp = Parser::with_range(self.octets(), self.withdrawals.clone());
 
         let iter = Nlris {
             parser: pp,
@@ -171,7 +184,6 @@ impl<Octs: Octets> UpdateMessage<Octs> {
         if let Some(WireformatPathAttribute::MpUnreachNlri(epa)) = self.path_attributes()?.get(
             PathAttributeType::MpUnreachNlri
         ){
-            //let mut parser = pa.clone();
             let mut parser = epa.value_into_parser();
             let afi = parser.parse_u16_be()?.into();
             let safi = parser.parse_u8()?.into();
@@ -206,26 +218,14 @@ impl<Octs: Octets> UpdateMessage<Octs> {
     // RFC4271: A value of 0 indicates that neither the Network Layer
     // Reachability Information field nor the Path Attribute field is present
     // in this UPDATE message.
-	fn total_path_attribute_len(&self) -> u16 {
-        let wrl = self.withdrawn_routes_len() as usize;
-        u16::from_be_bytes([
-            self.octets.as_ref()[COFF+2+wrl],
-            self.octets.as_ref()[COFF+2+wrl+1]
-        ])
-	}
+    pub fn total_path_attribute_len(&self) -> usize {
+        self.attributes.len()
+    }
 
     pub fn path_attributes(&self)
         -> Result<PathAttributes<Octs>, ParseError>
     {
-        // XXX eventually the UpdateMessage will have a field
-        // PathAttributesParser that points to the right place directly.
-        // For now, jump to the right place in this less nice way.
-
-        let wrl = self.withdrawn_routes_len() as usize;
-        let tpal = self.total_path_attribute_len() as usize;
-        let mut parser = Parser::from_ref(&self.octets);
-        parser.advance(COFF+2+wrl+2).unwrap();
-        let pp = Parser::parse_parser(&mut parser, tpal)?;
+        let pp = Parser::with_range(self.octets(), self.attributes.clone());
 
         Ok(PathAttributes::new(pp, self.session_config))
     }
@@ -234,13 +234,10 @@ impl<Octs: Octets> UpdateMessage<Octs> {
     pub fn conventional_announcements(&self)
         -> Result<Nlris<Octs>, ParseError>
     {
-        let wrl = self.withdrawn_routes_len() as usize;
-        let tpal = self.total_path_attribute_len() as usize;
-        let mut parser = Parser::from_ref(self.octets());
-        parser.advance(COFF+2+wrl+2+tpal)?;
+        let pp = Parser::with_range(self.octets(), self.announcements.clone());
 
         let iter = Nlris {
-            parser,
+            parser: pp,
             session_config: self.session_config,
             afi: AFI::Ipv4,
             safi: SAFI::Unicast
@@ -255,7 +252,6 @@ impl<Octs: Octets> UpdateMessage<Octs> {
         if let Some(WireformatPathAttribute::MpReachNlri(epa)) = self.path_attributes()?.get(
             PathAttributeType::MpReachNlri
         ){
-            //let mut parser = pa.clone();
             let mut parser = epa.value_into_parser();
             let afi = parser.parse_u16_be()?.into();
             let safi = parser.parse_u8()?.into();
@@ -308,11 +304,7 @@ impl<Octs: Octets> UpdateMessage<Octs> {
     }
 
     pub fn has_conventional_nlri(&self) -> bool {
-        let wrl = self.withdrawn_routes_len() as usize;
-        let tpal = self.total_path_attribute_len() as usize;
-        let pdu_len = self.as_ref().len();
-
-        (pdu_len - 16 - 2 - 1 - 2 - wrl - 2 - tpal) > 0
+        self.announcements.len() > 0
     }
 
     pub fn has_mp_nlri(&self) -> Result<bool, ParseError> {
@@ -328,7 +320,7 @@ impl<Octs: Octets> UpdateMessage<Octs> {
         // Conventional BGP
         if self.length() == 23 {
             // minimum length for a BGP UPDATE indicates EOR
-            // (no annoucements, no withdrawals)
+            // (no announcements, no withdrawals)
             return Ok(Some((AFI::Ipv4, SAFI::Unicast)));
         }
 
@@ -553,28 +545,47 @@ impl<Octs: Octets> UpdateMessage<Octs> {
 impl<Octs: Octets> UpdateMessage<Octs> {
     /// Create an UpdateMessage from an octets sequence.
     ///
+    /// The 16 byte marker, length and type byte must be present when parsing,
+    /// and will be included from `octets`.
+    ///
     /// As parsing of BGP UPDATE messages requires stateful information
     /// signalled by the BGP OPEN messages, this function requires a
     /// [`SessionConfig`].
     pub fn from_octets(octets: Octs, config: SessionConfig)
         -> Result<Self, ParseError>
-   {
-        Self::check(&octets, config)?;
-        Ok(UpdateMessage {
-            octets,
-            session_config: config
-        })
+    {
+        let mut parser = Parser::from_ref(&octets);
+        let UpdateMessage{withdrawals, attributes, announcements, ..} = UpdateMessage::<_>::parse(&mut parser, config)?;
+        let res  = 
+            Self {
+                octets,
+                withdrawals: (withdrawals.start +19..withdrawals.end + 19),
+                attributes: (attributes.start +19..attributes.end + 19),
+                announcements: (announcements.start +19..announcements.end + 19),
+                session_config: config
+            }
+        ;
+
+        Ok(res)
     }
 
-    pub fn into_octets(self) -> Octs {
-        self.octets
-    }
+    /// Parses an UpdateMessage from `parser`.
+    ///
+    /// The 16 byte marker, length and type byte must be present when parsing,
+    /// but will not be included in the resulting `Octs`.
+    pub fn parse<'a, R: Octets>(
+        mut parser: &mut Parser<'a, R>,
+        config: SessionConfig
+    ) -> Result<UpdateMessage<R::Range<'a>>, ParseError>
+    where
+        R: Octets<Range<'a> = Octs>,
+    {
 
-    fn check(octets: &Octs, config: SessionConfig) -> Result<(), ParseError> {
-        let mut parser = Parser::from_ref(octets);
-        Header::check(&mut parser)?;
+        let header = Header::parse(&mut parser)?;
+        let start_pos = parser.pos();
 
         let withdrawals_len = parser.parse_u16_be()?;
+        let withdrawals_start = parser.pos() - start_pos;
         if withdrawals_len > 0 {
             let mut wdraw_parser = parser.parse_parser(
                 withdrawals_len.into()
@@ -584,11 +595,13 @@ impl<Octs: Octets> UpdateMessage<Octs> {
                 BasicNlri::check(&mut wdraw_parser, config, AFI::Ipv4)?;
             }
         }
+        let withdrawals_end = parser.pos() - start_pos;
 
-        let path_attributes_len = parser.parse_u16_be()?;
-        if path_attributes_len > 0 {
+        let attributes_len = parser.parse_u16_be()?;
+        let attributes_start = parser.pos() - start_pos;
+        if attributes_len > 0 {
             let pas_parser = parser.parse_parser(
-                path_attributes_len.into()
+                attributes_len.into()
             )?;
             // XXX this calls `validate` on every attribute, do we want to
             // error on that level here?
@@ -596,63 +609,34 @@ impl<Octs: Octets> UpdateMessage<Octs> {
                pa?;
             }
         }
-
-        while parser.remaining() > 0 {
+        let announcements_start = parser.pos() - start_pos;
+        while parser.pos() < start_pos + header.length() as usize - 19 {
             // conventional announcements are always IPv4
             BasicNlri::check(&mut parser, config, AFI::Ipv4)?;
         }
 
-        Ok(())
-    }
-
-    // still used in bmp/message.rs
-    pub fn parse<'a, R>(parser: &mut Parser<'a, R>, config: SessionConfig)
-        -> Result<Self, ParseError>
-    where
-        R: Octets<Range<'a> = Octs>,
-    {
-        // parse header
-        let pos = parser.pos();
-        let hdr = Header::parse(parser)?;
-
-        let withdrawn_len = parser.parse_u16_be()?;
-        if withdrawn_len > 0 {
-            let mut wdraw_parser = parser.parse_parser(withdrawn_len.into())?;
-            while wdraw_parser.remaining() > 0 {
-                // conventional withdrawals are always IPv4
-                BasicNlri::parse(&mut wdraw_parser, config, AFI::Ipv4)?;
-            }
-        }
-        let total_path_attributes_len = parser.parse_u16_be()?;
-        if total_path_attributes_len > 0 {
-            let pas_parser = parser.parse_parser(total_path_attributes_len.into())?;
-            PathAttributes::new(pas_parser, config);
-            // XXX this calls `validate` on every attribute, do we want to
-            // error on that level here?
-            for pa in PathAttributes::new(pas_parser, config).into_iter() {
-               pa?;
-            }
-        }
-
-        // conventional NLRI, if any
-        while parser.remaining() > 0 {
-            // conventional announcements are always IPv4
-            BasicNlri::parse(parser, config, AFI::Ipv4)?;
-        }
-
-        let end = parser.pos();
-        if end - pos != hdr.length() as usize {
+        let end_pos = parser.pos();
+        if end_pos - start_pos != (header.length() as usize) - 19 {
             return Err(ParseError::form_error(
                 "message length and parsed bytes do not match"
             ));
         }
-        parser.seek(pos)?;
+        parser.seek(start_pos)?;
 
-        Ok(Self::for_slice(
-                parser.parse_octets(hdr.length().into())?,
-                config
-        ))
+        Ok(UpdateMessage {
+            octets: parser.parse_octets((header.length() - 19).into())?,
+            withdrawals: (withdrawals_start..withdrawals_end),
+            attributes: (attributes_start..announcements_start),
+            announcements: (announcements_start..end_pos - start_pos),
+            session_config: config
+        })
     }
+
+    pub fn into_octets(self) -> Octs {
+        self.octets
+    }
+
+
 }
 //--- Enums for passing config / state ---------------------------------------
 

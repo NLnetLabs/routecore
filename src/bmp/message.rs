@@ -1728,7 +1728,7 @@ mod tests {
         //-- from here on, this actually tests the bgp parsing functionality
         // rather than the bmp one, but let's leave it for now ---------------
         
-        assert_eq!(bgp_update.as_ref().len(), 55);
+        assert_eq!(bgp_update.as_ref().len(), 55 - 19);
         assert_eq!(bgp_update.withdrawn_routes_len(), 0);
         
         let mut pas = bgp_update.path_attributes().unwrap().into_iter();
