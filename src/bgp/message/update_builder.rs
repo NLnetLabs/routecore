@@ -992,7 +992,7 @@ impl UpdateBuilder<BytesMut> {
 // size allowed on the BGP session.
 
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct MpReachNlriBuilder {
     announcements: Vec<Nlri<Vec<u8>>>,
     len: usize, // size of value, excluding path attribute flags+type_code+len
@@ -1211,7 +1211,7 @@ impl NextHop {
 //    add_withdrawal should check whether the remote side is able to receive
 //    path ids if the Nlri passed to add_withdrawal contains Some(PathId).
 //
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct MpUnreachNlriBuilder {
     withdrawals: Vec<Nlri<Vec<u8>>>,
     afi: AFI,
@@ -1295,7 +1295,7 @@ impl MpUnreachNlriBuilder {
 //
 //
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct StandardCommunitiesBuilder {
     communities: Vec<StandardCommunity>,
     len: usize, // size of value, excluding path attribute flags+type_code+len

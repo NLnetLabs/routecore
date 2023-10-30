@@ -82,7 +82,8 @@ macro_rules! attribute {
      $type_code:expr
      ) => {
 
-        #[derive(Clone, Debug, Eq, PartialEq)]
+        // TODO Serialize
+        #[derive(Clone, Debug, Eq, Hash, PartialEq)]
         pub struct $name($data);
         impl $name {
             pub fn new(data: $data) -> $name {
