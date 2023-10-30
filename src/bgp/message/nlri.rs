@@ -229,6 +229,10 @@ impl NextHop {
                 NextHop::Unicast(parse_ipv6addr(parser)?.into()),
             (0, AFI::Ipv4, SAFI::FlowSpec) =>
                 NextHop::Empty,
+            (4, AFI::L2Vpn, SAFI::Evpn) =>
+                NextHop::Evpn(parse_ipv4addr(parser)?.into()),
+            (16, AFI::L2Vpn, SAFI::Evpn) =>
+                NextHop::Evpn(parse_ipv6addr(parser)?.into()),
             _ => {
                 parser.advance(len.into())?;
                 NextHop::Unimplemented( afi, safi)
@@ -539,8 +543,15 @@ where Octs: AsRef<[u8]>,
 /// **TODO**: implement accessor methods for the contents of this NLRI.
 #[derive(Copy, Clone, Debug)]
 pub struct EvpnNlri<Octs> {
+    #[allow(dead_code)]
     route_type: EvpnRouteType,
     raw: Octs,
+}
+
+impl<Octs> EvpnNlri<Octs> {
+    pub fn route_type(&self) -> EvpnRouteType {
+        self.route_type
+    }
 }
 
 typeenum!(
