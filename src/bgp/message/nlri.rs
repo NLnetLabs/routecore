@@ -5,6 +5,7 @@ use crate::addr::Prefix;
 use crate::util::parser::{parse_ipv4addr, parse_ipv6addr, ParseError};
 use crate::bgp::message::update::{AddPath, SessionConfig};
 use crate::flowspec::Component;
+use crate::typeenum;
 use octseq::{Octets, OctetsBuilder, OctetsFrom, Parser};
 use log::warn;
 
@@ -533,6 +534,36 @@ where Octs: AsRef<[u8]>,
     }
 }
 
+/// NLRI containing a EVPN NLRI as defined in RFC7432.
+///
+/// **TODO**: implement accessor methods for the contents of this NLRI.
+#[derive(Copy, Clone, Debug)]
+pub struct EvpnNlri<Octs> {
+    route_type: EvpnRouteType,
+    raw: Octs,
+}
+
+typeenum!(
+    EvpnRouteType, u8,
+    {
+      1 => EthernetAutoDiscovery,
+      2 => MacIpAdvertisement,
+      3 => InclusiveMulticastEthernetTag,
+      4 => EthernetSegment,
+      5 => IpPrefix,
+    }
+);
+
+
+impl<Octs, Other> PartialEq<EvpnNlri<Other>> for EvpnNlri<Octs>
+where Octs: AsRef<[u8]>,
+      Other: AsRef<[u8]>
+{
+    fn eq(&self, other: &EvpnNlri<Other>) -> bool {
+        self.raw.as_ref() == other.raw.as_ref()
+    }
+}
+
 /// Conventional and BGP-MP NLRI variants.
 #[derive(Copy, Clone, Debug)]
 pub enum Nlri<Octets> {                     // (AFIs  , SAFIs):
@@ -543,6 +574,7 @@ pub enum Nlri<Octets> {                     // (AFIs  , SAFIs):
     Vpls(VplsNlri),                         // (l2vpn, vpls)
     FlowSpec(FlowSpecNlri<Octets>),         // (v4/v6, flowspec)
     RouteTarget(RouteTargetNlri<Octets>),   // (v4, route target)
+    Evpn(EvpnNlri<Octets>),
 }
 // XXX some thoughts on if and how we need to redesign Nlri:
 //
@@ -615,6 +647,9 @@ impl<Octs: Octets> fmt::Display for Nlri<Octs> {
             Nlri::FlowSpec(_) => write!(f, "FlowSpec-NLRI")?,
             Nlri::RouteTarget(r) => {
                 write!(f, "RouteTarget-NLRI-{:?}", r.raw.as_ref())?
+            }
+            Nlri::Evpn(r) => {
+                write!(f, "Evpn-NLRI-{:?}", r.raw.as_ref())?
             }
         }
         Ok(())
@@ -750,6 +785,7 @@ impl<T> Nlri<T> {
             Self::Mpls(m) => m.basic.is_addpath(),
             Self::MplsVpn(m) => m.basic.is_addpath(),
             Self::Vpls(_) | Self::FlowSpec(_) | Self::RouteTarget(_) => false,
+            Self::Evpn(_) => false,
         }
     }
 }
@@ -788,7 +824,8 @@ impl<T> Nlri<T> {
             }
             Self::Vpls(_) => (AFI::L2Vpn, SAFI::Vpls),
             Self::FlowSpec(n) => (n.afi, SAFI::FlowSpec) ,
-            Self::RouteTarget(_) => (AFI::Ipv4, SAFI::RouteTarget)
+            Self::RouteTarget(_) => (AFI::Ipv4, SAFI::RouteTarget),
+            Self::Evpn(_) => (AFI::L2Vpn, SAFI::Evpn)
         }
     }
 
@@ -1430,6 +1467,25 @@ impl<Octs: Octets> RouteTargetNlri<Octs> {
 
         Ok(
             RouteTargetNlri {
+                raw
+            }
+        )
+    }
+}
+
+impl<Octs: Octets> EvpnNlri<Octs> {
+    pub fn parse<'a, R>(parser: &mut Parser<'a, R>)
+        -> Result<Self, ParseError>
+    where
+        R: Octets<Range<'a> = Octs>
+    {
+        let route_type = parser.parse_u8()?.into();
+        let route_len = parser.parse_u8()?;
+        let raw = parser.parse_octets(route_len.into())?;
+
+        Ok(
+            EvpnNlri {
+                route_type,
                 raw
             }
         )
