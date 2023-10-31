@@ -84,6 +84,7 @@ macro_rules! attribute {
 
         // TODO Serialize
         #[derive(Clone, Debug, Eq, Hash, PartialEq)]
+        #[cfg_attr(feature = "serde", derive(serde::Serialize))]
         pub struct $name($data);
         impl $name {
             pub fn new(data: $data) -> $name {
@@ -914,6 +915,7 @@ impl Copy for AtomicAggregate { }
 //--- Aggregator
 
 #[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct AggregatorInfo {
     asn: Asn,
     address: Ipv4Addr,
@@ -1050,6 +1052,7 @@ impl Attribute for OriginatorId {
 //--- ClusterList
 
 #[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct BgpIdentifier([u8; 4]);
 
 impl From<[u8; 4]> for BgpIdentifier {
@@ -1067,6 +1070,7 @@ impl From<u32> for BgpIdentifier {
 */
 
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct ClusterIds {
     cluster_ids: Vec<BgpIdentifier>
 }
@@ -1260,6 +1264,7 @@ impl Attribute for MpUnreachNlri {
 
 use crate::bgp::communities::ExtendedCommunity;
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct ExtendedCommunitiesList {
     communities: Vec<ExtendedCommunity>
 }
@@ -1424,6 +1429,7 @@ impl Attribute for Connector {
 //--- AsPathLimit (deprecated)
 
 #[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct AsPathLimitInfo {
     upper_bound: u8,
     attacher: Asn,
@@ -1471,6 +1477,7 @@ impl Attribute for AsPathLimit {
 
 use crate::bgp::communities::Ipv6ExtendedCommunity;
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct Ipv6ExtendedCommunitiesList {
     communities: Vec<Ipv6ExtendedCommunity>
 }
@@ -1532,6 +1539,7 @@ impl Attribute for Ipv6ExtendedCommunities {
 
 use crate::bgp::communities::LargeCommunity;
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct LargeCommunitiesList {
     communities: Vec<LargeCommunity>
 }
@@ -1620,6 +1628,7 @@ impl Attribute for Otc {
 //--- AttributeSet
 
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct AttributeSet {
     origin: Asn,
     attributes: Vec<u8>,
@@ -1673,6 +1682,7 @@ impl Attribute for AttrSet {
 //--- ReservedRaw
 
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct ReservedRaw {
     raw: Vec<u8>,
 }

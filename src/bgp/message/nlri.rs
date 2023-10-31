@@ -257,6 +257,7 @@ impl NextHop {
 ///
 /// Optionally used in [`BasicNlri`].
 #[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct PathId(u32);
 
 impl PathId {
@@ -290,6 +291,7 @@ impl fmt::Display for PathId {
 
 /// MPLS labels, part of [`MplsNlri`] and [`MplsVpnNlri`].
 #[derive(Copy, Clone, Debug, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct Labels<Octs> {
     octets: Octs
 }
@@ -450,6 +452,7 @@ pub enum RouteDistinguisherType {
 ///
 /// The `BasicNlri` is extended in [`MplsNlri`] and [`MplsVpnNlri`].
 #[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct BasicNlri {
     pub prefix: Prefix,
     pub path_id: Option<PathId>,
@@ -457,6 +460,7 @@ pub struct BasicNlri {
 
 /// NLRI comprised of a [`BasicNlri`] and MPLS `Labels`.
 #[derive(Copy, Clone, Debug, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct MplsNlri<Octs> {
     basic: BasicNlri,
     labels: Labels<Octs>,
@@ -474,6 +478,7 @@ where Octs: AsRef<[u8]>,
 /// NLRI comprised of a [`BasicNlri`], MPLS `Labels` and a VPN
 /// `RouteDistinguisher`.
 #[derive(Copy, Clone, Debug, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct MplsVpnNlri<Octs> {
     basic: BasicNlri,
     labels: Labels<Octs>,
@@ -493,6 +498,7 @@ where Octs: AsRef<[u8]>,
 
 /// VPLS Information as defined in RFC4761.
 #[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct VplsNlri {
     rd: RouteDistinguisher,
     ve_id: u16,
@@ -505,6 +511,7 @@ pub struct VplsNlri {
 ///
 /// Also see [`crate::flowspec`].
 #[derive(Copy, Clone, Debug, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct FlowSpecNlri<Octs> {
     #[allow(dead_code)]
     afi: AFI,
@@ -524,6 +531,7 @@ where Octs: AsRef<[u8]>,
 ///
 /// **TODO**: implement accessor methods for the contents of this NLRI.
 #[derive(Copy, Clone, Debug, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct RouteTargetNlri<Octs> {
     #[allow(dead_code)]
     raw: Octs,
@@ -542,6 +550,7 @@ where Octs: AsRef<[u8]>,
 ///
 /// **TODO**: implement accessor methods for the contents of this NLRI.
 #[derive(Copy, Clone, Debug, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct EvpnNlri<Octs> {
     #[allow(dead_code)]
     route_type: EvpnRouteType,
@@ -577,6 +586,7 @@ where Octs: AsRef<[u8]>,
 
 /// Conventional and BGP-MP NLRI variants.
 #[derive(Copy, Clone, Debug, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub enum Nlri<Octets> {                     // (AFIs  , SAFIs):
     Unicast(BasicNlri),                     // (v4/v6, unicast)
     Multicast(BasicNlri),                   // (v4/v6, multicast)

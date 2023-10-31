@@ -993,6 +993,7 @@ impl UpdateBuilder<BytesMut> {
 
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct MpReachNlriBuilder {
     announcements: Vec<Nlri<Vec<u8>>>,
     len: usize, // size of value, excluding path attribute flags+type_code+len
@@ -1212,6 +1213,7 @@ impl NextHop {
 //    path ids if the Nlri passed to add_withdrawal contains Some(PathId).
 //
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct MpUnreachNlriBuilder {
     withdrawals: Vec<Nlri<Vec<u8>>>,
     afi: AFI,
@@ -1296,6 +1298,7 @@ impl MpUnreachNlriBuilder {
 //
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct StandardCommunitiesBuilder {
     communities: Vec<StandardCommunity>,
     len: usize, // size of value, excluding path attribute flags+type_code+len
