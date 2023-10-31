@@ -909,6 +909,8 @@ impl Attribute for AtomicAggregate {
     }
 }
 
+impl Copy for AtomicAggregate { }
+
 //--- Aggregator
 
 #[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
