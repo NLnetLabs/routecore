@@ -329,6 +329,36 @@ impl<Octs: Octets> UpdateMessage<Octs> {
         res
     }
 
+    pub fn unicast_announcements_vec2(&self)
+        -> Result<Vec<BasicNlri>, ParseError>
+    {
+        let conv = self.conventional_announcements()?
+            .iter().map(|n|
+                if let Ok(Nlri::Unicast(b)) = n {
+                    Ok(b)
+                } else {
+                    Err(ParseError::form_error("invalid unicast NLRI"))
+                }
+            )
+        ;
+
+        let mp = self.mp_announcements()?.map(|mp| mp.iter()
+            .filter_map(|n|
+                 match n {
+                     Ok(Nlri::Unicast(b)) => Some(Ok(b)),
+                     Ok(_) => None,
+                     _ => {
+                         Some(Err(ParseError::form_error(
+                            "invalid unicast NLRI"
+                         )))
+                     }
+                 }
+            ))
+        ;
+
+        conv.chain(mp.into_iter().flatten()).collect()
+    }
+
     pub fn has_conventional_nlri(&self) -> bool {
         self.announcements.len() > 0
     }
