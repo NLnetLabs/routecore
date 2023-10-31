@@ -596,9 +596,15 @@ impl<Octs: Octets> UpdateMessage<Octs> {
             }
         }
         let withdrawals_end = parser.pos() - start_pos;
+        let withdrawals = if withdrawals_start == withdrawals_end {
+            (0..0)
+        } else {
+            (withdrawals_start..withdrawals_end)
+        };
+
 
         let attributes_len = parser.parse_u16_be()?;
-        let attributes_start = parser.pos() - start_pos;
+        let mut attributes_start = parser.pos() - start_pos;
         if attributes_len > 0 {
             let pas_parser = parser.parse_parser(
                 attributes_len.into()
@@ -609,25 +615,41 @@ impl<Octs: Octets> UpdateMessage<Octs> {
                pa?;
             }
         }
+        let attributes_end = parser.pos() - start_pos;
+        let attributes = if attributes_start == attributes_end {
+            (0..0)
+        } else {
+            (attributes_start..attributes_end)
+        };
+
         let announcements_start = parser.pos() - start_pos;
         while parser.pos() < start_pos + header.length() as usize - 19 {
             // conventional announcements are always IPv4
             BasicNlri::check(&mut parser, config, AFI::Ipv4)?;
         }
 
-        let end_pos = parser.pos();
-        if end_pos - start_pos != (header.length() as usize) - 19 {
+        let end_pos = parser.pos() - start_pos;
+
+        let announcements = if announcements_start == end_pos {
+            (0..0)
+        } else {
+            (announcements_start..end_pos)
+        };
+
+
+        if end_pos != (header.length() as usize) - 19 {
             return Err(ParseError::form_error(
                 "message length and parsed bytes do not match"
             ));
         }
+
         parser.seek(start_pos)?;
 
         Ok(UpdateMessage {
             octets: parser.parse_octets((header.length() - 19).into())?,
-            withdrawals: (withdrawals_start..withdrawals_end),
-            attributes: (attributes_start..announcements_start),
-            announcements: (announcements_start..end_pos - start_pos),
+            withdrawals,
+            attributes,
+            announcements,
             session_config: config
         })
     }
