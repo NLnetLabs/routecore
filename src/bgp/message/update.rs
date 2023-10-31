@@ -303,6 +303,32 @@ impl<Octs: Octets> UpdateMessage<Octs> {
 
     }
 
+    pub fn unicast_announcements_vec(&self) -> Vec<BasicNlri> {
+        let mut res = if let Ok(conv) = self.conventional_announcements() {
+            conv.iter().filter_map(|n|
+                if let Ok(Nlri::Unicast(b)) = n {
+                    Some(b)
+                } else {
+                    None
+                }
+            ).collect()
+        } else {
+            Vec::new()
+        };
+
+        if let Ok(Some(mp)) = self.mp_announcements() {
+            res.extend(mp.iter().filter_map(|n|
+                if let Ok(Nlri::Unicast(b)) = n {
+                    Some(b)
+                } else {
+                    None
+                }
+            ))
+        }
+
+        res
+    }
+
     pub fn has_conventional_nlri(&self) -> bool {
         self.announcements.len() > 0
     }
