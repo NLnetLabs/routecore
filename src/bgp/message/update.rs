@@ -461,8 +461,9 @@ impl<Octs: Octets> UpdateMessage<Octs> {
         ){
             // XXX not nice that we have to do this here, also it is exactly
             // the same as in the fn parse in path_attributes.rs
-            /*
-            let asn = if sc.has_four_octet_asn() {
+            use crate::util::parser::parse_ipv4addr;
+            let mut pa = epa.value_into_parser();
+            let asn = if self.session_config.has_four_octet_asn() {
                 Asn::from_u32(pa.parse_u32_be()?)
             } else {
                 Asn::from_u32(pa.parse_u16_be()?.into())
@@ -470,8 +471,7 @@ impl<Octs: Octets> UpdateMessage<Octs> {
 
             let address = parse_ipv4addr(&mut pa)?;
             Ok(Some(AggregatorInfo::new(asn, address)))
-            */
-            Ok(Some(Aggregator::parse2(&mut epa.value_into_parser(), epa.session_config())?.inner()))
+            //Ok(Some(Aggregator::parse2(&mut epa.value_into_parser(), epa.session_config())?.inner()))
         } else {
             Ok(None)
         }
