@@ -465,6 +465,54 @@ impl<Octs: Octets> UpdateMessage<Octs> {
 
     }
 
+    pub fn find_next_hop(&self, afi: AFI, safi: SAFI) -> Result<NextHop, ParseError> {
+        match (afi, safi) {
+            (AFI::Ipv4, SAFI::Unicast) => {
+                if let Ok(Some(mp)) = self.mp_next_hop() {
+                    if mp.afi_safi() == (AFI::Ipv4, SAFI::Unicast) {
+                        return Err(ParseError::form_error(
+                            "ambiguous IPv4 Unincast nexthop"
+                        ))
+                    }
+                }
+
+                if let Ok(maybe_nh) = self.conventional_next_hop() {
+                    if let Some(nh) = maybe_nh {
+                        Ok(nh)
+                    } else {
+                        Err(ParseError::form_error(
+                             "no conventional NEXT_HOP"
+                        ))
+                    }
+                } else {
+                    Err(ParseError::form_error(
+                            "invalid conventional NEXT_HOP"
+                    ))
+                }
+            }
+            (..) => {
+                if let Ok(maybe_mp) = self.mp_next_hop() {
+                    if let Some(mp) = maybe_mp {
+                        if mp.afi_safi() != (afi, safi) {
+                            return Err(ParseError::form_error(
+                                 "MP_REACH_NLRI for different AFI/SAFI"
+                            ))
+                        }
+                        Ok(mp)
+                    } else {
+                        Err(ParseError::form_error(
+                             "no MP_REACH_NLRI / nexthop"
+                        ))
+                    }
+                } else {
+                    Err(ParseError::form_error(
+                            "invalid MP_REACH_NLRI / nexthop"
+                    ))
+                }
+            }
+        }
+    }
+
     //--- Non-mandatory path attribute helpers -------------------------------
 
     /// Returns the Multi-Exit Discriminator value, if any.
