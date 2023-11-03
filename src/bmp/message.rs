@@ -857,8 +857,8 @@ impl<Octs: Octets> PeerUpNotification<Octs> {
         (sent, rcvd) 
     }
 
-    /// Create a [`SessionConfig`] describing the parameters for the BMP
-    /// session between the monitored router and the remote peer.
+    /// Create a [`SessionConfig`] to parse encapsulated BGP data based on the PerPeerHeader.
+    ///
     ///
     /// The information in this `SessionConfig` is necessary for correctly
     /// parsing future messages, specifically BGP UPDATEs carried in
