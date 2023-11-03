@@ -838,7 +838,7 @@ impl<Target> UpdateBuilder<Target>
     }
 
 
-    fn into_messages(self) -> Result<
+    pub fn into_messages(self) -> Result<
         Vec<UpdateMessage<<Target as FreezeBuilder>::Octets>>,
         ComposeError
     >
