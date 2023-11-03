@@ -1094,10 +1094,12 @@ impl<'a, Octs: Octets> NlriIter<'a, Octs> {
                 )?)
             },
             (_, _) => {
-                error!("trying to iterate over NLRI \
-                       for unknown AFI/SAFI combination {}/{}",
-                       self.afi, self.safi
-                );
+                let bits = self.parser.parse_u16_be()?;
+                self.parser.advance(bits.into())?;
+
+                let bops = self.parser.parse_u8()?;
+                self.parser.advance(bops.into())?;
+
                 //panic!("unsupported AFI/SAFI in NLRI get_nlri()")
                 return Err(ParseError::Unsupported)
 
