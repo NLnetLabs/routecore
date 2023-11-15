@@ -215,6 +215,24 @@ impl<Octs: Octets> UpdateMessage<Octs> {
 
     }
 
+    /// Creates a vec of all withdrawals in this message.
+    ///
+    /// If any of the NLRI, in the conventional part or the MP_UNREACH_NLRI
+    /// attribute, is invalid in any way, returns an Error.
+    /// This means the result is either the complete (possibly empty)
+    /// collection of all the announced NLRI, or none at all.
+    ///
+    /// For more fine-grained control, consider using the
+    /// `unicast_withdrawals` method.
+    pub fn withdrawals_vec(&self) 
+        -> Result<Vec<Nlri<Octs::Range<'_>>>, ParseError>
+    {
+        let conv = self.conventional_withdrawals()?.iter();
+        let mp = self.mp_withdrawals()?.map(|mp| mp.iter());
+
+        conv.chain(mp.into_iter().flatten()).collect()
+    }
+
     // RFC4271: A value of 0 indicates that neither the Network Layer
     // Reachability Information field nor the Path Attribute field is present
     // in this UPDATE message.
@@ -270,6 +288,25 @@ impl<Octs: Octets> UpdateMessage<Octs> {
 
     /// Returns a combined iterator of conventional and MP_REACH_NLRI.
     ///
+    /// Consuming the returned iterator requires care. The `Item` is a
+    /// Result, containing either a successfully parsed `Nlri`, or an Error
+    /// describing why it failed to parse. After one such error, the iterator
+    /// will return None on the next call to `next()`.
+    ///
+    /// This means that, if at any point an Error is returned from the
+    /// iterator, there likely is unparsed data in the PDU in either the
+    /// conventional part at the end of the PDU, or in the MP_REACH_NLRI
+    /// attribute. So, at best, one has an incomplete view of the announced
+    /// NLRI, but possibly even that incomplete view is not 100% correct
+    /// depending on the exact reason the parsing failed.
+    ///
+    /// With the above in mind, using `.count()` on this iterator to get the
+    /// number of announced prefixes might give the wrong impression, as it
+    /// will count the Error case, after which the iterator fuses.
+    ///
+    /// To retrieve all announcements if and only if all are validly parsed,
+    /// consder using `fn announcements_vec`.
+    ///
     /// Note that this iterator might contain NLRI of different AFI/SAFI
     /// types.
     pub fn announcements(&self)
@@ -284,10 +321,30 @@ impl<Octs: Octets> UpdateMessage<Octs> {
         Ok(mp_iter.into_iter().flatten().chain(conventional_iter))
     }
 
+    /// Creates a vec of all announcements in this message.
+    ///
+    /// If any of the NLRI, in the conventional part or the MP_REACH_NLRI
+    /// attribute, is invalid in any way, returns an Error.
+    /// This means the result is either the complete (possibly empty)
+    /// collection of all the announced NLRI, or none at all.
+    ///
+    /// For more fine-grained control, consider using the
+    /// `unicast_announcements` method.
+    pub fn announcements_vec(&self) 
+        -> Result<Vec<Nlri<Octs::Range<'_>>>, ParseError>
+    {
+        let conv = self.conventional_announcements()?.iter();
+        let mp = self.mp_announcements()?.map(|mp| mp.iter());
+
+        conv.chain(mp.into_iter().flatten()).collect()
+    }
+
     /// Returns a combined iterator of conventional and unicast MP_REACH_NLRI.
+    ///
+    /// If at any point an error occurs, the iterator returns that error and
+    /// fuses itself, i.e. any following call to `next()` will return None.
     pub fn unicast_announcements(&self)
         -> Result<
-            //impl Iterator<Item = Result<Nlri<Octs::Range<'_>>, ParseError>>,
             impl Iterator<Item = Result<BasicNlri, ParseError>> + '_,
             ParseError
         >
@@ -309,41 +366,14 @@ impl<Octs: Octets> UpdateMessage<Octs> {
                 }
            )
         )
-
-    }
-
-    /// Returns a combined iterator of conventional and unicast MP_UNREACH_NLRI.
-    pub fn unicast_withdrawals(&self)
-        -> Result<
-            impl Iterator<Item = Result<BasicNlri, ParseError>> + '_,
-            ParseError
-        >
-    {
-        let mp_iter = self.mp_withdrawals()?.filter(|nlris|
-            matches!((nlris.afi(), nlris.safi()), 
-                     (AFI::Ipv4 | AFI::Ipv6, SAFI::Unicast)
-            )
-        ).map(|nlris| nlris.iter());
-
-        let conventional_iter = self.conventional_withdrawals()?.iter();
-
-        Ok(mp_iter.into_iter().flatten().chain(conventional_iter)
-           .map(|n|
-                match n {
-                    Ok(Nlri::Unicast(b)) => Ok(b),
-                    Ok(_) => unreachable!(),
-                    Err(e) => Err(e),
-                }
-           )
-        )
     }
 
     /// Creates a vec of all unicast announcements in this message.
     ///
-    /// If any of the NLRI, in the conventional part of the MP_REACH_NLRI
+    /// If any of the NLRI, in the conventional part or the MP_REACH_NLRI
     /// attribute, is invalid in any way, returns an Error.
-    /// This means the result is either the complete collection of all the
-    /// announced NLRI, or none at all.
+    /// This means the result is either the complete (possibly empty)
+    /// collection of all the announced NLRI, or none at all.
     ///
     /// For more fine-grained control, consider using the
     /// `unicast_announcements` method.
@@ -379,6 +409,46 @@ impl<Octs: Octets> UpdateMessage<Octs> {
         conv.chain(mp.into_iter().flatten()).collect()
     }
 
+
+    /// Returns a combined iterator of conventional and unicast
+    /// MP_UNREACH_NLRI.
+    ///
+    /// If at any point an error occurs, the iterator returns that error and
+    /// fuses itself, i.e. any following call to `next()` will return None.
+    pub fn unicast_withdrawals(&self)
+        -> Result<
+            impl Iterator<Item = Result<BasicNlri, ParseError>> + '_,
+            ParseError
+        >
+    {
+        let mp_iter = self.mp_withdrawals()?.filter(|nlris|
+            matches!((nlris.afi(), nlris.safi()), 
+                     (AFI::Ipv4 | AFI::Ipv6, SAFI::Unicast)
+            )
+        ).map(|nlris| nlris.iter());
+
+        let conventional_iter = self.conventional_withdrawals()?.iter();
+
+        Ok(mp_iter.into_iter().flatten().chain(conventional_iter)
+           .map(|n|
+                match n {
+                    Ok(Nlri::Unicast(b)) => Ok(b),
+                    Ok(_) => unreachable!(),
+                    Err(e) => Err(e),
+                }
+           )
+        )
+    }
+
+    /// Creates a vec of all unicast withdrawals in this message.
+    ///
+    /// If any of the NLRI, in the conventional part or the MP_UNREACH_NLRI
+    /// attribute, is invalid in any way, returns an Error.
+    /// This means the result is either the complete (possibly empty)
+    /// collection of all the withdrawn NLRI, or none at all.
+    ///
+    /// For more fine-grained control, consider using the
+    /// `unicast_withdrawals` method.
     pub fn unicast_withdrawals_vec(&self)
         -> Result<Vec<BasicNlri>, ParseError>
     {
@@ -1087,6 +1157,9 @@ impl<'a, Octs: Octets> Nlris<'a, Octs> {
 ///
 /// Returns items of the enum [`Nlri`], thus both conventional and
 /// BGP MultiProtocol (RFC4760) NLRIs.
+///
+/// If at any point an error occurs, the iterator returns that error and fuses
+/// itself, i.e. any following call to `next()` will return None.
 pub struct NlriIter<'a, Octs> {
     parser: Parser<'a, Octs>,
     session_config: SessionConfig,
@@ -1171,12 +1244,19 @@ impl<'a, Octs: Octets> Iterator for NlriIter<'a, Octs> {
         if self.parser.remaining() == 0 {
             return None;
         }
-        Some(self.get_nlri())
+        match self.get_nlri() {
+            Ok(n) => Some(Ok(n)),
+            Err(e) => {
+                // Whenever an error occured, e.g. because the NLRI could not
+                // be parsed, we return the error and 'fuse' the iterator by
+                // advancing the parser, ensuring the next call to `next()`
+                // returns a None.
+                self.parser.advance(self.parser.remaining()).ok()?;
+                Some(Err(e))
+            }
+        }
     }
 }
-
-//--- Communities ------------------------------------------------------------
-//
 
 
 //--- Tests ------------------------------------------------------------------
@@ -1391,18 +1471,16 @@ mod tests {
             0x40, 0x02, 0x06, 0x02, 0x01, 0x00, 0x00, 0x00,
             0xc8, 0x80, 0x04, 0x04, 0x00, 0x00, 0x00, 0x00
         ];
-        //let update: UpdateMessage<_> = parse_msg(&buf);
-        let update: UpdateMessage<_> = Message::from_octets(
+        let update = UpdateMessage::from_octets(
             &buf,
-            Some(SessionConfig::modern())
-            ).unwrap().try_into().unwrap();
+            SessionConfig::modern()
+        ).unwrap();
 
         assert_eq!(update.withdrawn_routes_len(), 0);
         assert_eq!(update.total_path_attribute_len(), 113);
 
         assert!(!update.has_conventional_nlri());
         assert!(update.has_mp_nlri().unwrap());
-
         
         let nlri_iter = update.announcements().unwrap();
         assert_eq!(nlri_iter.count(), 5);
@@ -1415,7 +1493,26 @@ mod tests {
             "2001:db8:ffff:3::/64",
         ].map(|p| Nlri::unicast_from_str(p).unwrap());
 
-        assert!(prefixes.into_iter().eq(update.announcements().unwrap().map(|n| n.unwrap())));
+        assert!(prefixes.into_iter().eq(
+                update.announcements().unwrap().map(|n| n.unwrap())
+        ));
+
+        assert!(prefixes.into_iter().eq(
+                update.announcements_vec().unwrap().into_iter()
+        ));
+
+        assert!(update.unicast_announcements().unwrap()
+                .map(|b| Nlri::<&[u8]>::Unicast(b.unwrap()))
+                .eq(prefixes)
+        );
+
+        assert!(
+            update.unicast_announcements_vec().unwrap().into_iter()
+                .map(|b| Nlri::<&[u8]>::Unicast(b))
+                .eq(prefixes)
+        );
+
+        assert!(update.find_next_hop(AFI::Ipv6, SAFI::Multicast).is_err());
 
     }
 
@@ -1950,6 +2047,7 @@ mod tests {
         assert_eq!(update.mp_announcements().unwrap().unwrap().iter().count(), 1);
         assert!(update.mp_announcements().unwrap().unwrap().iter().next().unwrap().is_err());
 
+        // We expect only the two conventional announcements here:
         assert_eq!(update.unicast_announcements().unwrap().count(), 2);
 
     }
@@ -1975,10 +2073,10 @@ mod tests {
             0xfe, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10,
             0x00, // reserved byte
-            0x81, // was 0x80, changed to 0x81 (/129)
+            0x80, 
             0xfc, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10,
-            0x40,
+            0x81, // was 0x40, changed to 0x81 (/129)
             0x20, 0x01, 0x0d, 0xb8, 0xff, 0xff, 0x00, 0x00,
             0x40,
             0x20, 0x01, 0x0d, 0xb8, 0xff, 0xff, 0x00, 0x01,
@@ -1993,17 +2091,35 @@ mod tests {
             16, 10, 10, // 10.10.0.0/16
             16, 10, 11, // 10.11.0.0/16
         ];
-        //let update: UpdateMessage<_> = parse_msg(&buf);
+
         let update = UpdateMessage::from_octets(
             &buf,
             SessionConfig::modern()
         ).unwrap();
 
         assert!(matches!(
+            update.announcements_vec(),
+            Err(ParseError::Form(..))
+        ));
+
+        assert!(matches!(
             update.unicast_announcements_vec(),
             Err(ParseError::Form(..))
         ));
 
+        assert_eq!(update.announcements().unwrap().count(), 4);
+        assert_eq!(update.unicast_announcements().unwrap().count(), 4);
+
+        assert!(
+            update.unicast_announcements().unwrap().eq(
+            [
+                Ok(BasicNlri::new(Prefix::from_str("fc00::10/128").unwrap())),
+                Err(ParseError::form_error("illegal byte size for IPv6 NLRI")), 
+                Ok(BasicNlri::new(Prefix::from_str("10.10.0.0/16").unwrap())),
+                Ok(BasicNlri::new(Prefix::from_str("10.11.0.0/16").unwrap())),
+            ]
+            )
+        );
     }
 
     #[test]
@@ -2054,18 +2170,18 @@ mod tests {
             0x0f, 0x27,
             0x00, 0x02,
             0x01,
+            0x40,
+            0x20, 0x01, 0x0d, 0xb8, 0xff, 0xff, 0x00, 0x00,
             //0x40,
             0x41, // changed to 0x41, leading to a parse error somewhere in
                   // the remainder of the attribute.
-            0x20, 0x01, 0x0d, 0xb8, 0xff, 0xff, 0x00, 0x00,
-            0x40,
             0x20, 0x01, 0x0d, 0xb8, 0xff, 0xff, 0x00, 0x01,
             0x40,
             0x20, 0x01, 0x0d, 0xb8, 0xff, 0xff, 0x00, 0x02,
             0x40,
             0x20, 0x01, 0x0d, 0xb8, 0xff, 0xff, 0x00, 0x03
         ];
-        //let update: UpdateMessage<_> = parse_msg(&buf);
+
         let update = UpdateMessage::from_octets(
             &buf,
             SessionConfig::modern()
@@ -2080,6 +2196,20 @@ mod tests {
             update.unicast_withdrawals_vec(),
             Err(ParseError::Form(..))
         ));
+
+        assert_eq!(update.withdrawals().unwrap().count(), 2);
+        assert_eq!(update.unicast_withdrawals().unwrap().count(), 2);
+
+        assert!(
+            update.unicast_withdrawals().unwrap().eq(
+            [
+                Ok(BasicNlri::new(
+                        Prefix::from_str("2001:db8:ffff::/64").unwrap())
+                ),
+                Err(ParseError::form_error("prefix parsing failed")), 
+            ]
+            )
+        );
 
     }
 }
