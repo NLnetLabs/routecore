@@ -1,6 +1,6 @@
 use crate::bgp::message::Header;
 use octseq::{Octets, Parser};
-use log::error;
+use log::debug;
 
 use crate::asn::Asn;
 use crate::bgp::aspath::AsPath;
@@ -287,7 +287,8 @@ impl<Octs: Octets> UpdateMessage<Octs> {
     /// Returns a combined iterator of conventional and unicast MP_REACH_NLRI.
     pub fn unicast_announcements(&self)
         -> Result<
-            impl Iterator<Item = Result<Nlri<Octs::Range<'_>>, ParseError>>,
+            //impl Iterator<Item = Result<Nlri<Octs::Range<'_>>, ParseError>>,
+            impl Iterator<Item = Result<BasicNlri, ParseError>> + '_,
             ParseError
         >
     {
@@ -299,37 +300,54 @@ impl<Octs: Octets> UpdateMessage<Octs> {
 
         let conventional_iter = self.conventional_announcements()?.iter();
 
-        Ok(mp_iter.into_iter().flatten().chain(conventional_iter))
+        Ok(mp_iter.into_iter().flatten().chain(conventional_iter)
+           .map(|n|
+                match n {
+                Ok(Nlri::Unicast(b)) => Ok(b),
+                Ok(_) => unreachable!(),
+                Err(e) => Err(e),
+                }
+           )
+        )
 
     }
 
-    pub fn unicast_announcements_vec(&self) -> Vec<BasicNlri> {
-        let mut res = if let Ok(conv) = self.conventional_announcements() {
-            conv.iter().filter_map(|n|
-                if let Ok(Nlri::Unicast(b)) = n {
-                    Some(b)
-                } else {
-                    None
-                }
-            ).collect()
-        } else {
-            Vec::new()
-        };
+    /// Returns a combined iterator of conventional and unicast MP_UNREACH_NLRI.
+    pub fn unicast_withdrawals(&self)
+        -> Result<
+            impl Iterator<Item = Result<BasicNlri, ParseError>> + '_,
+            ParseError
+        >
+    {
+        let mp_iter = self.mp_withdrawals()?.filter(|nlris|
+            matches!((nlris.afi(), nlris.safi()), 
+                     (AFI::Ipv4 | AFI::Ipv6, SAFI::Unicast)
+            )
+        ).map(|nlris| nlris.iter());
 
-        if let Ok(Some(mp)) = self.mp_announcements() {
-            res.extend(mp.iter().filter_map(|n|
-                if let Ok(Nlri::Unicast(b)) = n {
-                    Some(b)
-                } else {
-                    None
-                }
-            ))
-        }
+        let conventional_iter = self.conventional_withdrawals()?.iter();
 
-        res
+        Ok(mp_iter.into_iter().flatten().chain(conventional_iter)
+           .map(|n|
+                match n {
+                    Ok(Nlri::Unicast(b)) => Ok(b),
+                    Ok(_) => unreachable!(),
+                    Err(e) => Err(e),
+                }
+           )
+        )
     }
 
-    pub fn unicast_announcements_vec2(&self)
+    /// Creates a vec of all unicast announcements in this message.
+    ///
+    /// If any of the NLRI, in the conventional part of the MP_REACH_NLRI
+    /// attribute, is invalid in any way, returns an Error.
+    /// This means the result is either the complete collection of all the
+    /// announced NLRI, or none at all.
+    ///
+    /// For more fine-grained control, consider using the
+    /// `unicast_announcements` method.
+    pub fn unicast_announcements_vec(&self)
         -> Result<Vec<BasicNlri>, ParseError>
     {
         let conv = self.conventional_announcements()?
@@ -337,7 +355,9 @@ impl<Octs: Octets> UpdateMessage<Octs> {
                 if let Ok(Nlri::Unicast(b)) = n {
                     Ok(b)
                 } else {
-                    Err(ParseError::form_error("invalid unicast NLRI"))
+                    Err(ParseError::form_error(
+                        "invalid announced conventional unicast NLRI"
+                    ))
                 }
             )
         ;
@@ -349,7 +369,39 @@ impl<Octs: Octets> UpdateMessage<Octs> {
                      Ok(_) => None,
                      _ => {
                          Some(Err(ParseError::form_error(
-                            "invalid unicast NLRI"
+                            "invalid announced MP unicast NLRI"
+                         )))
+                     }
+                 }
+            ))
+        ;
+
+        conv.chain(mp.into_iter().flatten()).collect()
+    }
+
+    pub fn unicast_withdrawals_vec(&self)
+        -> Result<Vec<BasicNlri>, ParseError>
+    {
+        let conv = self.conventional_withdrawals()?
+            .iter().map(|n|
+                if let Ok(Nlri::Unicast(b)) = n {
+                    Ok(b)
+                } else {
+                    Err(ParseError::form_error(
+                        "invalid withdrawn conventional unicast NLRI"
+                    ))
+                }
+            )
+        ;
+
+        let mp = self.mp_withdrawals()?.map(|mp| mp.iter()
+            .filter_map(|n|
+                 match n {
+                     Ok(Nlri::Unicast(b)) => Some(Ok(b)),
+                     Ok(_) => None,
+                     _ => {
+                         Some(Err(ParseError::form_error(
+                            "invalid withdrawn MP unicast NLRI"
                          )))
                      }
                  }
@@ -1094,13 +1146,18 @@ impl<'a, Octs: Octets> NlriIter<'a, Octs> {
                 )?)
             },
             (_, _) => {
-                error!("trying to iterate over NLRI \
+                debug!("trying to iterate over NLRI \
                        for unknown AFI/SAFI combination {}/{}",
                        self.afi, self.safi
                 );
-                //panic!("unsupported AFI/SAFI in NLRI get_nlri()")
-                return Err(ParseError::Unsupported)
 
+                // As all the NLRI in the iterator are of the same AFI/SAFI
+                // type, we will not be able to make sense of anything in this
+                // blob of NLRI. We advance the parser so the next call to
+                // next() on this iterator will return None, and be done with
+                // it.
+                self.parser.advance(self.parser.remaining())?;
+                return Err(ParseError::Unsupported)
             }
         };
         Ok(res)
@@ -1129,7 +1186,11 @@ mod tests {
 
     use super::*;
     use std::str::FromStr;
-    use crate::bgp::communities::*;
+    use crate::bgp::communities::{
+        ExtendedCommunityType,
+        ExtendedCommunitySubType,
+        Tag, Wellknown,
+    };
     use crate::bgp::message::{Message, nlri::PathId};
     use crate::addr::Prefix;
 
@@ -1845,5 +1906,180 @@ mod tests {
             upd.mp_next_hop().unwrap(),
             Some(NextHop::Evpn(Ipv4Addr::from_str("120.0.2.5").unwrap().into()))
         );
+    }
+
+    #[test]
+    fn unknown_afi_safi_announcements() {
+        // botched BGP UPDATE message containing MP_REACH_NLRI path attribute,
+        // comprising 5 (originally) IPv6 unicast NLRIs, but with the AFI/SAFI
+        // changed to 255/1
+        // and
+        // 2 conventional nlri
+        let buf = vec![
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0x00, 0x88 + 6, 0x02, 0x00, 0x00, 0x00, 0x71, 0x80,
+            0x0e, 0x5a,
+            //0x00, 0x02,
+            0x00, 0xff,
+            0x01,
+            0x20, 0xfc, 0x00,
+            0x00, 0x10, 0x00, 0x01, 0x00, 0x10, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0xfe, 0x80,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x80,
+            0xfc, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10,
+            0x40, 0x20, 0x01, 0x0d, 0xb8, 0xff, 0xff, 0x00,
+            0x00, 0x40, 0x20, 0x01, 0x0d, 0xb8, 0xff, 0xff,
+            0x00, 0x01, 0x40, 0x20, 0x01, 0x0d, 0xb8, 0xff,
+            0xff, 0x00, 0x02, 0x40, 0x20, 0x01, 0x0d, 0xb8,
+            0xff, 0xff, 0x00, 0x03, 0x40, 0x01, 0x01, 0x00,
+            0x40, 0x02, 0x06, 0x02, 0x01, 0x00, 0x00, 0x00,
+            0xc8, 0x80, 0x04, 0x04, 0x00, 0x00, 0x00, 0x00,
+            // conventional NLRI
+            16, 10, 10, // 10.10.0.0/16
+            16, 10, 11, // 10.11.0.0/16
+        ];
+        //let update: UpdateMessage<_> = parse_msg(&buf);
+        let update = UpdateMessage::from_octets(
+            &buf,
+            SessionConfig::modern()
+        ).unwrap();
+
+        assert_eq!(update.mp_announcements().unwrap().unwrap().iter().count(), 1);
+        assert!(update.mp_announcements().unwrap().unwrap().iter().next().unwrap().is_err());
+
+        assert_eq!(update.unicast_announcements().unwrap().count(), 2);
+
+    }
+
+    #[test]
+    fn invalid_nlri_length_in_announcements() {
+        // botched BGP UPDATE message containing MP_REACH_NLRI path attribute,
+        // comprising 5 (originally) IPv6 unicast NLRIs, with the second one
+        // having a prefix len of 129
+        // and
+        // 2 conventional nlri
+        let buf = vec![
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0x00, 0x88 + 6, 0x02, 0x00, 0x00, 0x00, 0x71, 0x80,
+            0x0e, 0x5a,
+            0x00, 0x02, // AFI
+            0x01, // SAFI
+            // NextHop:
+            0x20,
+            0xfc, 0x00, 0x00, 0x10, 0x00, 0x01, 0x00, 0x10,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10,
+            0xfe, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10,
+            0x00, // reserved byte
+            0x81, // was 0x80, changed to 0x81 (/129)
+            0xfc, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10,
+            0x40,
+            0x20, 0x01, 0x0d, 0xb8, 0xff, 0xff, 0x00, 0x00,
+            0x40,
+            0x20, 0x01, 0x0d, 0xb8, 0xff, 0xff, 0x00, 0x01,
+            0x40,
+            0x20, 0x01, 0x0d, 0xb8, 0xff, 0xff, 0x00, 0x02,
+            0x40,
+            0x20, 0x01, 0x0d, 0xb8, 0xff, 0xff, 0x00, 0x03,
+            0x40,
+            0x01, 0x01, 0x00, 0x40, 0x02, 0x06, 0x02, 0x01, 0x00, 0x00, 0x00,
+            0xc8, 0x80, 0x04, 0x04, 0x00, 0x00, 0x00, 0x00,
+            // conventional NLRI
+            16, 10, 10, // 10.10.0.0/16
+            16, 10, 11, // 10.11.0.0/16
+        ];
+        //let update: UpdateMessage<_> = parse_msg(&buf);
+        let update = UpdateMessage::from_octets(
+            &buf,
+            SessionConfig::modern()
+        ).unwrap();
+
+        assert!(matches!(
+            update.unicast_announcements_vec(),
+            Err(ParseError::Form(..))
+        ));
+
+    }
+
+    #[test]
+    fn unknown_afi_safi_withdrawals() {
+        // botched BGP UPDATE with 4 MP_UNREACH_NLRI
+        let buf = vec![
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0x00, 0x41, 0x02, 0x00, 0x00, 0x00, 0x2a, 0x80,
+            0x0f, 0x27,
+            //0x00, 0x02, // AFI
+            0x00, 0xff, // changed to unknown 255
+            0x01,       // SAFI
+            0x40,
+            0x20, 0x01, 0x0d, 0xb8, 0xff, 0xff, 0x00, 0x00,
+            0x40,
+            0x20, 0x01, 0x0d, 0xb8, 0xff, 0xff, 0x00, 0x01,
+            0x40,
+            0x20, 0x01, 0x0d, 0xb8, 0xff, 0xff, 0x00, 0x02,
+            0x40,
+            0x20, 0x01, 0x0d, 0xb8, 0xff, 0xff, 0x00, 0x03
+        ];
+        //let update: UpdateMessage<_> = parse_msg(&buf);
+        let update = UpdateMessage::from_octets(
+            &buf,
+            SessionConfig::modern()
+        ).unwrap();
+
+        assert!(matches!(
+            update.unicast_announcements_vec(),
+            Ok(Vec { .. })
+        ));
+
+        assert!(matches!(
+            update.unicast_withdrawals_vec(),
+            Err(ParseError::Form(..))
+        ));
+
+    }
+
+    #[test]
+    fn invalid_withdrawals() {
+        // botched BGP UPDATE with 4 MP_UNREACH_NLRI
+        let buf = vec![
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0x00, 0x41, 0x02, 0x00, 0x00, 0x00, 0x2a, 0x80,
+            0x0f, 0x27,
+            0x00, 0x02,
+            0x01,
+            //0x40,
+            0x41, // changed to 0x41, leading to a parse error somewhere in
+                  // the remainder of the attribute.
+            0x20, 0x01, 0x0d, 0xb8, 0xff, 0xff, 0x00, 0x00,
+            0x40,
+            0x20, 0x01, 0x0d, 0xb8, 0xff, 0xff, 0x00, 0x01,
+            0x40,
+            0x20, 0x01, 0x0d, 0xb8, 0xff, 0xff, 0x00, 0x02,
+            0x40,
+            0x20, 0x01, 0x0d, 0xb8, 0xff, 0xff, 0x00, 0x03
+        ];
+        //let update: UpdateMessage<_> = parse_msg(&buf);
+        let update = UpdateMessage::from_octets(
+            &buf,
+            SessionConfig::modern()
+        ).unwrap();
+
+        assert!(matches!(
+            update.unicast_announcements_vec(),
+            Ok(Vec { .. })
+        ));
+
+        assert!(matches!(
+            update.unicast_withdrawals_vec(),
+            Err(ParseError::Form(..))
+        ));
+
     }
 }
