@@ -23,7 +23,7 @@ chrono = { version = "0.4", optional = true }
 const-str = { version = "0.5.3", optional = true, features = ["case"] }
 log = { version = "0.4.17", optional = true }
 
-octseq = { version = "0.2.0", features = ["bytes"], optional = true }
+octseq = { version = "0.3.1", features = ["bytes"], optional = true }
 tokio = { version = "1", features = ["sync", "rt"], optional = true }
 
 [dev-dependencies]
