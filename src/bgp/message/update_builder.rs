@@ -1326,13 +1326,13 @@ impl StandardCommunitiesBuilder {
         &self.communities
     }
 
-    pub(crate) fn compose_len(&self, _community: StandardCommunity) -> usize {
-        if !self.extended && self.len + 4 > 255 {
-            4 +1
-        } else {
-            4
-        }
-    }
+    //pub(crate) fn compose_len(&self, _community: StandardCommunity) -> usize {
+    //    if !self.extended && self.len + 4 > 255 {
+    //        4 +1
+    //    } else {
+    //        4
+    //    }
+    //}
 
     pub(crate) fn add_community(&mut self, community: StandardCommunity) {
         if !self.extended && self.len + 4 > 255 {
@@ -1714,6 +1714,7 @@ mod tests {
 
         assert_eq!(w_cnt, prefixes_num);
     }
+
     use crate::bgp::communities::{StandardCommunity, Tag};
     #[test]
     fn into_messages_many_announcements_mp() {

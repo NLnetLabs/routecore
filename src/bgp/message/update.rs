@@ -5,7 +5,7 @@ use log::debug;
 use crate::asn::Asn;
 use crate::bgp::aspath::AsPath;
 use crate::bgp::path_attributes::{
-    Aggregator, AggregatorInfo,
+    AggregatorInfo,
     PathAttributes, PathAttributeType, WireformatPathAttribute
 };
 pub use crate::bgp::types::{
@@ -482,7 +482,7 @@ impl<Octs: Octets> UpdateMessage<Octs> {
     }
 
     pub fn has_conventional_nlri(&self) -> bool {
-        self.announcements.len() > 0
+        !self.announcements.is_empty()
     }
 
     pub fn has_mp_nlri(&self) -> Result<bool, ParseError> {
@@ -800,14 +800,14 @@ impl<Octs: Octets> UpdateMessage<Octs> {
     /// The 16 byte marker, length and type byte must be present when parsing,
     /// but will not be included in the resulting `Octs`.
     pub fn parse<'a, R: Octets>(
-        mut parser: &mut Parser<'a, R>,
+        parser: &mut Parser<'a, R>,
         config: SessionConfig
     ) -> Result<UpdateMessage<R::Range<'a>>, ParseError>
     where
         R: Octets<Range<'a> = Octs>,
     {
 
-        let header = Header::parse(&mut parser)?;
+        let header = Header::parse(parser)?;
         let start_pos = parser.pos();
 
         let withdrawals_len = parser.parse_u16_be()?;
@@ -823,14 +823,14 @@ impl<Octs: Octets> UpdateMessage<Octs> {
         }
         let withdrawals_end = parser.pos() - start_pos;
         let withdrawals = if withdrawals_start == withdrawals_end {
-            (0..0)
+            0..0
         } else {
-            (withdrawals_start..withdrawals_end)
+            withdrawals_start..withdrawals_end
         };
 
 
         let attributes_len = parser.parse_u16_be()?;
-        let mut attributes_start = parser.pos() - start_pos;
+        let attributes_start = parser.pos() - start_pos;
         if attributes_len > 0 {
             let pas_parser = parser.parse_parser(
                 attributes_len.into()
@@ -843,23 +843,23 @@ impl<Octs: Octets> UpdateMessage<Octs> {
         }
         let attributes_end = parser.pos() - start_pos;
         let attributes = if attributes_start == attributes_end {
-            (0..0)
+            0..0
         } else {
-            (attributes_start..attributes_end)
+            attributes_start..attributes_end
         };
 
         let announcements_start = parser.pos() - start_pos;
         while parser.pos() < start_pos + header.length() as usize - 19 {
             // conventional announcements are always IPv4
-            BasicNlri::check(&mut parser, config, AFI::Ipv4)?;
+            BasicNlri::check(parser, config, AFI::Ipv4)?;
         }
 
         let end_pos = parser.pos() - start_pos;
 
         let announcements = if announcements_start == end_pos {
-            (0..0)
+            0..0
         } else {
-            (announcements_start..end_pos)
+            announcements_start..end_pos
         };
 
 
@@ -1382,13 +1382,11 @@ mod tests {
 
         //assert_eq!(pa2.as_ref(), [0x02, 0x01, 0x00, 0x01, 0x00, 0x00]);
 
-        /*
-        let mut pb = AsPathBuilder::new();
-        pb.push(Asn::from_u32(65536)).unwrap();
-        let asp: AsPath<Vec<Asn>> = pb.finalize();
-        */
+        let mut pb = crate::bgp::aspath::HopPath::new();
+        pb.prepend(Asn::from_u32(65536));
+        let asp: AsPath<Bytes> = pb.to_as_path().unwrap();
 
-        //assert_eq!(update.aspath().unwrap(), asp);
+        assert_eq!(update.aspath().unwrap().unwrap(), asp);
 
         let pa3 = pa_iter.next().unwrap().unwrap();
         assert_eq!(pa3.type_code(), PathAttributeType::NextHop);
@@ -1508,7 +1506,7 @@ mod tests {
 
         assert!(
             update.unicast_announcements_vec().unwrap().into_iter()
-                .map(|b| Nlri::<&[u8]>::Unicast(b))
+                .map(Nlri::<&[u8]>::Unicast)
                 .eq(prefixes)
         );
 

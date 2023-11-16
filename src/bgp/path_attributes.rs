@@ -6,7 +6,6 @@ use octseq::{Octets, OctetsBuilder, OctetsFrom, Parser};
 
 use crate::asn::Asn;
 use crate::bgp::aspath::HopPath;
-use crate::bgp::message::nlri::FixedNlriIter;
 use crate::bgp::message::update_builder::{
     MpReachNlriBuilder,
     MpUnreachNlriBuilder
@@ -1184,7 +1183,7 @@ impl Attribute for MpReachNlri {
         ).iter();
 
         for nlri in nlri_iter {
-            builder.add_announcement(&nlri?.into());
+            builder.add_announcement(&nlri?);
         }
 
         Ok(MpReachNlri(builder))
@@ -1238,7 +1237,7 @@ impl Attribute for MpUnreachNlri {
         ).iter();
 
         for nlri in nlri_iter {
-            builder.add_withdrawal(&nlri?.into());
+            builder.add_withdrawal(&nlri?);
         }
         Ok(MpUnreachNlri(builder))
     }

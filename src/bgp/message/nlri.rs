@@ -56,6 +56,7 @@ impl AfiSafiParse for Ipv4Unicast {
 }
 
 impl<'a, T: 'a + Octets> FixedNlriIter<'a, T, Ipv4Unicast> {
+    #[allow(dead_code)]
     pub(crate) fn ipv4unicast(parser: &mut Parser<'a, T>) -> Self {
         FixedNlriIter::new( parser, Ipv4Unicast{} )
     }
@@ -79,6 +80,7 @@ impl AfiSafiParse for Ipv4UnicastAddPath {
 }
 
 impl<'a, T: 'a + Octets> FixedNlriIter<'a, T, Ipv4UnicastAddPath> {
+    #[allow(dead_code)]
     pub(crate) fn ipv4unicast_addpath(parser: &mut Parser<'a, T>) -> Self {
         FixedNlriIter::new( parser, Ipv4UnicastAddPath{} )
     }
@@ -98,6 +100,7 @@ impl AfiSafiParse for Ipv6Unicast {
 }
 
 impl<'a, T: 'a + Octets> FixedNlriIter<'a, T, Ipv6Unicast> {
+    #[allow(dead_code)]
     pub(crate) fn ipv6unicast(parser: &mut Parser<'a, T>) -> Self {
         FixedNlriIter::new( parser, Ipv6Unicast{} )
     }
@@ -121,6 +124,7 @@ impl AfiSafiParse for Ipv6UnicastAddPath {
 }
 
 impl<'a, T: 'a + Octets> FixedNlriIter<'a, T, Ipv6UnicastAddPath> {
+    #[allow(dead_code)]
     pub(crate) fn ipv6unicast_addpath(parser: &mut Parser<'a, T>) -> Self {
         FixedNlriIter::new( parser, Ipv6UnicastAddPath{} )
     }
