@@ -730,6 +730,20 @@ impl<Octs: Octets> UpdateMessage<Octs> {
         }
     }
 
+    /// Returns an iterator over IPv6 Address Extended Communities (RFC5701),
+    /// if any.
+    pub fn ipv6_ext_communities(&self)
+        -> Result<Option<Ipv6ExtCommunityIter<Octs::Range<'_>>>, ParseError>
+    {
+        if let Some(WireformatPathAttribute::Ipv6ExtendedCommunities(epa)) = self.path_attributes()?.get(PathAttributeType::Ipv6ExtendedCommunities) {
+            let mut p = epa.value_into_parser();
+            Ok(Some(Ipv6ExtCommunityIter::new(p.parse_octets(p.remaining())?)))
+        } else {
+            Ok(None)
+        }
+    }
+
+
     /// Returns an iterator over Large Communities (RFC8092), if any.
     pub fn large_communities(&self)
         -> Result<Option<LargeCommunityIter<Octs::Range<'_>>>, ParseError>
@@ -753,6 +767,11 @@ impl<Octs: Octets> UpdateMessage<Octs> {
         }
         if let Some(c) = self.ext_communities()? {
             res.append(&mut c.map(Community::Extended).collect::<Vec<_>>());
+        }
+        if let Some(c) = self.ipv6_ext_communities()? {
+            res.append(
+                &mut c.map(Community::Ipv6Extended).collect::<Vec<_>>()
+            );
         }
         if let Some(c) = self.large_communities()? {
             res.append(&mut c.map(Community::Large).collect::<Vec<_>>());
@@ -1077,6 +1096,37 @@ impl<Octs: Octets> Iterator for ExtCommunityIter<Octs> {
     type Item = ExtendedCommunity;
 
     fn next(&mut self) -> Option<ExtendedCommunity> {
+        if self.pos == self.slice.as_ref().len() {
+            return None
+        }
+        Some(self.get_community())
+    }
+}
+
+/// Iterator over [`Ipv6ExtendedCommunity`]s.
+pub struct Ipv6ExtCommunityIter<Octs: Octets> {
+    slice: Octs,
+    pos: usize,
+}
+
+impl<Octs: Octets> Ipv6ExtCommunityIter<Octs> {
+    fn new(slice: Octs) -> Self {
+        Ipv6ExtCommunityIter { slice, pos: 0 }
+    }
+
+    fn get_community(&mut self) -> Ipv6ExtendedCommunity {
+        let res = Ipv6ExtendedCommunity::from_raw(
+            self.slice.as_ref()[self.pos..self.pos+20].try_into().expect("parsed before")
+            );
+        self.pos += 8;
+        res
+    }
+}
+
+impl<Octs: Octets> Iterator for Ipv6ExtCommunityIter<Octs> {
+    type Item = Ipv6ExtendedCommunity;
+
+    fn next(&mut self) -> Option<Ipv6ExtendedCommunity> {
         if self.pos == self.slice.as_ref().len() {
             return None
         }
