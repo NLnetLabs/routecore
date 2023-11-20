@@ -856,7 +856,7 @@ impl<Octs: Octets> UpdateMessage<Octs> {
             )?;
             // XXX this calls `validate` on every attribute, do we want to
             // error on that level here?
-            for pa in PathAttributes::new(pas_parser, config).into_iter() {
+            for pa in PathAttributes::new(pas_parser, config) {
                pa?;
             }
         }
