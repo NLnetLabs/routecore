@@ -671,7 +671,8 @@ impl<Target> UpdateBuilder<Target>
 
     /// Compose the PDU, returns the builder if it exceeds the max PDU size.
     ///
-    /// 
+    /// Note that `UpdateBuilder` implements `IntoIterator`, which is perhaps
+    /// more appropriate for many use cases.
     pub fn take_message(mut self) -> (
         Result<UpdateMessage<<Target as FreezeBuilder>::Octets>, ComposeError>,
         Option<Self>
@@ -838,7 +839,11 @@ impl<Target> UpdateBuilder<Target>
     }
 
 
-    fn into_messages(self) -> Result<
+    /// Turn the builder into a vec of one or more UpdateMessages.
+    ///
+    /// Note that `UpdateBuilder` implements `IntoIterator`, which is perhaps
+    /// more appropriate for many use cases.
+    pub fn into_messages(self) -> Result<
         Vec<UpdateMessage<<Target as FreezeBuilder>::Octets>>,
         ComposeError
     >

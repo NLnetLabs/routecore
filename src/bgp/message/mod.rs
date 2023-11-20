@@ -8,8 +8,9 @@ pub mod keepalive;
 
 use octseq::{Octets, Parser};
 use crate::util::parser::ParseError;
-use std::fmt::{Debug, Display, Formatter, Result as FmtResult};
 use std::error::Error;
+use std::fmt::{Debug, Display, Formatter, Result as FmtResult};
+use std::io::Read;
 use crate::addr::PrefixError;
 use crate::typeenum; // from util::macros
 
@@ -133,6 +134,34 @@ impl<Octs: Octets> Message<Octs> {
         }
     }
 }
+
+/// Read a BGP message into `buf` and return the slice based on the length.
+///
+/// No parsing or validation is performed. This function jumps over the BGP
+/// marker to read the length, and reads bytes accordingly.
+/// The returned slice can be used with `Message::from_octets` to actually get
+/// a BGP message.
+pub fn read_message<'a, T: Read>(bytes: &mut T, buf: &'a mut [u8; 4096])
+    -> Result<Option<&'a [u8]>, &'a str>
+{
+
+    if let Err(e) = bytes.read_exact(&mut buf[..18]) {
+        match e.kind() {
+            std::io::ErrorKind::UnexpectedEof => { return Ok(None) }
+            _ => return Err("io error")
+        }
+    }
+
+    let len = u16::from_be_bytes([buf[16], buf[17]]) as usize;
+    if len > 4096 {
+        println!("jumbo? (len: {len}) {:x?}", &buf[..20]);
+    }
+
+    // including marker+length+type
+    let _ = bytes.read_exact(&mut buf[18..(len)]);
+    Ok(Some(&buf[..len]))
+}
+
 
 //--- From / TryFrom ---------------------------------------------------------
 

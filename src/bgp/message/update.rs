@@ -23,7 +23,7 @@ use crate::util::parser::ParseError;
 
 
 use crate::bgp::communities::{
-    Community, StandardCommunity,
+    Community,
     ExtendedCommunity, Ipv6ExtendedCommunity, 
     LargeCommunity
 };
