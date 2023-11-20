@@ -133,6 +133,12 @@ impl<Octs: Octets> UpdateMessage<Octs> {
     }
 
     /// Format the UpdateMessage in a `text2pcap` compatible way.
+    // Note that UpdateMessages can be created using from_octets, which will
+    // contain the 16 byte marker, or via `parse`, which will include the
+    // octets only from after the length+msgtype onwards.
+    // We use the start range for the withdrawals (the first part of the
+    // actual content) and the end range of the conventional announcements
+    // (the last part of the actual content).
     pub fn fmt_pcap_string(&self) -> String {
         let mut res = String::with_capacity(
             7 + ((19 + self.octets.as_ref().len()) * 3)
@@ -148,7 +154,9 @@ impl<Octs: Octets> UpdateMessage<Octs> {
 
         res.push_str(&format!("{:02x} {:02x} 02 ", len[0], len[1])); 
 
-        for b in self.octets.as_ref() {
+        for b in &self.octets.as_ref()[
+            self.withdrawals.start..self.announcements.end
+        ] {
             res.push_str(&format!("{:02x} ", b));
         }
 
@@ -2331,5 +2339,38 @@ mod tests {
             )
         );
 
+    }
+
+    #[test]
+    fn format_as_pcap() {
+        let buf = vec![
+            // Two identical BGP UPDATEs
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x37, 0x02,
+            0x00, 0x00, 0x00, 0x1b, 0x40, 0x01, 0x01, 0x00, 0x40, 0x02,
+            0x06, 0x02, 0x01, 0x00, 0x01, 0x00, 0x00, 0x40, 0x03, 0x04,
+            0x0a, 0xff, 0x00, 0x65, 0x80, 0x04, 0x04, 0x00, 0x00, 0x00,
+            0x01, 0x20, 0x0a, 0x0a, 0x0a, 0x02,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x37, 0x02,
+            0x00, 0x00, 0x00, 0x1b, 0x40, 0x01, 0x01, 0x00, 0x40, 0x02,
+            0x06, 0x02, 0x01, 0x00, 0x01, 0x00, 0x00, 0x40, 0x03, 0x04,
+            0x0a, 0xff, 0x00, 0x65, 0x80, 0x04, 0x04, 0x00, 0x00, 0x00,
+            0x01, 0x20, 0x0a, 0x0a, 0x0a, 0x02,
+        ];
+
+        let bytes = Bytes::from(buf);
+        let mut parser = Parser::from_ref(&bytes);
+        let update = UpdateMessage::parse(
+            &mut parser,
+            SessionConfig::modern()
+        ).unwrap();
+
+        let update2 = UpdateMessage::from_octets(
+            parser.peek_all(),
+            SessionConfig::modern()
+        ).unwrap();
+
+        assert_eq!(update.fmt_pcap_string(), update2.fmt_pcap_string());
     }
 }
