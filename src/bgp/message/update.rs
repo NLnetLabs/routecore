@@ -1469,6 +1469,77 @@ mod tests {
     }
 
     #[test]
+    fn conventional_parsed() {
+        let buf = vec![
+            // Two BGP UPDATEs
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x37, 0x02,
+            0x00, 0x00, 0x00, 0x1b, 0x40, 0x01, 0x01, 0x00, 0x40, 0x02,
+            0x06, 0x02, 0x01, 0x00, 0x01, 0x00, 0x00, 0x40, 0x03, 0x04,
+            0x0a, 0xff, 0x00, 0x65, 0x80, 0x04, 0x04, 0x00, 0x00, 0x00,
+            0x01, 0x20, 0x0a, 0x0a, 0x0a, 0x02,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0x00, 0x3c, 0x02, 0x00, 0x00, 0x00, 0x1b, 0x40,
+            0x01, 0x01, 0x00, 0x40, 0x02, 0x06, 0x02, 0x01,
+            0x00, 0x01, 0x00, 0x00, 0x40, 0x03, 0x04, 0x0a,
+            0xff, 0x00, 0x65, 0x80, 0x04, 0x04, 0x00, 0x00,
+            0x07, 0x6c, 0x20, 0x0a, 0x0a, 0x0a, 0x09, 0x1e,
+            0xc0, 0xa8, 0x61, 0x00
+        ];
+
+        let bytes = Bytes::from(buf);
+        let mut parser = Parser::from_ref(&bytes);
+        let update = UpdateMessage::parse(
+            &mut parser,
+            SessionConfig::modern()
+        ).unwrap();
+
+        update.print_pcap();
+        assert_eq!(update.length(), 55);
+        assert_eq!(update.total_path_attribute_len(), 27);
+
+        let update = UpdateMessage::parse(
+            &mut parser,
+            SessionConfig::modern()
+        ).unwrap();
+
+        update.print_pcap();
+        assert_eq!(update.total_path_attribute_len(), 27);
+        assert_eq!(update.announcements().unwrap().count(), 2);
+        
+    }
+
+    use std::fs::File;
+    use memmap2::Mmap;
+
+    #[test]
+    #[ignore]
+    fn parse_bulk() {
+        let filename = "examples/raw_bgp_updates";
+        let file = File::open(filename).unwrap();
+        let mmap = unsafe { Mmap::map(&file).unwrap()  };
+        let fh = &mmap[..];
+        let mut parser = Parser::from_ref(&fh);
+
+        let mut n = 0;
+        const MAX: usize = 10_000_000;
+
+        while parser.remaining() > 0 && n < MAX {
+            if let Err(e) = UpdateMessage::<_>::parse(
+                &mut parser, SessionConfig::modern()
+            ) {
+                eprintln!("failed to parse: {e}");
+            }
+            n += 1;
+            eprint!("\r{n} ");
+        }
+        eprintln!("parsed {n}");
+        dbg!(parser);
+    }
+
+
+    #[test]
     fn conventional_multiple_nlri() {
         let buf = vec![
             0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
