@@ -1317,6 +1317,7 @@ mod tests {
     use super::*;
     use std::str::FromStr;
     use crate::bgp::communities::{
+        StandardCommunity,
         ExtendedCommunityType,
         ExtendedCommunitySubType,
         Tag, Wellknown,
