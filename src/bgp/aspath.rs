@@ -17,7 +17,9 @@ use crate::asn::{Asn, LargeAsnError};
 
 use octseq::builder::{infallible, EmptyBuilder, FromBuilder, OctetsBuilder};
 use octseq::octets::{Octets, OctetsFrom, OctetsInto};
-use octseq::parse::{Parser, ShortInput};
+use octseq::parse::Parser;
+
+use crate::util::parser::ParseError;
 
 pub type OwnedHop = Hop<Vec<u8>>;
 
@@ -421,7 +423,7 @@ impl<Octs: AsRef<[u8]>> AsPath<Octs> {
     pub fn new(
         octets: Octs,
         four_byte_asns: bool,
-    ) -> Result<Self, ShortInput> {
+    ) -> Result<Self, ParseError> {
         AsPath::check(octets.as_ref(), four_byte_asns)?;
         Ok(unsafe {
             Self::new_unchecked(octets, four_byte_asns)
@@ -472,11 +474,10 @@ impl AsPath<()> {
     /// Checks whether `octets` validly represents an AS_PATH attribute.
     pub fn check(
         octets: &[u8], four_byte_asns: bool
-    ) -> Result<(), ShortInput> {
+    ) -> Result<(), ParseError> {
         let mut parser = Parser::from_ref(octets);
         while parser.remaining() > 0 {
-            // XXX Should this error on an unknown segment type?
-            parser.advance(1)?; // segment type
+            SegmentType::try_from(parser.parse_u8()?)?;
             let len = usize::from(parser.parse_u8()?); // segment length
             parser.advance(len * asn_size(four_byte_asns))?; // ASNs.
         }
@@ -664,7 +665,7 @@ impl<'a, Octs: Octets> Iterator for PathHops<'a, Octs> {
 
 //----------- PathSegments ---------------------------------------------------
 
-/// Iterates over [`Segment]`s in an [`AsPath`].
+/// Iterates over [`Segment`]s in an [`AsPath`].
 pub struct PathSegments<'a, Octs> {
     parser: Parser<'a, Octs>,
     four_byte_asns: bool,
@@ -1151,6 +1152,12 @@ impl fmt::Display for InvalidSegmentType {
 }
 
 impl error::Error for InvalidSegmentType { }
+
+impl From<InvalidSegmentType> for ParseError {
+    fn from(_: InvalidSegmentType) -> ParseError {
+        ParseError::form_error("invalid segment type")
+    }
+}
 
 //------------ ToPathError ---------------------------------------------------
 

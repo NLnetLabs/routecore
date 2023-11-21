@@ -2301,8 +2301,6 @@ mod tests {
                 }
             }
 
-
-
             assert_eq!(
               original.announcements().unwrap().count(),
               composed.announcements().unwrap().count(),
