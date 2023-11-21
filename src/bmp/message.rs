@@ -7,7 +7,7 @@
 use crate::asn::Asn;
 use crate::bgp::message::{Message as BgpMsg, OpenMessage as BgpOpen, UpdateMessage as BgpUpdate, NotificationMessage as BgpNotification};
 use crate::bgp::types::{AFI, SAFI};
-use crate::bgp::message::update::SessionConfig;
+use crate::bgp::message::update::{SessionConfig, FourOctetAsn};
 use crate::bgp::message::open::CapabilityType;
 use crate::util::parser::ParseError;
 use crate::typeenum; // from util::macros
@@ -483,7 +483,7 @@ impl<Octets: AsRef<[u8]>> PerPeerHeader<Octets> {
             );
             DateTime::<Utc>::MIN_UTC
         }
-    }
+    } 
 }
 
 impl<Octets: AsRef<[u8]>> Display for PerPeerHeader<Octets> {
@@ -857,23 +857,80 @@ impl<Octs: Octets> PeerUpNotification<Octs> {
         (sent, rcvd) 
     }
 
-    /// Create a [`SessionConfig`] describing the parameters for the BGP
-    /// session between the monitored router and the remote peer.
+    /// Create a [`SessionConfig`] to parse encapsulated BGP data based on the
+    /// PerPeerHeader.
     ///
     /// The information in this `SessionConfig` is necessary for correctly
     /// parsing future messages, specifically BGP UPDATEs carried in
     /// RouteMonitoring BMP messages. See [`SessionConfig`] for an example
     /// using it in that way.
-    pub fn session_config(&self) -> SessionConfig {
+    /// 
+    /// Note that this function returns the four octet capability set in the
+    /// per peer header, *not* the same capability in the encapsulated BGP
+    /// OPEN message. This method should normally be used by a BMP monitoring
+    /// station, when receiving a PeerUpNotification.
+    /// 
+    /// Returns the SessionConfig and an optional tuple if the BGP OPEN four
+    /// octet ASN capability and the one in the Per Peer Header are not the
+    /// same.
+    pub fn pph_session_config(&self) -> (SessionConfig, Option<(FourOctetAsn, FourOctetAsn)>)  {
         let (sent, rcvd) = self.bgp_open_sent_rcvd();
         let mut conf = SessionConfig::modern();
 
         // The 'modern' SessionConfig has four octet capability set to
         // enabled, so we need to disable it if any of both of the peers do
         // not support it.
-        if !sent.four_octet_capable() || !rcvd.four_octet_capable() {
-            conf.disable_four_octet_asn();
+        let bgp_four_octet = match sent.four_octet_capable() && rcvd.four_octet_capable() {
+            true => FourOctetAsn::Enabled,
+            false => FourOctetAsn::Disabled
+        };
+
+        let four_octet_asn = match self.per_peer_header().is_legacy_format() {
+            false => FourOctetAsn::Enabled,
+            true => FourOctetAsn::Disabled
+        };
+
+        conf.set_four_octet_asn(four_octet_asn);
+
+        if sent.add_path_capable() && rcvd.add_path_capable() {
+            conf.enable_addpath()
         }
+
+        let inconsistent = 
+            if four_octet_asn == bgp_four_octet { 
+                None 
+            } else { 
+                Some((four_octet_asn, bgp_four_octet)) 
+            };
+
+        (conf, inconsistent)
+    }
+
+    /// Create a [`SessionConfig`] to parse encapsulated BGP data based on the
+    /// exchanged BGP OPENs. session between the monitored router and the
+    /// remote peer.
+    ///
+    /// The information in this `SessionConfig` is necessary for correctly
+    /// parsing future messages, specifically BGP UPDATEs carried in
+    /// RouteMonitoring BMP messages. See [`SessionConfig`] for an example
+    /// using it in that way.
+    /// 
+    /// Note that this function does not consider the Per Peer Header four
+    /// octet ASN capability. Use `pph_session_config()` for that. This method
+    /// should probably not be used by a BMP monitoring station by default.
+    pub fn session_config(&self) -> SessionConfig  {
+        let (sent, rcvd) = self.bgp_open_sent_rcvd();
+        let mut conf = SessionConfig::modern();
+
+        // The 'modern' SessionConfig has four octet capability set to
+        // enabled, so we need to disable it if any of both of the peers do
+        // not support it.
+        let bgp_four_octet = match sent.four_octet_capable() && rcvd.four_octet_capable() {
+            true => FourOctetAsn::Enabled,
+            false => FourOctetAsn::Disabled
+        };
+
+        conf.set_four_octet_asn(bgp_four_octet);
 
         if sent.add_path_capable() && rcvd.add_path_capable() {
             conf.enable_addpath()
@@ -1968,9 +2025,10 @@ mod tests {
         assert_eq!(sent.as_ref(), bgp_open_sent.as_ref());
         assert_eq!(rcvd.as_ref(), bgp_open_rcvd.as_ref());
 
-        let sc = bmp.session_config();
-        assert_eq!(sc.four_octet_asn, FourOctetAsn::Enabled);
-        assert_eq!(sc.add_path, AddPath::Disabled);
+        let sc = bmp.pph_session_config();
+        assert_eq!(sc.1, None);
+        assert_eq!(sc.0.four_octet_asn, FourOctetAsn::Enabled);
+        assert_eq!(sc.0.add_path, AddPath::Disabled);
 
         assert_eq!(
             bmp.supported_protocols(),
