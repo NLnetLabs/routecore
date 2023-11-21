@@ -41,6 +41,17 @@ typeenum!(
 );
 
 typeenum!(
+/// Enhanced Route Refresh subtypes.
+    RouteRefreshSubtype, u8, 
+    {
+        0 => Normal,
+        1 => Begin, 
+        2 => End, 
+        255 => Reserved
+    }
+);
+
+typeenum!(
 /// PathAttributeType
 ///
 /// As per:

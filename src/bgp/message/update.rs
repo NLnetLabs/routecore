@@ -835,6 +835,9 @@ impl<Octs: Octets> UpdateMessage<Octs> {
     {
 
         let header = Header::parse(parser)?;
+        if header.length() < 19 {
+            return Err(ParseError::form_error("message length <19"))
+        }
         let start_pos = parser.pos();
 
         let withdrawals_len = parser.parse_u16_be()?;

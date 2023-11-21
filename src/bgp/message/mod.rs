@@ -4,6 +4,7 @@ pub mod update_builder;
 pub mod nlri;
 pub mod notification;
 pub mod keepalive;
+pub mod routerefresh;
 //pub mod attr_change_set;
 
 use octseq::{Octets, Parser};
@@ -14,6 +15,8 @@ use std::io::Read;
 use crate::addr::PrefixError;
 use crate::typeenum; // from util::macros
 
+use log::debug;
+
 #[cfg(feature = "serde")]
 use serde::{Serialize, Deserialize};
 
@@ -21,6 +24,7 @@ pub use open::OpenMessage;
 pub use update::{UpdateMessage, SessionConfig};
 pub use notification::NotificationMessage;
 pub use keepalive::KeepaliveMessage;
+pub use routerefresh::RouteRefreshMessage;
 
 //--- Generic ----------------------------------------------------------------
 
@@ -48,6 +52,7 @@ pub enum Message<Octs: Octets> {
     Update(UpdateMessage<Octs>),
     Notification(NotificationMessage<Octs>),
     Keepalive(KeepaliveMessage<Octs>),
+    RouteRefresh(RouteRefreshMessage<Octs>),
 }
 
 impl<Octs: Octets> AsRef<[u8]> for Message<Octs> {
@@ -57,6 +62,7 @@ impl<Octs: Octets> AsRef<[u8]> for Message<Octs> {
             Message::Update(m) => m.as_ref(),
             Message::Notification(m) => m.as_ref(),
             Message::Keepalive(m) => m.as_ref(),
+            Message::RouteRefresh(m) => m.as_ref(),
         }
     }
 }
@@ -68,6 +74,7 @@ impl<Octs: Octets> Message<Octs> {
             Message::Update(m) => m.octets(),
             Message::Notification(m) => m.octets(),
             Message::Keepalive(m) => m.octets(),
+            Message::RouteRefresh(m) => m.octets(),
         }
     }
 }
@@ -130,7 +137,14 @@ impl<Octs: Octets> Message<Octs> {
                 Ok(Message::Keepalive(
                         KeepaliveMessage::from_octets(octets)?
                 )),
-            t => panic!("not implemented yet: {:?}", t)
+            MsgType::RouteRefresh => {
+                debug!("Unimplemented BGP message type ROUTEREFRESH");
+                Err(ParseError::Unsupported)
+            }
+            MsgType::Unimplemented(t) => {
+                debug!("Unimplemented BGP message type {t}");
+                Err(ParseError::Unsupported)
+            }
         }
     }
 }
@@ -273,7 +287,7 @@ impl<Octs: Octets> Header<Octs> {
             3 => MsgType::Notification,
             4 => MsgType::Keepalive,
             5 => MsgType::RouteRefresh,
-            u => panic!("illegal Message Type {}", u)
+            u => MsgType::Unimplemented(u)
         }
     }
 }
