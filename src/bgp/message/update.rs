@@ -1180,6 +1180,7 @@ impl<Octs: Octets> Iterator for LargeCommunityIter<Octs> {
 }
 
 /// Represents the announced NLRI in a BGP UPDATE message.
+#[derive(Debug)]
 pub struct Nlris<'a, Octs: Octets> {
     parser: Parser<'a, Octs>,
     session_config: SessionConfig,

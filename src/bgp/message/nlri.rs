@@ -7,7 +7,7 @@ use crate::bgp::message::update::{AddPath, SessionConfig};
 use crate::flowspec::Component;
 use crate::typeenum;
 use octseq::{Octets, OctetsBuilder, OctetsFrom, Parser};
-use log::warn;
+use log::debug;
 
 use std::fmt;
 use std::net::IpAddr;
@@ -186,7 +186,7 @@ impl NextHop {
                 { },
             _ => {
                 parser.advance(len.into())?;
-                warn!("Unimplemented NextHop AFI/SAFI {}/{} len {}",
+                debug!("Unimplemented NextHop AFI/SAFI {}/{} len {}",
                       afi, safi, len);
                 return Err(ParseError::form_error(
                         "unimplemented AFI/SAFI in NextHop"
@@ -238,8 +238,10 @@ impl NextHop {
             (16, AFI::L2Vpn, SAFI::Evpn) =>
                 NextHop::Evpn(parse_ipv6addr(parser)?.into()),
             _ => {
+                debug!("Unimplemented NextHop AFI/SAFI {}/{} len {}",
+                      afi, safi, len);
                 parser.advance(len.into())?;
-                NextHop::Unimplemented( afi, safi)
+                NextHop::Unimplemented(afi, safi)
             }
         };
         Ok(res)
@@ -734,11 +736,27 @@ impl<'a, SrcOcts: 'a + Octets> OctetsFrom<&'a Nlri<SrcOcts>> for Nlri<Vec<u8>>
         match source {
             Nlri::Unicast(b) => Ok(Nlri::Unicast(*b)),
             Nlri::Multicast(b) => Ok(Nlri::Multicast(*b)),
-            Nlri::FlowSpec(m) => Ok(Nlri::FlowSpec(FlowSpecNlri {
+            Nlri::Mpls(m) => Ok(Nlri::Mpls(MplsNlri {
+                basic: m.basic,
+                labels: Labels{ octets: m.labels.as_ref().to_vec() },
+            })),
+            Nlri::MplsVpn(m) => Ok(Nlri::MplsVpn(MplsVpnNlri {
+                basic: m.basic,
+                labels: Labels{ octets: m.labels.as_ref().to_vec() },
+                rd: m.rd
+            })),
+            Nlri::Vpls(v) => Ok(Nlri::Vpls(*v)),
+            Nlri::FlowSpec(m) => Ok(Nlri::FlowSpec(FlowSpecNlri{
                     afi: m.afi,
                     raw: m.raw.as_ref().to_vec()
             })),
-            _ => todo!()
+            Nlri::RouteTarget(r) => Ok(Nlri::RouteTarget(RouteTargetNlri{
+                raw: r.raw.as_ref().to_vec(),
+            })),
+            Nlri::Evpn(e) => Ok(Nlri::Evpn( EvpnNlri{
+                route_type: e.route_type,
+                raw: e.raw.as_ref().to_vec(),
+            })),
         }
     }
 }
@@ -1388,7 +1406,7 @@ impl<Octs: Octets> FlowSpecNlri<Octs> {
                 Ok(())
             }
             AFI::Ipv6 => {
-                warn!("FlowSpec v6 not implemented yet");
+                debug!("FlowSpec v6 not implemented yet");
                 Ok(())
             }
             _ => Err(ParseError::form_error("illegal AFI for FlowSpec"))
@@ -1411,7 +1429,12 @@ impl<Octs: Octets> FlowSpecNlri<Octs> {
             len1 as u16
         };
         let pos = parser.pos();
-        assert_eq!(len as usize, parser.remaining());
+
+        if usize::from(len) != parser.remaining() {
+            return Err(ParseError::form_error(
+                    "invalid length of FlowSpec NLRI"
+            ));
+        }
 
         match afi {
             AFI::Ipv4 => {
@@ -1420,7 +1443,7 @@ impl<Octs: Octets> FlowSpecNlri<Octs> {
                 }
             }
             AFI::Ipv6 => {
-                warn!("FlowSpec v6 not implemented yet, \
+                debug!("FlowSpec v6 not implemented yet, \
                       returning unchecked NLRI"
                 );
             }

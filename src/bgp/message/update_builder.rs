@@ -1172,11 +1172,12 @@ impl NextHop {
             NextHop::Unicast(IpAddr::V4(_)) | NextHop::Multicast(IpAddr::V4(_)) => 4, 
             NextHop::Unicast(IpAddr::V6(_)) | NextHop::Multicast(IpAddr::V6(_)) => 16, 
             NextHop::Ipv6LL(_, _) => 32,
-            //NextHop::Ipv4MplsVpnUnicast(RouteDistinguisher, Ipv4Addr),
-            //NextHop::Ipv6MplsVpnUnicast(RouteDistinguisher, Ipv6Addr),
+            NextHop::Ipv4MplsVpnUnicast(_rd, _ip4) => todo!(),
+            NextHop::Ipv6MplsVpnUnicast(_rd, _ip6) => todo!(),
             NextHop::Empty => 0, // FlowSpec
-            //NextHop::Unimplemented(AFI, SAFI),
-            n => unimplemented!("{}", n)
+            NextHop::Evpn(IpAddr::V4(_)) => todo!(),
+            NextHop::Evpn(IpAddr::V6(_)) => todo!(),
+            NextHop::Unimplemented(_afi, _safi) => todo!()
         }
     }
 
@@ -1193,9 +1194,11 @@ impl NextHop {
                 target.append_slice(&a.octets())?;
                 target.append_slice(&ll.octets())?;
             }
+            NextHop::Ipv4MplsVpnUnicast(_rd, _ip4) => todo!(),
+            NextHop::Ipv6MplsVpnUnicast(_rd, _ip6) => todo!(),
+            NextHop::Evpn(_a) => todo!(),
             NextHop::Empty => { },
-
-            _ => unimplemented!()
+            NextHop::Unimplemented(_afi, _safi) => todo!(),
         }
 
         Ok(())

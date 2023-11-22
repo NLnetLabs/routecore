@@ -1,7 +1,7 @@
 use std::fmt;
 use std::net::Ipv4Addr;
 
-use log:: warn;
+use log::debug;
 use octseq::{Octets, OctetsBuilder, OctetsFrom, Parser};
 
 use crate::asn::Asn;
@@ -162,7 +162,7 @@ macro_rules! path_attributes {
                         u.compose(target)
                     }
                     PathAttribute::Invalid(flags, tc, val) => {
-                        warn!("composing invalid path attribute {tc}");
+                        debug!("composing invalid path attribute {tc}");
                         target.append_slice(&[flags.0 | Flags::PARTIAL, *tc])?;
                         if val.len() > 255 {
                             target.append_slice(&u16::try_from(val.len()).unwrap_or(u16::MAX).to_be_bytes())?;
@@ -302,7 +302,7 @@ macro_rules! path_attributes {
                         if let Err(e) = $name::validate(
                             flags.into(), &mut pp, sc
                         ) {
-                            warn!("failed to parse path attribute: {e}");
+                            debug!("failed to parse path attribute: {e}");
                             pp.seek(start_pos + header_len)?;
                             WireformatPathAttribute::Invalid(
                                 $flags.into(), $type_code, pp
@@ -1142,6 +1142,10 @@ impl Attribute for MpReachNlri {
         let afi: AFI = parser.parse_u16_be()?.into();
         let safi: SAFI = parser.parse_u8()?.into();
         let nexthop = crate::bgp::types::NextHop::parse(parser, afi, safi)?;
+        if let crate::bgp::types::NextHop::Unimplemented(..) =  nexthop {
+            debug!("Unsupported NextHop: {:?}", nexthop);
+            return Err(ParseError::Unsupported);
+        }
         parser.advance(1)?; // reserved byte
         let mut builder = MpReachNlriBuilder::new(
             afi, safi, nexthop, sc.addpath_enabled()
