@@ -314,12 +314,12 @@ where Octs: AsRef<[u8]>,
 impl<Octs: AsRef<[u8]>> Eq for Labels<Octs> { }
 
 
-impl<Octs: Octets> Labels<Octs> {
-    fn len(&self) -> usize {
+impl<Octs: AsRef<[u8]>> Labels<Octs> {
+    pub fn len(&self) -> usize {
         self.octets.as_ref().len()
     }
 
-    fn as_ref(&self) -> &[u8] {
+    pub fn as_ref(&self) -> &[u8] {
         self.octets.as_ref()
     }
     
@@ -491,6 +491,20 @@ pub struct MplsVpnNlri<Octs> {
     rd: RouteDistinguisher,
 }
 
+impl<T> MplsVpnNlri<T> {
+    pub fn basic(&self) -> BasicNlri {
+        self.basic
+    }
+
+    pub fn labels(&self) -> &Labels<T> {
+        &self.labels
+    }
+
+    pub fn rd(&self) -> RouteDistinguisher {
+        self.rd
+    }
+}
+
 impl<Octs, Other> PartialEq<MplsVpnNlri<Other>> for MplsVpnNlri<Octs>
 where Octs: AsRef<[u8]>,
       Other: AsRef<[u8]>
@@ -566,6 +580,12 @@ pub struct EvpnNlri<Octs> {
 impl<Octs> EvpnNlri<Octs> {
     pub fn route_type(&self) -> EvpnRouteType {
         self.route_type
+    }
+}
+
+impl<T: AsRef<[u8]>> EvpnNlri<T> {
+    fn compose_len(&self) -> usize {
+        1 + self.raw.as_ref().len()
     }
 }
 
@@ -938,8 +958,12 @@ impl<Octs: AsRef<[u8]>> Nlri<Octs> {
     pub fn compose_len(&self) -> usize {
         match self {
             Nlri::Unicast(b) | Nlri::Multicast(b) => b.compose_len(),
+            Nlri::Mpls(m) => m.compose_len(),
+            Nlri::MplsVpn(m) => m.compose_len(),
+            Nlri::Vpls(v) => v.compose_len(),
             Nlri::FlowSpec(f) => f.compose_len(),
-            _ => todo!()
+            Nlri::RouteTarget(r) => r.compose_len(),
+            Nlri::Evpn(e) => e.compose_len(),
         }
     }
 }
@@ -1263,23 +1287,37 @@ impl<Octs: Octets> MplsVpnNlri<Octs> {
         let mut prefix_bits = parser.parse_u8()?;
         let labels = Labels::parse(parser)?;
 
-        // Check whether we can safely subtract the labels length from the
-        // prefix size. If there is an unexpected path id, we might silently
-        // subtract too much, because there is no 'subtract with overflow'
-        // warning when built in release mode.
-        if 8 * labels.len() as u8 > prefix_bits {
+        // Check whether we can safely subtract both the labels length and the
+        // route Distinguisher length from the prefix size. If there is an
+        // unexpected path id, we might silently subtract too much, because
+        // there is no 'subtract with overflow' warning when built in release
+        // mode.
+
+        if
+            u8::try_from(8 * (8 + labels.len()))
+                .map_err(|_| ParseError::form_error(
+                        "MplsVpnNlri labels/rd too long"
+                ))? > prefix_bits
+        {
             return Err(ParseError::ShortInput);
         }
 
         prefix_bits -= 8 * labels.len() as u8;
 
         let rd = RouteDistinguisher::parse(parser)?;
-        prefix_bits -= 8*std::mem::size_of::<RouteDistinguisher>() as u8;
+
+        prefix_bits -= 8*8;
 
         let prefix = parse_prefix_for_len(parser, prefix_bits, afi)?;
 
         let basic = BasicNlri{ prefix, path_id };
         Ok(MplsVpnNlri{ basic, labels, rd })
+    }
+}
+
+impl<T: AsRef<[u8]>> MplsVpnNlri<T> {
+    fn compose_len(&self) -> usize {
+        self.basic.compose_len() + self.labels.len() + self.rd.bytes.len()
     }
 }
 
@@ -1334,7 +1372,10 @@ impl<Octs: Octets> MplsNlri<Octs> {
         // prefix size. If there is an unexpected path id, we might silently
         // subtract too much, because there is no 'subtract with overflow'
         // warning when built in release mode.
-        if 8 * labels.len() as u8 > prefix_bits {
+
+        if u8::try_from(8 * labels.len())
+            .map_err(|_| ParseError::form_error("MplsNlri labels too long"))?
+            > prefix_bits {
             return Err(ParseError::ShortInput);
         }
 
@@ -1348,6 +1389,15 @@ impl<Octs: Octets> MplsNlri<Octs> {
                 labels, 
             }
         )
+    }
+}
+
+impl<T: AsRef<[u8]>> MplsNlri<T> {
+    fn compose_len(&self) -> usize {
+        self.basic.compose_len() + self.labels.len()
+    }
+    pub fn labels(&self) -> &Labels<T> {
+        &self.labels
     }
 }
 
@@ -1383,6 +1433,10 @@ impl VplsNlri {
                 raw_label_base: label_base_1 << 16 | label_base_2,
             }
         )
+    }
+
+    fn compose_len(&self) -> usize {
+        8 + 2 + 2 + 2 + 4
     }
 }
 
@@ -1518,6 +1572,12 @@ impl<Octs: Octets> RouteTargetNlri<Octs> {
                 raw
             }
         )
+    }
+}
+
+impl<T: AsRef<[u8]>> RouteTargetNlri<T> {
+    fn compose_len(&self) -> usize {
+        self.raw.as_ref().len()
     }
 }
 

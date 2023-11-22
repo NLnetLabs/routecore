@@ -1331,14 +1331,19 @@ mod tests {
 
     use super::*;
     use std::str::FromStr;
+    use std::net::Ipv6Addr;
     use crate::bgp::communities::{
         StandardCommunity,
         ExtendedCommunityType,
         ExtendedCommunitySubType,
         Tag, Wellknown,
     };
-    use crate::bgp::message::{Message, nlri::PathId};
+    use crate::bgp::message::{Message, nlri::{
+        Labels, PathId, RouteDistinguisher
+    }};
     use crate::addr::Prefix;
+
+
 
     use bytes::Bytes;
 
@@ -1373,11 +1378,11 @@ mod tests {
     //   x chained iter
     // - MP NLRI types:
     //   announcements:
-    //   - v4 mpls unicast
+    //   x v4 mpls unicast
     //   - v4 mpls unicast unreach **missing**
     //   - v4 mpls vpn unicast
     //   - v6 mpls unicast addpath 
-    //   - v6 mpls vpn unicast
+    //   X v6 mpls vpn unicast
     //   - multicast **missing
     //   - vpls
     //   - flowspec
@@ -2379,5 +2384,157 @@ mod tests {
         ).unwrap();
 
         assert_eq!(update.fmt_pcap_string(), update2.fmt_pcap_string());
+    }
+
+    #[test]
+    fn v4_mpls_unicast() {
+        let raw = vec![
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0x00, 0x5c, 0x02, 0x00, 0x00, 0x00, 0x45, 0x80,
+            0x0e, 0x31, 0x00, 0x01, 0x04, 0x04, 0x0a, 0x07,
+            0x08, 0x08, 0x00, 0x38, 0x01, 0xf4, 0x01, 0x0a,
+            0x00, 0x00, 0x09, 0x32, 0x01, 0xf4, 0x11, 0xc6,
+            0x33, 0x64, 0x00, 0x32, 0x01, 0xf4, 0x21, 0xc6,
+            0x33, 0x64, 0x40, 0x32, 0x01, 0xf4, 0x31, 0xc6,
+            0x33, 0x64, 0x80, 0x32, 0x01, 0xf4, 0x91, 0xc6,
+            0x33, 0x64, 0xc0, 0x40, 0x01, 0x01, 0x00, 0x40,
+            0x02, 0x0a, 0x02, 0x02, 0x00, 0x00, 0x01, 0x2c,
+            0x00, 0x00, 0x01, 0xf4
+        ];
+
+        let upd = UpdateMessage::from_octets(
+            &raw,
+            SessionConfig::modern()
+        ).unwrap();
+        if let Ok(Some(NextHop::Unicast(a))) = upd.mp_next_hop() {
+            assert_eq!(a, Ipv4Addr::from_str("10.7.8.8").unwrap());
+        } else {
+            panic!("wrong");
+        }
+        let mut ann = upd.mp_announcements().unwrap().unwrap().iter();
+        if let Some(Ok(Nlri::Mpls(n1))) = ann.next() {
+            assert_eq!(
+                n1.basic().prefix(),
+                Prefix::from_str("10.0.0.9/32").unwrap()
+            );
+            assert_eq!(
+                n1.labels().as_ref(),
+                &[0x01, 0xf4, 0x01] // single label: [2012]
+                //Labels::from(..),
+            );
+        } else {
+            panic!("wrong");
+        }
+
+        // and 4 more:
+        assert_eq!(ann.count(), 4);
+    }
+
+    #[test]
+    fn v6_mpls_vpn_unicast() {
+
+        // BGP UPDATE for 2/128, one single announced NLRI 
+        let raw = vec![
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0x00, 0x9a, 0x02, 0x00, 0x00, 0x00, 0x83, 0x80,
+            0x0e, 0x39, 0x00, 0x02, 0x80, 0x18, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0xff, 0xff, 0x0a, 0x00, 0x00, 0x02, 0x00, 0xd8,
+            0x00, 0x7d, 0xc1, 0x00, 0x00, 0x00, 0x64, 0x00,
+            0x00, 0x00, 0x01, 0xfc, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x01, 0x40, 0x01, 0x01, 0x00, 0x40,
+            0x02, 0x06, 0x02, 0x01, 0x00, 0x00, 0x00, 0x01,
+            0x80, 0x04, 0x04, 0x00, 0x00, 0x00, 0x00, 0x40,
+            0x05, 0x04, 0x00, 0x00, 0x00, 0x64, 0xc0, 0x10,
+            0x18, 0x00, 0x02, 0x00, 0x64, 0x00, 0x00, 0x00,
+            0x01, 0x00, 0x09, 0x00, 0x64, 0x00, 0x00, 0x00,
+            0x00, 0x01, 0x0b, 0x0a, 0x00, 0x00, 0x02, 0x00,
+            0x01, 0xc0, 0x14, 0x0e, 0x00, 0x01, 0x00, 0x00,
+            0x00, 0x64, 0x00, 0x00, 0x00, 0x01, 0x0a, 0x00,
+            0x00, 0x02
+        ];
+
+        let upd = UpdateMessage::from_octets(
+            &raw,
+            SessionConfig::modern()
+        ).unwrap();
+        if let Ok(Some(NextHop::Ipv6MplsVpnUnicast(rd, a))) = upd.mp_next_hop() {
+            assert_eq!(rd, RouteDistinguisher::new(&[0; 8]));
+            assert_eq!(a, Ipv6Addr::from_str("::ffff:10.0.0.2").unwrap());
+        } else {
+            panic!("wrong");
+        }
+        let mut ann = upd.mp_announcements().unwrap().unwrap().iter();
+        if let Some(Ok(Nlri::MplsVpn(n1))) = ann.next() {
+            assert_eq!(
+                n1.basic().prefix(),
+                Prefix::from_str("fc00::1/128").unwrap()
+            );
+            assert_eq!(
+                n1.labels().as_ref(),
+                &[0x00, 0x7d, 0xc1] // single label: [2012]
+                //Labels::from([2012]),
+            );
+            assert_eq!(
+                n1.rd(),
+                //RouteDistinguisher::from_str("100:1".unwrap())
+                RouteDistinguisher::new(&[0, 0, 0, 100, 0, 0, 0, 1])
+            );
+        } else {
+            panic!("wrong");
+        }
+
+        assert!(ann.next().is_none());
+    }
+
+
+
+
+    #[test]
+    fn debug_fuzz_unknown_afi_safi() {
+        let raw = vec![
+            255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+            255, 255, 255, 0, 36, 0, 0, 0, 0, 13, 255, 255, 0, 0, 0, 14, 6, 1,
+            0, 4, 0, 1, 0, 0
+        ];
+
+        let upd = UpdateMessage::from_octets(&raw, SessionConfig::modern())
+            .unwrap();
+
+        if let Ok(pas) = upd.path_attributes() {
+            for pa in pas.into_iter() {
+                dbg!(&pa);
+                if let Ok(pa) = pa {
+                    let _ = pa.to_owned();
+                }
+            }
+        }
+    }
+
+
+    #[test]
+    fn debug_fuzz_assert_flowspecnlri() {
+        let raw = vec![
+            255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+            255, 255, 255, 0, 36, 0, 0, 0, 0, 13, 255, 255, 0, 0, 0, 15, 6, 0,
+            2, 133, 43, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 1, 0, 255, 255, 255, 254
+        ];
+
+        let upd = UpdateMessage::from_octets(&raw, SessionConfig::modern())
+            .unwrap();
+
+        if let Ok(pas) = upd.path_attributes() {
+            for pa in pas.into_iter() {
+                dbg!(&pa);
+                if let Ok(pa) = pa {
+                    let _ = pa.to_owned();
+                }
+            }
+        }
     }
 }

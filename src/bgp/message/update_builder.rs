@@ -1172,12 +1172,18 @@ impl NextHop {
             NextHop::Unicast(IpAddr::V4(_)) | NextHop::Multicast(IpAddr::V4(_)) => 4, 
             NextHop::Unicast(IpAddr::V6(_)) | NextHop::Multicast(IpAddr::V6(_)) => 16, 
             NextHop::Ipv6LL(_, _) => 32,
-            NextHop::Ipv4MplsVpnUnicast(_rd, _ip4) => todo!(),
-            NextHop::Ipv6MplsVpnUnicast(_rd, _ip6) => todo!(),
+            NextHop::Ipv4MplsVpnUnicast(_rd, _ip4) => 8 + 4,
+            NextHop::Ipv6MplsVpnUnicast(_rd, _ip6) => 8 + 16,
             NextHop::Empty => 0, // FlowSpec
-            NextHop::Evpn(IpAddr::V4(_)) => todo!(),
-            NextHop::Evpn(IpAddr::V6(_)) => todo!(),
-            NextHop::Unimplemented(_afi, _safi) => todo!()
+            NextHop::Evpn(IpAddr::V4(_)) => 4, 
+            NextHop::Evpn(IpAddr::V6(_)) => 16,
+            NextHop::Unimplemented(_afi, _safi) => {
+                warn!(
+                    "unexpected compose_len called on NextHop::Unimplemented \
+                    returning usize::MAX, this will cause failure."
+                );
+                usize::MAX
+            }
         }
     }
 
