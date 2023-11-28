@@ -8,6 +8,7 @@ use serde::{Serialize, Deserialize};
 
 typeenum!(
 /// AFI as used in BGP OPEN and UPDATE messages.
+#[cfg_attr(feature = "serde", serde(from = "u16"))]
         AFI, u16,
         {
             1 => Ipv4,
@@ -17,6 +18,7 @@ typeenum!(
 
 typeenum!(
 /// SAFI as used in BGP OPEN and UPDATE messages.
+#[cfg_attr(feature = "serde", serde(from = "u8"))]
     SAFI, u8,
     {
         1 => Unicast,
