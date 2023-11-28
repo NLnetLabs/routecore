@@ -30,6 +30,59 @@ typeenum!(
     134 => FlowSpecVpn
     });
 
+/// Valid/supported pair of `AFI` and `SAFI`.
+///
+/// Not all combinations of the `AFI` and `SAFI` variants make sense. This
+/// enum explicitly comprises combinations which are described in standards
+/// documents.
+#[derive(Clone, Copy, Debug, Hash, Eq, Ord, PartialEq, PartialOrd)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub enum AfiSafi {
+    Ipv4Unicast,
+    Ipv6Unicast,
+    Ipv4Multicast,
+    Ipv6Multicast,
+
+    Ipv4MplsUnicast,
+    Ipv6MplsUnicast,
+
+    Ipv4MplsVpnUnicast,
+    Ipv6MplsVpnUnicast,
+
+    Ipv4RouteTarget,
+
+    Ipv4FlowSpec,
+    Ipv6FlowSpec,
+
+    L2VpnVpls,
+    L2VpnEvpn,
+}
+
+impl AfiSafi {
+    pub fn split(&self) -> (AFI, SAFI) {
+        match self {
+            Self::Ipv4Unicast => (AFI::Ipv4, SAFI::Unicast),
+            Self::Ipv6Unicast => (AFI::Ipv6, SAFI::Unicast),
+            Self::Ipv4Multicast => (AFI::Ipv4, SAFI::Multicast),
+            Self::Ipv6Multicast => (AFI::Ipv6, SAFI::Multicast),
+
+            Self::Ipv4MplsUnicast => (AFI::Ipv4, SAFI::MplsUnicast),
+            Self::Ipv6MplsUnicast => (AFI::Ipv6, SAFI::MplsUnicast),
+
+            Self::Ipv4MplsVpnUnicast => (AFI::Ipv4, SAFI::MplsVpnUnicast),
+            Self::Ipv6MplsVpnUnicast => (AFI::Ipv6, SAFI::MplsVpnUnicast),
+
+            Self::Ipv4RouteTarget => (AFI::Ipv4, SAFI::RouteTarget),
+
+            Self::Ipv4FlowSpec => (AFI::Ipv4, SAFI::FlowSpec),
+            Self::Ipv6FlowSpec => (AFI::Ipv6, SAFI::FlowSpec),
+
+            Self::L2VpnVpls => (AFI::L2Vpn, SAFI::Vpls),
+            Self::L2VpnEvpn => (AFI::L2Vpn, SAFI::Evpn),
+        }
+    }
+}
+
 typeenum!(
 /// BGP Origin types as used in BGP UPDATE messages.
     OriginType, u8,
