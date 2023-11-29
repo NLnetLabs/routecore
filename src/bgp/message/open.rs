@@ -1,6 +1,6 @@
 use crate::bgp::message::{Header, MsgType};
 use crate::asn::Asn;
-use crate::bgp::types::{AFI, SAFI};
+use crate::bgp::types::{AFI, SAFI, AfiSafi};
 use crate::typeenum; // from util::macros
 use crate::util::parser::ParseError;
 use log::warn;
@@ -519,6 +519,10 @@ impl<Octs: Octets> Capability<Octs> {
         Capability { octets }
     }
 
+    pub fn new(octets: Octs) -> Self {
+        Capability { octets }
+    }
+
     /// Returns the [`CapabilityType`] of this capability.
     pub fn typ(&self) -> CapabilityType {
         self.octets.as_ref()[0].into()
@@ -685,6 +689,7 @@ typeenum!(
 pub struct OpenBuilder<Target> {
     target: Target,
     capabilities: Vec<Capability<Vec<u8>>>,
+    addpath_families: Vec<(AfiSafi, AddpathDirection)>,
 }
 
 use core::convert::Infallible;
@@ -707,7 +712,13 @@ where
 
         // opt param len is set in finish()
 
-        Ok(OpenBuilder { target, capabilities: Vec::<Capability<_>>::new() })
+        Ok(
+            OpenBuilder {
+                target,
+                capabilities: Vec::<Capability<_>>::new(),
+                addpath_families: Vec::new(),
+            }
+        )
     }
 
     // TODO fn header_mut(&self) -> &mut Header {
@@ -718,6 +729,7 @@ where
 
 impl<Target: OctetsBuilder + AsMut<[u8]>> OpenBuilder<Target> {
     pub fn set_asn(&mut self, asn: Asn) {
+        // XXX should we call set_four_octet_asn from here as well?
         let asn = u16::try_from(asn.into_u32()).unwrap_or(AS_TRANS);
         self.target.as_mut()[COFF+1..=COFF+2]
             .copy_from_slice(&asn.to_be_bytes());
@@ -760,12 +772,43 @@ impl<Target: OctetsBuilder + AsMut<[u8]>> OpenBuilder<Target> {
         self.add_capability(Capability::<Vec<u8>>::for_slice(s.to_vec()))
     }
 
+    pub fn add_addpath(&mut self, afisafi: AfiSafi, dir: AddpathDirection) {
+        self.addpath_families.push((afisafi, dir));
+    }
+}
+
+#[derive(Copy, Clone, Debug)]
+pub enum AddpathDirection {
+    Receive = 1,
+    Send = 2,
+    SendReceive = 3,
 }
 
 impl<Target: OctetsBuilder + AsMut<[u8]>> OpenBuilder<Target>
 where Infallible: From<<Target as OctetsBuilder>::AppendError>
 {
     pub fn finish(mut self) -> Target {
+
+        if !self.addpath_families.is_empty() {
+            let addpath_cap_len = 4 * self.addpath_families.len();
+            let mut addpath_cap = Vec::<u8>::with_capacity(addpath_cap_len);
+
+            addpath_cap.extend_from_slice(
+            // XXX throw a ComposeError or equivalent after refactoring the
+            // builder.
+                &[69,
+                  addpath_cap_len.try_into().unwrap_or(u8::MAX)
+                ]
+            );
+
+            for (fam, dir) in self.addpath_families.iter() {
+                let (afi, safi) = fam.split();
+                addpath_cap.extend_from_slice(&u16::from(afi).to_be_bytes());
+                addpath_cap.extend_from_slice(&[safi.into(), *dir as u8]);
+            }
+            self.add_capability(Capability::new(addpath_cap));
+        }
+
         let mut cap_len = 0u8;
         for c in &self.capabilities {
             cap_len += c.as_ref().len() as u8;
@@ -1000,6 +1043,23 @@ mod builder {
 
         open.add_mp(AFI::Ipv4, SAFI::Unicast);
         open.add_mp(AFI::Ipv6, SAFI::Unicast);
+
+        let res = open.into_message();
+
+        assert_eq!(res.my_asn(), Asn::from_u32(AS_TRANS.into()));
+    }
+
+    #[test]
+    fn builder_addpath() {
+        let mut open = OpenBuilder::new_vec();
+        open.set_asn(Asn::from_u32(123123));
+        open.set_holdtime(180);
+        open.set_bgp_id([1, 2, 3, 4]);
+
+        open.add_mp(AFI::Ipv4, SAFI::Unicast);
+        open.add_mp(AFI::Ipv6, SAFI::Unicast);
+        open.add_addpath(AfiSafi::Ipv4Unicast, AddpathDirection::SendReceive);
+        open.add_addpath(AfiSafi::Ipv6Unicast, AddpathDirection::SendReceive);
 
         let res = open.into_message();
 
