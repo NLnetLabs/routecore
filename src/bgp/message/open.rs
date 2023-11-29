@@ -180,6 +180,48 @@ impl<Octs: Octets> OpenMessage<Octs> {
         )
     }
 
+    /*
+    pub fn addpath_families(&self) -> impl Iterator<Item = (AfiSafi, AddpathDirection)> + '_ {
+        self.capabilities().filter(|c|
+            c.typ() == CapabilityType::AddPath
+        ).map(|c| {
+            &c.value().chunks(4)
+                .map(|c| {
+                let mut parser = Parser::from_ref(c);
+
+                let afi = parser.parse_u16_be().unwrap().into();
+                let safi = parser.parse_u8().unwrap().into();
+                let dir = AddpathDirection::try_from(parser.parse_u8().unwrap());
+                (AfiSafi::try_from((afi, safi)).unwrap(), dir.unwrap())
+            })
+        }).flatten().into_iter()
+    }
+    */
+
+    pub fn addpath_families_vec(&self)
+        -> Result<Vec<(AfiSafi, AddpathDirection)>, ParseError>
+    {
+        let mut res = vec![];
+        for c in self.capabilities().filter(|c|
+            c.typ() == CapabilityType::AddPath
+        ) {
+            for c in c.value().chunks(4) {
+                let mut parser = Parser::from_ref(c);
+
+                let afi = parser.parse_u16_be()?.into();
+                let safi = parser.parse_u8()?.into();
+                let dir = AddpathDirection::try_from(parser.parse_u8()?)
+                    .map_err(|_| ParseError::Unsupported)?;
+                res.push((
+                    AfiSafi::try_from((afi, safi))
+                        .map_err(|_| ParseError::Unsupported)?,
+                    dir
+                ));
+            }
+        }
+        Ok(res)
+    }
+
     /// Returns an iterator over `(AFI, SAFI)` tuples listed as
     /// MultiProtocol Capabilities in the Optional Parameters of this message.
     pub fn multiprotocol_ids(&self) -> impl Iterator<Item = (AFI,SAFI)> + '_ {
@@ -777,11 +819,25 @@ impl<Target: OctetsBuilder + AsMut<[u8]>> OpenBuilder<Target> {
     }
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Clone, Copy, Debug, Hash, Eq, Ord, PartialEq, PartialOrd)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum AddpathDirection {
     Receive = 1,
     Send = 2,
     SendReceive = 3,
+}
+
+impl TryFrom<u8> for AddpathDirection {
+    type Error = &'static str;
+    fn try_from(u: u8) -> Result<Self, Self::Error> {
+        match u {
+            1 => Ok(Self::Receive),
+            2 => Ok(Self::Send),
+            3 => Ok(Self::SendReceive),
+            _ => Err("invalid ADDPATH send/receive value")
+        }
+    }
+
 }
 
 impl<Target: OctetsBuilder + AsMut<[u8]>> OpenBuilder<Target>
@@ -1016,6 +1072,55 @@ mod tests {
 
     }
 
+    #[test]
+    fn multiple_addpath_single_cap() {
+        // BGP OPEN with 1 optional parameter, Capability ADDPATH
+        let buf = vec![
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0x00, 41, 0x01, 0x04, 0x5b, 0xa0, 0x00, 0xb4,
+            0x0a, 0x00, 0x00, 0x03,
+            0x0c,
+            0x02, 0x0a, 69, 0x08,
+            0x00, 0x01, 0x01, 0x03,
+            0x00, 0x02, 0x01, 0x03,
+        ];
+
+        let open = OpenMessage::from_octets(buf).unwrap();
+
+        assert_eq!(open.capabilities().count(), 1);
+        assert!(open.addpath_families_vec().unwrap().iter().eq(
+            &[(AfiSafi::Ipv4Unicast, AddpathDirection::SendReceive),
+              (AfiSafi::Ipv6Unicast, AddpathDirection::SendReceive)]
+            )
+        );
+    }
+
+    #[test]
+    fn multiple_addpath_multi_cap() {
+        // BGP OPEN with 2 optional parameters, all Capability ADDPATH
+        // XXX note that this isn't actually allowed, not sure if it occurs in
+        // the wild.
+        let buf = vec![
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0x00, 45, 0x01, 0x04, 0x5b, 0xa0, 0x00, 0xb4,
+            0x0a, 0x00, 0x00, 0x03,
+            0x10,
+            0x02, 0x06, 69, 0x04, 0x00, 0x01, 0x01, 0x03,
+            0x02, 0x06, 69, 0x04, 0x00, 0x02, 0x01, 0x03,
+        ];
+
+        let open = OpenMessage::from_octets(buf).unwrap();
+
+        assert_eq!(open.capabilities().count(), 2);
+        assert!(open.addpath_families_vec().unwrap().iter().eq(
+            &[(AfiSafi::Ipv4Unicast, AddpathDirection::SendReceive),
+              (AfiSafi::Ipv6Unicast, AddpathDirection::SendReceive)]
+            )
+        );
+    }
+
 mod builder {
     use super::*;
 
@@ -1064,6 +1169,9 @@ mod builder {
         let res = open.into_message();
 
         assert_eq!(res.my_asn(), Asn::from_u32(AS_TRANS.into()));
+        for ap in res.addpath_families_vec().unwrap().iter() {
+            eprintln!("{:?}", ap);
+        }
     }
 
 

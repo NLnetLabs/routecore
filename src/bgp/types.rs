@@ -60,6 +60,17 @@ pub enum AfiSafi {
     L2VpnEvpn,
 }
 
+impl TryFrom<(AFI, SAFI)> for AfiSafi {
+    type Error = &'static str;
+    fn try_from(t: (AFI, SAFI)) -> Result<Self, Self::Error> {
+        match t {
+            (AFI::Ipv4, SAFI::Unicast) => Ok(Self::Ipv4Unicast),
+            (AFI::Ipv6, SAFI::Unicast) => Ok(Self::Ipv6Unicast),
+            _ => Err("unsupported AFI/SAFI combination")
+        }
+    }
+}
+
 impl AfiSafi {
     pub fn split(&self) -> (AFI, SAFI) {
         match self {
