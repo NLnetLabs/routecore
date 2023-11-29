@@ -716,8 +716,7 @@ where
 
 impl<Target: OctetsBuilder + AsMut<[u8]>> OpenBuilder<Target> {
     pub fn set_asn(&mut self, asn: Asn) {
-        // FIXME properly check / convert for 4-octet ASNs
-        let asn = asn.into_u32() as u16;
+        let asn = u16::try_from(asn.into_u32()).unwrap_or(23456); //AS_TRANS
         self.target.as_mut()[COFF+1..=COFF+2]
             .copy_from_slice(&asn.to_be_bytes());
     }
