@@ -11,6 +11,8 @@ use serde::{Serialize, Deserialize};
 
 const COFF: usize = 19; // XXX replace this with .skip()'s?
 
+const AS_TRANS: u16 = 23456;
+
 /// BGP OPEN message, variant of the [`Message`] enum.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OpenMessage<Octets> {
@@ -716,7 +718,7 @@ where
 
 impl<Target: OctetsBuilder + AsMut<[u8]>> OpenBuilder<Target> {
     pub fn set_asn(&mut self, asn: Asn) {
-        let asn = u16::try_from(asn.into_u32()).unwrap_or(23456); //AS_TRANS
+        let asn = u16::try_from(asn.into_u32()).unwrap_or(AS_TRANS);
         self.target.as_mut()[COFF+1..=COFF+2]
             .copy_from_slice(&asn.to_be_bytes());
     }
@@ -975,7 +977,7 @@ mod builder {
     use super::*;
 
     #[test]
-    fn builder() {
+    fn builder_16bit_asn() {
         let mut open = OpenBuilder::new_vec();
         open.set_asn(Asn::from_u32(1234));
         open.set_holdtime(180);
@@ -985,7 +987,23 @@ mod builder {
         open.add_mp(AFI::Ipv6, SAFI::Unicast);
 
         let res = open.into_message();
-        println!("{:?}", res);
+
+        assert_eq!(res.my_asn(), Asn::from_u32(1234));
+    }
+
+    #[test]
+    fn builder_32bit_asn() {
+        let mut open = OpenBuilder::new_vec();
+        open.set_asn(Asn::from_u32(123123));
+        open.set_holdtime(180);
+        open.set_bgp_id([1, 2, 3, 4]);
+
+        open.add_mp(AFI::Ipv4, SAFI::Unicast);
+        open.add_mp(AFI::Ipv6, SAFI::Unicast);
+
+        let res = open.into_message();
+
+        assert_eq!(res.my_asn(), Asn::from_u32(AS_TRANS.into()));
     }
 
 
