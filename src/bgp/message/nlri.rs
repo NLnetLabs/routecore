@@ -1,9 +1,9 @@
-use crate::bgp::types::{AFI, SAFI, NextHop};
+use crate::bgp::types::{AFI, SAFI, AfiSafi, NextHop};
 
 use crate::addr::Prefix;
 
 use crate::util::parser::{parse_ipv4addr, parse_ipv6addr, ParseError};
-use crate::bgp::message::update::{AddPath, SessionConfig};
+use crate::bgp::message::update::{SessionConfig};
 use crate::flowspec::Component;
 use crate::typeenum;
 use octseq::{Octets, OctetsBuilder, OctetsFrom, Parser};
@@ -29,16 +29,29 @@ use serde::{Serialize, Deserialize};
 
 pub struct FixedNlriIter<'a, T, AS> {
     parser: Parser<'a, T>,
-    _afisafi: AS,
+    afisafi: std::marker::PhantomData<AS>,
 }
 
 impl<'a, T: 'a + Octets, AS: AfiSafiParse > FixedNlriIter<'a, T, AS> {
-    pub fn new(parser: &mut Parser<'a, T>, _afisafi: AS) -> Self {
-        FixedNlriIter { parser: *parser, _afisafi }
+    pub fn new(parser: &mut Parser<'a, T>) -> Self {
+        FixedNlriIter { parser: *parser, afisafi: std::marker::PhantomData}
     }
 
-    fn get_nlri(&mut self) -> Result<Nlri<T::Range<'a>>, ParseError> {
+    pub fn validate(&mut self) -> Result<(), ParseError> {
+        let pos = self.parser.pos();
+        while self.parser.remaining() > 0 {
+            self.skip_nlri()?
+        }
+        self.parser.seek(pos)?;
+        Ok(())
+    }
+
+    fn get_nlri(&mut self) -> Result<AS::Item<T::Range<'a>>, ParseError> {
         AS::parse_nlri(&mut self.parser)
+    }
+
+    fn skip_nlri(&mut self) -> Result<(), ParseError> {
+        AS::skip_nlri(&mut self.parser)
     }
 }
 
@@ -46,19 +59,25 @@ impl<'a, T: 'a + Octets, AS: AfiSafiParse > FixedNlriIter<'a, T, AS> {
 
 pub(crate) struct Ipv4Unicast;
 impl AfiSafiParse for Ipv4Unicast {
+    type Item<O> = BasicNlri;
     fn parse_nlri<'a, Octs: Octets>(
         parser: &mut Parser<'a, Octs>
-    ) -> Result<Nlri<Octs::Range<'a>>, ParseError> {
+    ) -> Result<Self::Item<Octs::Range<'a>>, ParseError> {
         Ok(
-            Nlri::Unicast(BasicNlri::new(parse_prefix(parser, AFI::Ipv4)?))
+            BasicNlri::new(parse_prefix(parser, AFI::Ipv4)?)
         )
+    }
+
+    fn skip_nlri<Octs: Octets>(parser: &mut Parser<'_, Octs>)
+        -> Result<(), ParseError>
+    {
+        skip_prefix(parser)
     }
 }
 
 impl<'a, T: 'a + Octets> FixedNlriIter<'a, T, Ipv4Unicast> {
-    #[allow(dead_code)]
     pub(crate) fn ipv4unicast(parser: &mut Parser<'a, T>) -> Self {
-        FixedNlriIter::new( parser, Ipv4Unicast{} )
+        FixedNlriIter::<T, Ipv4Unicast>::new(parser)
     }
 }
 
@@ -66,23 +85,29 @@ impl<'a, T: 'a + Octets> FixedNlriIter<'a, T, Ipv4Unicast> {
 
 pub(crate) struct Ipv4UnicastAddPath;
 impl AfiSafiParse for Ipv4UnicastAddPath {
+    type Item<O> = BasicNlri;
     fn parse_nlri<'a, Octs: Octets>(
         parser: &mut Parser<'a, Octs>
-    ) -> Result<Nlri<Octs::Range<'a>>, ParseError> {
+    ) -> Result<Self::Item<Octs::Range<'a>>, ParseError> {
         let path_id = PathId::parse(parser)?;
         Ok(
-            Nlri::Unicast(BasicNlri::with_path_id(
+            BasicNlri::with_path_id(
                 parse_prefix(parser, AFI::Ipv4)?,
                 path_id
-            ))
+            )
         )
+    }
+
+    fn skip_nlri<Octs: Octets>(parser: &mut Parser<'_, Octs>)
+        -> Result<(), ParseError>
+    {
+        skip_prefix_addpath(parser)
     }
 }
 
 impl<'a, T: 'a + Octets> FixedNlriIter<'a, T, Ipv4UnicastAddPath> {
-    #[allow(dead_code)]
     pub(crate) fn ipv4unicast_addpath(parser: &mut Parser<'a, T>) -> Self {
-        FixedNlriIter::new( parser, Ipv4UnicastAddPath{} )
+        FixedNlriIter::<T, Ipv4UnicastAddPath>::new(parser)
     }
 }
 
@@ -90,19 +115,25 @@ impl<'a, T: 'a + Octets> FixedNlriIter<'a, T, Ipv4UnicastAddPath> {
 
 pub(crate) struct Ipv6Unicast;
 impl AfiSafiParse for Ipv6Unicast {
+    type Item<O> = BasicNlri;
     fn parse_nlri<'a, Octs: Octets>(
         parser: &mut Parser<'a, Octs>
-    ) -> Result<Nlri<Octs::Range<'a>>, ParseError> {
+    ) -> Result<Self::Item<Octs::Range<'a>>, ParseError> {
         Ok(
-            Nlri::Unicast(BasicNlri::new(parse_prefix(parser, AFI::Ipv6)?))
+            BasicNlri::new(parse_prefix(parser, AFI::Ipv6)?)
         )
+    }
+
+    fn skip_nlri<Octs: Octets>(parser: &mut Parser<'_, Octs>)
+        -> Result<(), ParseError>
+    {
+        skip_prefix(parser)
     }
 }
 
 impl<'a, T: 'a + Octets> FixedNlriIter<'a, T, Ipv6Unicast> {
-    #[allow(dead_code)]
     pub(crate) fn ipv6unicast(parser: &mut Parser<'a, T>) -> Self {
-        FixedNlriIter::new( parser, Ipv6Unicast{} )
+        FixedNlriIter::<T, Ipv6Unicast>::new(parser)
     }
 }
 
@@ -110,38 +141,48 @@ impl<'a, T: 'a + Octets> FixedNlriIter<'a, T, Ipv6Unicast> {
 
 pub(crate) struct Ipv6UnicastAddPath;
 impl AfiSafiParse for Ipv6UnicastAddPath {
+    type Item<O> = BasicNlri;
     fn parse_nlri<'a, Octs: Octets>(
         parser: &mut Parser<'a, Octs>
-    ) -> Result<Nlri<Octs::Range<'a>>, ParseError> {
+    ) -> Result<Self::Item<Octs::Range<'a>>, ParseError> {
         let path_id = PathId::parse(parser)?;
         Ok(
-            Nlri::Unicast(BasicNlri::with_path_id(
+            BasicNlri::with_path_id(
                 parse_prefix(parser, AFI::Ipv6)?,
                 path_id
-            ))
+            )
         )
+    }
+
+    fn skip_nlri<Octs: Octets>(parser: &mut Parser<'_, Octs>)
+        -> Result<(), ParseError>
+    {
+        skip_prefix_addpath(parser)
     }
 }
 
 impl<'a, T: 'a + Octets> FixedNlriIter<'a, T, Ipv6UnicastAddPath> {
-    #[allow(dead_code)]
     pub(crate) fn ipv6unicast_addpath(parser: &mut Parser<'a, T>) -> Self {
-        FixedNlriIter::new( parser, Ipv6UnicastAddPath{} )
+        FixedNlriIter::<T, Ipv6UnicastAddPath>::new(parser)
     }
 }
 
 //------------ AfiSafiParse --------------------------------------------------
 
 pub trait AfiSafiParse {
+    type Item<O>;
     fn parse_nlri<'a, Octs: Octets>(
         parser: &mut Parser<'a, Octs>
-    ) -> Result<Nlri<Octs::Range<'a>>, ParseError>;
+    ) -> Result<Self::Item<Octs::Range<'a>>, ParseError>;
+
+    fn skip_nlri<Octs: Octets>(parser: &mut Parser<'_, Octs>)
+        -> Result<(), ParseError>;
 }
 
 //------------ Iterator ------------------------------------------------------
 
 impl<'a, T: Octets, AS: AfiSafiParse> Iterator for FixedNlriIter<'a, T, AS> {
-    type Item = Result<Nlri<T::Range<'a>>, ParseError>;
+    type Item = Result<AS::Item<T::Range<'a>>, ParseError>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.parser.remaining() == 0 {
@@ -153,7 +194,8 @@ impl<'a, T: Octets, AS: AfiSafiParse> Iterator for FixedNlriIter<'a, T, AS> {
 
 //--- NextHop in MP_REACH_NLRI -----------------------------------------------
 impl NextHop {
-    pub fn check<Octs: Octets>(parser: &mut Parser<Octs>, afi: AFI, safi: SAFI)
+    // XXX remove? at least get rid of code repetition with fn parse below
+    pub fn _check<Octs: Octets>(parser: &mut Parser<Octs>, afi: AFI, safi: SAFI)
         -> Result<(), ParseError>
     {
         let len = parser.parse_u8()?;
@@ -1086,6 +1128,23 @@ fn parse_prefix_for_len<R: Octets>(
     Ok(prefix)
 }
 
+fn skip_prefix<R: Octets>(parser: &mut Parser<'_, R>)
+    -> Result<(), ParseError>
+{
+    let prefix_bits = parser.parse_u8()?;
+    let prefix_bytes = prefix_bits_to_bytes(prefix_bits);
+    Ok(parser.advance(prefix_bytes)?)
+}
+
+fn skip_prefix_addpath<R: Octets>(parser: &mut Parser<'_, R>)
+    -> Result<(), ParseError>
+{
+    let prefix_bits = parser.parse_u8()?;
+    parser.advance(4)?;
+    let prefix_bytes = prefix_bits_to_bytes(prefix_bits);
+    Ok(parser.advance(prefix_bytes)?)
+}
+
 fn parse_prefix<R: Octets>(parser: &mut Parser<'_, R>, afi: AFI)
     -> Result<Prefix, ParseError>
 {
@@ -1135,14 +1194,14 @@ impl BasicNlri {
     pub fn check<Octs: Octets>(
         parser: &mut Parser<Octs>,
         config: SessionConfig,
-        afi: AFI
+        afisafi: AfiSafi,
     ) -> Result<(), ParseError> {
-        if config.add_path == AddPath::Enabled {
+        if config.rx_addpath(afisafi) {
             PathId::check(parser)?
         }
 
         let prefix_bits = parser.parse_u8()?;
-        check_prefix(parser, prefix_bits, afi)?;
+        check_prefix(parser, prefix_bits, afisafi.afi())?;
         
         Ok(())
     }
@@ -1150,14 +1209,20 @@ impl BasicNlri {
     pub fn parse<R: Octets>(
         parser: &mut Parser<'_, R>,
         config: SessionConfig,
-        afi: AFI
+        afisafi: AfiSafi,
     ) -> Result<Self, ParseError> {
-        let path_id = match config.add_path {
-            AddPath::Enabled => Some(PathId::parse(parser)?),
-            _ => None
+        let path_id = if config.rx_addpath(afisafi) {
+            Some(PathId::parse(parser)?)
+        } else {
+            None
         };
+
         let prefix_bits = parser.parse_u8()?;
-        let prefix = parse_prefix_for_len(parser, prefix_bits, afi)?;
+        let prefix = parse_prefix_for_len(
+            parser,
+            prefix_bits,
+            afisafi.afi()
+        )?;
         
         Ok(
             BasicNlri {
@@ -1249,10 +1314,10 @@ impl<Octs: Octets> MplsVpnNlri<Octs> {
     pub fn check(
         parser: &mut Parser<Octs>,
         config: SessionConfig,
-        afi: AFI
+        afisafi: AfiSafi,
         ) -> Result<(), ParseError>
     {
-        if config.add_path == AddPath::Enabled {
+        if config.rx_addpath(afisafi) {
             parser.advance(4)?;
         }
 
@@ -1272,7 +1337,7 @@ impl<Octs: Octets> MplsVpnNlri<Octs> {
         RouteDistinguisher::check(parser)?;
         prefix_bits -= 8 * 8_u8;
 
-        check_prefix(parser, prefix_bits, afi)?;
+        check_prefix(parser, prefix_bits, afisafi.afi())?;
 
         Ok(())
     }
@@ -1282,13 +1347,15 @@ impl<Octs: Octets> MplsVpnNlri<Octs> {
     pub fn parse<'a, R>(
         parser: &mut Parser<'a, R>,
         config: SessionConfig,
-        afi: AFI) -> Result<Self, ParseError>
+        afisafi: AfiSafi,
+    ) -> Result<Self, ParseError>
     where
         R: Octets<Range<'a> = Octs>
     {
-        let path_id = match config.add_path {
-            AddPath::Enabled => Some(PathId::parse(parser)?),
-            _ => None
+        let path_id = if config.rx_addpath(afisafi) {
+            Some(PathId::parse(parser)?)
+        } else {
+            None
         };
 
         let mut prefix_bits = parser.parse_u8()?;
@@ -1315,7 +1382,7 @@ impl<Octs: Octets> MplsVpnNlri<Octs> {
 
         prefix_bits -= 8*8;
 
-        let prefix = parse_prefix_for_len(parser, prefix_bits, afi)?;
+        let prefix = parse_prefix_for_len(parser, prefix_bits, afisafi.afi())?;
 
         let basic = BasicNlri{ prefix, path_id };
         Ok(MplsVpnNlri{ basic, labels, rd })
@@ -1332,10 +1399,10 @@ impl<Octs: Octets> MplsNlri<Octs> {
     pub fn check(
         parser: &mut Parser<Octs>,
         config: SessionConfig,
-        afi: AFI) -> Result<(), ParseError>
-    {
-        if config.add_path == AddPath::Enabled {
-            parser.advance(4)?;
+        afisafi: AfiSafi,
+    ) -> Result<(), ParseError> {
+        if config.rx_addpath(afisafi) {
+            PathId::check(parser)?
         }
 
         let mut prefix_bits = parser.parse_u8()?;
@@ -1350,7 +1417,7 @@ impl<Octs: Octets> MplsNlri<Octs> {
         }
 
         prefix_bits -= 8 * labels.len() as u8;
-        check_prefix(parser, prefix_bits, afi)?;
+        check_prefix(parser, prefix_bits, afisafi.afi())?;
         Ok(())
     }
 
@@ -1363,13 +1430,15 @@ impl<Octs: Octets> MplsNlri<Octs> {
     pub fn parse<'a, R>(
         parser: &mut Parser<'a, R>,
         config: SessionConfig,
-        afi: AFI) -> Result<Self, ParseError>
+        afisafi: AfiSafi,
+    ) -> Result<Self, ParseError>
     where
         R: Octets<Range<'a> = Octs>
     {
-        let path_id = match config.add_path {
-            AddPath::Enabled => Some(PathId::parse(parser)?),
-            _ => None
+        let path_id = if config.rx_addpath(afisafi) {
+            Some(PathId::parse(parser)?)
+        } else {
+            None
         };
 
         let mut prefix_bits = parser.parse_u8()?;
@@ -1388,8 +1457,14 @@ impl<Octs: Octets> MplsNlri<Octs> {
 
         prefix_bits -= 8 * labels.len() as u8;
 
-        let prefix = parse_prefix_for_len(parser, prefix_bits, afi)?;
+        let prefix = parse_prefix_for_len(
+            parser,
+            prefix_bits,
+            afisafi.afi()
+        )?;
+
         let basic = BasicNlri { prefix, path_id };
+
         Ok(
             MplsNlri {
                 basic,
