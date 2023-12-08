@@ -1,6 +1,6 @@
 use crate::bgp::message::{Header, MsgType};
 use crate::asn::Asn;
-use crate::bgp::types::{AFI, SAFI, AfiSafi};
+use crate::bgp::types::{AFI, SAFI, AfiSafi, AddpathFamDir, AddpathDirection};
 use crate::typeenum; // from util::macros
 use crate::util::parser::ParseError;
 use log::warn;
@@ -220,6 +220,33 @@ impl<Octs: Octets> OpenMessage<Octs> {
             }
         }
         Ok(res)
+    }
+
+    /// Merge exchanged ADDPATH capabilities from our perspective.
+    ///
+    /// Note that depending on the directions (Send, Receive, or SendReceive)
+    /// for the address families, we might up with a unidirectional ADDPATH
+    /// enabled session. For example, if we announce only Receive, and the
+    /// other side announces SendReceive, we must not send out prefixes with
+    /// Path IDs.
+    ///
+    /// Calling `msg1.addpath_intersection(msg2)` might give a different
+    /// result than `msg2.addpath_intersection(msg1)`.
+    pub fn addpath_intersection<O: Octets>(&self, other: &OpenMessage<O>)
+        -> Vec<AddpathFamDir>
+    {
+        let (Ok(mine), Ok(other)) =
+            (self.addpath_families_vec(), other.addpath_families_vec()) else {
+            return vec![];
+        };
+
+        mine.iter().filter_map(|(my_fam, my_dir)| {
+            other.iter().find(|(f, _d)| {
+                my_fam == f
+            }).and_then(|(_f, other_dir)| {
+                my_dir.merge(*other_dir)
+            }).map(|m| AddpathFamDir::new(*my_fam, m))
+        }).collect::<Vec<_>>()
     }
 
     /// Returns an iterator over `(AFI, SAFI)` tuples listed as
@@ -817,27 +844,6 @@ impl<Target: OctetsBuilder + AsMut<[u8]>> OpenBuilder<Target> {
     pub fn add_addpath(&mut self, afisafi: AfiSafi, dir: AddpathDirection) {
         self.addpath_families.push((afisafi, dir));
     }
-}
-
-#[derive(Clone, Copy, Debug, Hash, Eq, Ord, PartialEq, PartialOrd)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub enum AddpathDirection {
-    Receive = 1,
-    Send = 2,
-    SendReceive = 3,
-}
-
-impl TryFrom<u8> for AddpathDirection {
-    type Error = &'static str;
-    fn try_from(u: u8) -> Result<Self, Self::Error> {
-        match u {
-            1 => Ok(Self::Receive),
-            2 => Ok(Self::Send),
-            3 => Ok(Self::SendReceive),
-            _ => Err("invalid ADDPATH send/receive value")
-        }
-    }
-
 }
 
 impl<Target: OctetsBuilder + AsMut<[u8]>> OpenBuilder<Target>
