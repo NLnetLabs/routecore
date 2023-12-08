@@ -364,14 +364,16 @@ impl<Octs: AsRef<[u8]>> Eq for Labels<Octs> { }
 
 
 impl<Octs: AsRef<[u8]>> Labels<Octs> {
+    #[allow(clippy::len_without_is_empty)]
     pub fn len(&self) -> usize {
         self.octets.as_ref().len()
     }
+}
 
-    pub fn as_ref(&self) -> &[u8] {
+impl<Octs: AsRef<[u8]>> AsRef<[u8]> for Labels<Octs> {
+    fn as_ref(&self) -> &[u8] {
         self.octets.as_ref()
     }
-    
 }
 
 impl<Octs: Octets> Labels<Octs> {
