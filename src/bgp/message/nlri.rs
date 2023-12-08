@@ -237,6 +237,13 @@ impl NextHop {
                 NextHop::Evpn(parse_ipv4addr(parser)?.into()),
             (16, AFI::L2Vpn, SAFI::Evpn) =>
                 NextHop::Evpn(parse_ipv6addr(parser)?.into()),
+
+            (4, AFI::Ipv6, SAFI::MplsUnicast) =>
+                // IPv6 MPLS with IPv4 Nexthop (RFC4684)
+                NextHop::Unicast(parse_ipv4addr(parser)?.into()),
+            (16, AFI::Ipv4, SAFI::MplsUnicast) =>
+                // IPv4 MPLS with IPv6 Nexthop (RFC4684)
+                NextHop::Unicast(parse_ipv6addr(parser)?.into()),
             _ => {
                 debug!("Unimplemented NextHop AFI/SAFI {}/{} len {}",
                       afi, safi, len);
