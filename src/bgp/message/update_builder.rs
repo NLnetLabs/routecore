@@ -1461,6 +1461,7 @@ mod tests {
     use crate::asn::Asn;
     //use crate::bgp::communities::Wellknown;
     use crate::bgp::message::nlri::BasicNlri;
+    use crate::bgp::message::update::AfiSafi;
     use super::*;
 
     fn print_pcap<T: AsRef<[u8]>>(buf: T) {
@@ -1782,8 +1783,10 @@ mod tests {
         ).collect::<Vec<_>>();
         let _ = builder.append_withdrawals(&mut withdrawals);
         let msg = builder.finish().unwrap();
+        let mut sc = SessionConfig::modern();
+        sc.add_addpath_rxtx(AfiSafi::Ipv4Unicast);
         assert!(
-            UpdateMessage::from_octets(&msg, SessionConfig::modern_addpath())
+            UpdateMessage::from_octets(&msg, sc)
             .is_ok()
         );
         print_pcap(&msg);
