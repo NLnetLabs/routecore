@@ -63,15 +63,42 @@ pub enum AfiSafi {
 impl TryFrom<(AFI, SAFI)> for AfiSafi {
     type Error = &'static str;
     fn try_from(t: (AFI, SAFI)) -> Result<Self, Self::Error> {
+
+        use AfiSafi::*;
         match t {
-            (AFI::Ipv4, SAFI::Unicast) => Ok(Self::Ipv4Unicast),
-            (AFI::Ipv6, SAFI::Unicast) => Ok(Self::Ipv6Unicast),
+            (AFI::Ipv4, SAFI::Unicast) => Ok(Ipv4Unicast),
+            (AFI::Ipv6, SAFI::Unicast) => Ok(Ipv6Unicast),
+
+            (AFI::Ipv4, SAFI::Multicast) => Ok(Ipv4Multicast),
+            (AFI::Ipv6, SAFI::Multicast) => Ok(Ipv6Multicast),
+
+            (AFI::Ipv4, SAFI::MplsUnicast) => Ok(Ipv4MplsUnicast),
+            (AFI::Ipv6, SAFI::MplsUnicast) => Ok(Ipv6MplsUnicast),
+
+            (AFI::Ipv4, SAFI::MplsVpnUnicast) => Ok(Ipv4MplsVpnUnicast),
+            (AFI::Ipv6, SAFI::MplsVpnUnicast) => Ok(Ipv6MplsVpnUnicast),
+
+            (AFI::Ipv4, SAFI::RouteTarget) => Ok(Ipv4RouteTarget),
+
+            (AFI::Ipv4, SAFI::FlowSpec) => Ok(Ipv4FlowSpec),
+            (AFI::Ipv6, SAFI::FlowSpec) => Ok(Ipv6FlowSpec),
+
+            (AFI::L2Vpn, SAFI::Vpls) => Ok(L2VpnVpls),
+            (AFI::L2Vpn, SAFI::Evpn) => Ok(L2VpnEvpn),
             _ => Err("unsupported AFI/SAFI combination")
         }
     }
 }
 
 impl AfiSafi {
+    pub fn afi(&self) -> AFI {
+        self.split().0
+    }
+
+    pub fn safi(&self) -> SAFI {
+        self.split().1
+    }
+
     pub fn split(&self) -> (AFI, SAFI) {
         match self {
             Self::Ipv4Unicast => (AFI::Ipv4, SAFI::Unicast),
@@ -95,6 +122,68 @@ impl AfiSafi {
         }
     }
 }
+
+
+#[derive(Clone, Copy, Debug, Hash, Eq, Ord, PartialEq, PartialOrd)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct AddpathFamDir(AfiSafi, AddpathDirection);
+impl AddpathFamDir {
+    pub fn new(afisafi: AfiSafi, apd: AddpathDirection) -> Self {
+        Self(afisafi, apd)
+    }
+
+    pub fn merge(&self, other: Self) -> Option<Self> {
+        if self.0 != other.0 {
+            return None;
+        }
+        self.1.merge(other.1).map(|dir| Self::new(self.0, dir))
+    }
+
+    pub fn fam(&self) -> AfiSafi {
+        self.0
+    }
+
+    pub fn dir(&self) -> AddpathDirection {
+        self.1
+    }
+}
+
+#[derive(Clone, Copy, Debug, Hash, Eq, Ord, PartialEq, PartialOrd)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub enum AddpathDirection {
+    Receive = 1,
+    Send = 2,
+    SendReceive = 3,
+}
+
+impl AddpathDirection {
+    pub fn merge(&self, other: Self) -> Option<Self> {
+        match (self, other) {
+            (Self::Receive, Self::Receive) => None,
+            (Self::Send, Self::Send) => None,
+            (Self::SendReceive, Self::SendReceive) => Some(Self::SendReceive),
+            (Self::Send, Self::Receive | Self::SendReceive) => Some(Self::Send),
+            (Self::Receive, Self::Send | Self::SendReceive) => Some(Self::Receive),
+            (Self::SendReceive, Self::Send) => Some(Self::Receive),
+            (Self::SendReceive, Self::Receive) => Some(Self::Send),
+        }
+    }
+}
+
+impl TryFrom<u8> for AddpathDirection {
+    type Error = &'static str;
+    fn try_from(u: u8) -> Result<Self, Self::Error> {
+        match u {
+            1 => Ok(Self::Receive),
+            2 => Ok(Self::Send),
+            3 => Ok(Self::SendReceive),
+            _ => Err("invalid ADDPATH send/receive value")
+        }
+    }
+
+}
+
 
 typeenum!(
 /// BGP Origin types as used in BGP UPDATE messages.
