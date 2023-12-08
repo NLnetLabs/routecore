@@ -892,8 +892,8 @@ impl<Octs: Octets> PeerUpNotification<Octs> {
 
         conf.set_four_octet_asn(four_octet_asn);
 
-        if sent.add_path_capable() && rcvd.add_path_capable() {
-            conf.enable_addpath()
+        for famdir in sent.addpath_intersection(&rcvd) {
+            conf.add_famdir(famdir);
         }
 
         let inconsistent = 
@@ -932,8 +932,8 @@ impl<Octs: Octets> PeerUpNotification<Octs> {
 
         conf.set_four_octet_asn(bgp_four_octet);
 
-        if sent.add_path_capable() && rcvd.add_path_capable() {
-            conf.enable_addpath()
+        for famdir in sent.addpath_intersection(&rcvd) {
+            conf.add_famdir(famdir);
         }
 
         conf
@@ -1675,7 +1675,7 @@ mod tests {
     use crate::bgp::types::{AFI, SAFI};
     use crate::bgp::path_attributes::PathAttributeType;
     use crate::bgp::message::nlri::Nlri;
-    use crate::bgp::message::update::{AddPath, FourOctetAsn, SessionConfig};
+    use crate::bgp::message::update::{FourOctetAsn, SessionConfig};
 
     // Helper for generating a .pcap, pass output to `text2pcap`.
     #[allow(dead_code)]
@@ -2028,7 +2028,7 @@ mod tests {
         let sc = bmp.pph_session_config();
         assert_eq!(sc.1, None);
         assert_eq!(sc.0.four_octet_asn, FourOctetAsn::Enabled);
-        assert_eq!(sc.0.add_path, AddPath::Disabled);
+        assert_eq!(sc.0.enabled_addpaths().count(), 0);
 
         assert_eq!(
             bmp.supported_protocols(),
