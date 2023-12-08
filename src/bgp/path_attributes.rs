@@ -6,15 +6,18 @@ use octseq::{Octets, OctetsBuilder, OctetsFrom, Parser};
 
 use crate::asn::Asn;
 use crate::bgp::aspath::HopPath;
+use crate::bgp::message::{
+    nlri::FixedNlriIter,
+    SessionConfig
+};
 use crate::bgp::message::update_builder::{
     MpReachNlriBuilder,
-    MpUnreachNlriBuilder
+    MpUnreachNlriBuilder,
+    StandardCommunitiesBuilder
 };
-use crate::bgp::message::SessionConfig;
-use crate::bgp::types::{AFI, SAFI};
+use crate::bgp::types::{AFI, SAFI, AfiSafi};
 use crate::util::parser::{ParseError, parse_ipv4addr};
 
-use crate::bgp::message::update_builder::StandardCommunitiesBuilder;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub struct Flags(u8);
@@ -661,6 +664,7 @@ pub trait Attribute: AttributeHeader + Clone {
     
 }
 
+#[derive(Debug)]
 pub struct PathAttributes<'a, Octs> {
     pub parser: Parser<'a, Octs>,
     pub session_config: SessionConfig,
@@ -1147,8 +1151,15 @@ impl Attribute for MpReachNlri {
             return Err(ParseError::Unsupported);
         }
         parser.advance(1)?; // reserved byte
+        
+        let afisafi = AfiSafi::try_from((afi, safi))
+            .map_err(|_| ParseError::Unsupported)?;
+
         let mut builder = MpReachNlriBuilder::new(
-            afi, safi, nexthop, sc.addpath_enabled()
+            afi,
+            safi,
+            nexthop,
+            sc.rx_addpath(afisafi)
         );
 
         // This is what using the FixedNlriIter would look like:
@@ -1182,8 +1193,7 @@ impl Attribute for MpReachNlri {
         let nlri_iter = crate::bgp::message::update::Nlris::new(
             *parser,
             sc,
-            afi,
-            safi
+            afisafi
         ).iter();
 
         for nlri in nlri_iter {
@@ -1196,7 +1206,7 @@ impl Attribute for MpReachNlri {
     fn validate<Octs: Octets>(
         _flags: Flags,
         parser: &mut Parser<'_, Octs>,
-        _session_config: SessionConfig
+        session_config: SessionConfig
     ) -> Result<(), ParseError> {
         // We only check for the bare minimum here, as most checks are
         // better done upon (creation of the) Nlri iterator based on the
@@ -1205,6 +1215,60 @@ impl Attribute for MpReachNlri {
             return Err(ParseError::form_error(
                 "length for MP_REACH_NLRI less than minimum"
             ))
+        }
+        
+         
+        let afi: AFI = parser.parse_u16_be()?.into();
+        let safi: SAFI = parser.parse_u8()?.into();
+        let _nexthop = crate::bgp::types::NextHop::parse(parser, afi, safi)?;
+        //if let crate::bgp::types::NextHop::Unimplemented(..) =  nexthop {
+        //    debug!("Unsupported NextHop: {:?}", nexthop);
+        //    return Err(ParseError::Unsupported);
+        //}
+        parser.advance(1)?; // reserved byte
+
+        let afisafi = AfiSafi::try_from((afi, safi))
+            .map_err(|_| ParseError::Unsupported)?;
+        let expect_path_id = session_config.rx_addpath(afisafi);
+
+        use AfiSafi::*;
+        match (afisafi, expect_path_id) {
+            (Ipv4Unicast, false) => FixedNlriIter::ipv4unicast(parser).validate()?,
+            (Ipv4Unicast, true) => FixedNlriIter::ipv4unicast_addpath(parser).validate()?,
+            (Ipv6Unicast, false) => FixedNlriIter::ipv6unicast(parser).validate()?,
+            (Ipv6Unicast, true) => FixedNlriIter::ipv6unicast_addpath(parser).validate()?,
+            
+            _ => { debug!("TODO implement validation for this afi/safi"); }
+            /* TODO
+
+            (Ipv4Multicast, false) => FixedNlriIter::ipv4multicast(parser).validate()?,
+            (Ipv4Multicast, true) => FixedNlriIter::ipv4multicast_addpath(parser).validate()?,
+            (Ipv6Multicast, false) => FixedNlriIter::ipv6multicast(parser).validate()?,
+            (Ipv6Multicast, true) => FixedNlriIter::ipv6multicast_addpath(parser).validate()?,
+
+            (Ipv4MplsUnicast, false) => FixedNlriIter::ipv4mpls_unicast(parser).validate()?,
+            (Ipv4MplsUnicast, true) => FixedNlriIter::ipv4mpls_unicast_addpath(parser).validate()?,
+            (Ipv6MplsUnicast, false) => FixedNlriIter::ipv6mpls_unicast(parser).validate()?,
+            (Ipv6MplsUnicast, true) => FixedNlriIter::ipv6mpls_unicast_addpath(parser).validate()?,
+
+            (Ipv4MplsVpnUnicast, false) => FixedNlriIter::ipv4mpls_vpn_unicast(parser).validate()?,
+            (Ipv4MplsVpnUnicast, true) => FixedNlriIter::ipv4mpls_vpn_unicast_addpath(parser).validate()?,
+            (Ipv6MplsVpnUnicast, false) => FixedNlriIter::ipv6mpls_vpn_unicast(parser).validate()?,
+            (Ipv6MplsVpnUnicast, true) => FixedNlriIter::ipv6mpls_vpn_unicast_addpath(parser).validate()?,
+
+            // XXX does addpath come into play here?
+            (Ipv4RouteTarget, false) => FixedNlriIter::ipv4routetarget(parser).validate()?,
+            (Ipv4RouteTarget, true) => FixedNlriIter::ipv4routetarget_addpath(parser).validate()?,
+
+            (Ipv4FlowSpec, _) => FixedNlriIter::ipv4flowspec(parser).validate()?,
+            (Ipv6FlowSpec, _) => FixedNlriIter::ipv6flowspec(parser).validate()?,
+
+            // XXX does addpath come into play here?
+            (L2VpnVpls, false) => FixedNlriIter::l2vpn_vpls(parser).validate()?,
+            (L2VpnVpls, true) => FixedNlriIter::l2vpn_vpls_addpath(parser).validate()?,
+            (L2VpnEvpn, false) => FixedNlriIter::l2vpn_evpn(parser).validate()?,
+            (L2VpnEvpn, true) => FixedNlriIter::l2vpn_evpn_addpath(parser).validate()?,
+            */
         }
         Ok(())
     }
@@ -1230,14 +1294,18 @@ impl Attribute for MpUnreachNlri {
         let afi: AFI = parser.parse_u16_be()?.into();
         let safi: SAFI = parser.parse_u8()?.into();
 
+        let afisafi = AfiSafi::try_from((afi, safi))
+            .map_err(|_| ParseError::Unsupported)?;
+
         let mut builder = MpUnreachNlriBuilder::new(
-            afi, safi, sc.addpath_enabled()
+            afi,
+            safi,
+            sc.rx_addpath(afisafi)
         );
         let nlri_iter = crate::bgp::message::update::Nlris::new(
             *parser,
             sc,
-            afi,
-            safi
+            afisafi,
         ).iter();
 
         for nlri in nlri_iter {
