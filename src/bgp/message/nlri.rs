@@ -1330,8 +1330,8 @@ fn parse_prefix_for_len<R: Octets>(
             let mut b = [0u8; 4];
             b[..prefix_bytes].copy_from_slice(parser.peek(prefix_bytes)?);
             parser.advance(prefix_bytes)?;
-            Prefix::new(IpAddr::from(b), prefix_bits).map_err(|_e| 
-                    ParseError::form_error("prefix parsing failed")
+            Prefix::new(IpAddr::from(b), prefix_bits).map_err(|e| 
+                ParseError::form_error(e.static_description())
             )?
         }
         (AFI::Ipv6, 0) => {
@@ -1346,8 +1346,8 @@ fn parse_prefix_for_len<R: Octets>(
             let mut b = [0u8; 16];
             b[..prefix_bytes].copy_from_slice(parser.peek(prefix_bytes)?);
             parser.advance(prefix_bytes)?;
-            Prefix::new(IpAddr::from(b), prefix_bits).map_err(|_e| 
-                    ParseError::form_error("prefix parsing failed")
+            Prefix::new(IpAddr::from(b), prefix_bits).map_err(|e| 
+                ParseError::form_error(e.static_description())
             )?
         },
         (_, _) => {
