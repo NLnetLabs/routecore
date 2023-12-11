@@ -1008,6 +1008,15 @@ impl SessionAddpaths {
         }
         Self(res)
     }
+
+    // used for parsing retries
+    fn inverse_fam(&mut self, afisafi: AfiSafi) {
+        if self.0[afisafi as usize].is_some() {
+            self.0[afisafi as usize] = None;
+        } else {
+            self.0[afisafi as usize] = Some(AddpathDirection::Receive);
+        }
+    }
 }
 
 
@@ -1085,6 +1094,10 @@ impl SessionConfig {
 
     pub fn inverse_addpaths(&mut self) {
         self.addpath_fams = self.addpath_fams.inverse();
+    }
+
+    pub fn inverse_addpath(&mut self, fam: AfiSafi) {
+        self.addpath_fams.inverse_fam(fam);
     }
 }
 
@@ -2416,7 +2429,7 @@ mod tests {
                 Ok(BasicNlri::new(
                         Prefix::from_str("2001:db8:ffff::/64").unwrap())
                 ),
-                Err(ParseError::form_error("prefix parsing failed")), 
+                Err(ParseError::form_error("non-zero host portion")), 
             ]
             )
         );
@@ -2618,6 +2631,20 @@ mod tests {
 
         let inv_aps = aps.inverse();
         assert_eq!(inv_aps.enabled_addpaths().count(), 16 - 2);
+    }
 
+    #[test]
+    fn session_config_addpaths() {
+        let mut sc = SessionConfig::modern();
+        sc.add_addpath_rxtx(AfiSafi::Ipv4Unicast);
+        sc.add_addpath_rxtx(AfiSafi::Ipv6MplsUnicast);
+        assert_eq!(sc.enabled_addpaths().count(), 2);
+        sc.inverse_addpath(AfiSafi::Ipv4Unicast);
+        assert_eq!(sc.enabled_addpaths().count(), 1);
+        sc.inverse_addpath(AfiSafi::Ipv4Unicast);
+        sc.inverse_addpaths();
+        assert_eq!(sc.enabled_addpaths().count(), 14);
+        sc.inverse_addpath(AfiSafi::Ipv4Unicast);
+        assert_eq!(sc.enabled_addpaths().count(), 15);
     }
 }
