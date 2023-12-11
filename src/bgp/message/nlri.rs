@@ -1844,7 +1844,7 @@ impl<Octs: Octets> FlowSpecNlri<Octs> {
         };
         let pos = parser.pos();
 
-        if usize::from(len) != parser.remaining() {
+        if usize::from(len) > parser.remaining() {
             return Err(ParseError::form_error(
                     "invalid length of FlowSpec NLRI"
             ));
