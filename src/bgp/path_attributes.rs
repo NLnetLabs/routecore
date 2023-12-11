@@ -1233,23 +1233,25 @@ impl Attribute for MpReachNlri {
 
         use AfiSafi::*;
         match (afisafi, expect_path_id) {
-            (Ipv4Unicast, false) => FixedNlriIter::ipv4unicast(parser).validate()?,
-            (Ipv4Unicast, true) => FixedNlriIter::ipv4unicast_addpath(parser).validate()?,
-            (Ipv6Unicast, false) => FixedNlriIter::ipv6unicast(parser).validate()?,
-            (Ipv6Unicast, true) => FixedNlriIter::ipv6unicast_addpath(parser).validate()?,
+            (Ipv4Unicast, false) => FixedNlriIter::ipv4unicast(parser).validate(),
+            (Ipv4Unicast, true) => FixedNlriIter::ipv4unicast_addpath(parser).validate(),
+            (Ipv6Unicast, false) => FixedNlriIter::ipv6unicast(parser).validate(),
+            (Ipv6Unicast, true) => FixedNlriIter::ipv6unicast_addpath(parser).validate(),
             
-            _ => { debug!("TODO implement validation for this afi/safi"); }
+
+            (Ipv4Multicast, false) => FixedNlriIter::ipv4multicast(parser).validate(),
+            (Ipv4Multicast, true) => FixedNlriIter::ipv4multicast_addpath(parser).validate(),
+            (Ipv6Multicast, false) => FixedNlriIter::ipv6multicast(parser).validate(),
+            (Ipv6Multicast, true) => FixedNlriIter::ipv6multicast_addpath(parser).validate(),
+
+
+            (Ipv4MplsUnicast, false) => FixedNlriIter::ipv4mpls_unicast(parser).validate(),
+            (Ipv4MplsUnicast, true) => FixedNlriIter::ipv4mpls_unicast_addpath(parser).validate(),
+            (Ipv6MplsUnicast, false) => FixedNlriIter::ipv6mpls_unicast(parser).validate(),
+            (Ipv6MplsUnicast, true) => FixedNlriIter::ipv6mpls_unicast_addpath(parser).validate(),
+
+            _ => { debug!("TODO implement validation for this afi/safi"); Ok(()) }
             /* TODO
-
-            (Ipv4Multicast, false) => FixedNlriIter::ipv4multicast(parser).validate()?,
-            (Ipv4Multicast, true) => FixedNlriIter::ipv4multicast_addpath(parser).validate()?,
-            (Ipv6Multicast, false) => FixedNlriIter::ipv6multicast(parser).validate()?,
-            (Ipv6Multicast, true) => FixedNlriIter::ipv6multicast_addpath(parser).validate()?,
-
-            (Ipv4MplsUnicast, false) => FixedNlriIter::ipv4mpls_unicast(parser).validate()?,
-            (Ipv4MplsUnicast, true) => FixedNlriIter::ipv4mpls_unicast_addpath(parser).validate()?,
-            (Ipv6MplsUnicast, false) => FixedNlriIter::ipv6mpls_unicast(parser).validate()?,
-            (Ipv6MplsUnicast, true) => FixedNlriIter::ipv6mpls_unicast_addpath(parser).validate()?,
 
             (Ipv4MplsVpnUnicast, false) => FixedNlriIter::ipv4mpls_vpn_unicast(parser).validate()?,
             (Ipv4MplsVpnUnicast, true) => FixedNlriIter::ipv4mpls_vpn_unicast_addpath(parser).validate()?,
@@ -1270,7 +1272,6 @@ impl Attribute for MpReachNlri {
             (L2VpnEvpn, true) => FixedNlriIter::l2vpn_evpn_addpath(parser).validate()?,
             */
         }
-        Ok(())
     }
 }
 
