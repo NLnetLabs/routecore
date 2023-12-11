@@ -1400,6 +1400,18 @@ impl<'a, Octs: Octets> Iterator for NlriIter<'a, Octs> {
     }
 }
 
+impl<'a, Octs: Octets> TryFrom<NlriIter<'a, Octs>>
+    for FixedNlriIter<'a, Octs, nlri::Ipv4Unicast>
+{
+    type Error = &'static str;
+    fn try_from(iter: NlriIter<'a, Octs>) -> Result<Self, Self::Error> {
+        if iter.afisafi() == AfiSafi::Ipv4Unicast {
+            return Ok(FixedNlriIter::new(&mut iter.into_parser()))
+        }
+        Err("can not convert into FixedNlriIter for Ipv4Unicast")
+    }
+}
+
 
 //--- Tests ------------------------------------------------------------------
 
