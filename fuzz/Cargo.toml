@@ -33,3 +33,15 @@ name = "parse_bgp_message"
 path = "fuzz_targets/parse_bgp_message.rs"
 test = false
 doc = false
+
+[[bin]]
+name = "parse_update_message"
+path = "fuzz_targets/parse_update_message.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "parse_open_message"
+path = "fuzz_targets/parse_open_message.rs"
+test = false
+doc = false
