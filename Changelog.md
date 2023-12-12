@@ -17,6 +17,26 @@ New
   non-allocating and provide (lazy) iterators to the actual data (e.g. Path
   Attributes or NLRI in a BGP UPDATE PDU), to enable use in high throughput
   scenarios.
+ 
+* Composing of BGP messages.
+
+  Creating BGP messages is supported to a certain extent, note that the API is
+  still limited.
+
+  For BGP OPENs, the Optional Parameters are limited to only the
+  Capability type, and more specifically, only the Four Octet capability
+  (RFC6793), MultiProtocol (RFC4760) and AddPath (RFC7911) can be set.
+  
+  For BGP UPDATEs, the builder (`bgp::message::update_builder`) includes methods
+  to add announcements, withdrawals and next hop information for conventional
+  IPv4 Unicast and MultiProtocol address families. Mandatory path attributes and
+  standard communities have dedicated methods, but arbitrary PathAttributes can
+  be added as well.  Depending on the resulting total  size, the builder results
+  in multiple PDUs to adhere to the protocol.
+
+  BGP NOTIFICATIONs and KEEPALIVEs can be created as well, so all message types
+  needed for setting up a BGP session are supported. Note that actually setting
+  up and maintaining a BGP session is (currently) not part of `routecore`.
 
 * Added new `asn::SmallAsnSet` which, as, the name suggests, is supposed
   to hold a relatively small set of ASNs. ([#22])
