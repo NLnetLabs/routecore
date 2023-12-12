@@ -3,7 +3,7 @@
 use crate::addr::Prefix;
 use crate::bgp::types::AFI;
 use crate::util::parser::ParseError;
-use log::warn;
+use log::debug;
 use octseq::{Octets, Parser};
 
 use std::net::IpAddr;
@@ -286,10 +286,12 @@ impl<Octs: Octets> Component<Octs> {
                     parser.parse_octets(octets_len)?
                 )
             },
-            _ => { warn!("unimplemented typ {}", typ); unimplemented!() }
+            _ => { 
+                debug!("unimplemented flowspec type {}", typ);
+                return Err(ParseError::Unsupported)
+            }
         };
 
-        //debug!("flowspec component res: {:?}", res);
         Ok(res)
     }
 }

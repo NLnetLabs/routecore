@@ -1,16 +1,21 @@
 pub mod open;
 pub mod update;
+pub mod update_builder;
 pub mod nlri;
 pub mod notification;
 pub mod keepalive;
-pub mod attr_change_set;
+pub mod routerefresh;
+//pub mod attr_change_set;
 
 use octseq::{Octets, Parser};
 use crate::util::parser::ParseError;
-use std::fmt::{Debug, Display, Formatter, Result as FmtResult};
 use std::error::Error;
+use std::fmt::{Debug, Display, Formatter, Result as FmtResult};
+use std::io::Read;
 use crate::addr::PrefixError;
 use crate::typeenum; // from util::macros
+
+use log::debug;
 
 #[cfg(feature = "serde")]
 use serde::{Serialize, Deserialize};
@@ -19,6 +24,7 @@ pub use open::OpenMessage;
 pub use update::{UpdateMessage, SessionConfig};
 pub use notification::NotificationMessage;
 pub use keepalive::KeepaliveMessage;
+pub use routerefresh::RouteRefreshMessage;
 
 //--- Generic ----------------------------------------------------------------
 
@@ -46,6 +52,7 @@ pub enum Message<Octs: Octets> {
     Update(UpdateMessage<Octs>),
     Notification(NotificationMessage<Octs>),
     Keepalive(KeepaliveMessage<Octs>),
+    RouteRefresh(RouteRefreshMessage<Octs>),
 }
 
 impl<Octs: Octets> AsRef<[u8]> for Message<Octs> {
@@ -55,6 +62,7 @@ impl<Octs: Octets> AsRef<[u8]> for Message<Octs> {
             Message::Update(m) => m.as_ref(),
             Message::Notification(m) => m.as_ref(),
             Message::Keepalive(m) => m.as_ref(),
+            Message::RouteRefresh(m) => m.as_ref(),
         }
     }
 }
@@ -66,6 +74,7 @@ impl<Octs: Octets> Message<Octs> {
             Message::Update(m) => m.octets(),
             Message::Notification(m) => m.octets(),
             Message::Keepalive(m) => m.octets(),
+            Message::RouteRefresh(m) => m.octets(),
         }
     }
 }
@@ -128,10 +137,45 @@ impl<Octs: Octets> Message<Octs> {
                 Ok(Message::Keepalive(
                         KeepaliveMessage::from_octets(octets)?
                 )),
-            t => panic!("not implemented yet: {:?}", t)
+            MsgType::RouteRefresh => {
+                debug!("Unimplemented BGP message type ROUTEREFRESH");
+                Err(ParseError::Unsupported)
+            }
+            MsgType::Unimplemented(t) => {
+                debug!("Unimplemented BGP message type {t}");
+                Err(ParseError::Unsupported)
+            }
         }
     }
 }
+
+/// Read a BGP message into `buf` and return the slice based on the length.
+///
+/// No parsing or validation is performed. This function jumps over the BGP
+/// marker to read the length, and reads bytes accordingly.
+/// The returned slice can be used with `Message::from_octets` to actually get
+/// a BGP message.
+pub fn read_message<'a, T: Read>(bytes: &mut T, buf: &'a mut [u8; 4096])
+    -> Result<Option<&'a [u8]>, &'a str>
+{
+
+    if let Err(e) = bytes.read_exact(&mut buf[..18]) {
+        match e.kind() {
+            std::io::ErrorKind::UnexpectedEof => { return Ok(None) }
+            _ => return Err("io error")
+        }
+    }
+
+    let len = u16::from_be_bytes([buf[16], buf[17]]) as usize;
+    if len > 4096 {
+        println!("jumbo? (len: {len}) {:x?}", &buf[..20]);
+    }
+
+    // including marker+length+type
+    let _ = bytes.read_exact(&mut buf[18..(len)]);
+    Ok(Some(&buf[..len]))
+}
+
 
 //--- From / TryFrom ---------------------------------------------------------
 
@@ -192,7 +236,7 @@ impl<Octs: Octets> TryFrom<Message<Octs>> for NotificationMessage<Octs> {
 #[derive(Clone, Copy, Default)]
 pub struct Header<Octs>(Octs);
 
-impl<Octs: Octets + AsMut<[u8]>> Header<Octs> {
+impl<Octs: AsMut<[u8]>> Header<Octs> {
     pub fn set_type(&mut self, typ: MsgType) {
         self.0.as_mut()[18] = typ.into();
     }
@@ -205,6 +249,12 @@ impl<Octs: Octets + AsMut<[u8]>> Header<Octs> {
 impl<Octs: Octets> AsRef<[u8]> for Header<Octs> {
     fn as_ref(&self) -> &[u8] {
         self.0.as_ref()
+    }
+}
+
+impl Header<&mut [u8]> {
+    pub fn for_slice_mut(s: &mut [u8]) -> Header<&mut [u8]> {
+        Header(s)
     }
 }
 
@@ -237,7 +287,7 @@ impl<Octs: Octets> Header<Octs> {
             3 => MsgType::Notification,
             4 => MsgType::Keepalive,
             5 => MsgType::RouteRefresh,
-            u => panic!("illegal Message Type {}", u)
+            u => MsgType::Unimplemented(u)
         }
     }
 }
@@ -257,8 +307,8 @@ impl<Octs: Octets> Header<Octs> {
     }
 }
 
-impl Header<()> {
-    pub fn check(parser: &mut Parser<[u8]>) -> Result<(), ParseError> {
+impl<Octs: Octets> Header<Octs> {
+    pub fn check(parser: &mut Parser<'_, Octs>) -> Result<(), ParseError> {
         Marker::check(parser)?;
         let len = parser.parse_u16_be()? as usize;
         if len != parser.len() {
@@ -273,7 +323,7 @@ impl Header<()> {
 
 struct Marker;
 impl Marker {
-    fn check<R: Octets + ?Sized>(parser: &mut Parser<'_, R>)
+    fn check<R: Octets>(parser: &mut Parser<'_, R>)
         -> Result<(), ParseError>
     {
         let mut buf = [0u8; 16];

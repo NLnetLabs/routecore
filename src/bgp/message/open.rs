@@ -1,6 +1,6 @@
 use crate::bgp::message::{Header, MsgType};
 use crate::asn::Asn;
-use crate::bgp::types::{AFI, SAFI};
+use crate::bgp::types::{AFI, SAFI, AfiSafi, AddpathFamDir, AddpathDirection};
 use crate::typeenum; // from util::macros
 use crate::util::parser::ParseError;
 use log::warn;
@@ -10,6 +10,8 @@ use octseq::{FreezeBuilder, Octets, OctetsBuilder, Parser, ShortBuf, Truncate};
 use serde::{Serialize, Deserialize};
 
 const COFF: usize = 19; // XXX replace this with .skip()'s?
+
+const AS_TRANS: u16 = 23456;
 
 /// BGP OPEN message, variant of the [`Message`] enum.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -178,6 +180,75 @@ impl<Octs: Octets> OpenMessage<Octs> {
         )
     }
 
+    /*
+    pub fn addpath_families(&self) -> impl Iterator<Item = (AfiSafi, AddpathDirection)> + '_ {
+        self.capabilities().filter(|c|
+            c.typ() == CapabilityType::AddPath
+        ).map(|c| {
+            &c.value().chunks(4)
+                .map(|c| {
+                let mut parser = Parser::from_ref(c);
+
+                let afi = parser.parse_u16_be().unwrap().into();
+                let safi = parser.parse_u8().unwrap().into();
+                let dir = AddpathDirection::try_from(parser.parse_u8().unwrap());
+                (AfiSafi::try_from((afi, safi)).unwrap(), dir.unwrap())
+            })
+        }).flatten().into_iter()
+    }
+    */
+
+    pub fn addpath_families_vec(&self)
+        -> Result<Vec<(AfiSafi, AddpathDirection)>, ParseError>
+    {
+        let mut res = vec![];
+        for c in self.capabilities().filter(|c|
+            c.typ() == CapabilityType::AddPath
+        ) {
+            for c in c.value().chunks(4) {
+                let mut parser = Parser::from_ref(c);
+
+                let afi = parser.parse_u16_be()?.into();
+                let safi = parser.parse_u8()?.into();
+                let dir = AddpathDirection::try_from(parser.parse_u8()?)
+                    .map_err(|_| ParseError::Unsupported)?;
+                res.push((
+                    AfiSafi::try_from((afi, safi))
+                        .map_err(|_| ParseError::Unsupported)?,
+                    dir
+                ));
+            }
+        }
+        Ok(res)
+    }
+
+    /// Merge exchanged ADDPATH capabilities from our perspective.
+    ///
+    /// Note that depending on the directions (Send, Receive, or SendReceive)
+    /// for the address families, we might up with a unidirectional ADDPATH
+    /// enabled session. For example, if we announce only Receive, and the
+    /// other side announces SendReceive, we must not send out prefixes with
+    /// Path IDs.
+    ///
+    /// Calling `msg1.addpath_intersection(msg2)` might give a different
+    /// result than `msg2.addpath_intersection(msg1)`.
+    pub fn addpath_intersection<O: Octets>(&self, other: &OpenMessage<O>)
+        -> Vec<AddpathFamDir>
+    {
+        let (Ok(mine), Ok(other)) =
+            (self.addpath_families_vec(), other.addpath_families_vec()) else {
+            return vec![];
+        };
+
+        mine.iter().filter_map(|(my_fam, my_dir)| {
+            other.iter().find(|(f, _d)| {
+                my_fam == f
+            }).and_then(|(_f, other_dir)| {
+                my_dir.merge(*other_dir)
+            }).map(|m| AddpathFamDir::new(*my_fam, m))
+        }).collect::<Vec<_>>()
+    }
+
     /// Returns an iterator over `(AFI, SAFI)` tuples listed as
     /// MultiProtocol Capabilities in the Optional Parameters of this message.
     pub fn multiprotocol_ids(&self) -> impl Iterator<Item = (AFI,SAFI)> + '_ {
@@ -204,9 +275,9 @@ impl<Octs: Octets> OpenMessage<Octs> {
     }
 }
 
-impl OpenMessage<()> {
-    fn check(octets: &[u8]) -> Result<(), ParseError> {
-        let mut parser = Parser::from_ref(octets);
+impl<Octs: Octets> OpenMessage<Octs> {
+    fn check(octets: Octs) -> Result<(), ParseError> {
+        let mut parser = Parser::from_ref(&octets);
         Header::check(&mut parser)?;
         // jump over version, 2-octet ASN, Hold timer and BGP ID
         parser.advance(1 + 2 + 2 + 4)?;
@@ -295,8 +366,8 @@ impl<Octs: Octets> Parameter<Octs> {
     }
 }
 
-impl Parameter<()> {
-    fn check(parser: &mut Parser<[u8]>) -> Result<(), ParseError> {
+impl<Octs: Octets> Parameter<Octs> {
+    fn check(parser: &mut Parser<Octs>) -> Result<(), ParseError> {
         let typ = parser.parse_u8()?;
         let len = parser.parse_u8()? as usize;
         if typ == 2 {
@@ -315,8 +386,8 @@ impl Parameter<()> {
     }
 }
 
-impl Capability<()> {
-    fn check(parser: &mut Parser<[u8]>) -> Result<(), ParseError> {
+impl<Octs: Octets> Capability<Octs> {
+    fn check(parser: &mut Parser<Octs>) -> Result<(), ParseError> {
         let _typ = parser.parse_u8()?;
         let len = parser.parse_u8()? as usize;
         parser.advance(len)?;
@@ -517,6 +588,10 @@ impl<Octs: Octets> Capability<Octs> {
         Capability { octets }
     }
 
+    pub fn new(octets: Octs) -> Self {
+        Capability { octets }
+    }
+
     /// Returns the [`CapabilityType`] of this capability.
     pub fn typ(&self) -> CapabilityType {
         self.octets.as_ref()[0].into()
@@ -683,6 +758,7 @@ typeenum!(
 pub struct OpenBuilder<Target> {
     target: Target,
     capabilities: Vec<Capability<Vec<u8>>>,
+    addpath_families: Vec<(AfiSafi, AddpathDirection)>,
 }
 
 use core::convert::Infallible;
@@ -699,11 +775,19 @@ where
 
         // BGP version
         let _ =target.append_slice(&[4]);
+
+         // Prepare space for the mandatory ASN, holdtime, bgp_id.
         let _ =target.append_slice(&[0; 8]);
 
         // opt param len is set in finish()
 
-        Ok(OpenBuilder { target, capabilities: Vec::<Capability<_>>::new() })
+        Ok(
+            OpenBuilder {
+                target,
+                capabilities: Vec::<Capability<_>>::new(),
+                addpath_families: Vec::new(),
+            }
+        )
     }
 
     // TODO fn header_mut(&self) -> &mut Header {
@@ -714,8 +798,8 @@ where
 
 impl<Target: OctetsBuilder + AsMut<[u8]>> OpenBuilder<Target> {
     pub fn set_asn(&mut self, asn: Asn) {
-        // FIXME properly check / convert for 4-octet ASNs
-        let asn = asn.into_u32() as u16;
+        // XXX should we call set_four_octet_asn from here as well?
+        let asn = u16::try_from(asn.into_u32()).unwrap_or(AS_TRANS);
         self.target.as_mut()[COFF+1..=COFF+2]
             .copy_from_slice(&asn.to_be_bytes());
     }
@@ -757,12 +841,36 @@ impl<Target: OctetsBuilder + AsMut<[u8]>> OpenBuilder<Target> {
         self.add_capability(Capability::<Vec<u8>>::for_slice(s.to_vec()))
     }
 
+    pub fn add_addpath(&mut self, afisafi: AfiSafi, dir: AddpathDirection) {
+        self.addpath_families.push((afisafi, dir));
+    }
 }
 
 impl<Target: OctetsBuilder + AsMut<[u8]>> OpenBuilder<Target>
 where Infallible: From<<Target as OctetsBuilder>::AppendError>
 {
     pub fn finish(mut self) -> Target {
+
+        if !self.addpath_families.is_empty() {
+            let addpath_cap_len = 4 * self.addpath_families.len();
+            let mut addpath_cap = Vec::<u8>::with_capacity(addpath_cap_len);
+
+            addpath_cap.extend_from_slice(
+            // XXX throw a ComposeError or equivalent after refactoring the
+            // builder.
+                &[69,
+                  addpath_cap_len.try_into().unwrap_or(u8::MAX)
+                ]
+            );
+
+            for (fam, dir) in self.addpath_families.iter() {
+                let (afi, safi) = fam.split();
+                addpath_cap.extend_from_slice(&u16::from(afi).to_be_bytes());
+                addpath_cap.extend_from_slice(&[safi.into(), *dir as u8]);
+            }
+            self.add_capability(Capability::new(addpath_cap));
+        }
+
         let mut cap_len = 0u8;
         for c in &self.capabilities {
             cap_len += c.as_ref().len() as u8;
@@ -970,11 +1078,60 @@ mod tests {
 
     }
 
+    #[test]
+    fn multiple_addpath_single_cap() {
+        // BGP OPEN with 1 optional parameter, Capability ADDPATH
+        let buf = vec![
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0x00, 41, 0x01, 0x04, 0x5b, 0xa0, 0x00, 0xb4,
+            0x0a, 0x00, 0x00, 0x03,
+            0x0c,
+            0x02, 0x0a, 69, 0x08,
+            0x00, 0x01, 0x01, 0x03,
+            0x00, 0x02, 0x01, 0x03,
+        ];
+
+        let open = OpenMessage::from_octets(buf).unwrap();
+
+        assert_eq!(open.capabilities().count(), 1);
+        assert!(open.addpath_families_vec().unwrap().iter().eq(
+            &[(AfiSafi::Ipv4Unicast, AddpathDirection::SendReceive),
+              (AfiSafi::Ipv6Unicast, AddpathDirection::SendReceive)]
+            )
+        );
+    }
+
+    #[test]
+    fn multiple_addpath_multi_cap() {
+        // BGP OPEN with 2 optional parameters, all Capability ADDPATH
+        // XXX note that this isn't actually allowed, not sure if it occurs in
+        // the wild.
+        let buf = vec![
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0x00, 45, 0x01, 0x04, 0x5b, 0xa0, 0x00, 0xb4,
+            0x0a, 0x00, 0x00, 0x03,
+            0x10,
+            0x02, 0x06, 69, 0x04, 0x00, 0x01, 0x01, 0x03,
+            0x02, 0x06, 69, 0x04, 0x00, 0x02, 0x01, 0x03,
+        ];
+
+        let open = OpenMessage::from_octets(buf).unwrap();
+
+        assert_eq!(open.capabilities().count(), 2);
+        assert!(open.addpath_families_vec().unwrap().iter().eq(
+            &[(AfiSafi::Ipv4Unicast, AddpathDirection::SendReceive),
+              (AfiSafi::Ipv6Unicast, AddpathDirection::SendReceive)]
+            )
+        );
+    }
+
 mod builder {
     use super::*;
 
     #[test]
-    fn builder() {
+    fn builder_16bit_asn() {
         let mut open = OpenBuilder::new_vec();
         open.set_asn(Asn::from_u32(1234));
         open.set_holdtime(180);
@@ -984,7 +1141,43 @@ mod builder {
         open.add_mp(AFI::Ipv6, SAFI::Unicast);
 
         let res = open.into_message();
-        println!("{:?}", res);
+
+        assert_eq!(res.my_asn(), Asn::from_u32(1234));
+    }
+
+    #[test]
+    fn builder_32bit_asn() {
+        let mut open = OpenBuilder::new_vec();
+        open.set_asn(Asn::from_u32(123123));
+        open.set_holdtime(180);
+        open.set_bgp_id([1, 2, 3, 4]);
+
+        open.add_mp(AFI::Ipv4, SAFI::Unicast);
+        open.add_mp(AFI::Ipv6, SAFI::Unicast);
+
+        let res = open.into_message();
+
+        assert_eq!(res.my_asn(), Asn::from_u32(AS_TRANS.into()));
+    }
+
+    #[test]
+    fn builder_addpath() {
+        let mut open = OpenBuilder::new_vec();
+        open.set_asn(Asn::from_u32(123123));
+        open.set_holdtime(180);
+        open.set_bgp_id([1, 2, 3, 4]);
+
+        open.add_mp(AFI::Ipv4, SAFI::Unicast);
+        open.add_mp(AFI::Ipv6, SAFI::Unicast);
+        open.add_addpath(AfiSafi::Ipv4Unicast, AddpathDirection::SendReceive);
+        open.add_addpath(AfiSafi::Ipv6Unicast, AddpathDirection::SendReceive);
+
+        let res = open.into_message();
+
+        assert_eq!(res.my_asn(), Asn::from_u32(AS_TRANS.into()));
+        for ap in res.addpath_families_vec().unwrap().iter() {
+            eprintln!("{:?}", ap);
+        }
     }
 
 

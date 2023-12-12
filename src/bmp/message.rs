@@ -7,7 +7,7 @@
 use crate::asn::Asn;
 use crate::bgp::message::{Message as BgpMsg, OpenMessage as BgpOpen, UpdateMessage as BgpUpdate, NotificationMessage as BgpNotification};
 use crate::bgp::types::{AFI, SAFI};
-use crate::bgp::message::update::SessionConfig;
+use crate::bgp::message::update::{SessionConfig, FourOctetAsn};
 use crate::bgp::message::open::CapabilityType;
 use crate::util::parser::ParseError;
 use crate::typeenum; // from util::macros
@@ -59,9 +59,8 @@ impl Error for MessageError { }
 /// including the [`CommonHeader`], possibly a [`PerPeerHeader`] and the
 /// additional payload. The payload often comprises one or multiple
 /// [`bgp::Message`](crate::bgp::Message)s.
-
+#[derive(Clone, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
-#[derive(Eq)]
 pub enum Message<Octets: AsRef<[u8]>> {
     RouteMonitoring(RouteMonitoring<Octets>),
     StatisticsReport(StatisticsReport<Octets>),
@@ -169,7 +168,7 @@ impl<'a, Octs: Octets + 'a> Message<Octs> {
 }
 
 impl<Octs: Octets> Message<Octs> {
-    pub fn check(src: &mut Cursor<&[u8]>) -> Result<u32, MessageError> {
+    pub fn check(src: &mut Cursor<Octs>) -> Result<u32, MessageError> {
         if src.remaining() >= 5 {
             let _version = src.get_u8();
 			let len = src.get_u32();
@@ -488,7 +487,7 @@ impl<Octets: AsRef<[u8]>> PerPeerHeader<Octets> {
             );
             DateTime::<Utc>::MIN_UTC
         }
-    }
+    } 
 }
 
 impl<Octets: AsRef<[u8]>> Display for PerPeerHeader<Octets> {
@@ -553,7 +552,7 @@ typeenum!(
 /// Route Monitoring message.
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RouteMonitoring<Octets: AsRef<[u8]>>
 {
     octets: Octets
@@ -603,9 +602,8 @@ impl<Octs: Octets> RouteMonitoring<Octs> {
 }
 
 /// Statistics Report message.
-
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
-#[derive(Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct StatisticsReport<Octs> {
     octets: Octs,
 }
@@ -668,7 +666,7 @@ impl<Octs: Octets> Debug for StatisticsReport<Octs> {
 
 /// Peer Down Notification. 
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PeerDownNotification<Octets: AsRef<[u8]>> {
     octets: Octets,
 }
@@ -777,7 +775,7 @@ impl<Octs: Octets> PeerDownNotification<Octs> {
 
 /// Peer Up Notification.
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PeerUpNotification<Octets: AsRef<[u8]>> {
     octets: Octets,
 }
@@ -863,26 +861,83 @@ impl<Octs: Octets> PeerUpNotification<Octs> {
         (sent, rcvd) 
     }
 
-    /// Create a [`SessionConfig`] describing the parameters for the BGP
-    /// session between the monitored router and the remote peer.
+    /// Create a [`SessionConfig`] to parse encapsulated BGP data based on the
+    /// PerPeerHeader.
     ///
     /// The information in this `SessionConfig` is necessary for correctly
     /// parsing future messages, specifically BGP UPDATEs carried in
     /// RouteMonitoring BMP messages. See [`SessionConfig`] for an example
     /// using it in that way.
-    pub fn session_config(&self) -> SessionConfig {
+    /// 
+    /// Note that this function returns the four octet capability set in the
+    /// per peer header, *not* the same capability in the encapsulated BGP
+    /// OPEN message. This method should normally be used by a BMP monitoring
+    /// station, when receiving a PeerUpNotification.
+    /// 
+    /// Returns the SessionConfig and an optional tuple if the BGP OPEN four
+    /// octet ASN capability and the one in the Per Peer Header are not the
+    /// same.
+    pub fn pph_session_config(&self) -> (SessionConfig, Option<(FourOctetAsn, FourOctetAsn)>)  {
         let (sent, rcvd) = self.bgp_open_sent_rcvd();
         let mut conf = SessionConfig::modern();
 
         // The 'modern' SessionConfig has four octet capability set to
         // enabled, so we need to disable it if any of both of the peers do
         // not support it.
-        if !sent.four_octet_capable() || !rcvd.four_octet_capable() {
-            conf.disable_four_octet_asn();
+        let bgp_four_octet = match sent.four_octet_capable() && rcvd.four_octet_capable() {
+            true => FourOctetAsn::Enabled,
+            false => FourOctetAsn::Disabled
+        };
+
+        let four_octet_asn = match self.per_peer_header().is_legacy_format() {
+            false => FourOctetAsn::Enabled,
+            true => FourOctetAsn::Disabled
+        };
+
+        conf.set_four_octet_asn(four_octet_asn);
+
+        for famdir in sent.addpath_intersection(&rcvd) {
+            conf.add_famdir(famdir);
         }
 
-        if sent.add_path_capable() && rcvd.add_path_capable() {
-            conf.enable_addpath()
+        let inconsistent = 
+            if four_octet_asn == bgp_four_octet { 
+                None 
+            } else { 
+                Some((four_octet_asn, bgp_four_octet)) 
+            };
+
+        (conf, inconsistent)
+    }
+
+    /// Create a [`SessionConfig`] to parse encapsulated BGP data based on the
+    /// exchanged BGP OPENs. session between the monitored router and the
+    /// remote peer.
+    ///
+    /// The information in this `SessionConfig` is necessary for correctly
+    /// parsing future messages, specifically BGP UPDATEs carried in
+    /// RouteMonitoring BMP messages. See [`SessionConfig`] for an example
+    /// using it in that way.
+    /// 
+    /// Note that this function does not consider the Per Peer Header four
+    /// octet ASN capability. Use `pph_session_config()` for that. This method
+    /// should probably not be used by a BMP monitoring station by default.
+    pub fn session_config(&self) -> SessionConfig  {
+        let (sent, rcvd) = self.bgp_open_sent_rcvd();
+        let mut conf = SessionConfig::modern();
+
+        // The 'modern' SessionConfig has four octet capability set to
+        // enabled, so we need to disable it if any of both of the peers do
+        // not support it.
+        let bgp_four_octet = match sent.four_octet_capable() && rcvd.four_octet_capable() {
+            true => FourOctetAsn::Enabled,
+            false => FourOctetAsn::Disabled
+        };
+
+        conf.set_four_octet_asn(bgp_four_octet);
+
+        for famdir in sent.addpath_intersection(&rcvd) {
+            conf.add_famdir(famdir);
         }
 
         conf
@@ -961,7 +1016,7 @@ impl<Octs: Octets> PeerUpNotification<Octs> {
 
 /// Initiation Message.
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct InitiationMessage<Octets: AsRef<[u8]>> {
     octets: Octets,
 }
@@ -1002,7 +1057,7 @@ impl<Octs: Octets> InitiationMessage<Octs> {
 
 /// Termination message.
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TerminationMessage<Octets: AsRef<[u8]>> {
     octets: Octets,
 }
@@ -1048,7 +1103,7 @@ impl<Octs: Octets> TerminationMessage<Octs> {
 ///
 /// NB: Not well tested/supported at this moment!  
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RouteMirroring<Octs> {
     octets: Octs,
 }
@@ -1621,8 +1676,10 @@ mod tests {
     use bytes::Bytes;
     use std::str::FromStr;
     use crate::addr::Prefix;
-    use crate::bgp::types::{AFI, SAFI, PathAttributeType};
-    use crate::bgp::message::update::{AddPath, FourOctetAsn, SessionConfig};
+    use crate::bgp::types::{AFI, SAFI};
+    use crate::bgp::path_attributes::PathAttributeType;
+    use crate::bgp::message::nlri::Nlri;
+    use crate::bgp::message::update::{FourOctetAsn, SessionConfig};
 
     // Helper for generating a .pcap, pass output to `text2pcap`.
     #[allow(dead_code)]
@@ -1732,43 +1789,47 @@ mod tests {
         //-- from here on, this actually tests the bgp parsing functionality
         // rather than the bmp one, but let's leave it for now ---------------
         
-        assert_eq!(bgp_update.as_ref().len(), 55);
+        assert_eq!(bgp_update.as_ref().len(), 55 - 19);
         assert_eq!(bgp_update.withdrawn_routes_len(), 0);
         
-        let pas = bgp_update.path_attributes();
-        let mut pas = pas.iter();
-        let pa1 = pas.next().unwrap();
+        let mut pas = bgp_update.path_attributes().unwrap().into_iter();
+        let pa1 = pas.next().unwrap().unwrap();
         assert_eq!(pa1.type_code(), PathAttributeType::Origin);
-        assert_eq!(pa1.flags(), 0x40);
-        assert!(pa1.is_transitive());
-        assert!(!pa1.is_optional());
+        assert_eq!(pa1.flags(), 0x40.into());
+        assert!( pa1.flags().is_transitive());
+        assert!(!pa1.flags().is_optional());
         //TODO implement enum for Origins
-        assert_eq!(pa1.value().as_ref(), [0x00]); 
+        //assert_eq!(pa1.as_ref(), [0x00]); 
         
-        let pa2 = pas.next().unwrap();
+        let pa2 = pas.next().unwrap().unwrap();
         assert_eq!(pa2.type_code(), PathAttributeType::AsPath);
-        assert_eq!(pa2.flags(), 0x40);
+        assert_eq!(pa2.flags(), 0x40.into());
         // TODO check actual AS_PATH contents
 
-        let pa3 = pas.next().unwrap();
+        let pa3 = pas.next().unwrap().unwrap();
         assert_eq!(pa3.type_code(), PathAttributeType::NextHop);
-        assert_eq!(pa3.flags(), 0x40);
-        assert_eq!(pa3.value().as_ref(), [10, 255, 0, 101]); 
+        assert_eq!(pa3.flags(), 0x40.into());
+        //assert_eq!(pa3.as_ref(), [10, 255, 0, 101]); 
 
-        let pa4 = pas.next().unwrap();
+        let pa4 = pas.next().unwrap().unwrap();
         assert_eq!(pa4.type_code(), PathAttributeType::MultiExitDisc);
-        assert_eq!(pa4.flags(), 0x80);
-        assert!(pa4.is_optional());
-        assert_eq!(pa4.value().as_ref(), [0, 0, 0, 1]); 
+        assert_eq!(pa4.flags(), 0x80.into());
+        assert!(pa4.flags().is_optional());
+        //assert_eq!(pa4.as_ref(), [0, 0, 0, 1]); 
 
         assert!(pas.next().is_none());
 
 
         // NLRI
-        let nlris = bgp_update.nlris();
-        let mut nlris = nlris.iter();
-        let n1 = nlris.next().unwrap().prefix();
-        assert_eq!(n1, Some(Prefix::from_str("10.10.10.2/32").unwrap()));
+        let mut nlris = bgp_update.announcements().unwrap();
+        if let Some(Ok(Nlri::Unicast(n1))) = nlris.next() {
+            assert_eq!(
+                n1.prefix(),
+                Prefix::from_str("10.10.10.2/32").unwrap()
+            );
+        } else {
+            panic!()
+        }
         assert!(nlris.next().is_none());
     }
 
@@ -1968,9 +2029,10 @@ mod tests {
         assert_eq!(sent.as_ref(), bgp_open_sent.as_ref());
         assert_eq!(rcvd.as_ref(), bgp_open_rcvd.as_ref());
 
-        let sc = bmp.session_config();
-        assert_eq!(sc.four_octet_asn, FourOctetAsn::Enabled);
-        assert_eq!(sc.add_path, AddPath::Disabled);
+        let sc = bmp.pph_session_config();
+        assert_eq!(sc.1, None);
+        assert_eq!(sc.0.four_octet_asn, FourOctetAsn::Enabled);
+        assert_eq!(sc.0.enabled_addpaths().count(), 0);
 
         assert_eq!(
             bmp.supported_protocols(),

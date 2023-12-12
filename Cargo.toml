@@ -6,7 +6,7 @@ categories = ["network-programming"]
 description = "A Library with Building Blocks for BGP Routing"
 documentation = "https://docs.rs/routecore/"
 edition = "2021"
-rust-version = "1.65"
+rust-version = "1.71"
 keywords = ["routing", "bgp"]
 license = "BSD-3-Clause"
 
@@ -23,11 +23,12 @@ chrono = { version = "0.4", optional = true }
 const-str = { version = "0.5.3", optional = true, features = ["case"] }
 log = { version = "0.4.17", optional = true }
 
-octseq = { version = "0.2.0", features = ["bytes"], optional = true }
+octseq = { version = "0.3.1", features = ["bytes"], optional = true }
 tokio = { version = "1", features = ["sync", "rt"], optional = true }
 
 [dev-dependencies]
 serde_test      = "1.0"
+memmap2         = "0.6"
 
 [features]
 default = ["octseq"]

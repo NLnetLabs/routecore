@@ -2,6 +2,7 @@
 
 pub mod aspath;
 pub mod communities;
+pub mod path_attributes;
 pub mod types;
 
 pub mod message;
