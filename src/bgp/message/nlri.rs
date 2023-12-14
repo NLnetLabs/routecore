@@ -520,6 +520,60 @@ impl<'a, T: 'a + Octets> FixedNlriIter<'a, T, Ipv4RouteTarget> {
 }
 
 
+//------------ Ipv4FlowSpec -------------------------------------
+
+pub(crate) struct Ipv4FlowSpec;
+impl AfiSafiParse for Ipv4FlowSpec {
+    type Item<O> = FlowSpecNlri<O>;
+    fn parse_nlri<'a, Octs: Octets>(
+        parser: &mut Parser<'a, Octs>
+    ) -> Result<Self::Item<Octs::Range<'a>>, ParseError> {
+        FlowSpecNlri::parse(parser, AFI::Ipv4)
+    }
+
+    fn skip_nlri<Octs: Octets>(parser: &mut Parser<'_, Octs>)
+        -> Result<(), ParseError>
+    {
+        FlowSpecNlri::<Octs>::skip(parser)?;
+        Ok(())
+    }
+}
+
+impl<'a, T: 'a + Octets> FixedNlriIter<'a, T, Ipv4FlowSpec> {
+    pub(crate) fn ipv4flowspec(parser: &mut Parser<'a, T>)
+        -> Self
+    {
+        FixedNlriIter::<T, Ipv4FlowSpec>::new(parser)
+    }
+}
+
+
+//------------ Ipv6FlowSpec -------------------------------------
+
+pub(crate) struct Ipv6FlowSpec;
+impl AfiSafiParse for Ipv6FlowSpec {
+    type Item<O> = FlowSpecNlri<O>;
+    fn parse_nlri<'a, Octs: Octets>(
+        parser: &mut Parser<'a, Octs>
+    ) -> Result<Self::Item<Octs::Range<'a>>, ParseError> {
+        FlowSpecNlri::parse(parser, AFI::Ipv6)
+    }
+
+    fn skip_nlri<Octs: Octets>(parser: &mut Parser<'_, Octs>)
+        -> Result<(), ParseError>
+    {
+        FlowSpecNlri::<Octs>::skip(parser)?;
+        Ok(())
+    }
+}
+
+impl<'a, T: 'a + Octets> FixedNlriIter<'a, T, Ipv6FlowSpec> {
+    pub(crate) fn ipv6flowspec(parser: &mut Parser<'a, T>)
+        -> Self
+    {
+        FixedNlriIter::<T, Ipv6FlowSpec>::new(parser)
+    }
+}
 
 //TODO:
 //    Ipv4FlowSpec,
@@ -2056,6 +2110,18 @@ impl<Octs: Octets> FlowSpecNlri<Octs> {
             _ => Err(ParseError::form_error("illegal AFI for FlowSpec"))
 
         }
+    }
+
+    fn skip(parser: &mut Parser<Octs>) -> Result<(), ParseError> {
+        let len1 = parser.parse_u8()?;
+        let len: u16 = if len1 >= 0xf0 {
+            let len2 = parser.parse_u8()? as u16;
+            (((len1 as u16) << 8) | len2) & 0x0fff
+        } else {
+            len1 as u16
+        };
+
+        Ok(parser.advance(len.into())?)
     }
 }
 

@@ -1258,26 +1258,26 @@ impl Attribute for MpReachNlri {
 
             (Ipv4RouteTarget, false) => FixedNlriIter::ipv4route_target(parser).validate(),
 
+            (Ipv4FlowSpec, false) => FixedNlriIter::ipv4flowspec(parser).validate(),
+            (Ipv6FlowSpec, false) => FixedNlriIter::ipv6flowspec(parser).validate(),
 
-            (Ipv4RouteTarget, true) => {
+
+
+            (Ipv4RouteTarget, true) |
+                (Ipv4FlowSpec, true) | (Ipv6FlowSpec, true) |
+                (L2VpnVpls, true) |
+                (L2VpnEvpn, true)  => {
                 warn!("unimplemented: {} with ADDPATH", afisafi);
                 Ok(())
-                
             }
             _ => { debug!("TODO implement validation for this afi/safi"); Ok(()) }
 
             /* TODO
 
-            // XXX does addpath come into play here?
-
-            (Ipv4FlowSpec, _) => FixedNlriIter::ipv4flowspec(parser).validate(),
-            (Ipv6FlowSpec, _) => FixedNlriIter::ipv6flowspec(parser).validate(),
 
             // XXX does addpath come into play here
             (L2VpnVpls, false) => FixedNlriIter::l2vpn_vpls(parser).validate(),
-            (L2VpnVpls, true) => FixedNlriIter::l2vpn_vpls_addpath(parser).validate(),
             (L2VpnEvpn, false) => FixedNlriIter::l2vpn_evpn(parser).validate(),
-            (L2VpnEvpn, true) => FixedNlriIter::l2vpn_evpn_addpath(parser).validate(),
             */
         }
     }
