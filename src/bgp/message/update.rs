@@ -13,6 +13,7 @@ pub use crate::bgp::types::{
     AfiSafi, AddpathDirection, AddpathFamDir
 };
 
+use crate::bgp::message::MsgType;
 use crate::bgp::message::nlri::{self,
     Nlri, BasicNlri, EvpnNlri, MplsNlri, MplsVpnNlri, VplsNlri, FlowSpecNlri,
     RouteTargetNlri,
@@ -294,26 +295,6 @@ impl<Octs: Octets> UpdateMessage<Octs> {
                 afisafi,
             };
 
-            /* XXX try an alternative config here, perhaps based on a setting
-             * in session_config
-            if res.validate().is_err() {
-                let mut alt_sc = self.session_config;
-                alt_sc.inverse_addpaths();
-                let alt_res = Nlris {
-                    parser,
-                    session_config: alt_sc,
-                    afisafi
-                };
-                match alt_res.validate() {
-                    Ok(()) => return Ok(Some(alt_res)),
-                    Err(e) => return Err(e)
-                }
-            }
-            */
-            // XXX or, perhaps just return the Error here?
-            // although it might make more sense to do that earlier, i.e. when
-            // the PDU is parsed/validated
-            
             return Ok(Some(res))
         }
 
@@ -861,9 +842,15 @@ impl<Octs: Octets> UpdateMessage<Octs> {
     {
 
         let header = Header::parse(parser)?;
+
         if header.length() < 19 {
             return Err(ParseError::form_error("message length <19"))
         }
+
+        if header.msg_type() != MsgType::Update {
+            return Err(ParseError::form_error("message not of type UPDATE"))
+        }
+
         let start_pos = parser.pos();
 
         let withdrawals_len = parser.parse_u16_be()?;

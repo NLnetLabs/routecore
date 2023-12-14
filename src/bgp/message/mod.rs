@@ -114,9 +114,13 @@ impl<Octs: Octets> Message<Octs> {
         -> Result<Message<Octs>, ParseError>
     {
         let mut parser = Parser::from_ref(&octets);
-        let hdr = Header::parse(&mut parser)?;
-        parser.seek(0)?;
-        match hdr.msg_type() {
+        let msg_type;
+        {
+            let hdr = Header::parse(&mut parser)?;
+            parser.seek(0)?;
+            msg_type = hdr.msg_type();
+        }
+        match msg_type {
             MsgType::Open =>
                 Ok(Message::Open(OpenMessage::from_octets(octets)?)),
             MsgType::Update => {
@@ -280,7 +284,7 @@ impl<Octs: Octets> Header<Octs> {
 	}
 
     /// Returns the value of the message type field in this header.
-    pub fn msg_type(self) -> MsgType {
+    pub fn msg_type(&self) -> MsgType {
         match self.0.as_ref()[18] {
             1 => MsgType::Open,
             2 => MsgType::Update,
