@@ -2285,7 +2285,7 @@ impl<Octs: Octets> RouteTargetNlri<Octs> {
         Self::parse(parser)
     }
 
-    fn skip<'a, R>(parser: &mut Parser<'a, R>) -> Result<(), ParseError>
+    fn skip<R>(parser: &mut Parser<R>) -> Result<(), ParseError>
         where
             R: AsRef<[u8]>
     {
@@ -2321,7 +2321,7 @@ impl<Octs: Octets> EvpnNlri<Octs> {
         )
     }
 
-    fn skip<'a, R>(parser: &mut Parser<'a, R>) -> Result<(), ParseError>
+    fn skip<R>(parser: &mut Parser<R>) -> Result<(), ParseError>
         where
             R: AsRef<[u8]>
     {
