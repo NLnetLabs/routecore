@@ -575,12 +575,59 @@ impl<'a, T: 'a + Octets> FixedNlriIter<'a, T, Ipv6FlowSpec> {
     }
 }
 
-//TODO:
-//    Ipv4FlowSpec,
-//    Ipv6FlowSpec,
-//
-//    L2VpnVpls,
-//    L2VpnEvpn,
+//------------ L2VpnVpls -------------------------------------
+
+pub(crate) struct L2VpnVpls;
+impl AfiSafiParse for L2VpnVpls {
+    type Item<O> = VplsNlri;
+    fn parse_nlri<'a, Octs: Octets>(
+        parser: &mut Parser<'a, Octs>
+    ) -> Result<Self::Item<Octs::Range<'a>>, ParseError> {
+        VplsNlri::parse(parser)
+    }
+
+    fn skip_nlri<Octs: Octets>(parser: &mut Parser<'_, Octs>)
+        -> Result<(), ParseError>
+    {
+        VplsNlri::skip(parser)?;
+        Ok(())
+    }
+}
+
+impl<'a, T: 'a + Octets> FixedNlriIter<'a, T, L2VpnVpls> {
+    pub(crate) fn l2vpn_vpls(parser: &mut Parser<'a, T>)
+        -> Self
+    {
+        FixedNlriIter::<T, L2VpnVpls>::new(parser)
+    }
+}
+
+//------------ L2VpnEvpn -------------------------------------
+
+pub(crate) struct L2VpnEvpn;
+impl AfiSafiParse for L2VpnEvpn {
+    type Item<O> = EvpnNlri<O>;
+    fn parse_nlri<'a, Octs: Octets>(
+        parser: &mut Parser<'a, Octs>
+    ) -> Result<Self::Item<Octs::Range<'a>>, ParseError> {
+        EvpnNlri::parse(parser)
+    }
+
+    fn skip_nlri<Octs: Octets>(parser: &mut Parser<'_, Octs>)
+        -> Result<(), ParseError>
+    {
+        EvpnNlri::<Octs>::skip(parser)?;
+        Ok(())
+    }
+}
+
+impl<'a, T: 'a + Octets> FixedNlriIter<'a, T, L2VpnEvpn> {
+    pub(crate) fn l2vpn_evpn(parser: &mut Parser<'a, T>)
+        -> Self
+    {
+        FixedNlriIter::<T, L2VpnEvpn>::new(parser)
+    }
+}
 
 //------------ AfiSafiParse --------------------------------------------------
 
@@ -2046,7 +2093,7 @@ impl<T: AsRef<[u8]>> MplsNlri<T> {
 }
 
 impl VplsNlri {
-    pub fn check<Octs: Octets>(parser: &mut Parser<Octs>)
+    pub fn skip<Octs: Octets>(parser: &mut Parser<Octs>)
         -> Result<(), ParseError>
     {
         parser.advance(2)?; // length, u16
@@ -2272,6 +2319,16 @@ impl<Octs: Octets> EvpnNlri<Octs> {
                 raw
             }
         )
+    }
+
+    fn skip<'a, R>(parser: &mut Parser<'a, R>) -> Result<(), ParseError>
+        where
+            R: AsRef<[u8]>
+    {
+        parser.advance(1)?; // Route Type
+        let len = parser.parse_u8()?;
+        parser.advance(len.into())?; // Length in bytes
+        Ok(())
     }
 }
 

@@ -1261,24 +1261,21 @@ impl Attribute for MpReachNlri {
             (Ipv4FlowSpec, false) => FixedNlriIter::ipv4flowspec(parser).validate(),
             (Ipv6FlowSpec, false) => FixedNlriIter::ipv6flowspec(parser).validate(),
 
+            (L2VpnVpls, false) => FixedNlriIter::l2vpn_vpls(parser).validate(),
+            (L2VpnEvpn, false) => FixedNlriIter::l2vpn_evpn(parser).validate(),
 
-
+            // It's unclear to what extent the following address families
+            // are used in combination with PathIDs. For now we print a
+            // warning so it does not go unnoticed, and we do not return an
+            // Error.
+            
             (Ipv4RouteTarget, true) |
-                (Ipv4FlowSpec, true) | (Ipv6FlowSpec, true) |
-                (L2VpnVpls, true) |
-                (L2VpnEvpn, true)  => {
+            (Ipv4FlowSpec, true) | (Ipv6FlowSpec, true) |
+            (L2VpnVpls, true) |
+            (L2VpnEvpn, true)  => {
                 warn!("unimplemented: {} with ADDPATH", afisafi);
                 Ok(())
             }
-            _ => { debug!("TODO implement validation for this afi/safi"); Ok(()) }
-
-            /* TODO
-
-
-            // XXX does addpath come into play here
-            (L2VpnVpls, false) => FixedNlriIter::l2vpn_vpls(parser).validate(),
-            (L2VpnEvpn, false) => FixedNlriIter::l2vpn_evpn(parser).validate(),
-            */
         }
     }
 }
