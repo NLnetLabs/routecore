@@ -1,4 +1,5 @@
 use crate::typeenum; // from util::macros
+use std::fmt;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 use crate::bgp::message::nlri::RouteDistinguisher;
@@ -120,6 +121,32 @@ impl AfiSafi {
             Self::L2VpnVpls => (AFI::L2Vpn, SAFI::Vpls),
             Self::L2VpnEvpn => (AFI::L2Vpn, SAFI::Evpn),
         }
+    }
+}
+
+impl fmt::Display for AfiSafi {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::Ipv4Unicast => write!(f, "Ipv4Unicast"),
+            Self::Ipv6Unicast => write!(f, "Ipv6Unicast"),
+            Self::Ipv4Multicast => write!(f, "Ipv4Multicast"),
+            Self::Ipv6Multicast => write!(f, "Ipv6Multicast"),
+
+            Self::Ipv4MplsUnicast => write!(f, "Ipv4MplsUnicast"),
+            Self::Ipv6MplsUnicast => write!(f, "Ipv6MplsUnicast"),
+
+            Self::Ipv4MplsVpnUnicast => write!(f, "Ipv4MplsVpnUnicast"),
+            Self::Ipv6MplsVpnUnicast => write!(f, "Ipv6MplsVpnUnicast"),
+
+            Self::Ipv4RouteTarget => write!(f, "Ipv4RouteTarget"),
+
+            Self::Ipv4FlowSpec => write!(f, "Ipv4FlowSpec"),
+            Self::Ipv6FlowSpec => write!(f, "Ipv6FlowSpec"),
+
+            Self::L2VpnVpls => write!(f, "L2VpnVpls"),
+            Self::L2VpnEvpn => write!(f, "L2VpnEvpn"),
+        }
+
     }
 }
 
