@@ -1,7 +1,7 @@
 use std::fmt;
 use std::net::Ipv4Addr;
 
-use log::debug;
+use log::{debug, warn};
 use octseq::{Octets, OctetsBuilder, OctetsFrom, Parser};
 
 use crate::asn::Asn;
@@ -1256,22 +1256,28 @@ impl Attribute for MpReachNlri {
             (Ipv6MplsVpnUnicast, false) => FixedNlriIter::ipv6mpls_vpn_unicast(parser).validate(),
             (Ipv6MplsVpnUnicast, true) => FixedNlriIter::ipv6mpls_vpn_unicast_addpath(parser).validate(),
 
+            (Ipv4RouteTarget, false) => FixedNlriIter::ipv4route_target(parser).validate(),
+
+
+            (Ipv4RouteTarget, true) => {
+                warn!("unimplemented: {} with ADDPATH", afisafi);
+                Ok(())
+                
+            }
             _ => { debug!("TODO implement validation for this afi/safi"); Ok(()) }
 
             /* TODO
 
             // XXX does addpath come into play here?
-            (Ipv4RouteTarget, false) => FixedNlriIter::ipv4routetarget(parser).validate()?,
-            (Ipv4RouteTarget, true) => FixedNlriIter::ipv4routetarget_addpath(parser).validate()?,
 
-            (Ipv4FlowSpec, _) => FixedNlriIter::ipv4flowspec(parser).validate()?,
-            (Ipv6FlowSpec, _) => FixedNlriIter::ipv6flowspec(parser).validate()?,
+            (Ipv4FlowSpec, _) => FixedNlriIter::ipv4flowspec(parser).validate(),
+            (Ipv6FlowSpec, _) => FixedNlriIter::ipv6flowspec(parser).validate(),
 
-            // XXX does addpath come into play here?
-            (L2VpnVpls, false) => FixedNlriIter::l2vpn_vpls(parser).validate()?,
-            (L2VpnVpls, true) => FixedNlriIter::l2vpn_vpls_addpath(parser).validate()?,
-            (L2VpnEvpn, false) => FixedNlriIter::l2vpn_evpn(parser).validate()?,
-            (L2VpnEvpn, true) => FixedNlriIter::l2vpn_evpn_addpath(parser).validate()?,
+            // XXX does addpath come into play here
+            (L2VpnVpls, false) => FixedNlriIter::l2vpn_vpls(parser).validate(),
+            (L2VpnVpls, true) => FixedNlriIter::l2vpn_vpls_addpath(parser).validate(),
+            (L2VpnEvpn, false) => FixedNlriIter::l2vpn_evpn(parser).validate(),
+            (L2VpnEvpn, true) => FixedNlriIter::l2vpn_evpn_addpath(parser).validate(),
             */
         }
     }

@@ -491,13 +491,37 @@ impl<'a, T: 'a + Octets> FixedNlriIter<'a, T, Ipv6MplsUnicastAddPath> {
     }
 }
 
+
+//------------ Ipv4RouteTarget -------------------------------------
+
+pub(crate) struct Ipv4RouteTarget;
+impl AfiSafiParse for Ipv4RouteTarget {
+    type Item<O> = RouteTargetNlri<O>;
+    fn parse_nlri<'a, Octs: Octets>(
+        parser: &mut Parser<'a, Octs>
+    ) -> Result<Self::Item<Octs::Range<'a>>, ParseError> {
+        RouteTargetNlri::parse_no_addpath(parser)
+    }
+
+    fn skip_nlri<Octs: Octets>(parser: &mut Parser<'_, Octs>)
+        -> Result<(), ParseError>
+    {
+        RouteTargetNlri::<Octs>::skip(parser)?;
+        Ok(())
+    }
+}
+
+impl<'a, T: 'a + Octets> FixedNlriIter<'a, T, Ipv4RouteTarget> {
+    pub(crate) fn ipv4route_target(parser: &mut Parser<'a, T>)
+        -> Self
+    {
+        FixedNlriIter::<T, Ipv4RouteTarget>::new(parser)
+    }
+}
+
+
+
 //TODO:
-//
-//    Ipv4MplsVpnUnicast,
-//    Ipv6MplsVpnUnicast,
-//
-//    Ipv4RouteTarget,
-//
 //    Ipv4FlowSpec,
 //    Ipv6FlowSpec,
 //
@@ -2112,7 +2136,7 @@ impl<Octs: AsRef<[u8]>> FlowSpecNlri<Octs> {
 }
 
 impl<Octs: Octets> RouteTargetNlri<Octs> {
-    pub fn check(parser: &mut Parser<Octs>)
+    pub fn _check(parser: &mut Parser<Octs>)
         -> Result<(), ParseError>
     {
         let prefix_bits = parser.parse_u8()?;
@@ -2138,6 +2162,25 @@ impl<Octs: Octets> RouteTargetNlri<Octs> {
                 raw
             }
         )
+    }
+
+    pub fn parse_no_addpath<'a, R>(parser: &mut Parser<'a, R>)
+        -> Result<Self, ParseError>
+    where
+        R: Octets<Range<'a> = Octs>
+    {
+        Self::parse(parser)
+    }
+
+    fn skip<'a, R>(parser: &mut Parser<'a, R>) -> Result<(), ParseError>
+        where
+            R: AsRef<[u8]>
+    {
+        let prefix_bits = parser.parse_u8()?;
+        let prefix_bytes = prefix_bits_to_bytes(prefix_bits);
+        parser.advance(prefix_bytes)?;
+
+        Ok(())
     }
 }
 
