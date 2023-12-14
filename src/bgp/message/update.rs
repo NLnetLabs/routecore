@@ -365,8 +365,9 @@ impl<Octs: Octets> UpdateMessage<Octs> {
         >
     {
         let mp_iter = self.mp_announcements()?.filter(|nlris|
-            matches!((nlris.afi(), nlris.safi()), 
-                     (AFI::Ipv4 | AFI::Ipv6, SAFI::Unicast)
+            matches!(
+                nlris.afisafi(),
+                AfiSafi::Ipv4Unicast | AfiSafi::Ipv6Unicast
             )
         ).map(|nlris| nlris.iter());
 
@@ -437,8 +438,9 @@ impl<Octs: Octets> UpdateMessage<Octs> {
         >
     {
         let mp_iter = self.mp_withdrawals()?.filter(|nlris|
-            matches!((nlris.afi(), nlris.safi()), 
-                     (AFI::Ipv4 | AFI::Ipv6, SAFI::Unicast)
+            matches!(
+                nlris.afisafi(),
+                AfiSafi::Ipv4Unicast | AfiSafi::Ipv6Unicast
             )
         ).map(|nlris| nlris.iter());
 
@@ -595,7 +597,9 @@ impl<Octs: Octets> UpdateMessage<Octs> {
             let mut p = epa.value_into_parser();
             let afi = p.parse_u16_be()?.into();
             let safi = p.parse_u8()?.into();
-            Ok(Some(NextHop::parse(&mut p, afi, safi)?))
+            let afisafi = AfiSafi::try_from((afi, safi))
+                .map_err(|_| ParseError::Unsupported)?;
+            Ok(Some(NextHop::parse(&mut p, afisafi)?))
         } else {
             Ok(None)
         }
@@ -1258,6 +1262,11 @@ impl<'a, Octs: Octets> Nlris<'a, Octs> {
         }
     }
 
+    /// Returns the AfiSafi for these NLRI.
+    pub fn afisafi(&self) -> AfiSafi {
+        self.afisafi
+    }
+
     /// Returns the AFI for these NLRI.
     pub fn afi(&self) -> AFI {
         self.afisafi.afi()
@@ -1631,7 +1640,7 @@ mod tests {
             eprint!("\r{n} ");
         }
         eprintln!("parsed {n}");
-        dbg!(parser);
+        //dbg!(parser);
     }
 
 

@@ -7,7 +7,7 @@ use crate::bgp::message::update::{SessionConfig};
 use crate::flowspec::Component;
 use crate::typeenum;
 use octseq::{Octets, OctetsBuilder, OctetsFrom, Parser};
-use log::debug;
+use log::{debug, warn};
 
 use std::fmt;
 use std::net::IpAddr;
@@ -656,103 +656,64 @@ impl<'a, T: Octets, AS: AfiSafiParse> Iterator for FixedNlriIter<'a, T, AS> {
 
 //--- NextHop in MP_REACH_NLRI -----------------------------------------------
 impl NextHop {
-    // XXX remove? at least get rid of code repetition with fn parse below
-    pub fn _check<Octs: Octets>(parser: &mut Parser<Octs>, afi: AFI, safi: SAFI)
-        -> Result<(), ParseError>
-    {
-        let len = parser.parse_u8()?;
-        match (len, afi, safi) {
-            (16, AFI::Ipv6, SAFI::Unicast | SAFI::MplsUnicast) =>
-                //NextHop::Ipv6
-                parser.advance(16)?,
-            (32, AFI::Ipv6, SAFI::Unicast | SAFI::Multicast) =>
-                //NextHop::Ipv6LL
-                parser.advance(16 + 16)?,
-            (24, AFI::Ipv6, SAFI::MplsVpnUnicast) =>
-                //NextHop::Ipv6MplsVpnUnicast
-                parser.advance(8 + 16)?,
-            (4, AFI::Ipv4, SAFI::Unicast | SAFI::Multicast | SAFI::MplsUnicast ) =>
-                //NextHop::Ipv4
-                parser.advance(4)?,
-            (12, AFI::Ipv4, SAFI::MplsVpnUnicast) =>
-                //NextHop::Ipv4MplsVpnUnicast
-                parser.advance(8 + 4)?,
-            // RouteTarget is always AFI/SAFI 1/132, so, IPv4,
-            // but the Next Hop can be IPv6.
-            (4, AFI::Ipv4, SAFI::RouteTarget) =>
-                //NextHop::Ipv4
-                parser.advance(4)?,
-            (16, AFI::Ipv4, SAFI::RouteTarget) =>
-                //NextHop::Ipv6
-                parser.advance(16)?,
-            (0, AFI::Ipv4, SAFI::FlowSpec) =>
-                //NextHop::Empty
-                { },
-            _ => {
-                parser.advance(len.into())?;
-                debug!("Unimplemented NextHop AFI/SAFI {}/{} len {}",
-                      afi, safi, len);
-                return Err(ParseError::form_error(
-                        "unimplemented AFI/SAFI in NextHop"
-                ))
-            }
-        }
-
-        Ok(())
-    }
-
-    pub fn parse<R: Octets>(parser: &mut Parser<'_, R>, afi: AFI, safi: SAFI)
+    pub fn parse<R: Octets>(parser: &mut Parser<'_, R>, afisafi: AfiSafi)
         -> Result<Self, ParseError>
     {
+        use AfiSafi::*;
         let len = parser.parse_u8()?;
-        let res = match (len, afi, safi) {
-            (16, AFI::Ipv6, SAFI::Unicast | SAFI::MplsUnicast) =>
+        let res = match (len, afisafi) {
+            (16, Ipv6Unicast | Ipv6MplsUnicast) =>
                 NextHop::Unicast(parse_ipv6addr(parser)?.into()),
-            (16, AFI::Ipv6, SAFI::Multicast) =>
+            (16, Ipv6Multicast) =>
                 NextHop::Multicast(parse_ipv6addr(parser)?.into()),
-            (32, AFI::Ipv6, SAFI::Unicast | SAFI::Multicast) =>
+            (32, Ipv6Unicast | Ipv6Multicast) =>
                 NextHop::Ipv6LL(
                     parse_ipv6addr(parser)?,
                     parse_ipv6addr(parser)?
                 ),
-            (24, AFI::Ipv6, SAFI::MplsVpnUnicast) =>
+            (24, Ipv6MplsVpnUnicast) =>
                 NextHop::Ipv6MplsVpnUnicast(
                     RouteDistinguisher::parse(parser)?,
                     parse_ipv6addr(parser)?
                 ),
-            (4, AFI::Ipv4, SAFI::Unicast | SAFI::MplsUnicast ) =>
+            (4, Ipv4Unicast | Ipv4MplsUnicast ) =>
                 NextHop::Unicast(parse_ipv4addr(parser)?.into()),
-            (4, AFI::Ipv4, SAFI::Multicast) => 
+            (4, Ipv4Multicast) => 
                 NextHop::Multicast(parse_ipv4addr(parser)?.into()),
-            (12, AFI::Ipv4, SAFI::MplsVpnUnicast) =>
+            (12, Ipv4MplsVpnUnicast) =>
                 NextHop::Ipv4MplsVpnUnicast(
                     RouteDistinguisher::parse(parser)?,
                     parse_ipv4addr(parser)?
                 ),
             // RouteTarget is always AFI/SAFI 1/132, so, IPv4,
             // but the Next Hop can be IPv6.
-            (4, AFI::Ipv4, SAFI::RouteTarget) =>
+            (4, Ipv4RouteTarget) =>
                 NextHop::Unicast(parse_ipv4addr(parser)?.into()),
-            (16, AFI::Ipv4, SAFI::RouteTarget) =>
+            (16, Ipv4RouteTarget) =>
                 NextHop::Unicast(parse_ipv6addr(parser)?.into()),
-            (0, AFI::Ipv4, SAFI::FlowSpec) =>
+            (0, Ipv4FlowSpec) =>
                 NextHop::Empty,
-            (4, AFI::L2Vpn, SAFI::Evpn) =>
+            (4, L2VpnEvpn) =>
                 NextHop::Evpn(parse_ipv4addr(parser)?.into()),
-            (16, AFI::L2Vpn, SAFI::Evpn) =>
+            (16, L2VpnEvpn) =>
                 NextHop::Evpn(parse_ipv6addr(parser)?.into()),
 
-            (4, AFI::Ipv6, SAFI::MplsUnicast) =>
+            (4, Ipv6MplsUnicast) =>
                 // IPv6 MPLS with IPv4 Nexthop (RFC4684)
                 NextHop::Unicast(parse_ipv4addr(parser)?.into()),
-            (16, AFI::Ipv4, SAFI::MplsUnicast) =>
+            (16, Ipv4MplsUnicast) =>
                 // IPv4 MPLS with IPv6 Nexthop (RFC4684)
                 NextHop::Unicast(parse_ipv6addr(parser)?.into()),
-            _ => {
-                debug!("Unimplemented NextHop AFI/SAFI {}/{} len {}",
-                      afi, safi, len);
+            (_n, ..) => {
+                warn!(
+                    "Unimplemented NextHop len {} for AFI/SAFI {}",
+                    len, afisafi
+                );
+                return Err(ParseError::Unsupported);
+                /*
                 parser.advance(len.into())?;
                 NextHop::Unimplemented(afi, safi)
+                */
             }
         };
         Ok(res)

@@ -1154,7 +1154,9 @@ impl Attribute for MpReachNlri {
     {
         let afi: AFI = parser.parse_u16_be()?.into();
         let safi: SAFI = parser.parse_u8()?.into();
-        let nexthop = crate::bgp::types::NextHop::parse(parser, afi, safi)?;
+        let afisafi = AfiSafi::try_from((afi, safi))
+            .map_err(|_| ParseError::Unsupported)?;
+        let nexthop = crate::bgp::types::NextHop::parse(parser, afisafi)?;
         if let crate::bgp::types::NextHop::Unimplemented(..) =  nexthop {
             debug!("Unsupported NextHop: {:?}", nexthop);
             return Err(ParseError::Unsupported);
@@ -1171,34 +1173,6 @@ impl Attribute for MpReachNlri {
             sc.rx_addpath(afisafi)
         );
 
-        // This is what using the FixedNlriIter would look like:
-        /*
-        match(afi, safi, sc.addpath_enabled()) {
-            (AFI::Ipv4, SAFI::Unicast, false) => {
-                for n in FixedNlriIter::ipv4unicast(parser) {
-                    builder.add_announcement(&n?)
-                }
-            }
-            (AFI::Ipv4, SAFI::Unicast, true) => {
-                for n in FixedNlriIter::ipv4unicast_addpath(parser) {
-                    builder.add_announcement(&n?)
-                }
-            }
-            (AFI::Ipv6, SAFI::Unicast, false) => {
-                for n in FixedNlriIter::ipv6unicast(parser) {
-                    builder.add_announcement(&n?)
-                }
-            }
-            (AFI::Ipv6, SAFI::Unicast, true) => {
-                for n in FixedNlriIter::ipv6unicast_addpath(parser) {
-                    builder.add_announcement(&n?)
-                }
-            }
-            _ => {
-                todo!("afi safi {:?} {:?}", afi, safi);
-            }
-        }
-        */
         let nlri_iter = crate::bgp::message::update::Nlris::new(
             *parser,
             sc,
@@ -1229,15 +1203,15 @@ impl Attribute for MpReachNlri {
          
         let afi: AFI = parser.parse_u16_be()?.into();
         let safi: SAFI = parser.parse_u8()?.into();
-        let _nexthop = crate::bgp::types::NextHop::parse(parser, afi, safi)?;
+        let afisafi = AfiSafi::try_from((afi, safi))
+            .map_err(|_| ParseError::Unsupported)?;
+        let _nexthop = crate::bgp::types::NextHop::parse(parser, afisafi)?;
         //if let crate::bgp::types::NextHop::Unimplemented(..) =  nexthop {
         //    debug!("Unsupported NextHop: {:?}", nexthop);
         //    return Err(ParseError::Unsupported);
         //}
         parser.advance(1)?; // reserved byte
 
-        let afisafi = AfiSafi::try_from((afi, safi))
-            .map_err(|_| ParseError::Unsupported)?;
         let expect_path_id = session_config.rx_addpath(afisafi);
 
         use AfiSafi::*;
