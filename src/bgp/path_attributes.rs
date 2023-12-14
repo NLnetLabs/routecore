@@ -1250,13 +1250,15 @@ impl Attribute for MpReachNlri {
             (Ipv6MplsUnicast, false) => FixedNlriIter::ipv6mpls_unicast(parser).validate(),
             (Ipv6MplsUnicast, true) => FixedNlriIter::ipv6mpls_unicast_addpath(parser).validate(),
 
-            _ => { debug!("TODO implement validation for this afi/safi"); Ok(()) }
-            /* TODO
 
-            (Ipv4MplsVpnUnicast, false) => FixedNlriIter::ipv4mpls_vpn_unicast(parser).validate()?,
-            (Ipv4MplsVpnUnicast, true) => FixedNlriIter::ipv4mpls_vpn_unicast_addpath(parser).validate()?,
-            (Ipv6MplsVpnUnicast, false) => FixedNlriIter::ipv6mpls_vpn_unicast(parser).validate()?,
-            (Ipv6MplsVpnUnicast, true) => FixedNlriIter::ipv6mpls_vpn_unicast_addpath(parser).validate()?,
+            (Ipv4MplsVpnUnicast, false) => FixedNlriIter::ipv4mpls_vpn_unicast(parser).validate(),
+            (Ipv4MplsVpnUnicast, true) => FixedNlriIter::ipv4mpls_vpn_unicast_addpath(parser).validate(),
+            (Ipv6MplsVpnUnicast, false) => FixedNlriIter::ipv6mpls_vpn_unicast(parser).validate(),
+            (Ipv6MplsVpnUnicast, true) => FixedNlriIter::ipv6mpls_vpn_unicast_addpath(parser).validate(),
+
+            _ => { debug!("TODO implement validation for this afi/safi"); Ok(()) }
+
+            /* TODO
 
             // XXX does addpath come into play here?
             (Ipv4RouteTarget, false) => FixedNlriIter::ipv4routetarget(parser).validate()?,

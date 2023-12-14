@@ -279,7 +279,7 @@ impl<'a, T: 'a + Octets> FixedNlriIter<'a, T, Ipv6MulticastAddPath> {
     }
 }
 
-//------------ Ipv4MplsUnicast -------------------------------------------------
+//------------ Ipv4MplsUnicast -----------------------------------------------
 
 pub(crate) struct Ipv4MplsUnicast;
 impl AfiSafiParse for Ipv4MplsUnicast {
@@ -304,7 +304,7 @@ impl<'a, T: 'a + Octets> FixedNlriIter<'a, T, Ipv4MplsUnicast> {
     }
 }
 
-//------------ Ipv4MplsUnicastAddPath ------------------------------------------
+//------------ Ipv4MplsUnicastAddPath ----------------------------------------
 
 pub(crate) struct Ipv4MplsUnicastAddPath;
 impl AfiSafiParse for Ipv4MplsUnicastAddPath {
@@ -325,12 +325,14 @@ impl AfiSafiParse for Ipv4MplsUnicastAddPath {
 }
 
 impl<'a, T: 'a + Octets> FixedNlriIter<'a, T, Ipv4MplsUnicastAddPath> {
-    pub(crate) fn ipv4mpls_unicast_addpath(parser: &mut Parser<'a, T>) -> Self {
+    pub(crate) fn ipv4mpls_unicast_addpath(parser: &mut Parser<'a, T>)
+        -> Self
+    {
         FixedNlriIter::<T, Ipv4MplsUnicastAddPath>::new(parser)
     }
 }
 
-//------------ Ipv6MplsUnicast -------------------------------------------------
+//------------ Ipv6MplsUnicast -----------------------------------------------
 
 pub(crate) struct Ipv6MplsUnicast;
 impl AfiSafiParse for Ipv6MplsUnicast {
@@ -355,7 +357,7 @@ impl<'a, T: 'a + Octets> FixedNlriIter<'a, T, Ipv6MplsUnicast> {
     }
 }
 
-//------------ Ipv6MplsUnicastAddPath ------------------------------------------
+//------------ Ipv6MplsUnicastAddPath ----------------------------------------
 
 pub(crate) struct Ipv6MplsUnicastAddPath;
 impl AfiSafiParse for Ipv6MplsUnicastAddPath {
@@ -376,7 +378,115 @@ impl AfiSafiParse for Ipv6MplsUnicastAddPath {
 }
 
 impl<'a, T: 'a + Octets> FixedNlriIter<'a, T, Ipv6MplsUnicastAddPath> {
-    pub(crate) fn ipv6mpls_unicast_addpath(parser: &mut Parser<'a, T>) -> Self {
+    pub(crate) fn ipv6mpls_unicast_addpath(parser: &mut Parser<'a, T>)
+        -> Self
+    {
+        FixedNlriIter::<T, Ipv6MplsUnicastAddPath>::new(parser)
+    }
+}
+
+//------------ Ipv4MplsVpnUnicast --------------------------------------------
+
+pub(crate) struct Ipv4MplsVpnUnicast;
+impl AfiSafiParse for Ipv4MplsVpnUnicast {
+    type Item<O> = MplsVpnNlri<O>;
+    fn parse_nlri<'a, Octs: Octets>(
+        parser: &mut Parser<'a, Octs>
+    ) -> Result<Self::Item<Octs::Range<'a>>, ParseError> {
+        MplsVpnNlri::parse_no_addpath(parser, AfiSafi::Ipv4MplsVpnUnicast)
+    }
+
+    fn skip_nlri<Octs: Octets>(parser: &mut Parser<'_, Octs>)
+        -> Result<(), ParseError>
+    {
+        MplsVpnNlri::skip_labels_rd_prefix(parser)?;
+        Ok(())
+    }
+}
+
+impl<'a, T: 'a + Octets> FixedNlriIter<'a, T, Ipv4MplsVpnUnicast> {
+    pub(crate) fn ipv4mpls_vpn_unicast(parser: &mut Parser<'a, T>) -> Self {
+        FixedNlriIter::<T, Ipv4MplsVpnUnicast>::new(parser)
+    }
+}
+
+//------------ Ipv4MplsVpnUnicastAddPath -------------------------------------
+
+pub(crate) struct Ipv4MplsVpnUnicastAddPath;
+impl AfiSafiParse for Ipv4MplsVpnUnicastAddPath {
+    type Item<O> = MplsVpnNlri<O>;
+    fn parse_nlri<'a, Octs: Octets>(
+        parser: &mut Parser<'a, Octs>
+    ) -> Result<Self::Item<Octs::Range<'a>>, ParseError> {
+        MplsVpnNlri::parse_addpath(parser, AfiSafi::Ipv4MplsVpnUnicast)
+    }
+
+    fn skip_nlri<Octs: Octets>(parser: &mut Parser<'_, Octs>)
+        -> Result<(), ParseError>
+    {
+        parser.advance(4)?;
+        MplsVpnNlri::skip_labels_rd_prefix(parser)?;
+        Ok(())
+    }
+}
+
+impl<'a, T: 'a + Octets> FixedNlriIter<'a, T, Ipv4MplsVpnUnicastAddPath> {
+    pub(crate) fn ipv4mpls_vpn_unicast_addpath(parser: &mut Parser<'a, T>)
+        -> Self
+    {
+        FixedNlriIter::<T, Ipv4MplsVpnUnicastAddPath>::new(parser)
+    }
+}
+
+//------------ Ipv6MplsVpnUnicast --------------------------------------------
+
+pub(crate) struct Ipv6MplsVpnUnicast;
+impl AfiSafiParse for Ipv6MplsVpnUnicast {
+    type Item<O> = MplsVpnNlri<O>;
+    fn parse_nlri<'a, Octs: Octets>(
+        parser: &mut Parser<'a, Octs>
+    ) -> Result<Self::Item<Octs::Range<'a>>, ParseError> {
+        MplsVpnNlri::parse_no_addpath(parser, AfiSafi::Ipv6MplsVpnUnicast)
+    }
+
+    fn skip_nlri<Octs: Octets>(parser: &mut Parser<'_, Octs>)
+        -> Result<(), ParseError>
+    {
+        MplsVpnNlri::skip_labels_rd_prefix(parser)?;
+        Ok(())
+    }
+}
+
+impl<'a, T: 'a + Octets> FixedNlriIter<'a, T, Ipv6MplsVpnUnicast> {
+    pub(crate) fn ipv6mpls_vpn_unicast(parser: &mut Parser<'a, T>) -> Self {
+        FixedNlriIter::<T, Ipv6MplsVpnUnicast>::new(parser)
+    }
+}
+
+//------------ Ipv6MplsVpnUnicastAddPath -------------------------------------
+
+pub(crate) struct Ipv6MplsVpnUnicastAddPath;
+impl AfiSafiParse for Ipv6MplsVpnUnicastAddPath {
+    type Item<O> = MplsVpnNlri<O>;
+    fn parse_nlri<'a, Octs: Octets>(
+        parser: &mut Parser<'a, Octs>
+    ) -> Result<Self::Item<Octs::Range<'a>>, ParseError> {
+        MplsVpnNlri::parse_addpath(parser, AfiSafi::Ipv6MplsVpnUnicast)
+    }
+
+    fn skip_nlri<Octs: Octets>(parser: &mut Parser<'_, Octs>)
+        -> Result<(), ParseError>
+    {
+        parser.advance(4)?;
+        MplsVpnNlri::skip_labels_rd_prefix(parser)?;
+        Ok(())
+    }
+}
+
+impl<'a, T: 'a + Octets> FixedNlriIter<'a, T, Ipv6MplsUnicastAddPath> {
+    pub(crate) fn ipv6mpls_vpn_unicast_addpath(parser: &mut Parser<'a, T>)
+        -> Self
+    {
         FixedNlriIter::<T, Ipv6MplsUnicastAddPath>::new(parser)
     }
 }
@@ -694,6 +804,12 @@ impl RouteDistinguisher {
         Ok(
             RouteDistinguisher{ bytes: b }
         )
+    }
+
+    pub fn skip<R: Octets>(parser: &mut Parser<'_, R>)
+        -> Result<(), ParseError>
+    {
+        Ok(parser.advance(8)?)
     }
 }
 
@@ -1587,6 +1703,96 @@ impl<Octs: Octets> MplsVpnNlri<Octs> {
         let basic = BasicNlri{ prefix, path_id };
         Ok(MplsVpnNlri{ basic, labels, rd })
     }
+
+    pub fn parse_no_addpath<'a, R>(
+        parser: &mut Parser<'a, R>,
+        afisafi: AfiSafi,
+    ) -> Result<Self, ParseError>
+    where
+        R: Octets<Range<'a> = Octs>
+    {
+        let (labels, rd, prefix) =
+            Self::parse_labels_rd_prefix(parser, afisafi)?;
+
+        let basic = BasicNlri::new(prefix);
+
+        Ok(MplsVpnNlri{basic, labels, rd})
+    }
+
+    pub fn parse_addpath<'a, R>(
+        parser: &mut Parser<'a, R>,
+        afisafi: AfiSafi,
+    ) -> Result<Self, ParseError>
+    where
+        R: Octets<Range<'a> = Octs>
+    {
+        let path_id = PathId::parse(parser)?;
+        let (labels, rd, prefix) =
+            Self::parse_labels_rd_prefix(parser, afisafi)?;
+
+        let basic = BasicNlri::with_path_id(prefix, path_id);
+
+        Ok(MplsVpnNlri{basic, labels, rd})
+    }
+
+    fn parse_labels_rd_prefix<'a, R>(
+        parser: &mut Parser<'a, R>,
+        afisafi: AfiSafi,
+    ) -> Result<(Labels<Octs>, RouteDistinguisher, Prefix), ParseError>
+    where
+        R: Octets<Range<'a> = Octs>
+    {
+        let mut prefix_bits = parser.parse_u8()?;
+        let labels = Labels::<Octs>::parse(parser)?;
+
+        // 8 for the RouteDistinguisher, plus byte length of labels,
+        // times 8 to go from bytes to bits
+        let rd_label_len = u8::try_from(8 * (8 + labels.len()))
+                .map_err(|_| ParseError::form_error(
+                        "MplsVpnNlri labels/rd too long"
+                ))?;
+
+        if rd_label_len > prefix_bits {
+            return Err(ParseError::ShortInput);
+        }
+
+        let rd = RouteDistinguisher::parse(parser)?;
+        prefix_bits -= rd_label_len;
+
+        let prefix = parse_prefix_for_len(
+            parser,
+            prefix_bits,
+            afisafi.afi()
+        )?;
+
+        Ok((labels, rd, prefix))
+    }
+
+    fn skip_labels_rd_prefix<'a, R>(
+        parser: &mut Parser<'a, R>,
+    ) -> Result<(), ParseError>
+    where
+        R: Octets<Range<'a> = Octs>
+    {
+        let mut prefix_bits = parser.parse_u8()?;
+        let labels_len = Labels::<Octs>::skip(parser)?;
+
+        let rd_label_len = u8::try_from(8 * (8 + labels_len))
+                .map_err(|_| ParseError::form_error(
+                        "MplsVpnNlri labels/rd too long"
+                ))?;
+
+        if rd_label_len > prefix_bits {
+            return Err(ParseError::ShortInput);
+        }
+
+        RouteDistinguisher::skip(parser)?;
+        prefix_bits -= rd_label_len;
+
+        skip_prefix_for_len(parser, prefix_bits)?;
+
+        Ok(())
+    }
 }
 
 impl<T: AsRef<[u8]>> MplsVpnNlri<T> {
@@ -1692,7 +1898,7 @@ impl<Octs: Octets> MplsNlri<Octs> {
     fn parse_labels_and_prefix<'a, R>(
         parser: &mut Parser<'a, R>,
         afisafi: AfiSafi,
-    ) -> Result<(Prefix,Labels<Octs>), ParseError>
+    ) -> Result<(Prefix, Labels<Octs>), ParseError>
     where
         R: Octets<Range<'a> = Octs>
     {
