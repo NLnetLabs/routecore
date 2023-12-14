@@ -1579,8 +1579,8 @@ fn skip_prefix_for_len<R: Octets>(parser: &mut Parser<'_, R>, prefix_bits: u8)
 fn skip_prefix_addpath<R: Octets>(parser: &mut Parser<'_, R>)
     -> Result<(), ParseError>
 {
-    let prefix_bits = parser.parse_u8()?;
     parser.advance(4)?;
+    let prefix_bits = parser.parse_u8()?;
     let prefix_bytes = prefix_bits_to_bytes(prefix_bits);
     Ok(parser.advance(prefix_bytes)?)
 }
