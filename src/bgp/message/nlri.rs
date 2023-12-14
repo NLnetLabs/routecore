@@ -704,6 +704,8 @@ impl NextHop {
             (16, Ipv4MplsUnicast) =>
                 // IPv4 MPLS with IPv6 Nexthop (RFC4684)
                 NextHop::Unicast(parse_ipv6addr(parser)?.into()),
+            (4, L2VpnVpls) =>
+                NextHop::Unicast(parse_ipv4addr(parser)?.into()),
             (_n, ..) => {
                 warn!(
                     "Unimplemented NextHop len {} for AFI/SAFI {}",
