@@ -306,13 +306,22 @@ macro_rules! path_attributes {
                             flags.into(), &mut pp, sc
                         ) {
                             debug!("failed to parse path attribute: {e}");
-                            pp.seek(start_pos + header_len)?;
-                            WireformatPathAttribute::Invalid(
-                                $flags.into(), $type_code, pp
-                            )
+                            if $type_code == 14 {
+                                return Err(ParseError::form_error(
+                                        "invalid MP_REACH_NLRI"
+                                ))
+                            } else if $type_code == 15 {
+                                return Err(ParseError::form_error(
+                                        "invalid MP_UNREACH_NLRI"
+                                ))
+                            } else {
+                                pp.seek(start_pos + header_len)?;
+                                WireformatPathAttribute::Invalid(
+                                    $flags.into(), $type_code, pp
+                                )
+                            }
                         } else {
-                            pp.seek(start_pos/* + header_len */)?;
-                            //WireformatPathAttribute::$name(pp, sc)
+                            pp.seek(start_pos)?;
                             WireformatPathAttribute::$name(
                                 EncodedPathAttribute::new(pp, sc)
                             )
@@ -1273,7 +1282,10 @@ impl Attribute for MpReachNlri {
             (Ipv4FlowSpec, true) | (Ipv6FlowSpec, true) |
             (L2VpnVpls, true) |
             (L2VpnEvpn, true)  => {
-                warn!("unimplemented: {} with ADDPATH", afisafi);
+                warn!(
+                    "unimplemented: {} with ADDPATH MP_REACH_NLRI",
+                    afisafi
+                );
                 Ok(())
             }
         }
@@ -1323,7 +1335,7 @@ impl Attribute for MpUnreachNlri {
     fn validate<Octs: Octets>(
         _flags: Flags,
         parser: &mut Parser<'_, Octs>,
-        _session_config: SessionConfig
+        session_config: SessionConfig
     ) -> Result<(), ParseError> {
         // We only check for the bare minimum here, as most checks are
         // better done upon (creation of the) Nlri iterator based on the
@@ -1333,7 +1345,64 @@ impl Attribute for MpUnreachNlri {
                 "length for MP_UNREACH_NLRI less than minimum"
             ))
         }
-        Ok(())
+
+
+        let afi: AFI = parser.parse_u16_be()?.into();
+        let safi: SAFI = parser.parse_u8()?.into();
+
+        let afisafi = AfiSafi::try_from((afi, safi))
+            .map_err(|_| ParseError::Unsupported)?;
+        let expect_path_id = session_config.rx_addpath(afisafi);
+
+        use AfiSafi::*;
+        match (afisafi, expect_path_id) {
+            (Ipv4Unicast, false) => FixedNlriIter::ipv4unicast(parser).validate(),
+            (Ipv4Unicast, true) => FixedNlriIter::ipv4unicast_addpath(parser).validate(),
+            (Ipv6Unicast, false) => FixedNlriIter::ipv6unicast(parser).validate(),
+            (Ipv6Unicast, true) => FixedNlriIter::ipv6unicast_addpath(parser).validate(),
+            
+
+            (Ipv4Multicast, false) => FixedNlriIter::ipv4multicast(parser).validate(),
+            (Ipv4Multicast, true) => FixedNlriIter::ipv4multicast_addpath(parser).validate(),
+            (Ipv6Multicast, false) => FixedNlriIter::ipv6multicast(parser).validate(),
+            (Ipv6Multicast, true) => FixedNlriIter::ipv6multicast_addpath(parser).validate(),
+
+
+            (Ipv4MplsUnicast, false) => FixedNlriIter::ipv4mpls_unicast(parser).validate(),
+            (Ipv4MplsUnicast, true) => FixedNlriIter::ipv4mpls_unicast_addpath(parser).validate(),
+            (Ipv6MplsUnicast, false) => FixedNlriIter::ipv6mpls_unicast(parser).validate(),
+            (Ipv6MplsUnicast, true) => FixedNlriIter::ipv6mpls_unicast_addpath(parser).validate(),
+
+
+            (Ipv4MplsVpnUnicast, false) => FixedNlriIter::ipv4mpls_vpn_unicast(parser).validate(),
+            (Ipv4MplsVpnUnicast, true) => FixedNlriIter::ipv4mpls_vpn_unicast_addpath(parser).validate(),
+            (Ipv6MplsVpnUnicast, false) => FixedNlriIter::ipv6mpls_vpn_unicast(parser).validate(),
+            (Ipv6MplsVpnUnicast, true) => FixedNlriIter::ipv6mpls_vpn_unicast_addpath(parser).validate(),
+
+            (Ipv4RouteTarget, false) => FixedNlriIter::ipv4route_target(parser).validate(),
+
+            (Ipv4FlowSpec, false) => FixedNlriIter::ipv4flowspec(parser).validate(),
+            (Ipv6FlowSpec, false) => FixedNlriIter::ipv6flowspec(parser).validate(),
+
+            (L2VpnVpls, false) => FixedNlriIter::l2vpn_vpls(parser).validate(),
+            (L2VpnEvpn, false) => FixedNlriIter::l2vpn_evpn(parser).validate(),
+
+            // It's unclear to what extent the following address families
+            // are used in combination with PathIDs. For now we print a
+            // warning so it does not go unnoticed, and we do not return an
+            // Error.
+            
+            (Ipv4RouteTarget, true) |
+            (Ipv4FlowSpec, true) | (Ipv6FlowSpec, true) |
+            (L2VpnVpls, true) |
+            (L2VpnEvpn, true)  => {
+                warn!(
+                    "unimplemented: {} with ADDPATH in MP_UNREACH_NLRI",
+                    afisafi
+                );
+                Ok(())
+            }
+        }
     }
 }
 

@@ -2364,22 +2364,10 @@ mod tests {
             0x40,
             0x20, 0x01, 0x0d, 0xb8, 0xff, 0xff, 0x00, 0x03
         ];
-        //let update: UpdateMessage<_> = parse_msg(&buf);
-        let update = UpdateMessage::from_octets(
-            &buf,
-            SessionConfig::modern()
-        ).unwrap();
 
-        assert!(matches!(
-            update.unicast_announcements_vec(),
-            Ok(Vec { .. })
-        ));
-
-        assert!(matches!(
-            update.unicast_withdrawals_vec(),
-            Err(ParseError::Unsupported),
-        ));
-
+        assert!(
+            UpdateMessage::from_octets(&buf, SessionConfig::modern()).is_err()
+        );
     }
 
     #[test]
@@ -2404,11 +2392,11 @@ mod tests {
             0x20, 0x01, 0x0d, 0xb8, 0xff, 0xff, 0x00, 0x03
         ];
 
-        let update = UpdateMessage::from_octets(
-            &buf,
-            SessionConfig::modern()
-        ).unwrap();
+        assert!(
+            UpdateMessage::from_octets(&buf, SessionConfig::modern()).is_err()
+        );
 
+        /*
         assert!(matches!(
             update.unicast_announcements_vec(),
             Ok(Vec { .. })
@@ -2432,6 +2420,7 @@ mod tests {
             ]
             )
         );
+        */
 
     }
 
@@ -2573,42 +2562,47 @@ mod tests {
         assert!(ann.next().is_none());
     }
 
+
     #[test]
-    fn debug_fuzz_unknown_afi_safi() {
+    fn route_target_nlri() {
         let raw = vec![
-            255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
-            255, 255, 255, 0, 36, 0, 0, 0, 0, 13, 255, 255, 0, 0, 0, 14, 6, 1,
-            0, 4, 0, 1, 0, 0
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0x00, 0x5f, 0x02, 0x00, 0x00, 0x00, 0x48, 0x80,
+            0x0e, 0x30, 0x00, 0x01, 0x84, 0x04, 0x0a, 0x00,
+            0x00, 0x02, 0x00, 0x60, 0x00, 0x00, 0x00, 0x64,
+            0x00, 0x02, 0x00, 0x64, 0x00, 0x00, 0x00, 0x01,
+            0x60, 0x00, 0x00, 0x00, 0x64, 0x01, 0x02, 0x0a,
+            0x00, 0x00, 0x02, 0x00, 0x00, 0x60, 0x00, 0x00,
+            0x00, 0x64, 0x01, 0x02, 0x0a, 0x00, 0x00, 0x02,
+            0x00, 0x01, 0x40, 0x01, 0x01, 0x00, 0x40, 0x02,
+            0x00, 0x80, 0x04, 0x04, 0x00, 0x00, 0x00, 0x00,
+            0x40, 0x05, 0x04, 0x00, 0x00, 0x00, 0x64
         ];
 
-        let upd = UpdateMessage::from_octets(&raw, SessionConfig::modern())
-            .unwrap();
+        let upd = UpdateMessage::from_octets(
+            &raw,
+            SessionConfig::modern()
+        ).unwrap();
 
-        if let Ok(pas) = upd.path_attributes() {
-            for pa in pas.into_iter().flatten() {
-                let _ = pa.to_owned();
-            }
-        }
+        assert_eq!(
+            upd.mp_announcements().unwrap().unwrap().iter().count(),
+            3
+        );
     }
 
-
     #[test]
-    fn debug_fuzz_assert_flowspecnlri() {
+    fn invalid_mp_unreach_nlri() {
         let raw = vec![
             255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
-            255, 255, 255, 0, 36, 0, 0, 0, 0, 13, 255, 255, 0, 0, 0, 15, 6, 0,
+            255, 255, 255, 0, 36, 2, 0, 0, 0, 13, 255, 255, 0, 0, 0, 15, 6, 0,
             2, 133, 43, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
             0, 0, 1, 0, 255, 255, 255, 254
         ];
 
-        let upd = UpdateMessage::from_octets(&raw, SessionConfig::modern())
-            .unwrap();
-
-        if let Ok(pas) = upd.path_attributes() {
-            for pa in pas.into_iter().flatten() {
-                let _ = pa.to_owned();
-            }
-        }
+        assert!(
+            UpdateMessage::from_octets(&raw, SessionConfig::modern()).is_err()
+        );
     }
 
     #[test]
