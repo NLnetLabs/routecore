@@ -323,12 +323,12 @@ impl NextHop {
 
             Ipv4MplsVpnUnicast => Self::Ipv4MplsVpnUnicast(
                 RouteDistinguisher::zeroes(),
-                Ipv4Addr::from(0).into()
-                ),
+                Ipv4Addr::from(0)
+            ),
             Ipv6MplsVpnUnicast => Self::Ipv6MplsVpnUnicast(
                 RouteDistinguisher::zeroes(),
-                Ipv6Addr::from(0).into()
-                ),
+                Ipv6Addr::from(0)
+            ),
 
             Ipv4RouteTarget => Self::Unicast(Ipv4Addr::from(0).into()),
 
@@ -336,9 +336,6 @@ impl NextHop {
 
             L2VpnVpls => Self::Unicast(Ipv4Addr::from(0).into()),
             L2VpnEvpn => Self::Unicast(Ipv4Addr::from(0).into()),
-
-            //(_, _) => Self::Unimplemented(afi, safi)
-            //_ => Self::Unimplemented(afisafi.afi(), afisafi.safi())
         }
     }
 
