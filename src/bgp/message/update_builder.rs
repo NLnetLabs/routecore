@@ -1048,13 +1048,13 @@ impl MpReachNlriBuilder {
         }
     }
 
-    fn new_for_nlri<T>( nlri: &Nlri<T>) -> Self
+    fn new_for_nlri<T>(nlri: &Nlri<T>) -> Self
     where T: Octets,
           Vec<u8>: OctetsFrom<T>
     {
         let (afi, safi) = nlri.afi_safi();
         let addpath_enabled = nlri.is_addpath();
-        let nexthop = NextHop::new(afi, safi);
+        let nexthop = NextHop::new(nlri.afisafi());
         Self::new(afi, safi, nexthop, addpath_enabled)
     }
 

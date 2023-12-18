@@ -706,6 +706,9 @@ impl NextHop {
                 NextHop::Unicast(parse_ipv6addr(parser)?.into()),
             (4, L2VpnVpls) =>
                 NextHop::Unicast(parse_ipv4addr(parser)?.into()),
+            (16, L2VpnVpls) =>
+                NextHop::Unicast(parse_ipv6addr(parser)?.into()),
+
             (_n, ..) => {
                 warn!(
                     "Unimplemented NextHop len {} for AFI/SAFI {}",
@@ -905,6 +908,10 @@ impl RouteDistinguisher {
     /// Create a new RouteDistinguisher from a slice.
     pub fn new(bytes: &[u8]) -> Self {
         RouteDistinguisher { bytes: bytes.try_into().expect("parsed before") }
+    }
+
+    pub fn zeroes() -> Self {
+        RouteDistinguisher::new(&[0_u8; 8])
     }
 
     /// Returns the type this RouteDistinguisher.

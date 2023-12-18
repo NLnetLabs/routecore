@@ -310,15 +310,35 @@ pub enum NextHop {
 }
 
 impl NextHop {
-    pub fn new(afi: AFI, safi: SAFI) -> Self {
-        match (afi, safi) {
-            (AFI::Ipv4, SAFI::Unicast) => Self::Unicast(Ipv4Addr::from(0).into()),
-            (AFI::Ipv6, SAFI::Unicast) => Self::Unicast(Ipv6Addr::from(0).into()),
-            (AFI::Ipv4, SAFI::Multicast) => Self::Multicast(Ipv4Addr::from(0).into()),
-            (AFI::Ipv6, SAFI::Multicast) => Self::Multicast(Ipv6Addr::from(0).into()),
-            (AFI::Ipv4 | AFI::Ipv6, SAFI::FlowSpec) => Self::Empty,
+    pub fn new(afisafi: AfiSafi) -> Self {
+        use AfiSafi::*;
+        match afisafi {
+            Ipv4Unicast => Self::Unicast(Ipv4Addr::from(0).into()),
+            Ipv6Unicast => Self::Unicast(Ipv6Addr::from(0).into()),
+            Ipv4Multicast => Self::Multicast(Ipv4Addr::from(0).into()),
+            Ipv6Multicast => Self::Multicast(Ipv6Addr::from(0).into()),
 
-            (_, _) => Self::Unimplemented(afi, safi)
+            Ipv4MplsUnicast => Self::Unicast(Ipv4Addr::from(0).into()),
+            Ipv6MplsUnicast => Self::Unicast(Ipv6Addr::from(0).into()),
+
+            Ipv4MplsVpnUnicast => Self::Ipv4MplsVpnUnicast(
+                RouteDistinguisher::zeroes(),
+                Ipv4Addr::from(0).into()
+                ),
+            Ipv6MplsVpnUnicast => Self::Ipv6MplsVpnUnicast(
+                RouteDistinguisher::zeroes(),
+                Ipv6Addr::from(0).into()
+                ),
+
+            Ipv4RouteTarget => Self::Unicast(Ipv4Addr::from(0).into()),
+
+            Ipv4FlowSpec | Ipv6FlowSpec => Self::Empty,
+
+            L2VpnVpls => Self::Unicast(Ipv4Addr::from(0).into()),
+            L2VpnEvpn => Self::Unicast(Ipv4Addr::from(0).into()),
+
+            //(_, _) => Self::Unimplemented(afi, safi)
+            //_ => Self::Unimplemented(afisafi.afi(), afisafi.safi())
         }
     }
 
