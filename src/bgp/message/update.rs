@@ -181,7 +181,7 @@ impl<Octs: Octets> UpdateMessage<Octs> {
         let iter = Nlris {
             parser: pp,
             session_config: self.session_config,
-            afisafi: AfiSafi::Ipv4Unicast
+            afi_safi: AfiSafi::Ipv4Unicast
         };
 
         Ok(iter)
@@ -197,13 +197,13 @@ impl<Octs: Octets> UpdateMessage<Octs> {
             let mut parser = epa.value_into_parser();
             let afi = parser.parse_u16_be()?.into();
             let safi = parser.parse_u8()?.into();
-            let afisafi = AfiSafi::try_from((afi, safi))
+            let afi_safi = AfiSafi::try_from((afi, safi))
                 .map_err(|_| ParseError::Unsupported)?;
 
             return Ok(Some(Nlris{
                 parser, 
                 session_config: self.session_config,
-                afisafi,
+                afi_safi,
             }))
         }
 
@@ -269,7 +269,7 @@ impl<Octs: Octets> UpdateMessage<Octs> {
         let iter = Nlris {
             parser: pp,
             session_config: self.session_config,
-            afisafi: AfiSafi::Ipv4Unicast,
+            afi_safi: AfiSafi::Ipv4Unicast,
         };
 
         Ok(iter)
@@ -284,7 +284,7 @@ impl<Octs: Octets> UpdateMessage<Octs> {
             let mut parser = epa.value_into_parser();
             let afi = parser.parse_u16_be()?.into();
             let safi = parser.parse_u8()?.into();
-            let afisafi = AfiSafi::try_from((afi, safi))
+            let afi_safi = AfiSafi::try_from((afi, safi))
                 .map_err(|_| ParseError::Unsupported)?;
 
             NextHop::skip(&mut parser)?;
@@ -292,7 +292,7 @@ impl<Octs: Octets> UpdateMessage<Octs> {
             let res = Nlris{
                 parser, 
                 session_config: self.session_config,
-                afisafi,
+                afi_safi,
             };
 
             return Ok(Some(res))
@@ -366,7 +366,7 @@ impl<Octs: Octets> UpdateMessage<Octs> {
     {
         let mp_iter = self.mp_announcements()?.filter(|nlris|
             matches!(
-                nlris.afisafi(),
+                nlris.afi_safi(),
                 AfiSafi::Ipv4Unicast | AfiSafi::Ipv6Unicast
             )
         ).map(|nlris| nlris.iter());
@@ -439,7 +439,7 @@ impl<Octs: Octets> UpdateMessage<Octs> {
     {
         let mp_iter = self.mp_withdrawals()?.filter(|nlris|
             matches!(
-                nlris.afisafi(),
+                nlris.afi_safi(),
                 AfiSafi::Ipv4Unicast | AfiSafi::Ipv6Unicast
             )
         ).map(|nlris| nlris.iter());
@@ -597,26 +597,45 @@ impl<Octs: Octets> UpdateMessage<Octs> {
             let mut p = epa.value_into_parser();
             let afi = p.parse_u16_be()?.into();
             let safi = p.parse_u8()?.into();
-            let afisafi = AfiSafi::try_from((afi, safi))
+            let afi_safi = AfiSafi::try_from((afi, safi))
                 .map_err(|_| ParseError::Unsupported)?;
-            Ok(Some(NextHop::parse(&mut p, afisafi)?))
+            Ok(Some(NextHop::parse(&mut p, afi_safi)?))
+        } else {
+            Ok(None)
+        }
+    }
+
+    fn mp_next_hop_tuple(&self) -> Result<Option<(AfiSafi, NextHop)>, ParseError> {
+        if let Some(WireformatPathAttribute::MpReachNlri(epa)) = self.path_attributes()?.get(
+            PathAttributeType::MpReachNlri
+        ){
+            let mut p = epa.value_into_parser();
+            let afi = p.parse_u16_be()?.into();
+            let safi = p.parse_u8()?.into();
+            let afi_safi = AfiSafi::try_from((afi, safi))
+                .map_err(|_| ParseError::Unsupported)?;
+            Ok(Some((afi_safi, NextHop::parse(&mut p, afi_safi)?)))
         } else {
             Ok(None)
         }
 
     }
 
-    pub fn find_next_hop(&self, afi: AFI, safi: SAFI) -> Result<NextHop, ParseError> {
-        match (afi, safi) {
-            (AFI::Ipv4, SAFI::Unicast) => {
-                if let Ok(Some(mp)) = self.mp_next_hop() {
-                    if mp.afi_safi() == (AFI::Ipv4, SAFI::Unicast) {
-                        return Err(ParseError::form_error(
-                            "ambiguous IPv4 Unincast nexthop"
-                        ))
+    pub fn find_next_hop(&self, afi_safi: AfiSafi) -> Result<NextHop, ParseError> {
+        match afi_safi {
+            AfiSafi::Ipv4Unicast => {
+                // If there is Ipv4Unicast in the MP_REACH_NLRI attribute, the
+                // peers must have negotiated that in the BGP OPENs, so we can
+                // assume there are no NLRI in the conventional parts of the
+                // PDU. We return the nexthop from the MP attribute.
+                if let Ok(Some((mp_afisafi, mp))) = self.mp_next_hop_tuple() {
+                    if mp_afisafi == AfiSafi::Ipv4Unicast {
+                        return Ok(mp)
                     }
                 }
 
+                // If no MP_REACH_NLRI was found for Ipv4Unicast, we look for
+                // the conventional dedicated path attribute NEXT_HOP:
                 if let Ok(maybe_nh) = self.conventional_next_hop() {
                     if let Some(nh) = maybe_nh {
                         Ok(nh)
@@ -631,10 +650,10 @@ impl<Octs: Octets> UpdateMessage<Octs> {
                     ))
                 }
             }
-            (..) => {
-                if let Ok(maybe_mp) = self.mp_next_hop() {
-                    if let Some(mp) = maybe_mp {
-                        if mp.afi_safi() != (afi, safi) {
+            _ => {
+                if let Ok(maybe_mp) = self.mp_next_hop_tuple() {
+                    if let Some((mp_afisafi, mp)) = maybe_mp {
+                        if mp_afisafi != afi_safi {
                             return Err(ParseError::form_error(
                                  "MP_REACH_NLRI for different AFI/SAFI"
                             ))
@@ -975,11 +994,11 @@ impl SessionAddpaths {
         Self([Some(AddpathDirection::SendReceive); 16])
     }
 
-    fn set(&mut self, afisafi: AfiSafi, dir: AddpathDirection) {
-        self.0[afisafi as usize] = Some(dir);
+    fn set(&mut self, afi_safi: AfiSafi, dir: AddpathDirection) {
+        self.0[afi_safi as usize] = Some(dir);
     }
-    fn get(&self, afisafi: AfiSafi) -> Option<AddpathDirection> {
-        self.0[afisafi as usize]
+    fn get(&self, afi_safi: AfiSafi) -> Option<AddpathDirection> {
+        self.0[afi_safi as usize]
     }
 
     fn enabled_addpaths(&self)
@@ -1001,11 +1020,11 @@ impl SessionAddpaths {
     }
 
     // used for parsing retries
-    fn inverse_fam(&mut self, afisafi: AfiSafi) {
-        if self.0[afisafi as usize].is_some() {
-            self.0[afisafi as usize] = None;
+    fn inverse_fam(&mut self, afi_safi: AfiSafi) {
+        if self.0[afi_safi as usize].is_some() {
+            self.0[afi_safi as usize] = None;
         } else {
-            self.0[afisafi as usize] = Some(AddpathDirection::Receive);
+            self.0[afi_safi as usize] = Some(AddpathDirection::Receive);
         }
     }
 }
@@ -1232,30 +1251,30 @@ impl<Octs: Octets> Iterator for LargeCommunityIter<Octs> {
 pub struct Nlris<'a, Octs: Octets> {
     parser: Parser<'a, Octs>,
     session_config: SessionConfig,
-    afisafi: AfiSafi,
+    afi_safi: AfiSafi,
 }
 
 impl<'a, Octs: Octets> Nlris<'a, Octs> {
     pub fn new(
         parser: Parser<'a, Octs>,
         session_config: SessionConfig,
-        afisafi: AfiSafi,
+        afi_safi: AfiSafi,
     ) -> Nlris<'a, Octs> {
-        Nlris { parser, session_config, afisafi }
+        Nlris { parser, session_config, afi_safi }
     }
 
     pub fn iter(&self) -> NlriIter<'a, Octs> {
         NlriIter {
             parser: self.parser,
             session_config: self.session_config,
-            afisafi: self.afisafi,
+            afi_safi: self.afi_safi,
         }
     }
 
     // should this be a thing, here?
     fn _validate(&self) -> Result<(), ParseError> {
         use AfiSafi::*;
-        match self.afisafi {
+        match self.afi_safi {
             Ipv4Unicast => FixedNlriIter::ipv4unicast(&mut self.parser.clone()).validate(),
 
             _ => todo!()
@@ -1263,18 +1282,18 @@ impl<'a, Octs: Octets> Nlris<'a, Octs> {
     }
 
     /// Returns the AfiSafi for these NLRI.
-    pub fn afisafi(&self) -> AfiSafi {
-        self.afisafi
+    pub fn afi_safi(&self) -> AfiSafi {
+        self.afi_safi
     }
 
     /// Returns the AFI for these NLRI.
     pub fn afi(&self) -> AFI {
-        self.afisafi.afi()
+        self.afi_safi.afi()
     }
 
     /// Returns the SAFI for these NLRI.
     pub fn safi(&self) -> SAFI {
-        self.afisafi.safi()
+        self.afi_safi.safi()
     }
 }
 
@@ -1288,12 +1307,12 @@ impl<'a, Octs: Octets> Nlris<'a, Octs> {
 pub struct NlriIter<'a, Octs> {
     parser: Parser<'a, Octs>,
     session_config: SessionConfig,
-    afisafi: AfiSafi,
+    afi_safi: AfiSafi,
 }
 
 impl<'a, Octs: Octets> NlriIter<'a, Octs> {
-    pub fn afisafi(&self) -> AfiSafi {
-        self.afisafi
+    pub fn afi_safi(&self) -> AfiSafi {
+        self.afi_safi
     }
 
     fn into_parser(self) -> Parser<'a, Octs> {
@@ -1302,12 +1321,12 @@ impl<'a, Octs: Octets> NlriIter<'a, Octs> {
 
     fn get_nlri(&mut self) -> Result<Nlri<Octs::Range<'a>>, ParseError> {
         use AfiSafi::*;
-        let res = match self.afisafi {
+        let res = match self.afi_safi {
             Ipv4Unicast | Ipv6Unicast => {
                 Nlri::Unicast(BasicNlri::parse(
                         &mut self.parser,
                         self.session_config,
-                        self.afisafi
+                        self.afi_safi
 
                 )?)
             }
@@ -1315,21 +1334,21 @@ impl<'a, Octs: Octets> NlriIter<'a, Octs> {
                 Nlri::Multicast(BasicNlri::parse(
                         &mut self.parser,
                         self.session_config,
-                        self.afisafi,
+                        self.afi_safi,
                 )?)
             }
             Ipv4MplsVpnUnicast | Ipv6MplsVpnUnicast => {
                 Nlri::MplsVpn(MplsVpnNlri::parse(
                         &mut self.parser,
                         self.session_config,
-                        self.afisafi,
+                        self.afi_safi,
                 )?)
             },
             Ipv4MplsUnicast | Ipv6MplsUnicast => {
                 Nlri::Mpls(MplsNlri::parse(
                         &mut self.parser,
                         self.session_config,
-                        self.afisafi,
+                        self.afi_safi,
                 )?)
             },
             L2VpnVpls => {
@@ -1340,7 +1359,7 @@ impl<'a, Octs: Octets> NlriIter<'a, Octs> {
             Ipv4FlowSpec | Ipv6FlowSpec => {
                 Nlri::FlowSpec(FlowSpecNlri::parse(
                         &mut self.parser,
-                        self.afisafi.afi()
+                        self.afi_safi.afi()
                 )?)
             },
             Ipv4RouteTarget => {
@@ -1401,7 +1420,7 @@ impl<'a, Octs: Octets> TryFrom<NlriIter<'a, Octs>>
 {
     type Error = &'static str;
     fn try_from(iter: NlriIter<'a, Octs>) -> Result<Self, Self::Error> {
-        if iter.afisafi() == AfiSafi::Ipv4Unicast {
+        if iter.afi_safi() == AfiSafi::Ipv4Unicast {
             return Ok(FixedNlriIter::new(&mut iter.into_parser()))
         }
         Err("can not convert into FixedNlriIter for Ipv4Unicast")
@@ -1736,7 +1755,7 @@ mod tests {
                 .eq(prefixes)
         );
 
-        assert!(update.find_next_hop(AFI::Ipv6, SAFI::Multicast).is_err());
+        assert!(update.find_next_hop(AfiSafi::Ipv6Multicast).is_err());
 
     }
 
@@ -2228,7 +2247,7 @@ mod tests {
 
         assert_eq!(
             upd.mp_next_hop().unwrap(),
-            Some(NextHop::Evpn(Ipv4Addr::from_str("120.0.2.5").unwrap().into()))
+            Some(NextHop::Unicast(Ipv4Addr::from_str("120.0.2.5").unwrap().into()))
         );
     }
 

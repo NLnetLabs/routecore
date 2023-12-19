@@ -7,7 +7,7 @@ use crate::bgp::message::update::{SessionConfig};
 use crate::flowspec::Component;
 use crate::typeenum;
 use octseq::{Octets, OctetsBuilder, OctetsFrom, Parser};
-use log::{debug, warn};
+use log::debug;
 
 use std::fmt;
 use std::net::IpAddr;
@@ -661,66 +661,65 @@ impl NextHop {
     {
         use AfiSafi::*;
         let len = parser.parse_u8()?;
-        let res = match (len, afisafi) {
-            (16, Ipv6Unicast | Ipv6MplsUnicast) =>
-                NextHop::Unicast(parse_ipv6addr(parser)?.into()),
-            (16, Ipv6Multicast) =>
-                NextHop::Multicast(parse_ipv6addr(parser)?.into()),
-            (32, Ipv6Unicast | Ipv6Multicast) =>
-                NextHop::Ipv6LL(
-                    parse_ipv6addr(parser)?,
-                    parse_ipv6addr(parser)?
-                ),
-            (24, Ipv6MplsVpnUnicast) =>
-                NextHop::Ipv6MplsVpnUnicast(
-                    RouteDistinguisher::parse(parser)?,
-                    parse_ipv6addr(parser)?
-                ),
-            (4, Ipv4Unicast | Ipv4MplsUnicast ) =>
-                NextHop::Unicast(parse_ipv4addr(parser)?.into()),
-            (4, Ipv4Multicast) => 
-                NextHop::Multicast(parse_ipv4addr(parser)?.into()),
-            (12, Ipv4MplsVpnUnicast) =>
-                NextHop::Ipv4MplsVpnUnicast(
-                    RouteDistinguisher::parse(parser)?,
-                    parse_ipv4addr(parser)?
-                ),
-            // RouteTarget is always AFI/SAFI 1/132, so, IPv4,
-            // but the Next Hop can be IPv6.
-            (4, Ipv4RouteTarget) =>
-                NextHop::Unicast(parse_ipv4addr(parser)?.into()),
-            (16, Ipv4RouteTarget) =>
-                NextHop::Unicast(parse_ipv6addr(parser)?.into()),
-            (0, Ipv4FlowSpec) =>
-                NextHop::Empty,
-            (4, L2VpnEvpn) =>
-                NextHop::Evpn(parse_ipv4addr(parser)?.into()),
-            (16, L2VpnEvpn) =>
-                NextHop::Evpn(parse_ipv6addr(parser)?.into()),
 
-            (4, Ipv6MplsUnicast) =>
-                // IPv6 MPLS with IPv4 Nexthop (RFC4684)
-                NextHop::Unicast(parse_ipv4addr(parser)?.into()),
-            (16, Ipv4MplsUnicast) =>
-                // IPv4 MPLS with IPv6 Nexthop (RFC4684)
-                NextHop::Unicast(parse_ipv6addr(parser)?.into()),
-            (4, L2VpnVpls) =>
-                NextHop::Unicast(parse_ipv4addr(parser)?.into()),
-            (16, L2VpnVpls) =>
-                NextHop::Unicast(parse_ipv6addr(parser)?.into()),
+        macro_rules! error {
+            () => { return  Err(ParseError::Unsupported) }
+        }
 
-            (_n, ..) => {
-                warn!(
-                    "Unimplemented NextHop len {} for AFI/SAFI {}",
-                    len, afisafi
-                );
-                return Err(ParseError::Unsupported);
-                /*
-                parser.advance(len.into())?;
-                NextHop::Unimplemented(afi, safi)
-                */
+        let res = match afisafi {
+
+            Ipv4Unicast |
+                Ipv4Multicast |
+                Ipv4MplsUnicast |
+                Ipv4RouteTarget |
+                L2VpnVpls |
+                L2VpnEvpn
+            => {
+                match len {
+                    4 => NextHop::Unicast(parse_ipv4addr(parser)?.into()),
+                    _ => error!()
+                }
             }
+            Ipv6Unicast => {
+                match len {
+                    16 => NextHop::Unicast(parse_ipv6addr(parser)?.into()),
+                    32 => NextHop::Ipv6LL(
+                        parse_ipv6addr(parser)?,
+                        parse_ipv6addr(parser)?
+                    ),
+                    _ => error!()
+                }
+            }
+            Ipv6Multicast |
+                Ipv6MplsUnicast
+            => {
+                match len {
+                    16 => NextHop::Unicast(parse_ipv6addr(parser)?.into()),
+                    _ => error!()
+                }
+            }
+            Ipv4MplsVpnUnicast => {
+                match len {
+                    12 => NextHop::Ipv4MplsVpnUnicast(
+                        RouteDistinguisher::parse(parser)?,
+                        parse_ipv4addr(parser)?
+                    ),
+                    _ => error!()
+                }
+            }
+            Ipv6MplsVpnUnicast => {
+                match len {
+                    24 => NextHop::Ipv6MplsVpnUnicast(
+                        RouteDistinguisher::parse(parser)?,
+                        parse_ipv6addr(parser)?
+                    ),
+                    _ => error!()
+                }
+            }
+
+            Ipv4FlowSpec | Ipv6FlowSpec => Self::Empty,
         };
+
         Ok(res)
     }
 
@@ -1345,42 +1344,50 @@ impl<T> Nlri<T> {
 }
 
 impl<T> Nlri<T> {
-    /// Returns the tuple of (AFI, SAFI) for this Nlri.
-    pub fn afi_safi(&self) -> (AFI, SAFI) {
+    /// Returns the `AfiSafi` for this Nlri.
+    pub fn afi_safi(&self) -> AfiSafi {
+        use AfiSafi::*;
         match self {
             Self::Unicast(b) => {
                 if b.is_v4() {
-                    (AFI::Ipv4, SAFI::Unicast)
+                    Ipv4Unicast
                 } else {
-                    (AFI::Ipv6, SAFI::Unicast)
+                    Ipv6Unicast
                 }
             }
             Self::Multicast(b) => {
                 if b.is_v4() {
-                    (AFI::Ipv4, SAFI::Multicast)
+                    Ipv4Multicast
                 } else {
-                    (AFI::Ipv6, SAFI::Multicast)
+                    Ipv6Multicast
                 }
             }
             Self::Mpls(n) => {
                 if n.basic.is_v4() {
-                    (AFI::Ipv4, SAFI::MplsUnicast)
+                    Ipv4MplsUnicast
                 } else {
-                    (AFI::Ipv6, SAFI::MplsUnicast)
+                    Ipv6MplsUnicast
                 }
             }
             Self::MplsVpn(n) => {
                 if n.basic.is_v4() {
-                    (AFI::Ipv4, SAFI::MplsVpnUnicast)
+                    Ipv4MplsVpnUnicast
                 } else {
-                    (AFI::Ipv6, SAFI::MplsVpnUnicast)
+                    Ipv6MplsVpnUnicast
                 }
             }
-            Self::Vpls(_) => (AFI::L2Vpn, SAFI::Vpls),
-            Self::FlowSpec(n) => (n.afi, SAFI::FlowSpec) ,
-            Self::RouteTarget(_) => (AFI::Ipv4, SAFI::RouteTarget),
-            Self::Evpn(_) => (AFI::L2Vpn, SAFI::Evpn)
+            Self::Vpls(_) => L2VpnVpls,
+            Self::FlowSpec(n) => {
+                if n.afi == AFI::Ipv4 {
+                    Ipv4FlowSpec
+                } else {
+                    Ipv6FlowSpec
+                }
+            }
+            Self::RouteTarget(_) => Ipv4RouteTarget,
+            Self::Evpn(_) => L2VpnEvpn,
         }
+
     }
 
 }

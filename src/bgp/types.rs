@@ -305,7 +305,7 @@ pub enum NextHop {
     Ipv6MplsVpnUnicast(RouteDistinguisher, Ipv6Addr),
 
     Empty, // FlowSpec
-    Evpn(IpAddr),
+    //Evpn(IpAddr),
     Unimplemented(AFI, SAFI),
 }
 
@@ -352,6 +352,7 @@ impl NextHop {
             _ => todo!("{}", &self)
         }
     }
+    */
 }
 
 impl std::fmt::Display for NextHop {
@@ -362,7 +363,7 @@ impl std::fmt::Display for NextHop {
             Self::Ipv4MplsVpnUnicast(rd, ip) => write!(f, "rd {} {}", rd, ip),
             Self::Ipv6MplsVpnUnicast(rd, ip) => write!(f, "rd {} {}", rd, ip),
             Self::Empty => write!(f, "empty"),
-            Self::Evpn(ip) => write!(f, "evpn-{}", ip),
+            //Self::Evpn(ip) => write!(f, "evpn-{}", ip),
             Self::Unimplemented(afi, safi) => write!(f, "unimplemented for AFI {} /SAFI {}", afi, safi),
         }
     }
