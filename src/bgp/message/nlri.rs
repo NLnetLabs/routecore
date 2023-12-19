@@ -1,4 +1,4 @@
-use crate::bgp::types::{AFI, AfiSafi, NextHop};
+use crate::bgp::types::{Afi, AfiSafi, NextHop};
 
 use crate::addr::Prefix;
 
@@ -64,7 +64,7 @@ impl AfiSafiParse for Ipv4Unicast {
         parser: &mut Parser<'a, Octs>
     ) -> Result<Self::Item<Octs::Range<'a>>, ParseError> {
         Ok(
-            BasicNlri::new(parse_prefix(parser, AFI::Ipv4)?)
+            BasicNlri::new(parse_prefix(parser, Afi::Ipv4)?)
         )
     }
 
@@ -92,7 +92,7 @@ impl AfiSafiParse for Ipv4UnicastAddPath {
         let path_id = PathId::parse(parser)?;
         Ok(
             BasicNlri::with_path_id(
-                parse_prefix(parser, AFI::Ipv4)?,
+                parse_prefix(parser, Afi::Ipv4)?,
                 path_id
             )
         )
@@ -120,7 +120,7 @@ impl AfiSafiParse for Ipv6Unicast {
         parser: &mut Parser<'a, Octs>
     ) -> Result<Self::Item<Octs::Range<'a>>, ParseError> {
         Ok(
-            BasicNlri::new(parse_prefix(parser, AFI::Ipv6)?)
+            BasicNlri::new(parse_prefix(parser, Afi::Ipv6)?)
         )
     }
 
@@ -148,7 +148,7 @@ impl AfiSafiParse for Ipv6UnicastAddPath {
         let path_id = PathId::parse(parser)?;
         Ok(
             BasicNlri::with_path_id(
-                parse_prefix(parser, AFI::Ipv6)?,
+                parse_prefix(parser, Afi::Ipv6)?,
                 path_id
             )
         )
@@ -176,7 +176,7 @@ impl AfiSafiParse for Ipv4Multicast {
         parser: &mut Parser<'a, Octs>
     ) -> Result<Self::Item<Octs::Range<'a>>, ParseError> {
         Ok(
-            BasicNlri::new(parse_prefix(parser, AFI::Ipv4)?)
+            BasicNlri::new(parse_prefix(parser, Afi::Ipv4)?)
         )
     }
 
@@ -204,7 +204,7 @@ impl AfiSafiParse for Ipv4MulticastAddPath {
         let path_id = PathId::parse(parser)?;
         Ok(
             BasicNlri::with_path_id(
-                parse_prefix(parser, AFI::Ipv4)?,
+                parse_prefix(parser, Afi::Ipv4)?,
                 path_id
             )
         )
@@ -232,7 +232,7 @@ impl AfiSafiParse for Ipv6Multicast {
         parser: &mut Parser<'a, Octs>
     ) -> Result<Self::Item<Octs::Range<'a>>, ParseError> {
         Ok(
-            BasicNlri::new(parse_prefix(parser, AFI::Ipv6)?)
+            BasicNlri::new(parse_prefix(parser, Afi::Ipv6)?)
         )
     }
 
@@ -260,7 +260,7 @@ impl AfiSafiParse for Ipv6MulticastAddPath {
         let path_id = PathId::parse(parser)?;
         Ok(
             BasicNlri::with_path_id(
-                parse_prefix(parser, AFI::Ipv6)?,
+                parse_prefix(parser, Afi::Ipv6)?,
                 path_id
             )
         )
@@ -528,7 +528,7 @@ impl AfiSafiParse for Ipv4FlowSpec {
     fn parse_nlri<'a, Octs: Octets>(
         parser: &mut Parser<'a, Octs>
     ) -> Result<Self::Item<Octs::Range<'a>>, ParseError> {
-        FlowSpecNlri::parse(parser, AFI::Ipv4)
+        FlowSpecNlri::parse(parser, Afi::Ipv4)
     }
 
     fn skip_nlri<Octs: Octets>(parser: &mut Parser<'_, Octs>)
@@ -556,7 +556,7 @@ impl AfiSafiParse for Ipv6FlowSpec {
     fn parse_nlri<'a, Octs: Octets>(
         parser: &mut Parser<'a, Octs>
     ) -> Result<Self::Item<Octs::Range<'a>>, ParseError> {
-        FlowSpecNlri::parse(parser, AFI::Ipv6)
+        FlowSpecNlri::parse(parser, Afi::Ipv6)
     }
 
     fn skip_nlri<Octs: Octets>(parser: &mut Parser<'_, Octs>)
@@ -1024,7 +1024,7 @@ pub struct VplsNlri {
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct FlowSpecNlri<Octs> {
     #[allow(dead_code)]
-    afi: AFI,
+    afi: Afi,
     raw: Octs,
 }
 
@@ -1378,7 +1378,7 @@ impl<T> Nlri<T> {
             }
             Self::Vpls(_) => L2VpnVpls,
             Self::FlowSpec(n) => {
-                if n.afi == AFI::Ipv4 {
+                if n.afi == Afi::Ipv4 {
                     Ipv4FlowSpec
                 } else {
                     Ipv6FlowSpec
@@ -1499,24 +1499,24 @@ fn prefix_bits_to_bytes(bits: u8) -> usize {
 fn check_prefix<Octs: Octets>(
     parser: &mut Parser<Octs>,
     prefix_bits: u8,
-    afi: AFI
+    afi: Afi
 ) -> Result<(), ParseError> {
     let prefix_bytes = prefix_bits_to_bytes(prefix_bits);
     match (afi, prefix_bytes) {
-        (AFI::Ipv4, 0) => { },
-        (AFI::Ipv4, _b @ 5..) => { 
+        (Afi::Ipv4, 0) => { },
+        (Afi::Ipv4, _b @ 5..) => { 
             return Err(
                 ParseError::form_error("illegal byte size for IPv4 NLRI")
             )
         },
-        (AFI::Ipv4, _) => { parser.advance(prefix_bytes)?; }
-        (AFI::Ipv6, 0) => { },
-        (AFI::Ipv6, _b @ 17..) => { 
+        (Afi::Ipv4, _) => { parser.advance(prefix_bytes)?; }
+        (Afi::Ipv6, 0) => { },
+        (Afi::Ipv6, _b @ 17..) => { 
             return Err(
                 ParseError::form_error("illegal byte size for IPv6 NLRI")
             )
         },
-        (AFI::Ipv6, _) => { parser.advance(prefix_bytes)?; },
+        (Afi::Ipv6, _) => { parser.advance(prefix_bytes)?; },
         (_, _) => {
             return Err(
                 ParseError::form_error("unknown prefix format")
@@ -1530,21 +1530,21 @@ fn check_prefix<Octs: Octets>(
 fn parse_prefix_for_len<R: Octets>(
     parser: &mut Parser<'_, R>,
     prefix_bits: u8,
-    afi: AFI
+    afi: Afi
 )
     -> Result<Prefix, ParseError>
 {
     let prefix_bytes = prefix_bits_to_bytes(prefix_bits);
     let prefix = match (afi, prefix_bytes) {
-        (AFI::Ipv4, 0) => {
+        (Afi::Ipv4, 0) => {
             Prefix::new_v4(0.into(), 0)?
         },
-        (AFI::Ipv4, _b @ 5..) => { 
+        (Afi::Ipv4, _b @ 5..) => { 
             return Err(
                 ParseError::form_error("illegal byte size for IPv4 NLRI")
             )
         },
-        (AFI::Ipv4, _) => {
+        (Afi::Ipv4, _) => {
             let mut b = [0u8; 4];
             b[..prefix_bytes].copy_from_slice(parser.peek(prefix_bytes)?);
             parser.advance(prefix_bytes)?;
@@ -1552,15 +1552,15 @@ fn parse_prefix_for_len<R: Octets>(
                 ParseError::form_error(e.static_description())
             )?
         }
-        (AFI::Ipv6, 0) => {
+        (Afi::Ipv6, 0) => {
             Prefix::new_v6(0.into(), 0)?
         },
-        (AFI::Ipv6, _b @ 17..) => { 
+        (Afi::Ipv6, _b @ 17..) => { 
             return Err(
                 ParseError::form_error("illegal byte size for IPv6 NLRI")
             )
         },
-        (AFI::Ipv6, _) => {
+        (Afi::Ipv6, _) => {
             let mut b = [0u8; 16];
             b[..prefix_bytes].copy_from_slice(parser.peek(prefix_bytes)?);
             parser.advance(prefix_bytes)?;
@@ -1601,7 +1601,7 @@ fn skip_prefix_addpath<R: Octets>(parser: &mut Parser<'_, R>)
     Ok(parser.advance(prefix_bytes)?)
 }
 
-fn parse_prefix<R: Octets>(parser: &mut Parser<'_, R>, afi: AFI)
+fn parse_prefix<R: Octets>(parser: &mut Parser<'_, R>, afi: Afi)
     -> Result<Prefix, ParseError>
 {
     let prefix_bits = parser.parse_u8()?;
@@ -2109,7 +2109,7 @@ impl VplsNlri {
 }
 
 impl<Octs: Octets> FlowSpecNlri<Octs> {
-    pub fn check(parser: &mut Parser<Octs>, afi: AFI)
+    pub fn check(parser: &mut Parser<Octs>, afi: Afi)
         -> Result<(), ParseError>
     {
         let len1 = parser.parse_u8()?;
@@ -2121,13 +2121,13 @@ impl<Octs: Octets> FlowSpecNlri<Octs> {
         };
         let mut pp = parser.parse_parser(len.into())?;
         match afi {
-            AFI::Ipv4 => {
+            Afi::Ipv4 => {
                 while pp.remaining() > 0 {
                     Component::parse(&mut pp)?;
                 }
                 Ok(())
             }
-            AFI::Ipv6 => {
+            Afi::Ipv6 => {
                 debug!("FlowSpec v6 not implemented yet");
                 Ok(())
             }
@@ -2150,7 +2150,7 @@ impl<Octs: Octets> FlowSpecNlri<Octs> {
 }
 
 impl<Octs: Octets> FlowSpecNlri<Octs> {
-    pub fn parse<'a, R>(parser: &mut Parser<'a, R>, afi: AFI)
+    pub fn parse<'a, R>(parser: &mut Parser<'a, R>, afi: Afi)
         -> Result<Self, ParseError>
     where
         R: Octets<Range<'a> = Octs>
@@ -2171,12 +2171,12 @@ impl<Octs: Octets> FlowSpecNlri<Octs> {
         }
 
         match afi {
-            AFI::Ipv4 => {
+            Afi::Ipv4 => {
                 while parser.pos() < pos + len as usize {
                     Component::parse(parser)?;
                 }
             }
-            AFI::Ipv6 => {
+            Afi::Ipv6 => {
                 debug!("FlowSpec v6 not implemented yet, \
                       returning unchecked NLRI"
                 );

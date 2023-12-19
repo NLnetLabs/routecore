@@ -1,7 +1,7 @@
 //! FlowSpec v1 parsing.
 
 use crate::addr::Prefix;
-use crate::bgp::types::AFI;
+use crate::bgp::types::Afi;
 use crate::util::parser::ParseError;
 use log::debug;
 use octseq::{Octets, Parser};
@@ -97,19 +97,19 @@ fn prefix_bits_to_bytes(bits: u8) -> usize {
 
 fn parse_prefix<R: Octets + ?Sized>(
     parser: &mut Parser<'_, R>,
-    afi: AFI,
+    afi: Afi,
     prefix_bits: u8
 ) -> Result<Prefix, ParseError>
 {
     let prefix_bytes = prefix_bits_to_bytes(prefix_bits);
     let prefix = match (afi, prefix_bytes) {
-        (AFI::Ipv4, 0) => {
+        (Afi::Ipv4, 0) => {
             Prefix::new_v4(0.into(), 0)?
         },
-        (AFI::Ipv4, _b @ 5..) => { 
+        (Afi::Ipv4, _b @ 5..) => { 
             return Err(ParseError::form_error("illegal byte size for IPv4 NLRI"))
         },
-        (AFI::Ipv4, _) => {
+        (Afi::Ipv4, _) => {
             let mut b = [0u8; 4];
             b[..prefix_bytes].copy_from_slice(parser.peek(prefix_bytes)?);
             parser.advance(prefix_bytes)?;
@@ -117,13 +117,13 @@ fn parse_prefix<R: Octets + ?Sized>(
                     ParseError::form_error("prefix parsing failed")
             )?
         }
-        (AFI::Ipv6, 0) => {
+        (Afi::Ipv6, 0) => {
             Prefix::new_v6(0.into(), 0)?
         },
-        (AFI::Ipv6, _b @ 17..) => { 
+        (Afi::Ipv6, _b @ 17..) => { 
             return Err(ParseError::form_error("illegal byte size for IPv6 NLRI"))
         },
-        (AFI::Ipv6, _) => {
+        (Afi::Ipv6, _) => {
             let mut b = [0u8; 16];
             b[..prefix_bytes].copy_from_slice(parser.peek(prefix_bytes)?);
             parser.advance(prefix_bytes)?;
@@ -148,12 +148,12 @@ impl<Octs: Octets> Component<Octs> {
         let res = match typ {
             1 => {
                 let prefix_bits = parser.parse_u8()?;
-                let pfx = parse_prefix(parser, AFI::Ipv4, prefix_bits)?;
+                let pfx = parse_prefix(parser, Afi::Ipv4, prefix_bits)?;
                 Component::DestinationPrefix(pfx)
             },
             2 => {
                 let prefix_bits = parser.parse_u8()?;
-                let pfx = parse_prefix(parser, AFI::Ipv4, prefix_bits)?;
+                let pfx = parse_prefix(parser, Afi::Ipv4, prefix_bits)?;
                 Component::SourcePrefix(pfx)
             },
             3 => {

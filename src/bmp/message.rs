@@ -6,7 +6,7 @@
 
 use crate::asn::Asn;
 use crate::bgp::message::{Message as BgpMsg, OpenMessage as BgpOpen, UpdateMessage as BgpUpdate, NotificationMessage as BgpNotification};
-use crate::bgp::types::{AFI, SAFI};
+use crate::bgp::types::{Afi, Safi};
 use crate::bgp::message::update::{SessionConfig, FourOctetAsn};
 use crate::bgp::message::open::CapabilityType;
 use crate::util::parser::ParseError;
@@ -944,23 +944,23 @@ impl<Octs: Octets> PeerUpNotification<Octs> {
     }
 
 
-    pub fn supported_protocols(&self) -> Vec<(AFI, SAFI)> {
+    pub fn supported_protocols(&self) -> Vec<(Afi, Safi)> {
         let mut v = Vec::new();
         let mut res = Vec::new();
         let (sent, rcvd) = self.bgp_open_sent_rcvd();
         sent.capabilities()
             .filter(|c| c.typ() == CapabilityType::MultiProtocol)
             .for_each(|c| {
-                      let afi: AFI = u16::from_be_bytes([c.value()[0], c.value()[1]]).into();
-                      let safi: SAFI = c.value()[3].into();
+                      let afi: Afi = u16::from_be_bytes([c.value()[0], c.value()[1]]).into();
+                      let safi: Safi = c.value()[3].into();
                       v.push((afi, safi));
                   //println!("sent cap: {:?} == {}/{}", c.value(), afi, safi)
             });
         rcvd.capabilities()
             .filter(|c| c.typ() == CapabilityType::MultiProtocol)
             .for_each(|c| {
-                      let afi: AFI = u16::from_be_bytes([c.value()[0], c.value()[1]]).into();
-                      let safi: SAFI = c.value()[3].into();
+                      let afi: Afi = u16::from_be_bytes([c.value()[0], c.value()[1]]).into();
+                      let safi: Safi = c.value()[3].into();
                       if v.contains(&(afi, safi)) {
                           res.push((afi, safi));
                       }
@@ -1254,16 +1254,16 @@ pub enum Stat {
     Type6(u32),
     Type7(u64),
     Type8(u64),
-    Type9(AFI,SAFI,u64),
-    Type10(AFI,SAFI,u64),
+    Type9(Afi,Safi,u64),
+    Type10(Afi,Safi,u64),
     Type11(u32),
     Type12(u32),
     Type13(u32),
     // RFC 8671, Adj-RIB-Out
     Type14(u64),
     Type15(u64),
-    Type16(AFI,SAFI,u64),
-    Type17(AFI,SAFI,u64),
+    Type16(Afi,Safi,u64),
+    Type17(Afi,Safi,u64),
 
     Unimplemented(u16,u16) // type,len
 }
@@ -1332,12 +1332,12 @@ impl <'a>StatIter<'a> {
         res
     }
 
-    fn _take_afi_safi_u64(&mut self) -> (AFI, SAFI, u64) {
+    fn _take_afi_safi_u64(&mut self) -> (Afi, Safi, u64) {
 
-        let afi: AFI = u16::from_be_bytes(
+        let afi: Afi = u16::from_be_bytes(
             self.octets[self.pos + 4 .. self.pos + 4 + 2].try_into().unwrap()
         ).into();
-        let safi: SAFI = self.octets[self.pos + 4 + 2].into();
+        let safi: Safi = self.octets[self.pos + 4 + 2].into();
 
         let v = u64::from_be_bytes(
             self.octets[self.pos + 4 + 3 .. self.pos + 4 + 3 + 8]
@@ -1676,7 +1676,7 @@ mod tests {
     use bytes::Bytes;
     use std::str::FromStr;
     use crate::addr::Prefix;
-    use crate::bgp::types::{AFI, SAFI};
+    use crate::bgp::types::{Afi, Safi};
     use crate::bgp::path_attributes::PathAttributeType;
     use crate::bgp::message::nlri::Nlri;
     use crate::bgp::message::update::{FourOctetAsn, SessionConfig};
@@ -1878,8 +1878,8 @@ mod tests {
             Type8(28),
             Type14(139540),
             Type15(139540),
-            Type16(AFI::Ipv6, SAFI::Unicast, 139540),
-            Type17(AFI::Ipv6, SAFI::Unicast, 139540),
+            Type16(Afi::Ipv6, Safi::Unicast, 139540),
+            Type17(Afi::Ipv6, Safi::Unicast, 139540),
         ];
 
         for (s1, s2) in bmp.stats().zip(stats.iter()) {
@@ -2036,7 +2036,7 @@ mod tests {
 
         assert_eq!(
             bmp.supported_protocols(),
-            vec![(AFI::Ipv4, SAFI::Unicast)]
+            vec![(Afi::Ipv4, Safi::Unicast)]
         );
     }
 

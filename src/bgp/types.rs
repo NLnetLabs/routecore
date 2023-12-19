@@ -10,7 +10,7 @@ use serde::{Serialize, Deserialize};
 typeenum!(
 /// AFI as used in BGP OPEN and UPDATE messages.
 #[cfg_attr(feature = "serde", serde(from = "u16"))]
-        AFI, u16,
+        Afi, u16,
         {
             1 => Ipv4,
             2 => Ipv6,
@@ -20,7 +20,7 @@ typeenum!(
 typeenum!(
 /// SAFI as used in BGP OPEN and UPDATE messages.
 #[cfg_attr(feature = "serde", serde(from = "u8"))]
-    SAFI, u8,
+    Safi, u8,
     {
         1 => Unicast,
         2 => Multicast,
@@ -61,65 +61,65 @@ pub enum AfiSafi {
     L2VpnEvpn,
 }
 
-impl TryFrom<(AFI, SAFI)> for AfiSafi {
+impl TryFrom<(Afi, Safi)> for AfiSafi {
     type Error = &'static str;
-    fn try_from(t: (AFI, SAFI)) -> Result<Self, Self::Error> {
+    fn try_from(t: (Afi, Safi)) -> Result<Self, Self::Error> {
 
         use AfiSafi::*;
         match t {
-            (AFI::Ipv4, SAFI::Unicast) => Ok(Ipv4Unicast),
-            (AFI::Ipv6, SAFI::Unicast) => Ok(Ipv6Unicast),
+            (Afi::Ipv4, Safi::Unicast) => Ok(Ipv4Unicast),
+            (Afi::Ipv6, Safi::Unicast) => Ok(Ipv6Unicast),
 
-            (AFI::Ipv4, SAFI::Multicast) => Ok(Ipv4Multicast),
-            (AFI::Ipv6, SAFI::Multicast) => Ok(Ipv6Multicast),
+            (Afi::Ipv4, Safi::Multicast) => Ok(Ipv4Multicast),
+            (Afi::Ipv6, Safi::Multicast) => Ok(Ipv6Multicast),
 
-            (AFI::Ipv4, SAFI::MplsUnicast) => Ok(Ipv4MplsUnicast),
-            (AFI::Ipv6, SAFI::MplsUnicast) => Ok(Ipv6MplsUnicast),
+            (Afi::Ipv4, Safi::MplsUnicast) => Ok(Ipv4MplsUnicast),
+            (Afi::Ipv6, Safi::MplsUnicast) => Ok(Ipv6MplsUnicast),
 
-            (AFI::Ipv4, SAFI::MplsVpnUnicast) => Ok(Ipv4MplsVpnUnicast),
-            (AFI::Ipv6, SAFI::MplsVpnUnicast) => Ok(Ipv6MplsVpnUnicast),
+            (Afi::Ipv4, Safi::MplsVpnUnicast) => Ok(Ipv4MplsVpnUnicast),
+            (Afi::Ipv6, Safi::MplsVpnUnicast) => Ok(Ipv6MplsVpnUnicast),
 
-            (AFI::Ipv4, SAFI::RouteTarget) => Ok(Ipv4RouteTarget),
+            (Afi::Ipv4, Safi::RouteTarget) => Ok(Ipv4RouteTarget),
 
-            (AFI::Ipv4, SAFI::FlowSpec) => Ok(Ipv4FlowSpec),
-            (AFI::Ipv6, SAFI::FlowSpec) => Ok(Ipv6FlowSpec),
+            (Afi::Ipv4, Safi::FlowSpec) => Ok(Ipv4FlowSpec),
+            (Afi::Ipv6, Safi::FlowSpec) => Ok(Ipv6FlowSpec),
 
-            (AFI::L2Vpn, SAFI::Vpls) => Ok(L2VpnVpls),
-            (AFI::L2Vpn, SAFI::Evpn) => Ok(L2VpnEvpn),
-            _ => Err("unsupported AFI/SAFI combination")
+            (Afi::L2Vpn, Safi::Vpls) => Ok(L2VpnVpls),
+            (Afi::L2Vpn, Safi::Evpn) => Ok(L2VpnEvpn),
+            _ => Err("unsupported Afi/Safi combination")
         }
     }
 }
 
 impl AfiSafi {
-    pub fn afi(&self) -> AFI {
+    pub fn afi(&self) -> Afi {
         self.split().0
     }
 
-    pub fn safi(&self) -> SAFI {
+    pub fn safi(&self) -> Safi {
         self.split().1
     }
 
-    pub fn split(&self) -> (AFI, SAFI) {
+    pub fn split(&self) -> (Afi, Safi) {
         match self {
-            Self::Ipv4Unicast => (AFI::Ipv4, SAFI::Unicast),
-            Self::Ipv6Unicast => (AFI::Ipv6, SAFI::Unicast),
-            Self::Ipv4Multicast => (AFI::Ipv4, SAFI::Multicast),
-            Self::Ipv6Multicast => (AFI::Ipv6, SAFI::Multicast),
+            Self::Ipv4Unicast => (Afi::Ipv4, Safi::Unicast),
+            Self::Ipv6Unicast => (Afi::Ipv6, Safi::Unicast),
+            Self::Ipv4Multicast => (Afi::Ipv4, Safi::Multicast),
+            Self::Ipv6Multicast => (Afi::Ipv6, Safi::Multicast),
 
-            Self::Ipv4MplsUnicast => (AFI::Ipv4, SAFI::MplsUnicast),
-            Self::Ipv6MplsUnicast => (AFI::Ipv6, SAFI::MplsUnicast),
+            Self::Ipv4MplsUnicast => (Afi::Ipv4, Safi::MplsUnicast),
+            Self::Ipv6MplsUnicast => (Afi::Ipv6, Safi::MplsUnicast),
 
-            Self::Ipv4MplsVpnUnicast => (AFI::Ipv4, SAFI::MplsVpnUnicast),
-            Self::Ipv6MplsVpnUnicast => (AFI::Ipv6, SAFI::MplsVpnUnicast),
+            Self::Ipv4MplsVpnUnicast => (Afi::Ipv4, Safi::MplsVpnUnicast),
+            Self::Ipv6MplsVpnUnicast => (Afi::Ipv6, Safi::MplsVpnUnicast),
 
-            Self::Ipv4RouteTarget => (AFI::Ipv4, SAFI::RouteTarget),
+            Self::Ipv4RouteTarget => (Afi::Ipv4, Safi::RouteTarget),
 
-            Self::Ipv4FlowSpec => (AFI::Ipv4, SAFI::FlowSpec),
-            Self::Ipv6FlowSpec => (AFI::Ipv6, SAFI::FlowSpec),
+            Self::Ipv4FlowSpec => (Afi::Ipv4, Safi::FlowSpec),
+            Self::Ipv6FlowSpec => (Afi::Ipv6, Safi::FlowSpec),
 
-            Self::L2VpnVpls => (AFI::L2Vpn, SAFI::Vpls),
-            Self::L2VpnEvpn => (AFI::L2Vpn, SAFI::Evpn),
+            Self::L2VpnVpls => (Afi::L2Vpn, Safi::Vpls),
+            Self::L2VpnEvpn => (Afi::L2Vpn, Safi::Evpn),
         }
     }
 }
@@ -306,7 +306,7 @@ pub enum NextHop {
 
     Empty, // FlowSpec
     //Evpn(IpAddr),
-    Unimplemented(AFI, SAFI),
+    Unimplemented(Afi, Safi),
 }
 
 impl NextHop {

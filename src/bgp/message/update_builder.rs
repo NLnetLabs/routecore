@@ -10,7 +10,7 @@ use crate::bgp::aspath::HopPath;
 use crate::bgp::communities::StandardCommunity;
 use crate::bgp::message::{Header, MsgType, SessionConfig, UpdateMessage};
 use crate::bgp::message::nlri::Nlri;
-use crate::bgp::message::update::{AFI, SAFI, AfiSafi, NextHop};
+use crate::bgp::message::update::{Afi, Safi, AfiSafi, NextHop};
 use crate::bgp::types::OriginType;
 use crate::util::parser::ParseError;
 
@@ -138,7 +138,7 @@ where Target: octseq::Truncate
                     ) {
                         self.add_attribute(MpUnreachNlri::new(
                                 MpUnreachNlriBuilder::new(
-                                    AFI::Ipv6, SAFI::Unicast,
+                                    Afi::Ipv6, Safi::Unicast,
                                     b.is_addpath()
                                 )
                         ).into())?;
@@ -150,7 +150,7 @@ where Target: octseq::Truncate
                         let builder = pa.as_mut();
 
                         if !builder.valid_combination(
-                            AFI::Ipv6, SAFI::Unicast, b.is_addpath()
+                            Afi::Ipv6, Safi::Unicast, b.is_addpath()
                         ) {
                             // We are already constructing a
                             // MP_UNREACH_NLRI but for a different
@@ -295,7 +295,7 @@ where Target: octseq::Truncate
         } else {
             self.add_attribute(MpReachNlri::new(
                 MpReachNlriBuilder::new(
-                    AFI::Ipv6, SAFI::Unicast, NextHop::Ipv6LL(0.into(), addr),
+                    Afi::Ipv6, Safi::Unicast, NextHop::Ipv6LL(0.into(), addr),
                     false
                 )
             ).into())?;
@@ -995,8 +995,8 @@ pub struct MpReachNlriBuilder {
     announcements: Vec<Nlri<Vec<u8>>>,
     len: usize, // size of value, excluding path attribute flags+type_code+len
     extended: bool,
-    afi: AFI,
-    safi: SAFI,
+    afi: Afi,
+    safi: Safi,
     nexthop: NextHop,
     addpath_enabled: bool,
 }
@@ -1015,8 +1015,8 @@ impl MpReachNlriBuilder {
     // byte (1) and then space for at least an IPv6 /48 announcement (7)
 
     pub(crate) fn new(
-        afi: AFI,
-        safi: SAFI,
+        afi: Afi,
+        safi: Safi,
         nexthop: NextHop,
         addpath_enabled: bool,
     ) -> Self {
@@ -1213,13 +1213,13 @@ impl NextHop {
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct MpUnreachNlriBuilder {
     withdrawals: Vec<Nlri<Vec<u8>>>,
-    afi: AFI,
-    safi: SAFI,
+    afi: Afi,
+    safi: Safi,
     addpath_enabled: bool,
 }
 
 impl MpUnreachNlriBuilder {
-    pub(crate) fn new(afi: AFI, safi: SAFI, addpath_enabled: bool) -> Self {
+    pub(crate) fn new(afi: Afi, safi: Safi, addpath_enabled: bool) -> Self {
         MpUnreachNlriBuilder {
             withdrawals: vec![],
             afi,
@@ -1245,7 +1245,7 @@ impl MpUnreachNlriBuilder {
     }
 
     pub(crate) fn valid_combination(
-        &self, afi: AFI, safi: SAFI, is_addpath: bool
+        &self, afi: Afi, safi: Safi, is_addpath: bool
     ) -> bool {
         self.afi == afi
         && self.safi == safi

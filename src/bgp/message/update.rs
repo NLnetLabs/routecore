@@ -9,7 +9,7 @@ use crate::bgp::path_attributes::{
     PathAttributes, PathAttributeType, WireformatPathAttribute
 };
 pub use crate::bgp::types::{
-    AFI, SAFI, LocalPref, MultiExitDisc, NextHop, OriginType,
+    Afi, Safi, LocalPref, MultiExitDisc, NextHop, OriginType,
     AfiSafi, AddpathDirection, AddpathFamDir
 };
 
@@ -509,14 +509,14 @@ impl<Octs: Octets> UpdateMessage<Octs> {
         )
     }
 
-    /// Returns `Option<(AFI, SAFI)>` if this UPDATE represents the End-of-RIB
+    /// Returns `Option<(Afi, Safi)>` if this UPDATE represents the End-of-RIB
     /// marker for a AFI/SAFI combination.
-    pub fn is_eor(&self) -> Result<Option<(AFI, SAFI)>, ParseError> {
+    pub fn is_eor(&self) -> Result<Option<(Afi, Safi)>, ParseError> {
         // Conventional BGP
         if self.length() == 23 {
             // minimum length for a BGP UPDATE indicates EOR
             // (no announcements, no withdrawals)
-            return Ok(Some((AFI::Ipv4, SAFI::Unicast)));
+            return Ok(Some((Afi::Ipv4, Safi::Unicast)));
         }
 
         // Based on MP_UNREACH_NLRI
@@ -1288,13 +1288,13 @@ impl<'a, Octs: Octets> Nlris<'a, Octs> {
         self.afi_safi
     }
 
-    /// Returns the AFI for these NLRI.
-    pub fn afi(&self) -> AFI {
+    /// Returns the Afi for these NLRI.
+    pub fn afi(&self) -> Afi {
         self.afi_safi.afi()
     }
 
-    /// Returns the SAFI for these NLRI.
-    pub fn safi(&self) -> SAFI {
+    /// Returns the Safi for these NLRI.
+    pub fn safi(&self) -> Safi {
         self.afi_safi.safi()
     }
 }
@@ -1375,7 +1375,7 @@ impl<'a, Octs: Octets> NlriIter<'a, Octs> {
                 )?)
             },
             /* not a thing anymore since we match on AfiSafi variants instead
-             * of arbitrary combinations of (AFI::, SAFI::) variants.
+             * of arbitrary combinations of (Afi::, Safi::) variants.
             _ => {
                 debug!("trying to iterate over NLRI \
                        for unknown AFI/SAFI combination {:?}",
@@ -2173,8 +2173,8 @@ mod tests {
         let sc = SessionConfig::modern();
         let upd: UpdateMessage<_> = Message::from_octets(&buf, Some(sc))
             .unwrap().try_into().unwrap();
-        assert_eq!(upd.mp_announcements().unwrap().unwrap().afi(), AFI::Ipv4);
-        assert_eq!(upd.mp_announcements().unwrap().unwrap().safi(), SAFI::Multicast);
+        assert_eq!(upd.mp_announcements().unwrap().unwrap().afi(), Afi::Ipv4);
+        assert_eq!(upd.mp_announcements().unwrap().unwrap().safi(), Safi::Multicast);
         let prefixes = [
             "198.51.100.0/26",
             "198.51.100.64/26",
@@ -2197,8 +2197,8 @@ mod tests {
         let sc = SessionConfig::modern();
         let upd: UpdateMessage<_> = Message::from_octets(&buf, Some(sc))
             .unwrap().try_into().unwrap();
-        assert_eq!(upd.mp_withdrawals().unwrap().unwrap().afi(), AFI::Ipv4);
-        assert_eq!(upd.mp_withdrawals().unwrap().unwrap().safi(), SAFI::Multicast);
+        assert_eq!(upd.mp_withdrawals().unwrap().unwrap().afi(), Afi::Ipv4);
+        assert_eq!(upd.mp_withdrawals().unwrap().unwrap().safi(), Safi::Multicast);
         assert_eq!(upd.mp_withdrawals().unwrap().iter().count(), 1);
     }
 

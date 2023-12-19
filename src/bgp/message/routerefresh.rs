@@ -1,15 +1,15 @@
 use octseq::{Octets, Parser};
 
 use crate::bgp::message::Header;
-use crate::bgp::types::{AFI, SAFI, RouteRefreshSubtype};
+use crate::bgp::types::{Afi, Safi, RouteRefreshSubtype};
 use crate::util::parser::ParseError;
 
 /// BGP RouteRefresh message, variant of the [`Message`] enum.
 #[derive(Clone, Debug)]
 pub struct RouteRefreshMessage<Octets> {
     octets: Octets,
-    afi: AFI,
-    safi: SAFI,
+    afi: Afi,
+    safi: Safi,
     subtype: RouteRefreshSubtype,
 }
 
@@ -37,13 +37,13 @@ impl<Octs: Octets> RouteRefreshMessage<Octs> {
 }
 
 impl<Octs> RouteRefreshMessage<Octs> {
-    /// Returns the `AFI` for this Route Refresh message.
-    pub fn afi(&self) -> AFI {
+    /// Returns the `Afi` for this Route Refresh message.
+    pub fn afi(&self) -> Afi {
         self.afi
     }
 
-    /// Returns the `SAFI` for this Route Refresh message.
-    pub fn safi(&self) -> SAFI {
+    /// Returns the `Safi` for this Route Refresh message.
+    pub fn safi(&self) -> Safi {
         self.safi
     }
 
@@ -86,8 +86,8 @@ mod tests {
         ];
 
         let rr = RouteRefreshMessage::from_octets(&raw).unwrap();
-        assert_eq!(rr.afi(), AFI::Ipv4);
-        assert_eq!(rr.safi(), SAFI::Unicast);
+        assert_eq!(rr.afi(), Afi::Ipv4);
+        assert_eq!(rr.safi(), Safi::Unicast);
         assert_eq!(rr.subtype(), RouteRefreshSubtype::Begin);
 
     }

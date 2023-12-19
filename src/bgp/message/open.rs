@@ -1,6 +1,6 @@
 use crate::bgp::message::{Header, MsgType};
 use crate::asn::Asn;
-use crate::bgp::types::{AFI, SAFI, AfiSafi, AddpathFamDir, AddpathDirection};
+use crate::bgp::types::{Afi, Safi, AfiSafi, AddpathFamDir, AddpathDirection};
 use crate::typeenum; // from util::macros
 use crate::util::parser::ParseError;
 use log::warn;
@@ -249,9 +249,9 @@ impl<Octs: Octets> OpenMessage<Octs> {
         }).collect::<Vec<_>>()
     }
 
-    /// Returns an iterator over `(AFI, SAFI)` tuples listed as
+    /// Returns an iterator over `(Afi, Safi)` tuples listed as
     /// MultiProtocol Capabilities in the Optional Parameters of this message.
-    pub fn multiprotocol_ids(&self) -> impl Iterator<Item = (AFI,SAFI)> + '_ {
+    pub fn multiprotocol_ids(&self) -> impl Iterator<Item = (Afi,Safi)> + '_ {
         self.capabilities().filter(|c|
             c.typ() == CapabilityType::MultiProtocol
         ).map(|mp_cap| {
@@ -830,12 +830,12 @@ impl<Target: OctetsBuilder + AsMut<[u8]>> OpenBuilder<Target> {
         self.add_capability(Capability::for_slice(s.to_vec()));
     }
 
-    pub fn add_mp(&mut self, afi: AFI, safi:SAFI) {
+    pub fn add_mp(&mut self, afi: Afi, safi: Safi) {
         // code 1
         // length n
         // 2 bytes AFI, rsrvd byte, 1 byte SAFI
         let mut s = [0x01, 0x04, 0x00, 0x00, 0x00, safi.into()];
-        let a = <AFI as Into<u16>>::into(afi).to_be_bytes();
+        let a = <Afi as Into<u16>>::into(afi).to_be_bytes();
         s[2] = a[0];
         s[3] = a[1];
         self.add_capability(Capability::<Vec<u8>>::for_slice(s.to_vec()))
@@ -1053,21 +1053,21 @@ mod tests {
 
         assert_eq!(open.multiprotocol_ids().count(), 15);
         let protocols = [
-            (AFI::Ipv4, SAFI::Unicast),
-            (AFI::Ipv4, SAFI::Multicast),
-            (AFI::Ipv4, SAFI::MplsUnicast),
-            (AFI::Ipv4, SAFI::MplsVpnUnicast),
-            (AFI::Ipv4, SAFI::RouteTarget),
-            (AFI::Ipv4, SAFI::FlowSpec),
-            (AFI::Ipv4, SAFI::FlowSpecVpn),
-            (AFI::Ipv6, SAFI::Unicast),
-            (AFI::Ipv6, SAFI::Multicast),
-            (AFI::Ipv6, SAFI::MplsUnicast),
-            (AFI::Ipv6, SAFI::MplsVpnUnicast),
-            (AFI::Ipv6, SAFI::FlowSpec),
-            (AFI::Ipv6, SAFI::FlowSpecVpn),
-            (AFI::L2Vpn, SAFI::Vpls),
-            (AFI::L2Vpn, SAFI::Evpn),
+            (Afi::Ipv4, Safi::Unicast),
+            (Afi::Ipv4, Safi::Multicast),
+            (Afi::Ipv4, Safi::MplsUnicast),
+            (Afi::Ipv4, Safi::MplsVpnUnicast),
+            (Afi::Ipv4, Safi::RouteTarget),
+            (Afi::Ipv4, Safi::FlowSpec),
+            (Afi::Ipv4, Safi::FlowSpecVpn),
+            (Afi::Ipv6, Safi::Unicast),
+            (Afi::Ipv6, Safi::Multicast),
+            (Afi::Ipv6, Safi::MplsUnicast),
+            (Afi::Ipv6, Safi::MplsVpnUnicast),
+            (Afi::Ipv6, Safi::FlowSpec),
+            (Afi::Ipv6, Safi::FlowSpecVpn),
+            (Afi::L2Vpn, Safi::Vpls),
+            (Afi::L2Vpn, Safi::Evpn),
         ];
 
         for (id, protocol) in open.multiprotocol_ids().zip(
@@ -1137,8 +1137,8 @@ mod builder {
         open.set_holdtime(180);
         open.set_bgp_id([1, 2, 3, 4]);
 
-        open.add_mp(AFI::Ipv4, SAFI::Unicast);
-        open.add_mp(AFI::Ipv6, SAFI::Unicast);
+        open.add_mp(Afi::Ipv4, Safi::Unicast);
+        open.add_mp(Afi::Ipv6, Safi::Unicast);
 
         let res = open.into_message();
 
@@ -1152,8 +1152,8 @@ mod builder {
         open.set_holdtime(180);
         open.set_bgp_id([1, 2, 3, 4]);
 
-        open.add_mp(AFI::Ipv4, SAFI::Unicast);
-        open.add_mp(AFI::Ipv6, SAFI::Unicast);
+        open.add_mp(Afi::Ipv4, Safi::Unicast);
+        open.add_mp(Afi::Ipv6, Safi::Unicast);
 
         let res = open.into_message();
 
@@ -1167,8 +1167,8 @@ mod builder {
         open.set_holdtime(180);
         open.set_bgp_id([1, 2, 3, 4]);
 
-        open.add_mp(AFI::Ipv4, SAFI::Unicast);
-        open.add_mp(AFI::Ipv6, SAFI::Unicast);
+        open.add_mp(Afi::Ipv4, Safi::Unicast);
+        open.add_mp(Afi::Ipv6, Safi::Unicast);
         open.add_addpath(AfiSafi::Ipv4Unicast, AddpathDirection::SendReceive);
         open.add_addpath(AfiSafi::Ipv6Unicast, AddpathDirection::SendReceive);
 

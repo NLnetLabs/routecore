@@ -15,7 +15,7 @@ use crate::bgp::message::update_builder::{
     MpUnreachNlriBuilder,
     StandardCommunitiesBuilder
 };
-use crate::bgp::types::{AFI, SAFI, AfiSafi};
+use crate::bgp::types::{Afi, Safi, AfiSafi};
 use crate::util::parser::{ParseError, parse_ipv4addr};
 
 
@@ -1152,8 +1152,8 @@ impl Attribute for MpReachNlri {
         where
             Vec<u8>: OctetsFrom<Octs::Range<'a>>
     {
-        let afi: AFI = parser.parse_u16_be()?.into();
-        let safi: SAFI = parser.parse_u8()?.into();
+        let afi: Afi = parser.parse_u16_be()?.into();
+        let safi: Safi = parser.parse_u8()?.into();
         let afisafi = AfiSafi::try_from((afi, safi))
             .map_err(|_| ParseError::Unsupported)?;
         let nexthop = crate::bgp::types::NextHop::parse(parser, afisafi)?;
@@ -1201,8 +1201,8 @@ impl Attribute for MpReachNlri {
         }
         
          
-        let afi: AFI = parser.parse_u16_be()?.into();
-        let safi: SAFI = parser.parse_u8()?.into();
+        let afi: Afi = parser.parse_u16_be()?.into();
+        let safi: Safi = parser.parse_u8()?.into();
         let afisafi = AfiSafi::try_from((afi, safi))
             .map_err(|_| ParseError::Unsupported)?;
         let _nexthop = crate::bgp::types::NextHop::parse(parser, afisafi)?;
@@ -1283,8 +1283,8 @@ impl Attribute for MpUnreachNlri {
     where
         Vec<u8>: OctetsFrom<Octs::Range<'a>>
     {
-        let afi: AFI = parser.parse_u16_be()?.into();
-        let safi: SAFI = parser.parse_u8()?.into();
+        let afi: Afi = parser.parse_u16_be()?.into();
+        let safi: Safi = parser.parse_u8()?.into();
 
         let afisafi = AfiSafi::try_from((afi, safi))
             .map_err(|_| ParseError::Unsupported)?;
@@ -1321,8 +1321,8 @@ impl Attribute for MpUnreachNlri {
         }
 
 
-        let afi: AFI = parser.parse_u16_be()?.into();
-        let safi: SAFI = parser.parse_u8()?.into();
+        let afi: Afi = parser.parse_u16_be()?.into();
+        let safi: Safi = parser.parse_u8()?.into();
 
         let afisafi = AfiSafi::try_from((afi, safi))
             .map_err(|_| ParseError::Unsupported)?;
@@ -1985,8 +1985,8 @@ mod tests {
             ],
             {
             let mut builder = MpReachNlriBuilder::new(
-                AFI::Ipv6,
-                SAFI::Unicast,
+                Afi::Ipv6,
+                Safi::Unicast,
                 NextHop::Unicast("2001:db8::1234".parse().unwrap()),
                 false // no addpath
             );
@@ -2011,8 +2011,8 @@ mod tests {
                 use crate::addr::Prefix;
                 use std::str::FromStr;
             let mut builder = MpUnreachNlriBuilder::new(
-                AFI::Ipv6,
-                SAFI::Multicast,
+                Afi::Ipv6,
+                Safi::Multicast,
                 false // no addpath
             );
             [
