@@ -338,21 +338,6 @@ impl NextHop {
             L2VpnEvpn => Self::Unicast(Ipv4Addr::from(0).into()),
         }
     }
-
-    pub fn afi_safi(&self) -> (AFI, SAFI) {
-        match self {
-            Self::Unicast(IpAddr::V4(_)) => (AFI::Ipv4, SAFI::Unicast),
-            Self::Unicast(IpAddr::V6(_)) => (AFI::Ipv6, SAFI::Unicast),
-            Self::Multicast(IpAddr::V4(_)) => (AFI::Ipv4, SAFI::Multicast),
-            Self::Multicast(IpAddr::V6(_)) => (AFI::Ipv6, SAFI::Multicast),
-            Self::Ipv6LL(..) => (AFI::Ipv6, SAFI::Unicast), // always unicast?
-            Self::Empty => (AFI::Ipv4, SAFI::FlowSpec),
-            Self::Evpn(IpAddr::V4(_)) => (AFI::Ipv4, SAFI::Unicast),
-            Self::Evpn(IpAddr::V6(_)) => (AFI::Ipv6, SAFI::Unicast),
-            _ => todo!("{}", &self)
-        }
-    }
-    */
 }
 
 impl std::fmt::Display for NextHop {

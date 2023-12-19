@@ -621,7 +621,9 @@ impl<Octs: Octets> UpdateMessage<Octs> {
 
     }
 
-    pub fn find_next_hop(&self, afi_safi: AfiSafi) -> Result<NextHop, ParseError> {
+    pub fn find_next_hop(&self, afi_safi: AfiSafi)
+        -> Result<NextHop, ParseError>
+    {
         match afi_safi {
             AfiSafi::Ipv4Unicast => {
                 // If there is Ipv4Unicast in the MP_REACH_NLRI attribute, the
