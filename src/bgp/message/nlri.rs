@@ -1,9 +1,9 @@
-use crate::bgp::types::{AFI, SAFI, AfiSafi, NextHop};
+use crate::bgp::types::{AFI, AfiSafi, NextHop};
 
 use crate::addr::Prefix;
 
 use crate::util::parser::{parse_ipv4addr, parse_ipv6addr, ParseError};
-use crate::bgp::message::update::{SessionConfig};
+use crate::bgp::message::update::SessionConfig;
 use crate::flowspec::Component;
 use crate::typeenum;
 use octseq::{Octets, OctetsBuilder, OctetsFrom, Parser};
