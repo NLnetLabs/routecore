@@ -612,7 +612,7 @@ impl<Octs: Octets> UpdateMessage<Octs> {
                 if let Ok(Some(mp)) = self.mp_next_hop() {
                     if mp.afi_safi() == (AFI::Ipv4, SAFI::Unicast) {
                         return Err(ParseError::form_error(
-                            "ambiguous IPv4 Unincast nexthop"
+                            "ambiguous IPv4 Unicast nexthop"
                         ))
                     }
                 }
