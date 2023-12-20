@@ -1184,11 +1184,13 @@ impl NextHop {
                 target.append_slice(&a.octets())?;
                 target.append_slice(&ll.octets())?;
             }
-            NextHop::MplsVpnUnicast(_rd, IpAddr::V4(_)) => {
-                todo!()
+            NextHop::MplsVpnUnicast(rd, IpAddr::V4(a)) => {
+                target.append_slice(rd.as_ref())?;
+                target.append_slice(&a.octets())?;
             }
-            NextHop::MplsVpnUnicast(_rd, IpAddr::V6(_)) => {
-                todo!()
+            NextHop::MplsVpnUnicast(rd, IpAddr::V6(a)) => {
+                target.append_slice(rd.as_ref())?;
+                target.append_slice(&a.octets())?;
             }
             NextHop::Empty => { },
             NextHop::Unimplemented(_afi, _safi) => todo!(),

@@ -935,6 +935,12 @@ impl RouteDistinguisher {
     }
 }
 
+impl AsRef<[u8]> for RouteDistinguisher {
+    fn as_ref(&self) -> &[u8] {
+        &self.bytes
+    }
+}
+
 impl fmt::Display for RouteDistinguisher {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{:#?}", self.bytes)
@@ -1200,7 +1206,9 @@ impl<Octs: Octets> fmt::Display for Nlri<Octs> {
 }
 
 impl<Octs, SrcOcts> OctetsFrom<Nlri<SrcOcts>> for Nlri<Octs> 
-    where Octs: OctetsFrom<SrcOcts>,
+    where
+        SrcOcts: Octets,
+        Octs: OctetsFrom<SrcOcts>,
 {
     type Error = Octs::Error;
 
@@ -1208,11 +1216,27 @@ impl<Octs, SrcOcts> OctetsFrom<Nlri<SrcOcts>> for Nlri<Octs>
         match source {
             Nlri::Unicast(b) => Ok(Nlri::Unicast(b)),
             Nlri::Multicast(b) => Ok(Nlri::Multicast(b)),
+            Nlri::Mpls(m) => Ok(Nlri::Mpls(MplsNlri {
+                basic: m.basic,
+                labels: Labels{ octets: Octs::try_octets_from(m.labels.octets)? },
+            })),
+            Nlri::MplsVpn(m) => Ok(Nlri::MplsVpn(MplsVpnNlri {
+                basic: m.basic,
+                labels: Labels{ octets: Octs::try_octets_from(m.labels.octets)? },
+                rd: m.rd
+            })),
+            Nlri::Vpls(v) => Ok(Nlri::Vpls(v)),
+            Nlri::RouteTarget(r) => Ok(Nlri::RouteTarget(RouteTargetNlri{
+                raw: Octs::try_octets_from(r.raw)?
+            })),
             Nlri::FlowSpec(m) => Ok(Nlri::FlowSpec(FlowSpecNlri {
                     afi: m.afi,
                     raw: Octs::try_octets_from(m.raw)?
             })),
-            _ => todo!()
+            Nlri::Evpn(e) => Ok(Nlri::Evpn( EvpnNlri{
+                route_type: e.route_type,
+                raw: Octs::try_octets_from(e.raw)?
+            })),
         }
     }
 }
