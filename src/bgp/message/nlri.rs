@@ -1211,32 +1211,6 @@ impl<Octs, SrcOcts> OctetsFrom<Nlri<SrcOcts>> for Nlri<Octs>
     }
 }
 
-/*
-impl<'a, Octs, SrcOcts: 'a + Octets> OctetsFrom<&'a Nlri<SrcOcts>> for Nlri<Octs> 
-where
-    Octs: OctetsFrom<SrcOcts>,
-    //SrcOcts: Clone,
-    //Infallible: From<Octs::Error>
-{
-    type Error = Octs::Error;
-    //type Error = std::convert::Infallible;
-
-    fn try_octets_from(source: &'a Nlri<SrcOcts>) -> Result<Self, Self::Error> {
-        match source {
-            Nlri::Unicast(b) => Ok(Nlri::Unicast(*b)),
-            Nlri::Multicast(b) => Ok(Nlri::Multicast(*b)),
-            //Nlri::FlowSpec(m) => Ok(Nlri::FlowSpec(FlowSpecNlri::try_octets_from(m)?)),
-            //Nlri::FlowSpec(_) => Ok(Nlri::try_octets_from(*source)?),
-            Nlri::FlowSpec(m) => Ok(Nlri::FlowSpec(FlowSpecNlri {
-                    afi: m.afi,
-                    raw: Octs::try_octets_from(m.raw.as_ref())?
-            })),
-            _ => todo!()
-        }
-    }
-}
-*/
-
 impl<'a, SrcOcts: 'a + Octets> OctetsFrom<&'a Nlri<SrcOcts>> for Nlri<Vec<u8>> 
     where Vec<u8>: OctetsFrom<SrcOcts>,
 {

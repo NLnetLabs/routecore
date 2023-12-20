@@ -292,9 +292,6 @@ impl std::fmt::Display for LocalPref {
 /// Conventional and BGP-MP Next Hop variants.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-// XXX introduce v4/v6 specific Empty for FlowSpec? it does not carry
-// anything, but when creating the NextHop in
-// MpReachNlriBuilder::new_for_nexthop() we need both an AFI and a SAFI.
 pub enum NextHop {
     Unicast(IpAddr),
     Multicast(IpAddr),
@@ -305,7 +302,6 @@ pub enum NextHop {
     Ipv6MplsVpnUnicast(RouteDistinguisher, Ipv6Addr),
 
     Empty, // FlowSpec
-    //Evpn(IpAddr),
     Unimplemented(Afi, Safi),
 }
 
@@ -348,7 +344,6 @@ impl std::fmt::Display for NextHop {
             Self::Ipv4MplsVpnUnicast(rd, ip) => write!(f, "rd {} {}", rd, ip),
             Self::Ipv6MplsVpnUnicast(rd, ip) => write!(f, "rd {} {}", rd, ip),
             Self::Empty => write!(f, "empty"),
-            //Self::Evpn(ip) => write!(f, "evpn-{}", ip),
             Self::Unimplemented(afi, safi) => write!(f, "unimplemented for AFI {} /SAFI {}", afi, safi),
         }
     }
