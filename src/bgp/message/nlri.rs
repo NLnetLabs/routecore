@@ -670,7 +670,6 @@ impl NextHop {
 
             Ipv4Unicast |
                 Ipv4Multicast |
-                Ipv4MplsUnicast |
                 Ipv4RouteTarget |
                 L2VpnVpls |
                 L2VpnEvpn
@@ -690,10 +689,17 @@ impl NextHop {
                     _ => error!()
                 }
             }
-            Ipv6Multicast |
-                Ipv6MplsUnicast
-            => {
+            Ipv6Multicast => {
                 match len {
+                    16 => NextHop::Unicast(parse_ipv6addr(parser)?.into()),
+                    _ => error!()
+                }
+            }
+            // RFC4684: the nexthop for MPLS can be of the other AFI than the
+            // NLRI themselves are.
+            Ipv4MplsUnicast | Ipv6MplsUnicast => {
+                match len {
+                    4 => NextHop::Unicast(parse_ipv4addr(parser)?.into()),
                     16 => NextHop::Unicast(parse_ipv6addr(parser)?.into()),
                     _ => error!()
                 }
