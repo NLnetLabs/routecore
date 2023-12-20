@@ -700,18 +700,18 @@ impl NextHop {
             }
             Ipv4MplsVpnUnicast => {
                 match len {
-                    12 => NextHop::Ipv4MplsVpnUnicast(
+                    12 => NextHop::MplsVpnUnicast(
                         RouteDistinguisher::parse(parser)?,
-                        parse_ipv4addr(parser)?
+                        parse_ipv4addr(parser)?.into()
                     ),
                     _ => error!()
                 }
             }
             Ipv6MplsVpnUnicast => {
                 match len {
-                    24 => NextHop::Ipv6MplsVpnUnicast(
+                    24 => NextHop::MplsVpnUnicast(
                         RouteDistinguisher::parse(parser)?,
-                        parse_ipv6addr(parser)?
+                        parse_ipv6addr(parser)?.into()
                     ),
                     _ => error!()
                 }

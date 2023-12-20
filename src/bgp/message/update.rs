@@ -2563,7 +2563,7 @@ mod tests {
             &raw,
             SessionConfig::modern()
         ).unwrap();
-        if let Ok(Some(NextHop::Ipv6MplsVpnUnicast(rd, a))) = upd.mp_next_hop() {
+        if let Ok(Some(NextHop::MplsVpnUnicast(rd, a))) = upd.mp_next_hop() {
             assert_eq!(rd, RouteDistinguisher::new(&[0; 8]));
             assert_eq!(a, Ipv6Addr::from_str("::ffff:10.0.0.2").unwrap());
         } else {

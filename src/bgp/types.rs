@@ -296,11 +296,7 @@ pub enum NextHop {
     Unicast(IpAddr),
     Multicast(IpAddr),
     Ipv6LL(Ipv6Addr, Ipv6Addr), // is this always unicast?
-
-    // XXX can we consolidate these two into one with IpAddr?
-    Ipv4MplsVpnUnicast(RouteDistinguisher, Ipv4Addr),
-    Ipv6MplsVpnUnicast(RouteDistinguisher, Ipv6Addr),
-
+    MplsVpnUnicast(RouteDistinguisher, IpAddr),
     Empty, // FlowSpec
     Unimplemented(Afi, Safi),
 }
@@ -317,13 +313,13 @@ impl NextHop {
             Ipv4MplsUnicast => Self::Unicast(Ipv4Addr::from(0).into()),
             Ipv6MplsUnicast => Self::Unicast(Ipv6Addr::from(0).into()),
 
-            Ipv4MplsVpnUnicast => Self::Ipv4MplsVpnUnicast(
+            Ipv4MplsVpnUnicast => Self::MplsVpnUnicast(
                 RouteDistinguisher::zeroes(),
-                Ipv4Addr::from(0)
+                Ipv4Addr::from(0).into()
             ),
-            Ipv6MplsVpnUnicast => Self::Ipv6MplsVpnUnicast(
+            Ipv6MplsVpnUnicast => Self::MplsVpnUnicast(
                 RouteDistinguisher::zeroes(),
-                Ipv6Addr::from(0)
+                Ipv6Addr::from(0).into()
             ),
 
             Ipv4RouteTarget => Self::Unicast(Ipv4Addr::from(0).into()),
@@ -341,8 +337,7 @@ impl std::fmt::Display for NextHop {
         match self {
             Self::Unicast(ip) | Self::Multicast(ip)  => write!(f, "{}", ip),
             Self::Ipv6LL(ip1, ip2) => write!(f, "{} {} ", ip1, ip2),
-            Self::Ipv4MplsVpnUnicast(rd, ip) => write!(f, "rd {} {}", rd, ip),
-            Self::Ipv6MplsVpnUnicast(rd, ip) => write!(f, "rd {} {}", rd, ip),
+            Self::MplsVpnUnicast(rd, ip) => write!(f, "rd {} {}", rd, ip),
             Self::Empty => write!(f, "empty"),
             Self::Unimplemented(afi, safi) => write!(f, "unimplemented for AFI {} /SAFI {}", afi, safi),
         }
