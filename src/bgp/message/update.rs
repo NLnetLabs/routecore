@@ -1273,16 +1273,6 @@ impl<'a, Octs: Octets> Nlris<'a, Octs> {
         }
     }
 
-    // should this be a thing, here?
-    fn _validate(&self) -> Result<(), ParseError> {
-        use AfiSafi::*;
-        match self.afi_safi {
-            Ipv4Unicast => FixedNlriIter::ipv4unicast(&mut self.parser.clone()).validate(),
-
-            _ => todo!()
-        }
-    }
-
     /// Returns the AfiSafi for these NLRI.
     pub fn afi_safi(&self) -> AfiSafi {
         self.afi_safi

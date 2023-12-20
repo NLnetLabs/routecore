@@ -406,26 +406,12 @@ macro_rules! path_attributes {
             pub fn length(&self) -> usize {
                 match self {
                     $(
-                        //Self::$name(pa, _sc) => pa.remaining()
                         Self::$name(epa) => epa.length()
                     ),+,
                     Self::Unimplemented(u) => u.value.len(),
                     Self::Invalid(_, _, v) => v.remaining() //FIXME incorrect
                 }
             }
-
-            /*
-            pub fn _into_value_parser(self) -> Result<Parser<'a, Octs>, ParseError> {
-                match self {
-                $(
-                    Self::$name(p, _) => {
-                        Ok(p)
-                    }
-                ),+,
-                    _ => todo!()
-                }
-            }
-            */
         }
 
         impl<'a, Octs: Octets> AsRef<[u8]> for WireformatPathAttribute<'a, Octs> {
@@ -433,9 +419,7 @@ macro_rules! path_attributes {
                 match self {
                     $(
                         WireformatPathAttribute::$name(epa) => {
-                            // this one is maybe fixed this way?
-                        //p.peek_all()
-                        epa.as_ref()
+                            epa.as_ref()
                     }
                     ),+,
                         WireformatPathAttribute::Unimplemented(u) => {
