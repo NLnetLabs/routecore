@@ -1539,8 +1539,6 @@ mod tests {
         assert!(!pa1.flags().is_extended_length());
 
         assert_eq!(pa1.length(), 1);
-        //assert_eq!(pa1.as_ref(), &[0x00]); // TODO get inner, into
-        //                                           // OriginType
 
         let pa2 = pa_iter.next().unwrap().unwrap();
         assert_eq!(pa2.type_code(), PathAttributeType::AsPath);
