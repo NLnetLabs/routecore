@@ -231,6 +231,8 @@ impl Display for Community {
 
 //------------ HumanReadableCommunity ---------------------------------------0
 
+/// A Human readable BGP community serialization implementation.
+/// 
 /// Wrapper around Community with a special Serde Serializer implementation
 /// that produces better human-readable output and leaves out some details.
 /// Example output JSON can be found in the Rotonda docs repo:
@@ -239,6 +241,24 @@ impl Display for Community {
 /// the communities() and all_communities() on the Update struct will need to
 /// have this type included when calling these methods, like so:
 /// `my_update.communities::<HumanReadableCommunity>`.
+/// 
+/// The routecore types implement the Serialize trait but do so in a way
+/// suitable for machine <-> machine interaction where the consuming code is
+/// also routecore, i.e. the details of how (de)serialization is done are not
+/// important to nor intended to be visible to anyone except routecore itself.
+///
+/// In roto however, a TypeValue (which may contain a Community) can be
+/// serialized in order to render it to consumers outside the application,
+/// e.g. as JSON served by a HTTP API or contained in an MQTT payload. The
+/// operators of the deployed application can be expected to be familiar with
+/// details of BGP and it is more useful to them if the rendered form of a BGP
+/// community is somewhat relatable to the way communities are defined by and
+/// referred to in BGP RFCs and not exposing internally structural details of
+/// how routecore stores communities (e.g. as raw byte vectors for example).
+///
+/// We therefore provide our Serialize impl which will be used by callers when
+/// serializing our Community type and in turn the contained routecore
+/// Community type and its children.
 #[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, )]
 pub struct HumanReadableCommunity(pub Community);
 
