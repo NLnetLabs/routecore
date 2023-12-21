@@ -87,7 +87,7 @@ impl<Octs: Octets> AsRef<[u8]> for UpdateMessage<Octs> {
 /// attribute. Similarly, the `NEXT_HOP` path attribute was once mandatory for
 /// UPDATEs, but is now also part of the `MP_REACH_NLRI`, if present.
 ///
-/// To accomodate for these hassles, the following methods are provided:
+/// To accommodate for these hassles, the following methods are provided:
 ///
 /// * [`nlris()`][`UpdateMessage::nlris`] and
 /// [`withdrawals()`][`UpdateMessage::withdrawals`],
@@ -320,7 +320,7 @@ impl<Octs: Octets> UpdateMessage<Octs> {
     /// will count the Error case, after which the iterator fuses.
     ///
     /// To retrieve all announcements if and only if all are validly parsed,
-    /// consder using `fn announcements_vec`.
+    /// consider using `fn announcements_vec`.
     ///
     /// Note that this iterator might contain NLRI of different AFI/SAFI
     /// types.
@@ -747,7 +747,7 @@ impl<Octs: Octets> UpdateMessage<Octs> {
     //--- Communities --------------------------------------------------------
 
     /// Returns an iterator over Standard Communities (RFC1997), if any.
-    pub fn communities<T: From<[u8; 4]>>(&self)
+    fn _communities<T: From<[u8; 4]>>(&self)
         -> Result<Option<CommunityIter<Octs::Range<'_>, T>>, ParseError>
     {
         if let Some(WireformatPathAttribute::Communities(epa)) = self.path_attributes()?.get(PathAttributeType::Communities) {
@@ -756,6 +756,14 @@ impl<Octs: Octets> UpdateMessage<Octs> {
         } else {
             Ok(None)
         }
+    }
+
+    pub fn communities(&self) -> Result<Option<CommunityIter<Octs::Range<'_>, crate::bgp::communities::Community>>, ParseError> {
+        self._communities::<crate::bgp::communities::Community>()
+    }
+
+    pub fn human_readable_communities(&self) -> Result<Option<CommunityIter<Octs::Range<'_>, crate::bgp::communities::HumanReadableCommunity>>, ParseError> {
+        self._communities::<crate::bgp::communities::HumanReadableCommunity>()
     }
 
     /// Returns an iterator over Extended Communities (RFC4360), if any.
@@ -799,14 +807,14 @@ impl<Octs: Octets> UpdateMessage<Octs> {
     /// Returns an optional `Vec` containing all conventional, Extended and
     /// Large communities, if any, or None if none of the three appear in the
     /// path attributes of this message.
-    pub fn all_communities<T>(&self) -> Result<Option<Vec<T>>, ParseError> 
+    fn _all_communities<T>(&self) -> Result<Option<Vec<T>>, ParseError> 
         where T: From<[u8; 4]> + 
             From<ExtendedCommunity> + 
             From<LargeCommunity> + 
             From<Ipv6ExtendedCommunity> {
         let mut res: Vec<T> = Vec::new();
 
-        if let Some(c) = self.communities()? {
+        if let Some(c) = self._communities()? {
             res.append(&mut c.collect::<Vec<_>>());
         }
         if let Some(c) = self.ext_communities()? {
@@ -826,6 +834,14 @@ impl<Octs: Octets> UpdateMessage<Octs> {
         } else {
             Ok(Some(res))
         }
+    }
+
+    pub fn all_communities(&self) -> Result<Option<Vec<crate::bgp::communities::Community>>, ParseError> {
+        self._all_communities::<crate::bgp::communities::Community>()
+    }
+
+    pub fn all_human_readable_communities(&self) -> Result<Option<Vec<crate::bgp::communities::HumanReadableCommunity>>, ParseError> {
+        self._all_communities::<crate::bgp::communities::HumanReadableCommunity>()
     }
 }
 
@@ -1413,7 +1429,7 @@ impl<'a, Octs: Octets> Iterator for NlriIter<'a, Octs> {
         match self.get_nlri() {
             Ok(n) => Some(Ok(n)),
             Err(e) => {
-                // Whenever an error occured, e.g. because the NLRI could not
+                // Whenever an error occurred, e.g. because the NLRI could not
                 // be parsed, we return the error and 'fuse' the iterator by
                 // advancing the parser, ensuring the next call to `next()`
                 // returns a None.
@@ -1968,7 +1984,6 @@ mod tests {
 
     #[test]
     fn pa_communities() {
-        use crate::bgp::communities::Community;
         // BGP UPDATE with 9 path attributes for 1 NLRI with Path Id,
         // includes both normal communities and extended communities.
         let buf = vec![
@@ -2004,11 +2019,11 @@ mod tests {
                     ))
         );
 
-        assert!(upd.communities::<Community>().unwrap().is_some());
-        for c in upd.communities::<Community>().unwrap().unwrap() { 
+        assert!(upd.communities().unwrap().is_some());
+        for c in upd.communities().unwrap().unwrap() { 
             println!("{:?}", c);
         }
-        assert!(upd.communities::<Community>().unwrap().unwrap()
+        assert!(upd.communities().unwrap().unwrap()
             .eq([
                 StandardCommunity::new(42.into(), Tag::new(518)).into(),
                 Wellknown::NoExport.into(),
@@ -2089,8 +2104,6 @@ mod tests {
 
     #[test]
     fn chained_community_iters() {
-        use crate::bgp::communities::Community;
-
         let buf = vec![
             0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
             0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
@@ -2115,10 +2128,10 @@ mod tests {
         let upd: UpdateMessage<_> = Message::from_octets(&buf, Some(sc))
             .unwrap().try_into().unwrap();
 
-        for c in upd.all_communities::<Community>().unwrap().unwrap() {
+        for c in upd.all_communities().unwrap().unwrap() {
             println!("{}", c);
         }
-        assert!(upd.all_communities::<Community>().unwrap().unwrap()
+        assert!(upd.all_communities().unwrap().unwrap()
             .eq(&[
                 StandardCommunity::new(42.into(), Tag::new(518)).into(),
                 Wellknown::NoExport.into(),

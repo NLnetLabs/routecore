@@ -1444,7 +1444,7 @@ mod tests {
 
     use octseq::Parser;
 
-    use crate::{addr::Prefix, bgp::communities::Community};
+    use crate::addr::Prefix;
     use crate::asn::Asn;
     //use crate::bgp::communities::Wellknown;
     use crate::bgp::message::nlri::BasicNlri;
@@ -1743,7 +1743,7 @@ mod tests {
             a_cnt += pdu.announcements().unwrap().count();
             assert!(pdu.local_pref().unwrap().is_some());
             assert!(pdu.multi_exit_disc().unwrap().is_some());
-            assert_eq!(pdu.communities::<Community>().unwrap().unwrap().count(), 300);
+            assert_eq!(pdu.communities().unwrap().unwrap().count(), 300);
         }
 
         assert_eq!(a_cnt, prefixes_num.try_into().unwrap());
@@ -2187,7 +2187,7 @@ mod tests {
             assert!(prev_type_code < type_code);
             prev_type_code = type_code; 
         }
-        assert_eq!(pdu.communities::<Community>().unwrap().unwrap().count(), 2);
+        assert_eq!(pdu.communities().unwrap().unwrap().count(), 2);
     }
 
     // TODO also do fn check(raw: Bytes)
