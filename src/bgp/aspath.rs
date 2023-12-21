@@ -15,10 +15,10 @@ use std::{error, fmt};
 
 use crate::asn::{Asn, LargeAsnError};
 
-#[cfg(feature = "human_serde")]
+#[cfg(feature = "serde")]
 use serde::ser::SerializeSeq;
 
-#[cfg(feature = "human_serde")]
+#[cfg(feature = "serde")]
 use serde::{Serialize, Serializer};
 
 use octseq::builder::{infallible, EmptyBuilder, FromBuilder, OctetsBuilder};
@@ -29,7 +29,7 @@ use crate::util::parser::ParseError;
 
 pub type OwnedHop = Hop<Vec<u8>>;
 
-#[cfg(feature = "human_serde")]
+#[cfg(feature = "serde")]
 pub trait SerializeForOperators: Serialize {
     fn serialize_for_operator<S>(
         &self,
@@ -420,7 +420,7 @@ impl fmt::Display for HopPath {
     }
 }
 
-#[cfg(feature = "human_serde")]
+#[cfg(feature = "serde")]
 impl Serialize for HopPath {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -434,7 +434,7 @@ impl Serialize for HopPath {
     }
 }
 
-#[cfg(feature = "human_serde")]
+#[cfg(feature = "serde")]
 impl SerializeForOperators for HopPath {
     fn serialize_for_operator<S>(
         &self,

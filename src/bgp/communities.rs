@@ -95,10 +95,10 @@ use std::str::FromStr;
 
 use crate::asn::{Asn, Asn16, ParseAsnError};
 
-#[cfg(feature = "human_serde")]
+#[cfg(feature = "serde")]
 use serde::{Serialize, Serializer};
 
-#[cfg(feature = "human_serde")]
+#[cfg(feature = "serde")]
 pub trait SerializeForOperators: Serialize {
     fn serialize_for_operator<S>(
         &self,
@@ -108,10 +108,11 @@ pub trait SerializeForOperators: Serialize {
         S: Serializer;
 }
 
-//--- Community --------------------------------------------------------------
+//------------ Community -----------------------------------------------------
 
 /// Standard and Extended/Large Communities variants.
 #[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, )]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub enum Community {
     Standard(StandardCommunity),
     Extended(ExtendedCommunity),
@@ -228,14 +229,83 @@ impl Display for Community {
     }
 }
 
-#[cfg(feature = "human_serde")]
-impl Serialize for Community {
+//------------ HumanReadableCommunity ---------------------------------------0
+
+/// Wrapper around Community with a special Serde Serializer implementation
+/// that produces better human-readable output and leaves out some details.
+/// Example output JSON can be found in the Rotonda docs repo:
+/// https://github.com/NLnetLabs/rotonda-doc/
+/// 
+/// the communities() and all_communities() on the Update struct will need to
+/// have this type included when calling these methods, like so:
+/// `my_update.communities::<HumanReadableCommunity>`.
+#[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, )]
+pub struct HumanReadableCommunity(pub Community);
+
+impl From<Community> for HumanReadableCommunity {
+    fn from(value: Community) -> Self {
+        HumanReadableCommunity(value)
+    }
+}
+
+impl From<[u8; 4]> for HumanReadableCommunity {
+    fn from(raw: [u8; 4]) -> HumanReadableCommunity {
+        HumanReadableCommunity(Community::Standard(StandardCommunity(raw)))
+    }
+}
+
+impl From<StandardCommunity> for HumanReadableCommunity {
+    fn from(value: StandardCommunity) -> Self {
+        HumanReadableCommunity(Community::Standard(value))
+    }
+}
+
+impl From<Wellknown> for HumanReadableCommunity {
+    fn from(wk: Wellknown) -> Self {
+        HumanReadableCommunity(Community::Standard(wk.into()))
+    }
+}
+
+impl From<ExtendedCommunity> for HumanReadableCommunity {
+    fn from(value: ExtendedCommunity) -> Self {
+        HumanReadableCommunity(Community::Extended(value))
+    }
+}
+
+impl From<LargeCommunity> for HumanReadableCommunity {
+    fn from(value: LargeCommunity) -> Self {
+        HumanReadableCommunity(Community::Large(value))
+    }
+}
+
+impl From<Ipv6ExtendedCommunity> for HumanReadableCommunity {
+    fn from(value: Ipv6ExtendedCommunity) -> Self {
+        HumanReadableCommunity(Community::Ipv6Extended(value))
+    }
+}
+
+impl FromStr for HumanReadableCommunity {
+    type Err = ParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Community::from_str(s).map(Self)
+    }
+}
+
+impl Display for HumanReadableCommunity {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        Display::fmt(&self.0, f)
+    }
+}
+
+#[cfg(feature = "serde")]
+impl Serialize for HumanReadableCommunity {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
         if serializer.is_human_readable() {
-            match &self {
+            match &self.0 {
                 Community::Standard(c) => {
                     c.serialize_for_operator(serializer)
                 }
@@ -538,7 +608,7 @@ impl Display for StandardCommunity {
 
 }
 
-#[cfg(feature = "human_serde")]
+#[cfg(feature = "serde")]
 impl SerializeForOperators for StandardCommunity {
     fn serialize_for_operator<S>(
         &self,
@@ -1055,7 +1125,7 @@ impl Display for ExtendedCommunity {
 
 // Serialize
 
-#[cfg(feature = "human_serde")]
+#[cfg(feature = "serde")]
 impl SerializeForOperators for ExtendedCommunity {
     fn serialize_for_operator<S>(
         &self,
@@ -1445,7 +1515,7 @@ impl Display for LargeCommunity {
 
 // Serialize
 
-#[cfg(feature = "human_serde")]
+#[cfg(feature = "serde")]
 impl SerializeForOperators for LargeCommunity {
     fn serialize_for_operator<S>(
         &self,
@@ -1513,8 +1583,8 @@ impl From<ParseAsnError> for ParseError {
 }
 
 // Types used only by our own human_serialize feature to structure the
-// serialized output differently than is done by the default Serializer.
-#[cfg(feature = "human_serde")]
+// serialized output differently than is done by derive(Serialize).
+#[cfg(feature = "serde")]
 mod ser {
     #[derive(serde::Serialize)]
     #[serde(rename = "value")]

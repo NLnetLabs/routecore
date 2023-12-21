@@ -21,14 +21,14 @@ use crate::bgp::message::nlri::{self,
 };
 
 use core::ops::Range; 
+use std::marker::PhantomData;
 use std::net::Ipv4Addr;
 use crate::util::parser::ParseError;
 
 
 use crate::bgp::communities::{
-    Community,
     ExtendedCommunity, Ipv6ExtendedCommunity, 
-    LargeCommunity
+    LargeCommunity,
 };
 
 /// BGP UPDATE message, variant of the [`Message`] enum.
@@ -747,8 +747,8 @@ impl<Octs: Octets> UpdateMessage<Octs> {
     //--- Communities --------------------------------------------------------
 
     /// Returns an iterator over Standard Communities (RFC1997), if any.
-    pub fn communities(&self)
-        -> Result<Option<CommunityIter<Octs::Range<'_>>>, ParseError>
+    pub fn communities<T: From<[u8; 4]>>(&self)
+        -> Result<Option<CommunityIter<Octs::Range<'_>, T>>, ParseError>
     {
         if let Some(WireformatPathAttribute::Communities(epa)) = self.path_attributes()?.get(PathAttributeType::Communities) {
             let mut p = epa.value_into_parser();
@@ -799,22 +799,26 @@ impl<Octs: Octets> UpdateMessage<Octs> {
     /// Returns an optional `Vec` containing all conventional, Extended and
     /// Large communities, if any, or None if none of the three appear in the
     /// path attributes of this message.
-    pub fn all_communities(&self) -> Result<Option<Vec<Community>>, ParseError> {
-        let mut res = Vec::<Community>::new();
+    pub fn all_communities<T>(&self) -> Result<Option<Vec<T>>, ParseError> 
+        where T: From<[u8; 4]> + 
+            From<ExtendedCommunity> + 
+            From<LargeCommunity> + 
+            From<Ipv6ExtendedCommunity> {
+        let mut res: Vec<T> = Vec::new();
 
         if let Some(c) = self.communities()? {
             res.append(&mut c.collect::<Vec<_>>());
         }
         if let Some(c) = self.ext_communities()? {
-            res.append(&mut c.map(Community::Extended).collect::<Vec<_>>());
+            res.append(&mut c.map(|c| c.into()).collect::<Vec<_>>());
         }
         if let Some(c) = self.ipv6_ext_communities()? {
             res.append(
-                &mut c.map(Community::Ipv6Extended).collect::<Vec<_>>()
+                &mut c.map(|c| c.into()).collect::<Vec<_>>()
             );
         }
         if let Some(c) = self.large_communities()? {
-            res.append(&mut c.map(Community::Large).collect::<Vec<_>>());
+            res.append(&mut c.map(|c| c.into()).collect::<Vec<_>>());
         }
 
         if res.is_empty() {
@@ -823,7 +827,6 @@ impl<Octs: Octets> UpdateMessage<Octs> {
             Ok(Some(res))
         }
     }
-    
 }
 
 
@@ -1124,19 +1127,23 @@ pub enum FourOctetAsn {
 
 /// Iterator for BGP UPDATE Communities.
 ///
-/// Returns values of enum [`Community`], wrapping [`StandardCommunity`],
-/// [`ExtendedCommunity`], [`LargeCommunity`] and well-known communities.
-pub struct CommunityIter<Octs: Octets> {
+/// Returns values of enum or struct [`T`], where T wraps or has variants
+/// [`StandardCommunity`], [`ExtendedCommunity`], [`LargeCommunity`] or a
+/// well-known community. T are most notably `Community` or
+/// `HumanReadableCommunity`. In most cases you will need to explicitly state
+/// the type of T.
+pub struct CommunityIter<Octs: Octets, T> {
     slice: Octs,
     pos: usize,
+    _t: PhantomData<T>
 }
 
-impl<Octs: Octets> CommunityIter<Octs> {
+impl<Octs: Octets, T: From<[u8; 4]>> CommunityIter<Octs, T> {
     fn new(slice: Octs) -> Self {
-        CommunityIter { slice, pos: 0 }
+        CommunityIter { slice, pos: 0, _t: PhantomData }
     }
 
-    fn get_community(&mut self) -> Community {
+    fn get_community(&mut self) -> T {
         let mut buf = [0u8; 4];
         buf[..].copy_from_slice(&self.slice.as_ref()[self.pos..self.pos+4]);
         self.pos += 4;
@@ -1144,10 +1151,10 @@ impl<Octs: Octets> CommunityIter<Octs> {
     }
 }
 
-impl<Octs: Octets> Iterator for CommunityIter<Octs> {
-    type Item = Community;
+impl<Octs: Octets, T: From<[u8; 4]>> Iterator for CommunityIter<Octs, T> {
+    type Item = T;
     
-    fn next(&mut self) -> Option<Community> {
+    fn next(&mut self) -> Option<T> {
         if self.pos == self.slice.as_ref().len() {
             return None
         }
@@ -1961,6 +1968,7 @@ mod tests {
 
     #[test]
     fn pa_communities() {
+        use crate::bgp::communities::Community;
         // BGP UPDATE with 9 path attributes for 1 NLRI with Path Id,
         // includes both normal communities and extended communities.
         let buf = vec![
@@ -1996,11 +2004,11 @@ mod tests {
                     ))
         );
 
-        assert!(upd.communities().unwrap().is_some());
-        for c in upd.communities().unwrap().unwrap() { 
+        assert!(upd.communities::<Community>().unwrap().is_some());
+        for c in upd.communities::<Community>().unwrap().unwrap() { 
             println!("{:?}", c);
         }
-        assert!(upd.communities().unwrap().unwrap()
+        assert!(upd.communities::<Community>().unwrap().unwrap()
             .eq([
                 StandardCommunity::new(42.into(), Tag::new(518)).into(),
                 Wellknown::NoExport.into(),
@@ -2081,6 +2089,8 @@ mod tests {
 
     #[test]
     fn chained_community_iters() {
+        use crate::bgp::communities::Community;
+
         let buf = vec![
             0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
             0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
@@ -2105,10 +2115,10 @@ mod tests {
         let upd: UpdateMessage<_> = Message::from_octets(&buf, Some(sc))
             .unwrap().try_into().unwrap();
 
-        for c in upd.all_communities().unwrap().unwrap() {
+        for c in upd.all_communities::<Community>().unwrap().unwrap() {
             println!("{}", c);
         }
-        assert!(upd.all_communities().unwrap().unwrap()
+        assert!(upd.all_communities::<Community>().unwrap().unwrap()
             .eq(&[
                 StandardCommunity::new(42.into(), Tag::new(518)).into(),
                 Wellknown::NoExport.into(),
@@ -2255,7 +2265,7 @@ mod tests {
 
     // the MP_REACH_NLRI currently ends up as a ::Invalid path attribute
     // variant, so the call to .mp_announcements() yields a Ok(None) and thus
-    // the second unwrap fails. Therefor, ignore for now:
+    // the second unwrap fails. Therefore, ignore for now:
     #[ignore = "need to rethink this one because of API change"]
     #[test]
     fn unknown_afi_safi_announcements() {
