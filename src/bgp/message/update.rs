@@ -21,14 +21,14 @@ use crate::bgp::message::nlri::{self,
 };
 
 use core::ops::Range; 
+use std::marker::PhantomData;
 use std::net::Ipv4Addr;
 use crate::util::parser::ParseError;
 
 
 use crate::bgp::communities::{
-    Community,
     ExtendedCommunity, Ipv6ExtendedCommunity, 
-    LargeCommunity
+    LargeCommunity,
 };
 
 /// BGP UPDATE message, variant of the [`Message`] enum.
@@ -87,7 +87,7 @@ impl<Octs: Octets> AsRef<[u8]> for UpdateMessage<Octs> {
 /// attribute. Similarly, the `NEXT_HOP` path attribute was once mandatory for
 /// UPDATEs, but is now also part of the `MP_REACH_NLRI`, if present.
 ///
-/// To accomodate for these hassles, the following methods are provided:
+/// To accommodate for these hassles, the following methods are provided:
 ///
 /// * [`nlris()`][`UpdateMessage::nlris`] and
 /// [`withdrawals()`][`UpdateMessage::withdrawals`],
@@ -320,7 +320,7 @@ impl<Octs: Octets> UpdateMessage<Octs> {
     /// will count the Error case, after which the iterator fuses.
     ///
     /// To retrieve all announcements if and only if all are validly parsed,
-    /// consder using `fn announcements_vec`.
+    /// consider using `fn announcements_vec`.
     ///
     /// Note that this iterator might contain NLRI of different AFI/SAFI
     /// types.
@@ -746,9 +746,9 @@ impl<Octs: Octets> UpdateMessage<Octs> {
 
     //--- Communities --------------------------------------------------------
 
-    /// Returns an iterator over Standard Communities (RFC1997), if any.
-    pub fn communities(&self)
-        -> Result<Option<CommunityIter<Octs::Range<'_>>>, ParseError>
+    // Internal, generic method, users should use the non-generic ones.
+    fn _communities<T: From<[u8; 4]>>(&self)
+        -> Result<Option<CommunityIter<Octs::Range<'_>, T>>, ParseError>
     {
         if let Some(WireformatPathAttribute::Communities(epa)) = self.path_attributes()?.get(PathAttributeType::Communities) {
             let mut p = epa.value_into_parser();
@@ -756,6 +756,26 @@ impl<Octs: Octets> UpdateMessage<Octs> {
         } else {
             Ok(None)
         }
+    }
+
+    /// Returns an iterator over Standard Communities (RFC1997), if any.
+    pub fn communities(&self) 
+        -> Result<
+            Option<CommunityIter<Octs::Range<'_>, crate::bgp::communities::Community>>, ParseError> {
+        self._communities::<crate::bgp::communities::Community>()
+    }
+
+    /// Returns an iterator over Standard Communities (RFC1997), if any. The
+    /// iterator contains the `HumanReadableCommunity` (with special
+    /// Serializer implementation).
+    pub fn human_readable_communities(&self) 
+        -> Result<
+            Option<
+                CommunityIter<Octs::Range<'_>, 
+                crate::bgp::communities::HumanReadableCommunity>>, 
+                ParseError
+            > {
+        self._communities::<crate::bgp::communities::HumanReadableCommunity>()
     }
 
     /// Returns an iterator over Extended Communities (RFC4360), if any.
@@ -796,25 +816,28 @@ impl<Octs: Octets> UpdateMessage<Octs> {
         }
     }
 
-    /// Returns an optional `Vec` containing all conventional, Extended and
-    /// Large communities, if any, or None if none of the three appear in the
-    /// path attributes of this message.
-    pub fn all_communities(&self) -> Result<Option<Vec<Community>>, ParseError> {
-        let mut res = Vec::<Community>::new();
+    // Generic version shouldn't be used directly, users should use the
+    // non-generic ones.
+    fn _all_communities<T>(&self) -> Result<Option<Vec<T>>, ParseError> 
+        where T: From<[u8; 4]> + 
+            From<ExtendedCommunity> + 
+            From<LargeCommunity> + 
+            From<Ipv6ExtendedCommunity> {
+        let mut res: Vec<T> = Vec::new();
 
-        if let Some(c) = self.communities()? {
+        if let Some(c) = self._communities()? {
             res.append(&mut c.collect::<Vec<_>>());
         }
         if let Some(c) = self.ext_communities()? {
-            res.append(&mut c.map(Community::Extended).collect::<Vec<_>>());
+            res.append(&mut c.map(|c| c.into()).collect::<Vec<_>>());
         }
         if let Some(c) = self.ipv6_ext_communities()? {
             res.append(
-                &mut c.map(Community::Ipv6Extended).collect::<Vec<_>>()
+                &mut c.map(|c| c.into()).collect::<Vec<_>>()
             );
         }
         if let Some(c) = self.large_communities()? {
-            res.append(&mut c.map(Community::Large).collect::<Vec<_>>());
+            res.append(&mut c.map(|c| c.into()).collect::<Vec<_>>());
         }
 
         if res.is_empty() {
@@ -823,7 +846,23 @@ impl<Octs: Octets> UpdateMessage<Octs> {
             Ok(Some(res))
         }
     }
-    
+
+    /// Returns an optional `Vec` containing all conventional, Extended and
+    /// Large communities, if any, or None if none of the three appear in the
+    /// path attributes of this message.
+    pub fn all_communities(&self) -> 
+        Result<Option<Vec<crate::bgp::communities::Community>>, ParseError> {
+        self._all_communities::<crate::bgp::communities::Community>()
+    }
+
+    /// Returns an optional `Vec` containing all conventional, Extended and
+    /// Large communities, if any, or None if none of the three appear in the
+    /// path attributes of this message, in the form of
+    /// `HumanReadableCommunity`.
+    pub fn all_human_readable_communities(&self) -> 
+        Result<Option<Vec<crate::bgp::communities::HumanReadableCommunity>>, ParseError> {
+        self._all_communities::<crate::bgp::communities::HumanReadableCommunity>()
+    }
 }
 
 
@@ -1124,19 +1163,23 @@ pub enum FourOctetAsn {
 
 /// Iterator for BGP UPDATE Communities.
 ///
-/// Returns values of enum [`Community`], wrapping [`StandardCommunity`],
-/// [`ExtendedCommunity`], [`LargeCommunity`] and well-known communities.
-pub struct CommunityIter<Octs: Octets> {
+/// Returns values of enum or struct [`T`], where T wraps or has variants
+/// [`StandardCommunity`], [`ExtendedCommunity`], [`LargeCommunity`] or a
+/// well-known community. T are most notably `Community` or
+/// `HumanReadableCommunity`. In most cases you will need to explicitly state
+/// the type of T.
+pub struct CommunityIter<Octs: Octets, T> {
     slice: Octs,
     pos: usize,
+    _t: PhantomData<T>
 }
 
-impl<Octs: Octets> CommunityIter<Octs> {
+impl<Octs: Octets, T: From<[u8; 4]>> CommunityIter<Octs, T> {
     fn new(slice: Octs) -> Self {
-        CommunityIter { slice, pos: 0 }
+        CommunityIter { slice, pos: 0, _t: PhantomData }
     }
 
-    fn get_community(&mut self) -> Community {
+    fn get_community(&mut self) -> T {
         let mut buf = [0u8; 4];
         buf[..].copy_from_slice(&self.slice.as_ref()[self.pos..self.pos+4]);
         self.pos += 4;
@@ -1144,10 +1187,10 @@ impl<Octs: Octets> CommunityIter<Octs> {
     }
 }
 
-impl<Octs: Octets> Iterator for CommunityIter<Octs> {
-    type Item = Community;
+impl<Octs: Octets, T: From<[u8; 4]>> Iterator for CommunityIter<Octs, T> {
+    type Item = T;
     
-    fn next(&mut self) -> Option<Community> {
+    fn next(&mut self) -> Option<T> {
         if self.pos == self.slice.as_ref().len() {
             return None
         }
@@ -1396,7 +1439,7 @@ impl<'a, Octs: Octets> Iterator for NlriIter<'a, Octs> {
         match self.get_nlri() {
             Ok(n) => Some(Ok(n)),
             Err(e) => {
-                // Whenever an error occured, e.g. because the NLRI could not
+                // Whenever an error occurred, e.g. because the NLRI could not
                 // be parsed, we return the error and 'fuse' the iterator by
                 // advancing the parser, ensuring the next call to `next()`
                 // returns a None.
@@ -2243,7 +2286,7 @@ mod tests {
 
     // the MP_REACH_NLRI currently ends up as a ::Invalid path attribute
     // variant, so the call to .mp_announcements() yields a Ok(None) and thus
-    // the second unwrap fails. Therefor, ignore for now:
+    // the second unwrap fails. Therefore, ignore for now:
     #[ignore = "need to rethink this one because of API change"]
     #[test]
     fn unknown_afi_safi_announcements() {

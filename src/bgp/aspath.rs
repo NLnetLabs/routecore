@@ -15,6 +15,12 @@ use std::{error, fmt};
 
 use crate::asn::{Asn, LargeAsnError};
 
+#[cfg(feature = "serde")]
+use serde::ser::SerializeSeq;
+
+#[cfg(feature = "serde")]
+use serde::{Serialize, Serializer};
+
 use octseq::builder::{infallible, EmptyBuilder, FromBuilder, OctetsBuilder};
 use octseq::octets::{Octets, OctetsFrom, OctetsInto};
 use octseq::parse::Parser;
@@ -22,6 +28,16 @@ use octseq::parse::Parser;
 use crate::util::parser::ParseError;
 
 pub type OwnedHop = Hop<Vec<u8>>;
+
+#[cfg(feature = "serde")]
+pub trait SerializeForOperators: Serialize {
+    fn serialize_for_operator<S>(
+        &self,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer;
+}
 
 //------------ HopPath -------------------------------------------------------
 
@@ -43,7 +59,6 @@ pub type OwnedHop = Hop<Vec<u8>>;
 /// ```Hop(AS10), Hop(AS20), Hop(AS30), Hop(Set(AS40, AS50))```
 ///
 #[derive(Clone, Debug, Default, Eq, PartialEq, Hash)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct HopPath {
     /// The hops in this HopPath.
     hops: Vec<OwnedHop>,
@@ -405,6 +420,36 @@ impl fmt::Display for HopPath {
     }
 }
 
+#[cfg(feature = "serde")]
+impl Serialize for HopPath {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        if serializer.is_human_readable() {
+            self.serialize_for_operator(serializer)
+        } else {
+            self.serialize(serializer)
+        }
+    }
+}
+
+#[cfg(feature = "serde")]
+impl SerializeForOperators for HopPath {
+    fn serialize_for_operator<S>(
+        &self,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut seq = serializer.serialize_seq(Some(self.hop_count()))?;
+        for hop in self.iter() {
+            seq.serialize_element(&format!("{}", hop))?;
+        }
+        seq.end()
+    }
+}
 
 //----------- AsPath ---------------------------------------------------------
 

@@ -771,6 +771,12 @@ impl PathId {
     }
 }
 
+impl From<PathId> for u32 {
+    fn from(value: PathId) -> Self {
+        value.0
+    }
+}
+
 impl fmt::Display for PathId {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.0)

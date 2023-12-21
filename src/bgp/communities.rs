@@ -95,7 +95,20 @@ use std::str::FromStr;
 
 use crate::asn::{Asn, Asn16, ParseAsnError};
 
-//--- Community --------------------------------------------------------------
+#[cfg(feature = "serde")]
+use serde::{Serialize, Serializer};
+
+#[cfg(feature = "serde")]
+pub trait SerializeForOperators: Serialize {
+    fn serialize_for_operator<S>(
+        &self,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer;
+}
+
+//------------ Community -----------------------------------------------------
 
 /// Standard and Extended/Large Communities variants.
 #[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, )]
@@ -215,6 +228,105 @@ impl Display for Community {
         }
     }
 }
+
+//------------ HumanReadableCommunity ---------------------------------------0
+
+/// Wrapper around Community with a special Serde Serializer implementation
+/// that produces better human-readable output and leaves out some details.
+/// Example output JSON can be found in the Rotonda docs repo:
+/// https://github.com/NLnetLabs/rotonda-doc/
+/// 
+/// the communities() and all_communities() on the Update struct will need to
+/// have this type included when calling these methods, like so:
+/// `my_update.communities::<HumanReadableCommunity>`.
+#[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, )]
+pub struct HumanReadableCommunity(pub Community);
+
+impl From<Community> for HumanReadableCommunity {
+    fn from(value: Community) -> Self {
+        HumanReadableCommunity(value)
+    }
+}
+
+impl From<[u8; 4]> for HumanReadableCommunity {
+    fn from(raw: [u8; 4]) -> HumanReadableCommunity {
+        HumanReadableCommunity(Community::Standard(StandardCommunity(raw)))
+    }
+}
+
+impl From<StandardCommunity> for HumanReadableCommunity {
+    fn from(value: StandardCommunity) -> Self {
+        HumanReadableCommunity(Community::Standard(value))
+    }
+}
+
+impl From<Wellknown> for HumanReadableCommunity {
+    fn from(wk: Wellknown) -> Self {
+        HumanReadableCommunity(Community::Standard(wk.into()))
+    }
+}
+
+impl From<ExtendedCommunity> for HumanReadableCommunity {
+    fn from(value: ExtendedCommunity) -> Self {
+        HumanReadableCommunity(Community::Extended(value))
+    }
+}
+
+impl From<LargeCommunity> for HumanReadableCommunity {
+    fn from(value: LargeCommunity) -> Self {
+        HumanReadableCommunity(Community::Large(value))
+    }
+}
+
+impl From<Ipv6ExtendedCommunity> for HumanReadableCommunity {
+    fn from(value: Ipv6ExtendedCommunity) -> Self {
+        HumanReadableCommunity(Community::Ipv6Extended(value))
+    }
+}
+
+impl FromStr for HumanReadableCommunity {
+    type Err = ParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Community::from_str(s).map(Self)
+    }
+}
+
+impl Display for HumanReadableCommunity {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        Display::fmt(&self.0, f)
+    }
+}
+
+#[cfg(feature = "serde")]
+impl Serialize for HumanReadableCommunity {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        if serializer.is_human_readable() {
+            match &self.0 {
+                Community::Standard(c) => {
+                    c.serialize_for_operator(serializer)
+                }
+                Community::Large(c) => {
+                    c.serialize_for_operator(serializer)
+                }
+                Community::Extended(c) => {
+                    c.serialize_for_operator(serializer)
+                }
+                Community::Ipv6Extended(c) => {
+                    // TODO: Also implement SerializeForOperators for IPv6
+                    // Extended Communities.
+                    c.serialize(serializer)
+                }
+            }
+        } else {
+            self.serialize(serializer)
+        }
+    }
+}
+
 
 //--- Wellknown --------------------------------------------------------------
 
@@ -494,6 +606,100 @@ impl Display for StandardCommunity {
         }
     }
 
+}
+
+#[cfg(feature = "serde")]
+impl SerializeForOperators for StandardCommunity {
+    fn serialize_for_operator<S>(
+        &self,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match self.to_wellknown() {
+            Some(Wellknown::Unrecognized(_)) => ser::Community {
+                raw_fields: vec![format!("{:#010X}", self.to_u32())],
+                r#type: "standard",
+                parsed: ser::Parsed::ExplicitValue {
+                    value: ser::Value::Plain(ser::PlainValue {
+                        r#type: "well-known-unrecognised",
+                    }),
+                },
+            }
+            .serialize(serializer),
+
+            Some(wk) => ser::Community {
+                raw_fields: vec![format!("{:#010X}", self.to_u32())],
+                r#type: "standard",
+                parsed: ser::Parsed::ExplicitValue {
+                    value: ser::Value::Attribute(ser::AttributeValue {
+                        r#type: "well-known",
+                        attribute: format!("{}", wk),
+                    }),
+                },
+            }
+            .serialize(serializer),
+
+            None if self.is_reserved() => ser::Community {
+                raw_fields: vec![format!("{:#010X}", self.to_u32())],
+                r#type: "standard",
+                parsed: ser::Parsed::ExplicitValue {
+                    value: ser::Value::Plain(ser::PlainValue {
+                        r#type: "reserved",
+                    }),
+                },
+            }
+            .serialize(serializer),
+
+            None if self.is_private() => {
+                let asn = if let Some(asn) = self.asn() {
+                    // ASNs can only be 2-byte in standard communities, so not
+                    // being able to parse it into one is a (weird) error.
+                    if let Ok(asn) = asn.try_into_u16() {
+                        asn
+                    } else {
+                        return Err(serde::ser::Error::custom(format!(
+                            "ASN {} is not a 2-byte ASN and cannot \
+                            be converted",
+                            asn
+                        )));
+                    }
+                } else {
+                    return Err(serde::ser::Error::custom(format!(
+                        "ASN {:?} contains invalid characters",
+                        self.asn()
+                    )));
+                };
+                let tag: u16 = if let Some(tag) = self.tag() {
+                    tag.value()
+                } else {
+                    return Err(serde::ser::Error::custom(format!(
+                        "Tag {:?} contains invalid characters",
+                        self.tag()
+                    )));
+                };
+                let formatted_asn = format!("AS{}", asn); // to match Routinator JSON style
+                ser::Community {
+                    raw_fields: vec![
+                        format!("{:#06X}", asn),
+                        format!("{:#06X}", tag),
+                    ],
+                    r#type: "standard",
+                    parsed: ser::Parsed::ExplicitValue {
+                        value: ser::Value::AsnTag(ser::AsnTagValue {
+                            r#type: "private",
+                            asn: formatted_asn,
+                            tag,
+                        }),
+                    },
+                }
+                .serialize(serializer)
+            }
+
+            _ => serializer.serialize_none(),
+        }
+    }
 }
 
 
@@ -917,6 +1123,168 @@ impl Display for ExtendedCommunity {
 }
 
 
+// Serialize
+
+#[cfg(feature = "serde")]
+impl SerializeForOperators for ExtendedCommunity {
+    fn serialize_for_operator<S>(
+        &self,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        // The structure doesn't tell us if we have to look at the "type low"
+        // (subtype()) value or not, we can only know that based on knowledge
+        // of the "type value" stored in the IANA BGP Extended Communities
+        // registry [1].
+        //
+        // [1]: https://www.iana.org/assignments/bgp-extended-communities/
+        //      bgp-extended-communities.xhtml
+        use ExtendedCommunitySubType::*;
+        use ExtendedCommunityType::*;
+
+        let mut raw_fields = Vec::new();
+        let (typ, subtyp) = self.types();
+
+        match (typ, subtyp) {
+            // 0x00 = Transitive Two-Octet AS-Specific Extended Community (RFC 7153)
+            // - 0x02 = Route Target (RFC 4360)
+            // - 0x03 = Route Origin (RFC 4360)
+            (TransitiveTwoOctetSpecific, RouteTarget)
+            | (TransitiveTwoOctetSpecific, RouteOrigin) => {
+                let global_admin = if let Some(ga) = self.as2() {
+                    ga
+                } else {
+                    return Err(serde::ser::Error::custom(format!(
+                        "Global Admin {:?} contains invalid characters",
+                        self.as2()
+                    )));
+                };
+                let local_admin = if let Some(la) = self.an4() {
+                    la
+                } else {
+                    return Err(serde::ser::Error::custom(format!(
+                        "Local Admin {:?} contains invalid characters",
+                        self.an4()
+                    )));
+                };
+                raw_fields.push(format!("{:#04X}", self.type_raw()));
+                let field = if let Some(field) = self.to_raw().get(1) {
+                    *field
+                } else {
+                    return Err(serde::ser::Error::custom(format!(
+                        "Cannot parse extended community from: '{:?}'",
+                        self.to_raw()
+                    )));
+                };
+                raw_fields.push(format!("{:#04X}", field));
+                raw_fields.push(format!("{:#06X}", global_admin.to_u16()));
+                raw_fields.push(format!("{:#010X}", local_admin));
+                ser::Community {
+                    raw_fields,
+                    r#type: "extended",
+                    parsed: ser::Parsed::InlineValue(ser::Value::Extended(
+                        ser::ExtendedValue {
+                            r#type: "as2-specific",
+                            transitive: self.is_transitive(),
+                            inner: ser::TypedValueInner::As2Specific {
+                                rfc7153SubType: match subtyp {
+                                    RouteTarget => "route-target",
+                                    RouteOrigin => "route-origin",
+                                    _ => unreachable!(),
+                                },
+                                globalAdmin: ser::GlobalAdmin {
+                                    r#type: "asn",
+                                    value: global_admin.to_string(),
+                                },
+                                localAdmin: local_admin,
+                            },
+                        },
+                    )),
+                }
+            }
+
+            // 0x01 = Transitive IPv4-Address-Specific Extended Community (RFC 7153)
+            // - 0x02 = Route Target (RFC 4360)
+            // - 0x03 = Route Origin (RFC 4360)
+            (TransitiveIp4Specific, RouteTarget)
+            | (TransitiveIp4Specific, RouteOrigin) => {
+                let global_admin = if let Some(ga) = self.ip4() {
+                    ga
+                } else {
+                    return Err(serde::ser::Error::custom(format!(
+                        "global Admin {:?} contains invalid characters",
+                        self.ip4()
+                    )));
+                };
+                let local_admin = if let Some(la) = self.an2() {
+                    la
+                } else {
+                    return Err(serde::ser::Error::custom(format!(
+                        "Local Admin {:?} contains invalid characters",
+                        self.an2()
+                    )));
+                };
+                raw_fields.push(format!("{:#04X}", self.type_raw()));
+                let field = if let Some(field) = self.to_raw().get(1) {
+                    *field
+                } else {
+                    return Err(serde::ser::Error::custom(format!(
+                        "Cannot parse extended community from: '{:?}'",
+                        self.to_raw()
+                    )));
+                };
+                raw_fields.push(format!("{:#04X}", field));
+                raw_fields.push(format!("{:#010X}", u32::from(global_admin)));
+                raw_fields.push(format!("{:#06X}", local_admin));
+                ser::Community {
+                    raw_fields,
+                    r#type: "extended",
+                    parsed: ser::Parsed::InlineValue(ser::Value::Extended(
+                        ser::ExtendedValue {
+                            r#type: "ipv4-address-specific",
+                            transitive: self.is_transitive(),
+                            inner:
+                                ser::TypedValueInner::Ipv4AddressSpecific {
+                                    rfc7153SubType: match subtyp {
+                                        RouteTarget => "route-target",
+                                        RouteOrigin => "route-origin",
+                                        _ => unreachable!(),
+                                    },
+                                    globalAdmin: ser::GlobalAdmin {
+                                        r#type: "ipv4-address",
+                                        value: global_admin.to_string(),
+                                    },
+                                    localAdmin: local_admin,
+                                },
+                        },
+                    )),
+                }
+            }
+
+            _ => {
+                raw_fields.extend(
+                    self.to_raw().iter().map(|x| format!("{:#04X}", x)),
+                );
+                ser::Community {
+                    raw_fields,
+                    r#type: "extended",
+                    parsed: ser::Parsed::InlineValue(ser::Value::Extended(
+                        ser::ExtendedValue {
+                            r#type: "unrecognised",
+                            transitive: self.is_transitive(),
+                            inner: ser::TypedValueInner::Unrecognised,
+                        },
+                    )),
+                }
+            }
+        }
+        .serialize(serializer)
+    }
+}
+
+
 //--- Ipv6ExtendedCommunity --------------------------------------------------
 
 /// IPv6 Extended Community as defined in RFC5701.
@@ -1144,6 +1512,44 @@ impl Display for LargeCommunity {
 
 }
 
+
+// Serialize
+
+#[cfg(feature = "serde")]
+impl SerializeForOperators for LargeCommunity {
+    fn serialize_for_operator<S>(
+        &self,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let asn = format!("AS{}", self.global());
+
+        ser::Community {
+            raw_fields: vec![
+                format!("{:#06X}", self.global()),
+                format!("{:#06X}", self.local1()),
+                format!("{:#06X}", self.local2()),
+            ],
+            r#type: "large",
+            parsed: ser::Parsed::InlineValue(
+                ser::Value::GlobalLocalDataParts(
+                    ser::GlobalLocalDataPartsValue {
+                        globalAdmin: ser::GlobalAdmin {
+                            r#type: "asn",
+                            value: asn,
+                        },
+                        localDataPart1: self.local1(),
+                        localDataPart2: self.local2(),
+                    },
+                ),
+            ),
+        }
+        .serialize(serializer)
+    }
+}
+
 fn strip_as(s: &str) -> &str {
     s.strip_prefix("AS")
         .or_else(|| s.strip_prefix("as"))
@@ -1176,6 +1582,99 @@ impl From<ParseAsnError> for ParseError {
     }
 }
 
+// Types used only by our own human_serialize feature to structure the
+// serialized output differently than is done by derive(Serialize).
+#[cfg(feature = "serde")]
+mod ser {
+    #[derive(serde::Serialize)]
+    #[serde(rename = "value")]
+    pub struct PlainValue {
+        pub r#type: &'static str,
+    }
+
+    #[derive(serde::Serialize)]
+    #[serde(rename = "value")]
+    pub struct AsnTagValue {
+        pub r#type: &'static str,
+        pub asn: String,
+        pub tag: u16,
+    }
+
+    #[derive(serde::Serialize)]
+    #[serde(rename = "value")]
+    pub struct AttributeValue {
+        pub r#type: &'static str,
+        pub attribute: String,
+    }
+
+    #[derive(serde::Serialize)]
+    #[serde(rename = "value")]
+    pub struct GlobalAdmin {
+        pub r#type: &'static str,
+        pub value: String,
+    }
+
+    #[derive(serde::Serialize)]
+    #[serde(rename = "value")]
+    #[allow(non_snake_case)]
+    pub struct GlobalLocalDataPartsValue {
+        pub globalAdmin: GlobalAdmin,
+        pub localDataPart1: u32,
+        pub localDataPart2: u32,
+    }
+
+    #[derive(serde::Serialize)]
+    #[serde(rename = "value")]
+    pub struct ExtendedValue {
+        pub r#type: &'static str,
+        pub transitive: bool,
+        #[serde(flatten)]
+        pub inner: TypedValueInner,
+    }
+
+    #[derive(serde::Serialize)]
+    #[serde(untagged)]
+    #[allow(non_snake_case)]
+    pub enum TypedValueInner {
+        As2Specific {
+            rfc7153SubType: &'static str,
+            globalAdmin: GlobalAdmin,
+            localAdmin: u32,
+        },
+        Ipv4AddressSpecific {
+            rfc7153SubType: &'static str,
+            globalAdmin: GlobalAdmin,
+            localAdmin: u16,
+        },
+        Unrecognised,
+    }
+
+    #[derive(serde::Serialize)]
+    #[serde(untagged)]
+    pub enum Value {
+        AsnTag(AsnTagValue),
+        Attribute(AttributeValue),
+        GlobalLocalDataParts(GlobalLocalDataPartsValue),
+        Plain(PlainValue),
+        Extended(ExtendedValue),
+    }
+
+    #[derive(serde::Serialize)]
+    #[serde(rename = "parsed", untagged)]
+    pub enum Parsed {
+        ExplicitValue { value: Value },
+        InlineValue(Value),
+    }
+
+    #[derive(serde::Serialize)]
+    #[serde(rename = "Community")]
+    pub struct Community {
+        #[serde(rename = "rawFields")]
+        pub raw_fields: Vec<String>,
+        pub r#type: &'static str,
+        pub parsed: Parsed,
+    }
+}
 
 
 //--- tests ------------------------------------------------------------------
