@@ -5,27 +5,30 @@ use octseq::{Octets, Parser};
 use crate::asn::Asn;
 use crate::bgp::aspath::AsPath;
 use crate::bgp::path_attributes::{
-    AggregatorInfo, PathAttributeType, PathAttributes,
-    WireformatPathAttribute,
+    AggregatorInfo,
+    PathAttributes, PathAttributeType, WireformatPathAttribute
 };
 pub use crate::bgp::types::{
-    AddpathDirection, AddpathFamDir, Afi, AfiSafi, LocalPref, MultiExitDisc,
-    NextHop, OriginType, Safi,
+    Afi, Safi, LocalPref, MultiExitDisc, NextHop, OriginType,
+    AfiSafi, AddpathDirection, AddpathFamDir
 };
 
-use crate::bgp::message::nlri::{
-    self, BasicNlri, EvpnNlri, FixedNlriIter, FlowSpecNlri, MplsNlri,
-    MplsVpnNlri, Nlri, RouteTargetNlri, VplsNlri,
-};
 use crate::bgp::message::MsgType;
+use crate::bgp::message::nlri::{self,
+    Nlri, BasicNlri, EvpnNlri, MplsNlri, MplsVpnNlri, VplsNlri, FlowSpecNlri,
+    RouteTargetNlri,
+    FixedNlriIter,
+};
 
-use crate::util::parser::ParseError;
-use core::ops::Range;
+use core::ops::Range; 
 use std::marker::PhantomData;
 use std::net::Ipv4Addr;
+use crate::util::parser::ParseError;
+
 
 use crate::bgp::communities::{
-    ExtendedCommunity, Ipv6ExtendedCommunity, LargeCommunity,
+    ExtendedCommunity, Ipv6ExtendedCommunity, 
+    LargeCommunity,
 };
 
 /// BGP UPDATE message, variant of the [`Message`] enum.
@@ -39,7 +42,9 @@ pub struct UpdateMessage<Octs: Octets> {
     session_config: SessionConfig,
 }
 
+
 impl<Octs: Octets> UpdateMessage<Octs> {
+
     pub fn octets(&self) -> &Octs {
         &self.octets
     }
@@ -50,7 +55,7 @@ impl<Octs: Octets> UpdateMessage<Octs> {
     //}
 
     /// Returns the length in bytes of the entire BGP message.
-    pub fn length(&self) -> usize {
+	pub fn length(&self) -> usize {
         //// marker, length, type
         16 + 2 + 1  
         // length of withdrawals
@@ -59,7 +64,7 @@ impl<Octs: Octets> UpdateMessage<Octs> {
         + 2 + self.attributes.len()
         // remainder is announcements, no explicit length field
         + self.announcements.len()
-    }
+	}
 }
 
 impl<Octs: Octets> AsRef<[u8]> for UpdateMessage<Octs> {
@@ -139,22 +144,22 @@ impl<Octs: Octets> UpdateMessage<Octs> {
     // (the last part of the actual content).
     pub fn fmt_pcap_string(&self) -> String {
         let mut res = String::with_capacity(
-            7 + ((19 + self.octets.as_ref().len()) * 3),
+            7 + ((19 + self.octets.as_ref().len()) * 3)
         );
 
         res.push_str(
-            "000000 ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ",
+            "000000 ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff "
         );
 
         let len = u16::try_from(self.length())
             .unwrap_or(u16::MAX)
             .to_be_bytes();
 
-        res.push_str(&format!("{:02x} {:02x} 02 ", len[0], len[1]));
+        res.push_str(&format!("{:02x} {:02x} 02 ", len[0], len[1])); 
 
-        for b in &self.octets.as_ref()
-            [self.withdrawals.start..self.announcements.end]
-        {
+        for b in &self.octets.as_ref()[
+            self.withdrawals.start..self.announcements.end
+        ] {
             res.push_str(&format!("{:02x} ", b));
         }
 
@@ -167,57 +172,59 @@ impl<Octs: Octets> UpdateMessage<Octs> {
 }
 
 impl<Octs: Octets> UpdateMessage<Octs> {
+
     /// Returns the conventional withdrawals.
-    pub fn conventional_withdrawals(
-        &self,
-    ) -> Result<Nlris<Octs>, ParseError> {
+    pub fn conventional_withdrawals(&self) -> Result<Nlris<Octs>, ParseError>
+    {
         let pp = Parser::with_range(self.octets(), self.withdrawals.clone());
 
         let iter = Nlris {
             parser: pp,
             session_config: self.session_config,
-            afi_safi: AfiSafi::Ipv4Unicast,
+            afi_safi: AfiSafi::Ipv4Unicast
         };
 
         Ok(iter)
+
     }
 
     /// Returns the withdrawals from the MP_UNREACH_NLRI attribute, if any.
-    pub fn mp_withdrawals(&self) -> Result<Option<Nlris<Octs>>, ParseError> {
-        if let Some(WireformatPathAttribute::MpUnreachNlri(epa)) = self
-            .path_attributes()?
-            .get(PathAttributeType::MpUnreachNlri)
-        {
+    pub fn mp_withdrawals(&self) -> Result<Option< Nlris<Octs>>, ParseError>
+    {
+        if let Some(WireformatPathAttribute::MpUnreachNlri(epa)) = self.path_attributes()?.get(
+            PathAttributeType::MpUnreachNlri
+        ){
             let mut parser = epa.value_into_parser();
             let afi = parser.parse_u16_be()?.into();
             let safi = parser.parse_u8()?.into();
             let afi_safi = AfiSafi::try_from((afi, safi))
                 .map_err(|_| ParseError::Unsupported)?;
 
-            return Ok(Some(Nlris {
-                parser,
+            return Ok(Some(Nlris{
+                parser, 
                 session_config: self.session_config,
                 afi_safi,
-            }));
+            }))
         }
 
-        Ok(None)
+       Ok(None)
     }
 
     /// Returns a combined iterator of conventional and MP_UNREACH_NLRI.
     ///
     /// Note that this iterator might contain NLRI of different AFI/SAFI
     /// types.
-    pub fn withdrawals(
-        &self,
-    ) -> Result<
-        impl Iterator<Item = Result<Nlri<Octs::Range<'_>>, ParseError>>,
-        ParseError,
-    > {
+    pub fn withdrawals(&self)
+        -> Result<
+            impl Iterator<Item = Result<Nlri<Octs::Range<'_>>, ParseError>>,
+            ParseError
+            >
+    {
         let mp_iter = self.mp_withdrawals()?.map(|i| i.iter());
         let conventional_iter = self.conventional_withdrawals()?.iter();
 
         Ok(mp_iter.into_iter().flatten().chain(conventional_iter))
+
     }
 
     /// Creates a vec of all withdrawals in this message.
@@ -229,9 +236,9 @@ impl<Octs: Octets> UpdateMessage<Octs> {
     ///
     /// For more fine-grained control, consider using the
     /// `unicast_withdrawals` method.
-    pub fn withdrawals_vec(
-        &self,
-    ) -> Result<Vec<Nlri<Octs::Range<'_>>>, ParseError> {
+    pub fn withdrawals_vec(&self) 
+        -> Result<Vec<Nlri<Octs::Range<'_>>>, ParseError>
+    {
         let conv = self.conventional_withdrawals()?.iter();
         let mp = self.mp_withdrawals()?.map(|mp| mp.iter());
 
@@ -245,20 +252,19 @@ impl<Octs: Octets> UpdateMessage<Octs> {
         self.attributes.len()
     }
 
-    pub fn path_attributes(
-        &self,
-    ) -> Result<PathAttributes<Octs>, ParseError> {
+    pub fn path_attributes(&self)
+        -> Result<PathAttributes<Octs>, ParseError>
+    {
         let pp = Parser::with_range(self.octets(), self.attributes.clone());
 
         Ok(PathAttributes::new(pp, self.session_config))
     }
 
     /// Returns the conventional announcements.
-    pub fn conventional_announcements(
-        &self,
-    ) -> Result<Nlris<Octs>, ParseError> {
-        let pp =
-            Parser::with_range(self.octets(), self.announcements.clone());
+    pub fn conventional_announcements(&self)
+        -> Result<Nlris<Octs>, ParseError>
+    {
+        let pp = Parser::with_range(self.octets(), self.announcements.clone());
 
         let iter = Nlris {
             parser: pp,
@@ -270,12 +276,11 @@ impl<Octs: Octets> UpdateMessage<Octs> {
     }
 
     /// Returns the announcements from the MP_UNREACH_NLRI attribute, if any.
-    pub fn mp_announcements(
-        &self,
-    ) -> Result<Option<Nlris<Octs>>, ParseError> {
-        if let Some(WireformatPathAttribute::MpReachNlri(epa)) =
-            self.path_attributes()?.get(PathAttributeType::MpReachNlri)
-        {
+    pub fn mp_announcements(&self) -> Result<Option<Nlris<Octs>>, ParseError>
+    {
+        if let Some(WireformatPathAttribute::MpReachNlri(epa)) = self.path_attributes()?.get(
+            PathAttributeType::MpReachNlri
+        ){
             let mut parser = epa.value_into_parser();
             let afi = parser.parse_u16_be()?.into();
             let safi = parser.parse_u8()?.into();
@@ -284,16 +289,16 @@ impl<Octs: Octets> UpdateMessage<Octs> {
 
             NextHop::skip(&mut parser)?;
             parser.advance(1)?; // 1 reserved byte
-            let res = Nlris {
-                parser,
+            let res = Nlris{
+                parser, 
                 session_config: self.session_config,
                 afi_safi,
             };
 
-            return Ok(Some(res));
+            return Ok(Some(res))
         }
 
-        Ok(None)
+       Ok(None)
     }
 
     /// Returns a combined iterator of conventional and MP_REACH_NLRI.
@@ -319,12 +324,12 @@ impl<Octs: Octets> UpdateMessage<Octs> {
     ///
     /// Note that this iterator might contain NLRI of different AFI/SAFI
     /// types.
-    pub fn announcements(
-        &self,
-    ) -> Result<
-        impl Iterator<Item = Result<Nlri<Octs::Range<'_>>, ParseError>>,
-        ParseError,
-    > {
+    pub fn announcements(&self)
+        -> Result<
+            impl Iterator<Item = Result<Nlri<Octs::Range<'_>>, ParseError>>,
+            ParseError
+            >
+    {
         let mp_iter = self.mp_announcements()?.map(|i| i.iter());
         let conventional_iter = self.conventional_announcements()?.iter();
 
@@ -340,9 +345,9 @@ impl<Octs: Octets> UpdateMessage<Octs> {
     ///
     /// For more fine-grained control, consider using the
     /// `unicast_announcements` method.
-    pub fn announcements_vec(
-        &self,
-    ) -> Result<Vec<Nlri<Octs::Range<'_>>>, ParseError> {
+    pub fn announcements_vec(&self) 
+        -> Result<Vec<Nlri<Octs::Range<'_>>>, ParseError>
+    {
         let conv = self.conventional_announcements()?.iter();
         let mp = self.mp_announcements()?.map(|mp| mp.iter());
 
@@ -353,33 +358,30 @@ impl<Octs: Octets> UpdateMessage<Octs> {
     ///
     /// If at any point an error occurs, the iterator returns that error and
     /// fuses itself, i.e. any following call to `next()` will return None.
-    pub fn unicast_announcements(
-        &self,
-    ) -> Result<
-        impl Iterator<Item = Result<BasicNlri, ParseError>> + '_,
-        ParseError,
-    > {
-        let mp_iter = self
-            .mp_announcements()?
-            .filter(|nlris| {
-                matches!(
-                    nlris.afi_safi(),
-                    AfiSafi::Ipv4Unicast | AfiSafi::Ipv6Unicast
-                )
-            })
-            .map(|nlris| nlris.iter());
+    pub fn unicast_announcements(&self)
+        -> Result<
+            impl Iterator<Item = Result<BasicNlri, ParseError>> + '_,
+            ParseError
+        >
+    {
+        let mp_iter = self.mp_announcements()?.filter(|nlris|
+            matches!(
+                nlris.afi_safi(),
+                AfiSafi::Ipv4Unicast | AfiSafi::Ipv6Unicast
+            )
+        ).map(|nlris| nlris.iter());
 
         let conventional_iter = self.conventional_announcements()?.iter();
 
-        Ok(mp_iter
-            .into_iter()
-            .flatten()
-            .chain(conventional_iter)
-            .map(|n| match n {
+        Ok(mp_iter.into_iter().flatten().chain(conventional_iter)
+           .map(|n|
+                match n {
                 Ok(Nlri::Unicast(b)) => Ok(b),
                 Ok(_) => unreachable!(),
                 Err(e) => Err(e),
-            }))
+                }
+           )
+        )
     }
 
     /// Creates a vec of all unicast announcements in this message.
@@ -391,64 +393,68 @@ impl<Octs: Octets> UpdateMessage<Octs> {
     ///
     /// For more fine-grained control, consider using the
     /// `unicast_announcements` method.
-    pub fn unicast_announcements_vec(
-        &self,
-    ) -> Result<Vec<BasicNlri>, ParseError> {
-        let conv = self.conventional_announcements()?.iter().map(|n| {
-            if let Ok(Nlri::Unicast(b)) = n {
-                Ok(b)
-            } else {
-                Err(ParseError::form_error(
-                    "invalid announced conventional unicast NLRI",
-                ))
-            }
-        });
+    pub fn unicast_announcements_vec(&self)
+        -> Result<Vec<BasicNlri>, ParseError>
+    {
+        let conv = self.conventional_announcements()?
+            .iter().map(|n|
+                if let Ok(Nlri::Unicast(b)) = n {
+                    Ok(b)
+                } else {
+                    Err(ParseError::form_error(
+                        "invalid announced conventional unicast NLRI"
+                    ))
+                }
+            )
+        ;
 
-        let mp = self.mp_announcements()?.map(|mp| {
-            mp.iter().filter_map(|n| match n {
-                Ok(Nlri::Unicast(b)) => Some(Ok(b)),
-                Ok(_) => None,
-                _ => Some(Err(ParseError::form_error(
-                    "invalid announced MP unicast NLRI",
-                ))),
-            })
-        });
+        let mp = self.mp_announcements()?.map(|mp| mp.iter()
+            .filter_map(|n|
+                 match n {
+                     Ok(Nlri::Unicast(b)) => Some(Ok(b)),
+                     Ok(_) => None,
+                     _ => {
+                         Some(Err(ParseError::form_error(
+                            "invalid announced MP unicast NLRI"
+                         )))
+                     }
+                 }
+            ))
+        ;
 
         conv.chain(mp.into_iter().flatten()).collect()
     }
+
 
     /// Returns a combined iterator of conventional and unicast
     /// MP_UNREACH_NLRI.
     ///
     /// If at any point an error occurs, the iterator returns that error and
     /// fuses itself, i.e. any following call to `next()` will return None.
-    pub fn unicast_withdrawals(
-        &self,
-    ) -> Result<
-        impl Iterator<Item = Result<BasicNlri, ParseError>> + '_,
-        ParseError,
-    > {
-        let mp_iter = self
-            .mp_withdrawals()?
-            .filter(|nlris| {
-                matches!(
-                    nlris.afi_safi(),
-                    AfiSafi::Ipv4Unicast | AfiSafi::Ipv6Unicast
-                )
-            })
-            .map(|nlris| nlris.iter());
+    pub fn unicast_withdrawals(&self)
+        -> Result<
+            impl Iterator<Item = Result<BasicNlri, ParseError>> + '_,
+            ParseError
+        >
+    {
+        let mp_iter = self.mp_withdrawals()?.filter(|nlris|
+            matches!(
+                nlris.afi_safi(),
+                AfiSafi::Ipv4Unicast | AfiSafi::Ipv6Unicast
+            )
+        ).map(|nlris| nlris.iter());
 
         let conventional_iter = self.conventional_withdrawals()?.iter();
 
-        Ok(mp_iter
-            .into_iter()
-            .flatten()
-            .chain(conventional_iter)
-            .map(|n| match n {
-                Ok(Nlri::Unicast(b)) => Ok(b),
-                Ok(_) => unreachable!(),
-                Err(e) => Err(e),
-            }))
+        Ok(mp_iter.into_iter().flatten().chain(conventional_iter)
+           .map(|n|
+                match n {
+                    Ok(Nlri::Unicast(b)) => Ok(b),
+                    Ok(_) => unreachable!(),
+                    Err(e) => Err(e),
+                }
+           )
+        )
     }
 
     /// Creates a vec of all unicast withdrawals in this message.
@@ -460,28 +466,34 @@ impl<Octs: Octets> UpdateMessage<Octs> {
     ///
     /// For more fine-grained control, consider using the
     /// `unicast_withdrawals` method.
-    pub fn unicast_withdrawals_vec(
-        &self,
-    ) -> Result<Vec<BasicNlri>, ParseError> {
-        let conv = self.conventional_withdrawals()?.iter().map(|n| {
-            if let Ok(Nlri::Unicast(b)) = n {
-                Ok(b)
-            } else {
-                Err(ParseError::form_error(
-                    "invalid withdrawn conventional unicast NLRI",
-                ))
-            }
-        });
+    pub fn unicast_withdrawals_vec(&self)
+        -> Result<Vec<BasicNlri>, ParseError>
+    {
+        let conv = self.conventional_withdrawals()?
+            .iter().map(|n|
+                if let Ok(Nlri::Unicast(b)) = n {
+                    Ok(b)
+                } else {
+                    Err(ParseError::form_error(
+                        "invalid withdrawn conventional unicast NLRI"
+                    ))
+                }
+            )
+        ;
 
-        let mp = self.mp_withdrawals()?.map(|mp| {
-            mp.iter().filter_map(|n| match n {
-                Ok(Nlri::Unicast(b)) => Some(Ok(b)),
-                Ok(_) => None,
-                _ => Some(Err(ParseError::form_error(
-                    "invalid withdrawn MP unicast NLRI",
-                ))),
-            })
-        });
+        let mp = self.mp_withdrawals()?.map(|mp| mp.iter()
+            .filter_map(|n|
+                 match n {
+                     Ok(Nlri::Unicast(b)) => Some(Ok(b)),
+                     Ok(_) => None,
+                     _ => {
+                         Some(Err(ParseError::form_error(
+                            "invalid withdrawn MP unicast NLRI"
+                         )))
+                     }
+                 }
+            ))
+        ;
 
         conv.chain(mp.into_iter().flatten()).collect()
     }
@@ -491,10 +503,10 @@ impl<Octs: Octets> UpdateMessage<Octs> {
     }
 
     pub fn has_mp_nlri(&self) -> Result<bool, ParseError> {
-        Ok(self
-            .path_attributes()?
-            .get(PathAttributeType::MpReachNlri)
-            .is_some())
+        Ok(
+            self.path_attributes()?
+                .get(PathAttributeType::MpReachNlri).is_some()
+        )
     }
 
     /// Returns `Option<(Afi, Safi)>` if this UPDATE represents the End-of-RIB
@@ -510,14 +522,12 @@ impl<Octs: Octets> UpdateMessage<Octs> {
         // Based on MP_UNREACH_NLRI
 
         let mut pas = self.path_attributes()?;
-        if let Some(Ok(WireformatPathAttribute::MpUnreachNlri(epa))) =
-            pas.next()
-        {
+        if let Some(Ok(WireformatPathAttribute::MpUnreachNlri(epa))) = pas.next() {
             let mut pa = epa.value_into_parser();
             if pa.remaining() == 3 && pas.next().is_none() {
                 let afi = pa.parse_u16_be()?.into();
                 let safi = pa.parse_u8()?.into();
-                return Ok(Some((afi, safi)));
+                return Ok(Some((afi, safi)))
             }
         }
 
@@ -532,9 +542,7 @@ impl<Octs: Octets> UpdateMessage<Octs> {
     // with only withdrawals will not have any of these mandatory path
     // attributes present.
     pub fn origin(&self) -> Result<Option<OriginType>, ParseError> {
-        if let Some(WireformatPathAttribute::Origin(epa)) =
-            self.path_attributes()?.get(PathAttributeType::Origin)
-        {
+        if let Some(WireformatPathAttribute::Origin(epa)) = self.path_attributes()?.get(PathAttributeType::Origin) {
             Ok(Some(epa.value_into_parser().parse_u8()?.into()))
         } else {
             Ok(None)
@@ -542,12 +550,11 @@ impl<Octs: Octets> UpdateMessage<Octs> {
     }
 
     /// Returns the AS4_PATH attribute.
-    pub fn as4path(
-        &self,
-    ) -> Result<Option<AsPath<Octs::Range<'_>>>, ParseError> {
-        if let Some(WireformatPathAttribute::As4Path(epa)) =
-            self.path_attributes()?.get(PathAttributeType::As4Path)
-        {
+    pub fn as4path(&self) -> Result<
+        Option<AsPath<Octs::Range<'_>>>,
+        ParseError
+    > {
+        if let Some(WireformatPathAttribute::As4Path(epa)) = self.path_attributes()?.get(PathAttributeType::As4Path) {
             let mut p = epa.value_into_parser();
             Ok(Some(AsPath::new(p.parse_octets(p.remaining())?, true)?))
         } else {
@@ -555,36 +562,28 @@ impl<Octs: Octets> UpdateMessage<Octs> {
         }
     }
 
+
     /// Returns the AS_PATH path attribute.
     //
     // NOTE: This is now the AS PATH and only the AS_PATH.
-    pub fn aspath(
-        &self,
-    ) -> Result<Option<AsPath<Octs::Range<'_>>>, ParseError> {
-        if let Some(WireformatPathAttribute::AsPath(epa)) =
-            self.path_attributes()?.get(PathAttributeType::AsPath)
-        {
+    pub fn aspath(&self)
+        -> Result<Option<AsPath<Octs::Range<'_>>>, ParseError>
+    {
+        if let Some(WireformatPathAttribute::AsPath(epa)) = self.path_attributes()?.get(PathAttributeType::AsPath) {
             let mut p = epa.value_into_parser();
-            Ok(Some(AsPath::new(
-                p.parse_octets(p.remaining())?,
-                epa.session_config().has_four_octet_asn(),
-            )?))
+            Ok(Some(AsPath::new(p.parse_octets(p.remaining())?,
+            epa.session_config().has_four_octet_asn())?))
         } else {
             Ok(None)
         }
     }
 
     /// Returns NextHop information from the NEXT_HOP path attribute, if any.
-    pub fn conventional_next_hop(
-        &self,
-    ) -> Result<Option<NextHop>, ParseError> {
-        if let Some(WireformatPathAttribute::NextHop(epa)) =
-            self.path_attributes()?.get(PathAttributeType::NextHop)
-        {
-            Ok(Some(NextHop::Unicast(
-                Ipv4Addr::from(epa.value_into_parser().parse_u32_be()?)
-                    .into(),
-            )))
+    pub fn conventional_next_hop(&self)
+        -> Result<Option<NextHop>, ParseError>
+    {
+        if let Some(WireformatPathAttribute::NextHop(epa)) = self.path_attributes()?.get(PathAttributeType::NextHop) {
+            Ok(Some(NextHop::Unicast(Ipv4Addr::from(epa.value_into_parser().parse_u32_be()?).into())))
         } else {
             Ok(None)
         }
@@ -592,9 +591,9 @@ impl<Octs: Octets> UpdateMessage<Octs> {
 
     /// Returns NextHop information from the MP_REACH_NLRI, if any.
     pub fn mp_next_hop(&self) -> Result<Option<NextHop>, ParseError> {
-        if let Some(WireformatPathAttribute::MpReachNlri(epa)) =
-            self.path_attributes()?.get(PathAttributeType::MpReachNlri)
-        {
+        if let Some(WireformatPathAttribute::MpReachNlri(epa)) = self.path_attributes()?.get(
+            PathAttributeType::MpReachNlri
+        ){
             let mut p = epa.value_into_parser();
             let afi = p.parse_u16_be()?.into();
             let safi = p.parse_u8()?.into();
@@ -606,12 +605,10 @@ impl<Octs: Octets> UpdateMessage<Octs> {
         }
     }
 
-    fn mp_next_hop_tuple(
-        &self,
-    ) -> Result<Option<(AfiSafi, NextHop)>, ParseError> {
-        if let Some(WireformatPathAttribute::MpReachNlri(epa)) =
-            self.path_attributes()?.get(PathAttributeType::MpReachNlri)
-        {
+    fn mp_next_hop_tuple(&self) -> Result<Option<(AfiSafi, NextHop)>, ParseError> {
+        if let Some(WireformatPathAttribute::MpReachNlri(epa)) = self.path_attributes()?.get(
+            PathAttributeType::MpReachNlri
+        ){
             let mut p = epa.value_into_parser();
             let afi = p.parse_u16_be()?.into();
             let safi = p.parse_u8()?.into();
@@ -621,12 +618,12 @@ impl<Octs: Octets> UpdateMessage<Octs> {
         } else {
             Ok(None)
         }
+
     }
 
-    pub fn find_next_hop(
-        &self,
-        afi_safi: AfiSafi,
-    ) -> Result<NextHop, ParseError> {
+    pub fn find_next_hop(&self, afi_safi: AfiSafi)
+        -> Result<NextHop, ParseError>
+    {
         match afi_safi {
             AfiSafi::Ipv4Unicast => {
                 // If there is Ipv4Unicast in the MP_REACH_NLRI attribute, the
@@ -635,7 +632,7 @@ impl<Octs: Octets> UpdateMessage<Octs> {
                 // PDU. We return the nexthop from the MP attribute.
                 if let Ok(Some((mp_afisafi, mp))) = self.mp_next_hop_tuple() {
                     if mp_afisafi == AfiSafi::Ipv4Unicast {
-                        return Ok(mp);
+                        return Ok(mp)
                     }
                 }
 
@@ -646,12 +643,12 @@ impl<Octs: Octets> UpdateMessage<Octs> {
                         Ok(nh)
                     } else {
                         Err(ParseError::form_error(
-                            "no conventional NEXT_HOP",
+                             "no conventional NEXT_HOP"
                         ))
                     }
                 } else {
                     Err(ParseError::form_error(
-                        "invalid conventional NEXT_HOP",
+                            "invalid conventional NEXT_HOP"
                     ))
                 }
             }
@@ -660,18 +657,18 @@ impl<Octs: Octets> UpdateMessage<Octs> {
                     if let Some((mp_afisafi, mp)) = maybe_mp {
                         if mp_afisafi != afi_safi {
                             return Err(ParseError::form_error(
-                                "MP_REACH_NLRI for different AFI/SAFI",
-                            ));
+                                 "MP_REACH_NLRI for different AFI/SAFI"
+                            ))
                         }
                         Ok(mp)
                     } else {
                         Err(ParseError::form_error(
-                            "no MP_REACH_NLRI / nexthop",
+                             "no MP_REACH_NLRI / nexthop"
                         ))
                     }
                 } else {
                     Err(ParseError::form_error(
-                        "invalid MP_REACH_NLRI / nexthop",
+                            "invalid MP_REACH_NLRI / nexthop"
                     ))
                 }
             }
@@ -681,24 +678,24 @@ impl<Octs: Octets> UpdateMessage<Octs> {
     //--- Non-mandatory path attribute helpers -------------------------------
 
     /// Returns the Multi-Exit Discriminator value, if any.
-    pub fn multi_exit_disc(
-        &self,
-    ) -> Result<Option<MultiExitDisc>, ParseError> {
-        if let Some(WireformatPathAttribute::MultiExitDisc(epa)) = self
-            .path_attributes()?
-            .get(PathAttributeType::MultiExitDisc)
-        {
+    pub fn multi_exit_disc(&self)
+        -> Result<Option<MultiExitDisc>, ParseError>
+    {
+        if let Some(WireformatPathAttribute::MultiExitDisc(epa)) = self.path_attributes()?.get(
+            PathAttributeType::MultiExitDisc
+        ){
             Ok(Some(MultiExitDisc(epa.value_into_parser().parse_u32_be()?)))
         } else {
             Ok(None)
         }
+
     }
 
     /// Returns the Local Preference value, if any.
     pub fn local_pref(&self) -> Result<Option<LocalPref>, ParseError> {
-        if let Some(WireformatPathAttribute::LocalPref(epa)) =
-            self.path_attributes()?.get(PathAttributeType::LocalPref)
-        {
+        if let Some(WireformatPathAttribute::LocalPref(epa)) = self.path_attributes()?.get(
+            PathAttributeType::LocalPref
+        ){
             Ok(Some(LocalPref(epa.value_into_parser().parse_u32_be()?)))
         } else {
             Ok(None)
@@ -708,10 +705,10 @@ impl<Octs: Octets> UpdateMessage<Octs> {
     /// Returns true if this UPDATE contains the ATOMIC_AGGREGATE path
     /// attribute.
     pub fn is_atomic_aggregate(&self) -> Result<bool, ParseError> {
-        Ok(self
-            .path_attributes()?
-            .get(PathAttributeType::AtomicAggregate)
-            .is_some())
+        Ok(
+            self.path_attributes()?
+                .get(PathAttributeType::AtomicAggregate).is_some()
+        )
     }
 
     /// Returns the AGGREGATOR path attribute, if any.
@@ -722,11 +719,12 @@ impl<Octs: Octets> UpdateMessage<Octs> {
     //
     // As such, we can determine whether there is a 2-octet or 4-octet ASN
     // based on the size of the attribute itself.
-    //
+    // 
     pub fn aggregator(&self) -> Result<Option<AggregatorInfo>, ParseError> {
-        if let Some(WireformatPathAttribute::Aggregator(epa)) =
-            self.path_attributes()?.get(PathAttributeType::Aggregator)
-        {
+
+        if let Some(WireformatPathAttribute::Aggregator(epa)) = self.path_attributes()?.get(
+            PathAttributeType::Aggregator
+        ){
             // XXX not nice that we have to do this here, also it is exactly
             // the same as in the fn parse in path_attributes.rs
             use crate::util::parser::parse_ipv4addr;
@@ -745,15 +743,14 @@ impl<Octs: Octets> UpdateMessage<Octs> {
         }
     }
 
+
     //--- Communities --------------------------------------------------------
 
     // Internal, generic method, users should use the non-generic ones.
-    fn _communities<T: From<[u8; 4]>>(
-        &self,
-    ) -> Result<Option<CommunityIter<Octs::Range<'_>, T>>, ParseError> {
-        if let Some(WireformatPathAttribute::Communities(epa)) =
-            self.path_attributes()?.get(PathAttributeType::Communities)
-        {
+    fn _communities<T: From<[u8; 4]>>(&self)
+        -> Result<Option<CommunityIter<Octs::Range<'_>, T>>, ParseError>
+    {
+        if let Some(WireformatPathAttribute::Communities(epa)) = self.path_attributes()?.get(PathAttributeType::Communities) {
             let mut p = epa.value_into_parser();
             Ok(Some(CommunityIter::new(p.parse_octets(p.remaining())?)))
         } else {
@@ -762,45 +759,30 @@ impl<Octs: Octets> UpdateMessage<Octs> {
     }
 
     /// Returns an iterator over Standard Communities (RFC1997), if any.
-    pub fn communities(
-        &self,
-    ) -> Result<
-        Option<
-            CommunityIter<
-                Octs::Range<'_>,
-                crate::bgp::communities::Community,
-            >,
-        >,
-        ParseError,
-    > {
+    pub fn communities(&self) 
+        -> Result<
+            Option<CommunityIter<Octs::Range<'_>, crate::bgp::communities::Community>>, ParseError> {
         self._communities::<crate::bgp::communities::Community>()
     }
 
     /// Returns an iterator over Standard Communities (RFC1997), if any. The
     /// iterator contains the `HumanReadableCommunity` (with special
     /// Serializer implementation).
-    pub fn human_readable_communities(
-        &self,
-    ) -> Result<
-        Option<
-            CommunityIter<
-                Octs::Range<'_>,
-                crate::bgp::communities::HumanReadableCommunity,
-            >,
-        >,
-        ParseError,
-    > {
+    pub fn human_readable_communities(&self) 
+        -> Result<
+            Option<
+                CommunityIter<Octs::Range<'_>, 
+                crate::bgp::communities::HumanReadableCommunity>>, 
+                ParseError
+            > {
         self._communities::<crate::bgp::communities::HumanReadableCommunity>()
     }
 
     /// Returns an iterator over Extended Communities (RFC4360), if any.
-    pub fn ext_communities(
-        &self,
-    ) -> Result<Option<ExtCommunityIter<Octs::Range<'_>>>, ParseError> {
-        if let Some(WireformatPathAttribute::ExtendedCommunities(epa)) = self
-            .path_attributes()?
-            .get(PathAttributeType::ExtendedCommunities)
-        {
+    pub fn ext_communities(&self)
+        -> Result<Option<ExtCommunityIter<Octs::Range<'_>>>, ParseError>
+    {
+        if let Some(WireformatPathAttribute::ExtendedCommunities(epa)) = self.path_attributes()?.get(PathAttributeType::ExtendedCommunities) {
             let mut p = epa.value_into_parser();
             Ok(Some(ExtCommunityIter::new(p.parse_octets(p.remaining())?)))
         } else {
@@ -810,35 +792,25 @@ impl<Octs: Octets> UpdateMessage<Octs> {
 
     /// Returns an iterator over IPv6 Address Extended Communities (RFC5701),
     /// if any.
-    pub fn ipv6_ext_communities(
-        &self,
-    ) -> Result<Option<Ipv6ExtCommunityIter<Octs::Range<'_>>>, ParseError>
+    pub fn ipv6_ext_communities(&self)
+        -> Result<Option<Ipv6ExtCommunityIter<Octs::Range<'_>>>, ParseError>
     {
-        if let Some(WireformatPathAttribute::Ipv6ExtendedCommunities(epa)) =
-            self.path_attributes()?
-                .get(PathAttributeType::Ipv6ExtendedCommunities)
-        {
+        if let Some(WireformatPathAttribute::Ipv6ExtendedCommunities(epa)) = self.path_attributes()?.get(PathAttributeType::Ipv6ExtendedCommunities) {
             let mut p = epa.value_into_parser();
-            Ok(Some(Ipv6ExtCommunityIter::new(
-                p.parse_octets(p.remaining())?,
-            )))
+            Ok(Some(Ipv6ExtCommunityIter::new(p.parse_octets(p.remaining())?)))
         } else {
             Ok(None)
         }
     }
 
+
     /// Returns an iterator over Large Communities (RFC8092), if any.
-    pub fn large_communities(
-        &self,
-    ) -> Result<Option<LargeCommunityIter<Octs::Range<'_>>>, ParseError> {
-        if let Some(WireformatPathAttribute::LargeCommunities(epa)) = self
-            .path_attributes()?
-            .get(PathAttributeType::LargeCommunities)
-        {
+    pub fn large_communities(&self)
+        -> Result<Option<LargeCommunityIter<Octs::Range<'_>>>, ParseError>
+    {
+        if let Some(WireformatPathAttribute::LargeCommunities(epa)) = self.path_attributes()?.get(PathAttributeType::LargeCommunities) {
             let mut p = epa.value_into_parser();
-            Ok(Some(LargeCommunityIter::new(
-                p.parse_octets(p.remaining())?,
-            )))
+            Ok(Some(LargeCommunityIter::new(p.parse_octets(p.remaining())?)))
         } else {
             Ok(None)
         }
@@ -846,13 +818,11 @@ impl<Octs: Octets> UpdateMessage<Octs> {
 
     // Generic version shouldn't be used directly, users should use the
     // non-generic ones.
-    fn _all_communities<T>(&self) -> Result<Option<Vec<T>>, ParseError>
-    where
-        T: From<[u8; 4]>
-            + From<ExtendedCommunity>
-            + From<LargeCommunity>
-            + From<Ipv6ExtendedCommunity>,
-    {
+    fn _all_communities<T>(&self) -> Result<Option<Vec<T>>, ParseError> 
+        where T: From<[u8; 4]> + 
+            From<ExtendedCommunity> + 
+            From<LargeCommunity> + 
+            From<Ipv6ExtendedCommunity> {
         let mut res: Vec<T> = Vec::new();
 
         if let Some(c) = self._communities()? {
@@ -862,7 +832,9 @@ impl<Octs: Octets> UpdateMessage<Octs> {
             res.append(&mut c.map(|c| c.into()).collect::<Vec<_>>());
         }
         if let Some(c) = self.ipv6_ext_communities()? {
-            res.append(&mut c.map(|c| c.into()).collect::<Vec<_>>());
+            res.append(
+                &mut c.map(|c| c.into()).collect::<Vec<_>>()
+            );
         }
         if let Some(c) = self.large_communities()? {
             res.append(&mut c.map(|c| c.into()).collect::<Vec<_>>());
@@ -878,10 +850,8 @@ impl<Octs: Octets> UpdateMessage<Octs> {
     /// Returns an optional `Vec` containing all conventional, Extended and
     /// Large communities, if any, or None if none of the three appear in the
     /// path attributes of this message.
-    pub fn all_communities(
-        &self,
-    ) -> Result<Option<Vec<crate::bgp::communities::Community>>, ParseError>
-    {
+    pub fn all_communities(&self) -> 
+        Result<Option<Vec<crate::bgp::communities::Community>>, ParseError> {
         self._all_communities::<crate::bgp::communities::Community>()
     }
 
@@ -889,15 +859,12 @@ impl<Octs: Octets> UpdateMessage<Octs> {
     /// Large communities, if any, or None if none of the three appear in the
     /// path attributes of this message, in the form of
     /// `HumanReadableCommunity`.
-    pub fn all_human_readable_communities(
-        &self,
-    ) -> Result<
-        Option<Vec<crate::bgp::communities::HumanReadableCommunity>>,
-        ParseError,
-    > {
+    pub fn all_human_readable_communities(&self) -> 
+        Result<Option<Vec<crate::bgp::communities::HumanReadableCommunity>>, ParseError> {
         self._all_communities::<crate::bgp::communities::HumanReadableCommunity>()
     }
 }
+
 
 impl<Octs: Octets> UpdateMessage<Octs> {
     /// Create an UpdateMessage from an octets sequence.
@@ -908,24 +875,20 @@ impl<Octs: Octets> UpdateMessage<Octs> {
     /// As parsing of BGP UPDATE messages requires stateful information
     /// signalled by the BGP OPEN messages, this function requires a
     /// [`SessionConfig`].
-    pub fn from_octets(
-        octets: Octs,
-        config: SessionConfig,
-    ) -> Result<Self, ParseError> {
+    pub fn from_octets(octets: Octs, config: SessionConfig)
+        -> Result<Self, ParseError>
+    {
         let mut parser = Parser::from_ref(&octets);
-        let UpdateMessage {
-            withdrawals,
-            attributes,
-            announcements,
-            ..
-        } = UpdateMessage::<_>::parse(&mut parser, config)?;
-        let res = Self {
-            octets,
-            withdrawals: (withdrawals.start + 19..withdrawals.end + 19),
-            attributes: (attributes.start + 19..attributes.end + 19),
-            announcements: (announcements.start + 19..announcements.end + 19),
-            session_config: config,
-        };
+        let UpdateMessage{withdrawals, attributes, announcements, ..} = UpdateMessage::<_>::parse(&mut parser, config)?;
+        let res  = 
+            Self {
+                octets,
+                withdrawals: (withdrawals.start +19..withdrawals.end + 19),
+                attributes: (attributes.start +19..attributes.end + 19),
+                announcements: (announcements.start +19..announcements.end + 19),
+                session_config: config
+            }
+        ;
 
         Ok(res)
     }
@@ -936,19 +899,20 @@ impl<Octs: Octets> UpdateMessage<Octs> {
     /// but will not be included in the resulting `Octs`.
     pub fn parse<'a, R: Octets>(
         parser: &mut Parser<'a, R>,
-        config: SessionConfig,
+        config: SessionConfig
     ) -> Result<UpdateMessage<R::Range<'a>>, ParseError>
     where
         R: Octets<Range<'a> = Octs>,
     {
+
         let header = Header::parse(parser)?;
 
         if header.length() < 19 {
-            return Err(ParseError::form_error("message length <19"));
+            return Err(ParseError::form_error("message length <19"))
         }
 
         if header.msg_type() != MsgType::Update {
-            return Err(ParseError::form_error("message not of type UPDATE"));
+            return Err(ParseError::form_error("message not of type UPDATE"))
         }
 
         let start_pos = parser.pos();
@@ -956,14 +920,15 @@ impl<Octs: Octets> UpdateMessage<Octs> {
         let withdrawals_len = parser.parse_u16_be()?;
         let withdrawals_start = parser.pos() - start_pos;
         if withdrawals_len > 0 {
-            let mut wdraw_parser =
-                parser.parse_parser(withdrawals_len.into())?;
+            let mut wdraw_parser = parser.parse_parser(
+                withdrawals_len.into()
+            )?;
             while wdraw_parser.remaining() > 0 {
                 // conventional withdrawals are always IPv4
                 BasicNlri::check(
                     &mut wdraw_parser,
                     config,
-                    AfiSafi::Ipv4Unicast,
+                    AfiSafi::Ipv4Unicast
                 )?;
             }
         }
@@ -974,14 +939,17 @@ impl<Octs: Octets> UpdateMessage<Octs> {
             withdrawals_start..withdrawals_end
         };
 
+
         let attributes_len = parser.parse_u16_be()?;
         let attributes_start = parser.pos() - start_pos;
         if attributes_len > 0 {
-            let pas_parser = parser.parse_parser(attributes_len.into())?;
+            let pas_parser = parser.parse_parser(
+                attributes_len.into()
+            )?;
             // XXX this calls `validate` on every attribute, do we want to
             // error on that level here?
             for pa in PathAttributes::new(pas_parser, config) {
-                pa?;
+               pa?;
             }
         }
         let attributes_end = parser.pos() - start_pos;
@@ -994,7 +962,11 @@ impl<Octs: Octets> UpdateMessage<Octs> {
         let announcements_start = parser.pos() - start_pos;
         while parser.pos() < start_pos + header.length() as usize - 19 {
             // conventional announcements are always IPv4
-            BasicNlri::check(parser, config, AfiSafi::Ipv4Unicast)?;
+            BasicNlri::check(
+                parser,
+                config,
+                AfiSafi::Ipv4Unicast
+            )?;
         }
 
         let end_pos = parser.pos() - start_pos;
@@ -1005,9 +977,10 @@ impl<Octs: Octets> UpdateMessage<Octs> {
             announcements_start..end_pos
         };
 
+
         if end_pos != (header.length() as usize) - 19 {
             return Err(ParseError::form_error(
-                "message length and parsed bytes do not match",
+                "message length and parsed bytes do not match"
             ));
         }
 
@@ -1018,13 +991,15 @@ impl<Octs: Octets> UpdateMessage<Octs> {
             withdrawals,
             attributes,
             announcements,
-            session_config: config,
+            session_config: config
         })
     }
 
     pub fn into_octets(self) -> Octs {
         self.octets
     }
+
+
 }
 //--- Enums for passing config / state ---------------------------------------
 
@@ -1046,6 +1021,7 @@ pub struct SessionConfig {
     addpath_fams: SessionAddpaths,
 }
 
+
 #[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
@@ -1066,11 +1042,10 @@ impl SessionAddpaths {
         self.0[afi_safi as usize]
     }
 
-    fn enabled_addpaths(
-        &self,
-    ) -> impl Iterator<Item = (usize, AddpathDirection)> + '_ {
-        self.0
-            .iter()
+    fn enabled_addpaths(&self)
+        -> impl Iterator<Item = (usize, AddpathDirection)> + '_
+    {
+        self.0.iter()
             .enumerate()
             .filter_map(|(idx, apd)| apd.map(|apd| (idx, apd)))
     }
@@ -1094,6 +1069,7 @@ impl SessionAddpaths {
         }
     }
 }
+
 
 impl SessionConfig {
     pub const fn modern() -> Self {
@@ -1144,22 +1120,21 @@ impl SessionConfig {
     pub fn rx_addpath(&self, fam: AfiSafi) -> bool {
         if let Some(dir) = self.get_addpath(fam) {
             match dir {
-                AddpathDirection::Receive | AddpathDirection::SendReceive => {
-                    true
-                }
-                AddpathDirection::Send => false,
+                AddpathDirection::Receive |
+                    AddpathDirection::SendReceive => true,
+                AddpathDirection::Send => false
             }
         } else {
             false
         }
     }
 
-    pub fn enabled_addpaths(
-        &self,
-    ) -> impl Iterator<Item = (usize, AddpathDirection)> + '_ {
+    pub fn enabled_addpaths(&self)
+        -> impl Iterator<Item = (usize, AddpathDirection)> + '_
+    {
         self.addpath_fams.enabled_addpaths()
     }
-
+    
     pub fn clear_addpaths(&mut self) {
         self.addpath_fams = SessionAddpaths::new()
     }
@@ -1196,21 +1171,17 @@ pub enum FourOctetAsn {
 pub struct CommunityIter<Octs: Octets, T> {
     slice: Octs,
     pos: usize,
-    _t: PhantomData<T>,
+    _t: PhantomData<T>
 }
 
 impl<Octs: Octets, T: From<[u8; 4]>> CommunityIter<Octs, T> {
     fn new(slice: Octs) -> Self {
-        CommunityIter {
-            slice,
-            pos: 0,
-            _t: PhantomData,
-        }
+        CommunityIter { slice, pos: 0, _t: PhantomData }
     }
 
     fn get_community(&mut self) -> T {
         let mut buf = [0u8; 4];
-        buf[..].copy_from_slice(&self.slice.as_ref()[self.pos..self.pos + 4]);
+        buf[..].copy_from_slice(&self.slice.as_ref()[self.pos..self.pos+4]);
         self.pos += 4;
         buf.into()
     }
@@ -1218,10 +1189,10 @@ impl<Octs: Octets, T: From<[u8; 4]>> CommunityIter<Octs, T> {
 
 impl<Octs: Octets, T: From<[u8; 4]>> Iterator for CommunityIter<Octs, T> {
     type Item = T;
-
+    
     fn next(&mut self) -> Option<T> {
         if self.pos == self.slice.as_ref().len() {
-            return None;
+            return None
         }
         Some(self.get_community())
     }
@@ -1240,10 +1211,8 @@ impl<Octs: Octets> ExtCommunityIter<Octs> {
 
     fn get_community(&mut self) -> ExtendedCommunity {
         let res = ExtendedCommunity::from_raw(
-            self.slice.as_ref()[self.pos..self.pos + 8]
-                .try_into()
-                .expect("parsed before"),
-        );
+            self.slice.as_ref()[self.pos..self.pos+8].try_into().expect("parsed before")
+            );
         self.pos += 8;
         res
     }
@@ -1254,7 +1223,7 @@ impl<Octs: Octets> Iterator for ExtCommunityIter<Octs> {
 
     fn next(&mut self) -> Option<ExtendedCommunity> {
         if self.pos == self.slice.as_ref().len() {
-            return None;
+            return None
         }
         Some(self.get_community())
     }
@@ -1273,10 +1242,8 @@ impl<Octs: Octets> Ipv6ExtCommunityIter<Octs> {
 
     fn get_community(&mut self) -> Ipv6ExtendedCommunity {
         let res = Ipv6ExtendedCommunity::from_raw(
-            self.slice.as_ref()[self.pos..self.pos + 20]
-                .try_into()
-                .expect("parsed before"),
-        );
+            self.slice.as_ref()[self.pos..self.pos+20].try_into().expect("parsed before")
+            );
         self.pos += 8;
         res
     }
@@ -1287,7 +1254,7 @@ impl<Octs: Octets> Iterator for Ipv6ExtCommunityIter<Octs> {
 
     fn next(&mut self) -> Option<Ipv6ExtendedCommunity> {
         if self.pos == self.slice.as_ref().len() {
-            return None;
+            return None
         }
         Some(self.get_community())
     }
@@ -1306,10 +1273,8 @@ impl<Octs: Octets> LargeCommunityIter<Octs> {
 
     fn get_community(&mut self) -> LargeCommunity {
         let res = LargeCommunity::from_raw(
-            self.slice.as_ref()[self.pos..self.pos + 12]
-                .try_into()
-                .expect("parsed before"),
-        );
+            self.slice.as_ref()[self.pos..self.pos+12].try_into().expect("parsed before")
+            );
         self.pos += 12;
         res
     }
@@ -1320,7 +1285,7 @@ impl<Octs: Octets> Iterator for LargeCommunityIter<Octs> {
 
     fn next(&mut self) -> Option<LargeCommunity> {
         if self.pos == self.slice.as_ref().len() {
-            return None;
+            return None
         }
         Some(self.get_community())
     }
@@ -1340,11 +1305,7 @@ impl<'a, Octs: Octets> Nlris<'a, Octs> {
         session_config: SessionConfig,
         afi_safi: AfiSafi,
     ) -> Nlris<'a, Octs> {
-        Nlris {
-            parser,
-            session_config,
-            afi_safi,
-        }
+        Nlris { parser, session_config, afi_safi }
     }
 
     pub fn iter(&self) -> NlriIter<'a, Octs> {
@@ -1359,12 +1320,9 @@ impl<'a, Octs: Octets> Nlris<'a, Octs> {
     fn _validate(&self) -> Result<(), ParseError> {
         use AfiSafi::*;
         match self.afi_safi {
-            Ipv4Unicast => {
-                FixedNlriIter::ipv4unicast(&mut self.parser.clone())
-                    .validate()
-            }
+            Ipv4Unicast => FixedNlriIter::ipv4unicast(&mut self.parser.clone()).validate(),
 
-            _ => todo!(),
+            _ => todo!()
         }
     }
 
@@ -1409,38 +1367,56 @@ impl<'a, Octs: Octets> NlriIter<'a, Octs> {
     fn get_nlri(&mut self) -> Result<Nlri<Octs::Range<'a>>, ParseError> {
         use AfiSafi::*;
         let res = match self.afi_safi {
-            Ipv4Unicast | Ipv6Unicast => Nlri::Unicast(BasicNlri::parse(
-                &mut self.parser,
-                self.session_config,
-                self.afi_safi,
-            )?),
+            Ipv4Unicast | Ipv6Unicast => {
+                Nlri::Unicast(BasicNlri::parse(
+                        &mut self.parser,
+                        self.session_config,
+                        self.afi_safi
+
+                )?)
+            }
             Ipv4Multicast | Ipv6Multicast => {
                 Nlri::Multicast(BasicNlri::parse(
-                    &mut self.parser,
-                    self.session_config,
-                    self.afi_safi,
+                        &mut self.parser,
+                        self.session_config,
+                        self.afi_safi,
                 )?)
             }
             Ipv4MplsVpnUnicast | Ipv6MplsVpnUnicast => {
                 Nlri::MplsVpn(MplsVpnNlri::parse(
-                    &mut self.parser,
-                    self.session_config,
-                    self.afi_safi,
+                        &mut self.parser,
+                        self.session_config,
+                        self.afi_safi,
                 )?)
-            }
-            Ipv4MplsUnicast | Ipv6MplsUnicast => Nlri::Mpls(MplsNlri::parse(
-                &mut self.parser,
-                self.session_config,
-                self.afi_safi,
-            )?),
-            L2VpnVpls => Nlri::Vpls(VplsNlri::parse(&mut self.parser)?),
-            Ipv4FlowSpec | Ipv6FlowSpec => Nlri::FlowSpec(
-                FlowSpecNlri::parse(&mut self.parser, self.afi_safi.afi())?,
-            ),
+            },
+            Ipv4MplsUnicast | Ipv6MplsUnicast => {
+                Nlri::Mpls(MplsNlri::parse(
+                        &mut self.parser,
+                        self.session_config,
+                        self.afi_safi,
+                )?)
+            },
+            L2VpnVpls => {
+                Nlri::Vpls(VplsNlri::parse(
+                        &mut self.parser
+                )?)
+            },
+            Ipv4FlowSpec | Ipv6FlowSpec => {
+                Nlri::FlowSpec(FlowSpecNlri::parse(
+                        &mut self.parser,
+                        self.afi_safi.afi()
+                )?)
+            },
             Ipv4RouteTarget => {
-                Nlri::RouteTarget(RouteTargetNlri::parse(&mut self.parser)?)
-            }
-            L2VpnEvpn => Nlri::Evpn(EvpnNlri::parse(&mut self.parser)?),
+                Nlri::RouteTarget(RouteTargetNlri::parse(
+                        &mut self.parser
+                )?)
+            },
+            L2VpnEvpn => {
+                Nlri::Evpn(EvpnNlri::parse(
+                        &mut self.parser
+                )?)
+            },
             /* not a thing anymore since we match on AfiSafi variants instead
              * of arbitrary combinations of (Afi::, Safi::) variants.
             _ => {
@@ -1490,11 +1466,12 @@ impl<'a, Octs: Octets> TryFrom<NlriIter<'a, Octs>>
     type Error = &'static str;
     fn try_from(iter: NlriIter<'a, Octs>) -> Result<Self, Self::Error> {
         if iter.afi_safi() == AfiSafi::Ipv4Unicast {
-            return Ok(FixedNlriIter::new(&mut iter.into_parser()));
+            return Ok(FixedNlriIter::new(&mut iter.into_parser()))
         }
         Err("can not convert into FixedNlriIter for Ipv4Unicast")
     }
 }
+
 
 //--- Tests ------------------------------------------------------------------
 
@@ -1502,17 +1479,20 @@ impl<'a, Octs: Octets> TryFrom<NlriIter<'a, Octs>>
 mod tests {
 
     use super::*;
-    use crate::addr::Prefix;
+    use std::str::FromStr;
+    use std::net::Ipv6Addr;
     use crate::bgp::communities::{
-        ExtendedCommunitySubType, ExtendedCommunityType, StandardCommunity,
+        StandardCommunity,
+        ExtendedCommunityType,
+        ExtendedCommunitySubType,
         Tag, Wellknown,
     };
-    use crate::bgp::message::{
-        nlri::{PathId, RouteDistinguisher},
-        Message,
-    };
-    use std::net::Ipv6Addr;
-    use std::str::FromStr;
+    use crate::bgp::message::{Message, nlri::{
+        PathId, RouteDistinguisher
+    }};
+    use crate::addr::Prefix;
+
+
 
     use bytes::Bytes;
 
@@ -1525,6 +1505,7 @@ mod tests {
         println!();
     }
 
+
     //TODO:
     // X generic
     // - incomplete msg
@@ -1533,7 +1514,7 @@ mod tests {
     //   - attributeset
     // - announcements:
     //   X single conventional
-    //   X multiple conventional
+    //   X multiple conventional 
     //   x bgp-mp
     // - withdrawals
     //   - single conventional
@@ -1549,7 +1530,7 @@ mod tests {
     //   x v4 mpls unicast
     //   - v4 mpls unicast unreach **missing**
     //   - v4 mpls vpn unicast
-    //   - v6 mpls unicast addpath
+    //   - v6 mpls unicast addpath 
     //   X v6 mpls vpn unicast
     //   - multicast **missing
     //   - vpls
@@ -1565,11 +1546,13 @@ mod tests {
     //    as4path
     //
 
+
     #[test]
     fn incomplete_msg() {
         let buf = vec![
-            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-            0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x88, 0x02,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0x00, 0x88, 0x02, 
         ];
         assert!(Message::from_octets(&buf, None).is_err());
     }
@@ -1578,20 +1561,20 @@ mod tests {
     fn conventional() {
         let buf = vec![
             // BGP UPDATE, single conventional announcement, MultiExitDisc
-            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-            0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x37, 0x02, 0x00, 0x00, 0x00,
-            0x1b, 0x40, 0x01, 0x01, 0x00, 0x40, 0x02, 0x06, 0x02, 0x01, 0x00,
-            0x01, 0x00, 0x00, 0x40, 0x03, 0x04, 0x0a, 0xff, 0x00, 0x65, 0x80,
-            0x04, 0x04, 0x00, 0x00, 0x00, 0x01, 0x20, 0x0a, 0x0a, 0x0a, 0x02,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x37, 0x02,
+            0x00, 0x00, 0x00, 0x1b, 0x40, 0x01, 0x01, 0x00, 0x40, 0x02,
+            0x06, 0x02, 0x01, 0x00, 0x01, 0x00, 0x00, 0x40, 0x03, 0x04,
+            0x0a, 0xff, 0x00, 0x65, 0x80, 0x04, 0x04, 0x00, 0x00, 0x00,
+            0x01, 0x20, 0x0a, 0x0a, 0x0a, 0x02
         ];
 
         //let update: UpdateMessage<_> = parse_msg(&buf);
         let bytes = Bytes::from(buf);
-        let update: UpdateMessage<_> =
-            Message::from_octets(bytes, Some(SessionConfig::modern()))
-                .unwrap()
-                .try_into()
-                .unwrap();
+        let update: UpdateMessage<_> = Message::from_octets(
+            bytes,
+            Some(SessionConfig::modern())
+            ).unwrap().try_into().unwrap();
 
         assert_eq!(update.length(), 55);
         assert_eq!(update.total_path_attribute_len(), 27);
@@ -1633,12 +1616,12 @@ mod tests {
         assert_eq!(
             update.conventional_next_hop().unwrap(),
             Some(NextHop::Unicast(Ipv4Addr::new(10, 255, 0, 101).into()))
-        );
+            );
 
         let pa4 = pa_iter.next().unwrap().unwrap();
         assert_eq!(pa4.type_code(), PathAttributeType::MultiExitDisc);
         assert_eq!(pa4.flags(), 0x80.into());
-        assert!(pa4.flags().is_optional());
+        assert!( pa4.flags().is_optional());
         assert!(!pa4.flags().is_transitive());
         assert!(!pa4.flags().is_partial());
         assert!(!pa4.flags().is_extended_length());
@@ -1650,10 +1633,7 @@ mod tests {
 
         let mut nlri_iter = update.announcements().unwrap();
         let nlri1 = nlri_iter.next().unwrap();
-        assert_eq!(
-            nlri1.unwrap(),
-            Nlri::unicast_from_str("10.10.10.2/32").unwrap()
-        );
+        assert_eq!(nlri1.unwrap(), Nlri::unicast_from_str("10.10.10.2/32").unwrap());
         assert!(nlri_iter.next().is_none());
     }
 
@@ -1661,47 +1641,53 @@ mod tests {
     fn conventional_parsed() {
         let buf = vec![
             // Two BGP UPDATEs
-            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-            0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x37, 0x02, 0x00, 0x00, 0x00,
-            0x1b, 0x40, 0x01, 0x01, 0x00, 0x40, 0x02, 0x06, 0x02, 0x01, 0x00,
-            0x01, 0x00, 0x00, 0x40, 0x03, 0x04, 0x0a, 0xff, 0x00, 0x65, 0x80,
-            0x04, 0x04, 0x00, 0x00, 0x00, 0x01, 0x20, 0x0a, 0x0a, 0x0a, 0x02,
-            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-            0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x3c, 0x02, 0x00, 0x00, 0x00,
-            0x1b, 0x40, 0x01, 0x01, 0x00, 0x40, 0x02, 0x06, 0x02, 0x01, 0x00,
-            0x01, 0x00, 0x00, 0x40, 0x03, 0x04, 0x0a, 0xff, 0x00, 0x65, 0x80,
-            0x04, 0x04, 0x00, 0x00, 0x07, 0x6c, 0x20, 0x0a, 0x0a, 0x0a, 0x09,
-            0x1e, 0xc0, 0xa8, 0x61, 0x00,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x37, 0x02,
+            0x00, 0x00, 0x00, 0x1b, 0x40, 0x01, 0x01, 0x00, 0x40, 0x02,
+            0x06, 0x02, 0x01, 0x00, 0x01, 0x00, 0x00, 0x40, 0x03, 0x04,
+            0x0a, 0xff, 0x00, 0x65, 0x80, 0x04, 0x04, 0x00, 0x00, 0x00,
+            0x01, 0x20, 0x0a, 0x0a, 0x0a, 0x02,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0x00, 0x3c, 0x02, 0x00, 0x00, 0x00, 0x1b, 0x40,
+            0x01, 0x01, 0x00, 0x40, 0x02, 0x06, 0x02, 0x01,
+            0x00, 0x01, 0x00, 0x00, 0x40, 0x03, 0x04, 0x0a,
+            0xff, 0x00, 0x65, 0x80, 0x04, 0x04, 0x00, 0x00,
+            0x07, 0x6c, 0x20, 0x0a, 0x0a, 0x0a, 0x09, 0x1e,
+            0xc0, 0xa8, 0x61, 0x00
         ];
 
         let bytes = Bytes::from(buf);
         let mut parser = Parser::from_ref(&bytes);
-        let update =
-            UpdateMessage::parse(&mut parser, SessionConfig::modern())
-                .unwrap();
+        let update = UpdateMessage::parse(
+            &mut parser,
+            SessionConfig::modern()
+        ).unwrap();
 
         update.print_pcap();
         assert_eq!(update.length(), 55);
         assert_eq!(update.total_path_attribute_len(), 27);
 
-        let update =
-            UpdateMessage::parse(&mut parser, SessionConfig::modern())
-                .unwrap();
+        let update = UpdateMessage::parse(
+            &mut parser,
+            SessionConfig::modern()
+        ).unwrap();
 
         update.print_pcap();
         assert_eq!(update.total_path_attribute_len(), 27);
         assert_eq!(update.announcements().unwrap().count(), 2);
+        
     }
 
-    use memmap2::Mmap;
     use std::fs::File;
+    use memmap2::Mmap;
 
     #[test]
     #[ignore]
     fn parse_bulk() {
         let filename = "examples/raw_bgp_updates";
         let file = File::open(filename).unwrap();
-        let mmap = unsafe { Mmap::map(&file).unwrap() };
+        let mmap = unsafe { Mmap::map(&file).unwrap()  };
         let fh = &mmap[..];
         let mut parser = Parser::from_ref(&fh);
 
@@ -1710,8 +1696,7 @@ mod tests {
 
         while parser.remaining() > 0 && n < MAX {
             if let Err(e) = UpdateMessage::<_>::parse(
-                &mut parser,
-                SessionConfig::modern(),
+                &mut parser, SessionConfig::modern()
             ) {
                 eprintln!("failed to parse: {e}");
             }
@@ -1722,32 +1707,33 @@ mod tests {
         //dbg!(parser);
     }
 
+
     #[test]
     fn conventional_multiple_nlri() {
         let buf = vec![
-            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-            0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x3c, 0x02, 0x00, 0x00, 0x00,
-            0x1b, 0x40, 0x01, 0x01, 0x00, 0x40, 0x02, 0x06, 0x02, 0x01, 0x00,
-            0x01, 0x00, 0x00, 0x40, 0x03, 0x04, 0x0a, 0xff, 0x00, 0x65, 0x80,
-            0x04, 0x04, 0x00, 0x00, 0x07, 0x6c, 0x20, 0x0a, 0x0a, 0x0a, 0x09,
-            0x1e, 0xc0, 0xa8, 0x61, 0x00,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0x00, 0x3c, 0x02, 0x00, 0x00, 0x00, 0x1b, 0x40,
+            0x01, 0x01, 0x00, 0x40, 0x02, 0x06, 0x02, 0x01,
+            0x00, 0x01, 0x00, 0x00, 0x40, 0x03, 0x04, 0x0a,
+            0xff, 0x00, 0x65, 0x80, 0x04, 0x04, 0x00, 0x00,
+            0x07, 0x6c, 0x20, 0x0a, 0x0a, 0x0a, 0x09, 0x1e,
+            0xc0, 0xa8, 0x61, 0x00
         ];
 
         //let update: UpdateMessage<_> = parse_msg(&buf);
-        let update: UpdateMessage<_> =
-            Message::from_octets(&buf, Some(SessionConfig::modern()))
-                .unwrap()
-                .try_into()
-                .unwrap();
+        let update: UpdateMessage<_> = Message::from_octets(
+            &buf,
+            Some(SessionConfig::modern())
+            ).unwrap().try_into().unwrap();
 
         assert_eq!(update.total_path_attribute_len(), 27);
         assert_eq!(update.announcements().unwrap().count(), 2);
         let prefixes = ["10.10.10.9/32", "192.168.97.0/30"]
             .map(|p| Nlri::unicast_from_str(p).unwrap());
 
-        assert!(prefixes
-            .into_iter()
-            .eq(update.announcements().unwrap().map(|n| n.unwrap())));
+        assert!(prefixes.into_iter().eq(update.announcements().unwrap().map(|n| n.unwrap())));
+
     }
 
     #[test]
@@ -1755,30 +1741,35 @@ mod tests {
         // BGP UPDATE message containing MP_REACH_NLRI path attribute,
         // comprising 5 IPv6 NLRIs
         let buf = vec![
-            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-            0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x88, 0x02, 0x00, 0x00, 0x00,
-            0x71, 0x80, 0x0e, 0x5a, 0x00, 0x02, 0x01, 0x20, 0xfc, 0x00, 0x00,
-            0x10, 0x00, 0x01, 0x00, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x10, 0xfe, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x80, 0xfc, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x10, 0x40, 0x20, 0x01, 0x0d, 0xb8, 0xff, 0xff, 0x00,
-            0x00, 0x40, 0x20, 0x01, 0x0d, 0xb8, 0xff, 0xff, 0x00, 0x01, 0x40,
-            0x20, 0x01, 0x0d, 0xb8, 0xff, 0xff, 0x00, 0x02, 0x40, 0x20, 0x01,
-            0x0d, 0xb8, 0xff, 0xff, 0x00, 0x03, 0x40, 0x01, 0x01, 0x00, 0x40,
-            0x02, 0x06, 0x02, 0x01, 0x00, 0x00, 0x00, 0xc8, 0x80, 0x04, 0x04,
-            0x00, 0x00, 0x00, 0x00,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0x00, 0x88, 0x02, 0x00, 0x00, 0x00, 0x71, 0x80,
+            0x0e, 0x5a, 0x00, 0x02, 0x01, 0x20, 0xfc, 0x00,
+            0x00, 0x10, 0x00, 0x01, 0x00, 0x10, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0xfe, 0x80,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x80,
+            0xfc, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10,
+            0x40, 0x20, 0x01, 0x0d, 0xb8, 0xff, 0xff, 0x00,
+            0x00, 0x40, 0x20, 0x01, 0x0d, 0xb8, 0xff, 0xff,
+            0x00, 0x01, 0x40, 0x20, 0x01, 0x0d, 0xb8, 0xff,
+            0xff, 0x00, 0x02, 0x40, 0x20, 0x01, 0x0d, 0xb8,
+            0xff, 0xff, 0x00, 0x03, 0x40, 0x01, 0x01, 0x00,
+            0x40, 0x02, 0x06, 0x02, 0x01, 0x00, 0x00, 0x00,
+            0xc8, 0x80, 0x04, 0x04, 0x00, 0x00, 0x00, 0x00
         ];
-        let update =
-            UpdateMessage::from_octets(&buf, SessionConfig::modern())
-                .unwrap();
+        let update = UpdateMessage::from_octets(
+            &buf,
+            SessionConfig::modern()
+        ).unwrap();
 
         assert_eq!(update.withdrawn_routes_len(), 0);
         assert_eq!(update.total_path_attribute_len(), 113);
 
         assert!(!update.has_conventional_nlri());
         assert!(update.has_mp_nlri().unwrap());
-
+        
         let nlri_iter = update.announcements().unwrap();
         assert_eq!(nlri_iter.count(), 5);
 
@@ -1788,52 +1779,52 @@ mod tests {
             "2001:db8:ffff:1::/64",
             "2001:db8:ffff:2::/64",
             "2001:db8:ffff:3::/64",
-        ]
-        .map(|p| Nlri::unicast_from_str(p).unwrap());
+        ].map(|p| Nlri::unicast_from_str(p).unwrap());
 
-        assert!(prefixes
-            .into_iter()
-            .eq(update.announcements().unwrap().map(|n| n.unwrap())));
+        assert!(prefixes.into_iter().eq(
+                update.announcements().unwrap().map(|n| n.unwrap())
+        ));
 
-        assert!(prefixes
-            .into_iter()
-            .eq(update.announcements_vec().unwrap().into_iter()));
+        assert!(prefixes.into_iter().eq(
+                update.announcements_vec().unwrap().into_iter()
+        ));
 
-        assert!(update
-            .unicast_announcements()
-            .unwrap()
-            .map(|b| Nlri::<&[u8]>::Unicast(b.unwrap()))
-            .eq(prefixes));
+        assert!(update.unicast_announcements().unwrap()
+                .map(|b| Nlri::<&[u8]>::Unicast(b.unwrap()))
+                .eq(prefixes)
+        );
 
-        assert!(update
-            .unicast_announcements_vec()
-            .unwrap()
-            .into_iter()
-            .map(Nlri::<&[u8]>::Unicast)
-            .eq(prefixes));
+        assert!(
+            update.unicast_announcements_vec().unwrap().into_iter()
+                .map(Nlri::<&[u8]>::Unicast)
+                .eq(prefixes)
+        );
 
         assert!(update.find_next_hop(AfiSafi::Ipv6Multicast).is_err());
+
     }
 
     #[test]
     fn conventional_withdrawals() {
         // BGP UPDATE with 12 conventional withdrawals
         let buf = vec![
-            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-            0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x53, 0x02, 0x00, 0x3c, 0x20,
-            0x0a, 0x0a, 0x0a, 0x0a, 0x1e, 0xc0, 0xa8, 0x00, 0x1c, 0x20, 0x0a,
-            0x0a, 0x0a, 0x65, 0x1e, 0xc0, 0xa8, 0x00, 0x18, 0x20, 0x0a, 0x0a,
-            0x0a, 0x09, 0x20, 0x0a, 0x0a, 0x0a, 0x08, 0x1e, 0xc0, 0xa8, 0x61,
-            0x00, 0x20, 0x0a, 0x0a, 0x0a, 0x66, 0x1e, 0xc0, 0xa8, 0x00, 0x20,
-            0x1e, 0xc0, 0xa8, 0x62, 0x00, 0x1e, 0xc0, 0xa8, 0x00, 0x10, 0x1e,
-            0xc0, 0xa8, 0x63, 0x00, 0x00, 0x00,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0x00, 0x53, 0x02, 0x00, 0x3c, 0x20, 0x0a, 0x0a,
+            0x0a, 0x0a, 0x1e, 0xc0, 0xa8, 0x00, 0x1c, 0x20,
+            0x0a, 0x0a, 0x0a, 0x65, 0x1e, 0xc0, 0xa8, 0x00,
+            0x18, 0x20, 0x0a, 0x0a, 0x0a, 0x09, 0x20, 0x0a,
+            0x0a, 0x0a, 0x08, 0x1e, 0xc0, 0xa8, 0x61, 0x00,
+            0x20, 0x0a, 0x0a, 0x0a, 0x66, 0x1e, 0xc0, 0xa8,
+            0x00, 0x20, 0x1e, 0xc0, 0xa8, 0x62, 0x00, 0x1e,
+            0xc0, 0xa8, 0x00, 0x10, 0x1e, 0xc0, 0xa8, 0x63,
+            0x00, 0x00, 0x00
         ];
         //let update: UpdateMessage<_> = parse_msg(&buf);
-        let update: UpdateMessage<_> =
-            Message::from_octets(&buf, Some(SessionConfig::modern()))
-                .unwrap()
-                .try_into()
-                .unwrap();
+        let update: UpdateMessage<_> = Message::from_octets(
+            &buf,
+            Some(SessionConfig::modern())
+            ).unwrap().try_into().unwrap();
 
         assert_eq!(update.withdrawals().unwrap().count(), 12);
 
@@ -1850,8 +1841,7 @@ mod tests {
             "192.168.98.0/30",
             "192.168.0.16/30",
             "192.168.99.0/30",
-        ]
-        .map(|w| Ok(Nlri::unicast_from_str(w).unwrap()));
+        ].map(|w| Ok(Nlri::unicast_from_str(w).unwrap()));
 
         assert!(ws.into_iter().eq(update.withdrawals().unwrap()));
     }
@@ -1860,19 +1850,21 @@ mod tests {
     fn multiple_mp_unreach() {
         // BGP UPDATE with 4 MP_UNREACH_NLRI
         let buf = vec![
-            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-            0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x41, 0x02, 0x00, 0x00, 0x00,
-            0x2a, 0x80, 0x0f, 0x27, 0x00, 0x02, 0x01, 0x40, 0x20, 0x01, 0x0d,
-            0xb8, 0xff, 0xff, 0x00, 0x00, 0x40, 0x20, 0x01, 0x0d, 0xb8, 0xff,
-            0xff, 0x00, 0x01, 0x40, 0x20, 0x01, 0x0d, 0xb8, 0xff, 0xff, 0x00,
-            0x02, 0x40, 0x20, 0x01, 0x0d, 0xb8, 0xff, 0xff, 0x00, 0x03,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0x00, 0x41, 0x02, 0x00, 0x00, 0x00, 0x2a, 0x80,
+            0x0f, 0x27, 0x00, 0x02, 0x01, 0x40, 0x20, 0x01,
+            0x0d, 0xb8, 0xff, 0xff, 0x00, 0x00, 0x40, 0x20,
+            0x01, 0x0d, 0xb8, 0xff, 0xff, 0x00, 0x01, 0x40,
+            0x20, 0x01, 0x0d, 0xb8, 0xff, 0xff, 0x00, 0x02,
+            0x40, 0x20, 0x01, 0x0d, 0xb8, 0xff, 0xff, 0x00,
+            0x03
         ];
         //let update: UpdateMessage<_> = parse_msg(&buf);
-        let update: UpdateMessage<_> =
-            Message::from_octets(&buf, Some(SessionConfig::modern()))
-                .unwrap()
-                .try_into()
-                .unwrap();
+        let update: UpdateMessage<_> = Message::from_octets(
+            &buf,
+            Some(SessionConfig::modern())
+            ).unwrap().try_into().unwrap();
 
         assert_eq!(update.withdrawals().unwrap().count(), 4);
 
@@ -1881,8 +1873,7 @@ mod tests {
             "2001:db8:ffff:1::/64",
             "2001:db8:ffff:2::/64",
             "2001:db8:ffff:3::/64",
-        ]
-        .map(|w| Ok(Nlri::unicast_from_str(w).unwrap()));
+        ].map(|w| Ok(Nlri::unicast_from_str(w).unwrap()));
         assert!(ws.into_iter().eq(update.withdrawals().unwrap()));
     }
 
@@ -1893,22 +1884,24 @@ mod tests {
         // BGP UPDATE with 5 conventional announcements, MULTI_EXIT_DISC
         // and LOCAL_PREF path attributes
         let buf = vec![
-            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-            0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x60, 0x02, 0x00, 0x00, 0x00,
-            0x30, 0x40, 0x01, 0x01, 0x00, 0x40, 0x02, 0x14, 0x03, 0x01, 0x00,
-            0x00, 0xfd, 0xea, 0x02, 0x03, 0x00, 0x00, 0x01, 0x90, 0x00, 0x00,
-            0x01, 0x2c, 0x00, 0x00, 0x01, 0xf4, 0x40, 0x03, 0x04, 0x0a, 0x04,
-            0x05, 0x05, 0x80, 0x04, 0x04, 0x00, 0x00, 0x00, 0x00, 0x40, 0x05,
-            0x04, 0x00, 0x00, 0x00, 0x64, 0x20, 0x0a, 0x00, 0x00, 0x09, 0x1a,
-            0xc6, 0x33, 0x64, 0x00, 0x1a, 0xc6, 0x33, 0x64, 0x40, 0x1a, 0xc6,
-            0x33, 0x64, 0x80, 0x1a, 0xc6, 0x33, 0x64, 0xc0,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0x00, 0x60, 0x02, 0x00, 0x00, 0x00, 0x30, 0x40,
+            0x01, 0x01, 0x00, 0x40, 0x02, 0x14, 0x03, 0x01,
+            0x00, 0x00, 0xfd, 0xea, 0x02, 0x03, 0x00, 0x00,
+            0x01, 0x90, 0x00, 0x00, 0x01, 0x2c, 0x00, 0x00,
+            0x01, 0xf4, 0x40, 0x03, 0x04, 0x0a, 0x04, 0x05,
+            0x05, 0x80, 0x04, 0x04, 0x00, 0x00, 0x00, 0x00,
+            0x40, 0x05, 0x04, 0x00, 0x00, 0x00, 0x64, 0x20,
+            0x0a, 0x00, 0x00, 0x09, 0x1a, 0xc6, 0x33, 0x64,
+            0x00, 0x1a, 0xc6, 0x33, 0x64, 0x40, 0x1a, 0xc6,
+            0x33, 0x64, 0x80, 0x1a, 0xc6, 0x33, 0x64, 0xc0
         ];
         //let update: UpdateMessage<_> = parse_msg(&buf);
-        let update: UpdateMessage<_> =
-            Message::from_octets(&buf, Some(SessionConfig::modern()))
-                .unwrap()
-                .try_into()
-                .unwrap();
+        let update: UpdateMessage<_> = Message::from_octets(
+            &buf,
+            Some(SessionConfig::modern())
+            ).unwrap().try_into().unwrap();
         assert_eq!(update.multi_exit_disc().unwrap(), Some(MultiExitDisc(0)));
         assert_eq!(update.local_pref().unwrap(), Some(LocalPref(100)));
     }
@@ -1917,20 +1910,21 @@ mod tests {
     fn atomic_aggregate() {
         // BGP UPDATE with AGGREGATOR and ATOMIC_AGGREGATE
         let buf = vec![
-            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-            0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x44, 0x02, 0x00, 0x00, 0x00,
-            0x29, 0x40, 0x01, 0x01, 0x00, 0x40, 0x02, 0x06, 0x02, 0x01, 0x00,
-            0x00, 0x00, 0x65, 0xc0, 0x07, 0x08, 0x00, 0x00, 0x00, 0x65, 0xc6,
-            0x33, 0x64, 0x01, 0x40, 0x06, 0x00, 0x40, 0x03, 0x04, 0x0a, 0x01,
-            0x02, 0x01, 0x80, 0x04, 0x04, 0x00, 0x00, 0x00, 0x00, 0x18, 0xc6,
-            0x33, 0x64,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0x00, 0x44, 0x02, 0x00, 0x00, 0x00, 0x29, 0x40,
+            0x01, 0x01, 0x00, 0x40, 0x02, 0x06, 0x02, 0x01,
+            0x00, 0x00, 0x00, 0x65, 0xc0, 0x07, 0x08, 0x00,
+            0x00, 0x00, 0x65, 0xc6, 0x33, 0x64, 0x01, 0x40,
+            0x06, 0x00, 0x40, 0x03, 0x04, 0x0a, 0x01, 0x02,
+            0x01, 0x80, 0x04, 0x04, 0x00, 0x00, 0x00, 0x00,
+            0x18, 0xc6, 0x33, 0x64
         ];
         //let update: UpdateMessage<_> = parse_msg(&buf);
-        let update: UpdateMessage<_> =
-            Message::from_octets(&buf, Some(SessionConfig::modern()))
-                .unwrap()
-                .try_into()
-                .unwrap();
+        let update: UpdateMessage<_> = Message::from_octets(
+            &buf,
+            Some(SessionConfig::modern())
+            ).unwrap().try_into().unwrap();
         let aggr = update.aggregator().unwrap();
 
         assert!(update.is_atomic_aggregate().unwrap());
@@ -1938,7 +1932,7 @@ mod tests {
         assert_eq!(
             aggr.unwrap().address(),
             Ipv4Addr::from_str("198.51.100.1").unwrap()
-        );
+            );
     }
 
     #[test]
@@ -1947,29 +1941,29 @@ mod tests {
         // SEQUENCE of length 10. First four in AS_PATH are actual ASNs,
         // last six are AS_TRANS.
         let buf = vec![
-            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-            0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x6e, 0x02, 0x00, 0x00, 0x00,
-            0x53, 0x40, 0x01, 0x01, 0x00, 0x50, 0x02, 0x00, 0x16, 0x02, 0x0a,
-            0xfb, 0xf0, 0xfb, 0xf1, 0xfb, 0xf2, 0xfb, 0xf3, 0x5b, 0xa0, 0x5b,
-            0xa0, 0x5b, 0xa0, 0x5b, 0xa0, 0x5b, 0xa0, 0x5b, 0xa0, 0x40, 0x03,
-            0x04, 0xc0, 0xa8, 0x01, 0x01, 0xd0, 0x11, 0x00, 0x2a, 0x02, 0x0a,
-            0x00, 0x00, 0xfb, 0xf0, 0x00, 0x00, 0xfb, 0xf1, 0x00, 0x00, 0xfb,
-            0xf2, 0x00, 0x00, 0xfb, 0xf3, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
-            0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00,
-            0x01, 0x00, 0x01, 0x00, 0x01, 0x00, 0x0a, 0x16, 0x0a, 0x01, 0x04,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0x00, 0x6e, 0x02, 0x00, 0x00, 0x00, 0x53, 0x40,
+            0x01, 0x01, 0x00, 0x50, 0x02, 0x00, 0x16, 0x02,
+            0x0a, 0xfb, 0xf0, 0xfb, 0xf1, 0xfb, 0xf2, 0xfb,
+            0xf3, 0x5b, 0xa0, 0x5b, 0xa0, 0x5b, 0xa0, 0x5b,
+            0xa0, 0x5b, 0xa0, 0x5b, 0xa0, 0x40, 0x03, 0x04,
+            0xc0, 0xa8, 0x01, 0x01, 0xd0, 0x11, 0x00, 0x2a,
+            0x02, 0x0a, 0x00, 0x00, 0xfb, 0xf0, 0x00, 0x00,
+            0xfb, 0xf1, 0x00, 0x00, 0xfb, 0xf2, 0x00, 0x00,
+            0xfb, 0xf3, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+            0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+            0x00, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x01,
+            0x00, 0x0a, 0x16, 0x0a, 0x01, 0x04
         ];
 
         let sc = SessionConfig::legacy();
         let update: UpdateMessage<_> = Message::from_octets(&buf, Some(sc))
-            .unwrap()
-            .try_into()
-            .unwrap();
+            .unwrap().try_into().unwrap();
 
-        update.path_attributes().iter(); //.count();
-        if let Some(Ok(aspath)) =
-            update.path_attributes().unwrap().find(|pa| {
-                pa.as_ref().unwrap().type_code() == PathAttributeType::AsPath
-            })
+        update.path_attributes().iter();//.count();
+        if let Some(Ok(aspath)) = update.path_attributes().unwrap()
+            .find(|pa| pa.as_ref().unwrap().type_code() == PathAttributeType::AsPath)
         {
             assert_eq!(aspath.flags(), 0x50.into());
             assert!(aspath.flags().is_transitive());
@@ -1980,10 +1974,8 @@ mod tests {
             panic!("ASPATH path attribute not found")
         }
 
-        if let Some(Ok(as4path)) =
-            update.path_attributes().unwrap().find(|pa| {
-                pa.as_ref().unwrap().type_code() == PathAttributeType::As4Path
-            })
+        if let Some(Ok(as4path)) = update.path_attributes().unwrap()
+            .find(|pa| pa.as_ref().unwrap().type_code() == PathAttributeType::As4Path)
         {
             assert_eq!(as4path.flags(), 0xd0.into());
             assert_eq!(as4path.length(), 42);
@@ -1995,25 +1987,16 @@ mod tests {
         assert_eq!(
             update.aspath().unwrap().unwrap().hops().collect::<Vec<_>>(),
             AsPath::vec_from_asns([
-                0xfbf0, 0xfbf1, 0xfbf2, 0xfbf3, 0x5ba0, 0x5ba0, 0x5ba0,
-                0x5ba0, 0x5ba0, 0x5ba0
-            ])
-            .hops()
-            .collect::<Vec<_>>(),
+                0xfbf0, 0xfbf1, 0xfbf2, 0xfbf3, 0x5ba0, 0x5ba0,
+                0x5ba0, 0x5ba0, 0x5ba0, 0x5ba0
+            ]).hops().collect::<Vec<_>>(),
         );
         assert_eq!(
-            update
-                .as4path()
-                .unwrap()
-                .unwrap()
-                .hops()
-                .collect::<Vec<_>>(),
+            update.as4path().unwrap().unwrap().hops().collect::<Vec<_>>(),
             AsPath::vec_from_asns([
-                0xfbf0, 0xfbf1, 0xfbf2, 0xfbf3, 0x10000, 0x10000, 0x10000,
-                0x10000, 0x10001, 0x1000a,
-            ])
-            .hops()
-            .collect::<Vec<_>>(),
+                0xfbf0, 0xfbf1, 0xfbf2, 0xfbf3, 0x10000, 0x10000,
+                0x10000, 0x10000, 0x10001, 0x1000a,
+            ]).hops().collect::<Vec<_>>(),
         );
     }
 
@@ -2024,44 +2007,49 @@ mod tests {
         // BGP UPDATE with 9 path attributes for 1 NLRI with Path Id,
         // includes both normal communities and extended communities.
         let buf = vec![
-            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-            0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x82, 0x02, 0x00, 0x00, 0x00,
-            0x62, 0x40, 0x01, 0x01, 0x00, 0x40, 0x02, 0x16, 0x02, 0x05, 0x00,
-            0x00, 0x00, 0x65, 0x00, 0x00, 0x01, 0x2d, 0x00, 0x00, 0x01, 0x2c,
-            0x00, 0x00, 0x02, 0x58, 0x00, 0x00, 0x02, 0xbc, 0x40, 0x03, 0x04,
-            0x0a, 0x01, 0x03, 0x01, 0x80, 0x04, 0x04, 0x00, 0x00, 0x00, 0x00,
-            0x40, 0x05, 0x04, 0x00, 0x00, 0x00, 0x64, 0xc0, 0x08, 0x0c, 0x00,
-            0x2a, 0x02, 0x06, 0xff, 0xff, 0xff, 0x01, 0xff, 0xff, 0xff, 0x03,
-            0xc0, 0x10, 0x10, 0x00, 0x06, 0x00, 0x00, 0x44, 0x9c, 0x40, 0x00,
-            0x40, 0x04, 0x00, 0x00, 0x44, 0x9c, 0x40, 0x00, 0x80, 0x0a, 0x04,
-            0x0a, 0x00, 0x00, 0x04, 0x80, 0x09, 0x04, 0x0a, 0x00, 0x00, 0x03,
-            0x00, 0x00, 0x00, 0x01, 0x19, 0xc6, 0x33, 0x64, 0x00,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0x00, 0x82, 0x02, 0x00, 0x00, 0x00, 0x62, 0x40,
+            0x01, 0x01, 0x00, 0x40, 0x02, 0x16, 0x02, 0x05,
+            0x00, 0x00, 0x00, 0x65, 0x00, 0x00, 0x01, 0x2d,
+            0x00, 0x00, 0x01, 0x2c, 0x00, 0x00, 0x02, 0x58,
+            0x00, 0x00, 0x02, 0xbc, 0x40, 0x03, 0x04, 0x0a,
+            0x01, 0x03, 0x01, 0x80, 0x04, 0x04, 0x00, 0x00,
+            0x00, 0x00, 0x40, 0x05, 0x04, 0x00, 0x00, 0x00,
+            0x64, 0xc0, 0x08, 0x0c, 0x00, 0x2a, 0x02, 0x06,
+            0xff, 0xff, 0xff, 0x01, 0xff, 0xff, 0xff, 0x03,
+            0xc0, 0x10, 0x10, 0x00, 0x06, 0x00, 0x00, 0x44,
+            0x9c, 0x40, 0x00, 0x40, 0x04, 0x00, 0x00, 0x44,
+            0x9c, 0x40, 0x00, 0x80, 0x0a, 0x04, 0x0a, 0x00,
+            0x00, 0x04, 0x80, 0x09, 0x04, 0x0a, 0x00, 0x00,
+            0x03, 0x00, 0x00, 0x00, 0x01, 0x19, 0xc6, 0x33,
+            0x64, 0x00
         ];
         let mut sc = SessionConfig::modern();
         sc.add_addpath(AfiSafi::Ipv4Unicast, AddpathDirection::Receive);
         let upd: UpdateMessage<_> = Message::from_octets(&buf, Some(sc))
-            .unwrap()
-            .try_into()
-            .unwrap();
+            .unwrap().try_into().unwrap();
 
         let nlri1 = upd.announcements().unwrap().next().unwrap();
         assert_eq!(
             nlri1.unwrap(),
             Nlri::<&[u8]>::Unicast(BasicNlri::with_path_id(
-                Prefix::from_str("198.51.100.0/25").unwrap(),
-                PathId::from_u32(1)
-            ))
+                    Prefix::from_str("198.51.100.0/25").unwrap(),
+                    PathId::from_u32(1)
+                    ))
         );
 
         assert!(upd.communities().unwrap().is_some());
-        for c in upd.communities().unwrap().unwrap() {
+        for c in upd.communities().unwrap().unwrap() { 
             println!("{:?}", c);
         }
-        assert!(upd.communities().unwrap().unwrap().eq([
-            StandardCommunity::new(42.into(), Tag::new(518)).into(),
-            Wellknown::NoExport.into(),
-            Wellknown::NoExportSubconfed.into()
-        ]));
+        assert!(upd.communities().unwrap().unwrap()
+            .eq([
+                StandardCommunity::new(42.into(), Tag::new(518)).into(),
+                Wellknown::NoExport.into(),
+                Wellknown::NoExportSubconfed.into()
+            ])
+        );
 
         assert!(upd.ext_communities().unwrap().is_some());
         let mut ext_comms = upd.ext_communities().unwrap().unwrap();
@@ -2070,11 +2058,9 @@ mod tests {
 
         assert_eq!(
             ext_comm1.types(),
-            (
-                ExtendedCommunityType::TransitiveTwoOctetSpecific,
-                ExtendedCommunitySubType::OtherSubType(0x06)
-            )
-        );
+            (ExtendedCommunityType::TransitiveTwoOctetSpecific,
+             ExtendedCommunitySubType::OtherSubType(0x06))
+            );
 
         use crate::asn::Asn16;
         assert_eq!(ext_comm1.as2(), Some(Asn16::from_u16(0)));
@@ -2083,14 +2069,13 @@ mod tests {
         assert!(!ext_comm2.is_transitive());
         assert_eq!(
             ext_comm2.types(),
-            (
-                ExtendedCommunityType::NonTransitiveTwoOctetSpecific,
-                ExtendedCommunitySubType::OtherSubType(0x04)
-            )
-        );
+            (ExtendedCommunityType::NonTransitiveTwoOctetSpecific,
+             ExtendedCommunitySubType::OtherSubType(0x04))
+            );
         assert_eq!(ext_comm2.as2(), Some(Asn16::from_u16(0)));
 
         assert!(ext_comms.next().is_none());
+
     }
 
     #[test]
@@ -2098,20 +2083,22 @@ mod tests {
         // BGP UPDATE with several path attributes, including Large
         // Communities with three communities: 65536:1:1, 65536:1:2, 65536:1:3
         let buf = vec![
-            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-            0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x57, 0x02, 0x00, 0x00, 0x00,
-            0x3b, 0x40, 0x01, 0x01, 0x00, 0x40, 0x02, 0x06, 0x02, 0x01, 0x00,
-            0x01, 0x00, 0x00, 0x40, 0x03, 0x04, 0xc0, 0x00, 0x02, 0x02, 0xc0,
-            0x20, 0x24, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00,
-            0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01,
-            0x00, 0x00, 0x00, 0x02, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x01, 0x00, 0x00, 0x00, 0x03, 0x20, 0xcb, 0x00, 0x71, 0x0d,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0x00, 0x57, 0x02, 0x00, 0x00, 0x00, 0x3b, 0x40,
+            0x01, 0x01, 0x00, 0x40, 0x02, 0x06, 0x02, 0x01,
+            0x00, 0x01, 0x00, 0x00, 0x40, 0x03, 0x04, 0xc0,
+            0x00, 0x02, 0x02, 0xc0, 0x20, 0x24, 0x00, 0x01,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00,
+            0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x01,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00,
+            0x00, 0x03, 0x20, 0xcb, 0x00, 0x71, 0x0d
         ];
-        let update: UpdateMessage<_> =
-            Message::from_octets(&buf, Some(SessionConfig::modern()))
-                .unwrap()
-                .try_into()
-                .unwrap();
+        let update: UpdateMessage<_> = Message::from_octets(
+            &buf,
+            Some(SessionConfig::modern())
+            ).unwrap().try_into().unwrap();
 
         let mut lcs = update.large_communities().unwrap().unwrap();
         let lc1 = lcs.next().unwrap();
@@ -2132,70 +2119,79 @@ mod tests {
         assert_eq!(format!("{}", lc3), "65536:1:3");
 
         assert!(lcs.next().is_none());
+
     }
 
     #[test]
     fn chained_community_iters() {
         let buf = vec![
-            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-            0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x82, 0x02, 0x00, 0x00, 0x00,
-            0x62, 0x40, 0x01, 0x01, 0x00, 0x40, 0x02, 0x16, 0x02, 0x05, 0x00,
-            0x00, 0x00, 0x65, 0x00, 0x00, 0x01, 0x2d, 0x00, 0x00, 0x01, 0x2c,
-            0x00, 0x00, 0x02, 0x58, 0x00, 0x00, 0x02, 0xbc, 0x40, 0x03, 0x04,
-            0x0a, 0x01, 0x03, 0x01, 0x80, 0x04, 0x04, 0x00, 0x00, 0x00, 0x00,
-            0x40, 0x05, 0x04, 0x00, 0x00, 0x00, 0x64, 0xc0, 0x08, 0x0c, 0x00,
-            0x2a, 0x02, 0x06, 0xff, 0xff, 0xff, 0x01, 0xff, 0xff, 0xff, 0x03,
-            0xc0, 0x10, 0x10, 0x00, 0x06, 0x00, 0x00, 0x44, 0x9c, 0x40, 0x00,
-            0x40, 0x04, 0x00, 0x00, 0x44, 0x9c, 0x40, 0x00, 0x80, 0x0a, 0x04,
-            0x0a, 0x00, 0x00, 0x04, 0x80, 0x09, 0x04, 0x0a, 0x00, 0x00, 0x03,
-            0x00, 0x00, 0x00, 0x01, 0x19, 0xc6, 0x33, 0x64, 0x00,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0x00, 0x82, 0x02, 0x00, 0x00, 0x00, 0x62, 0x40,
+            0x01, 0x01, 0x00, 0x40, 0x02, 0x16, 0x02, 0x05,
+            0x00, 0x00, 0x00, 0x65, 0x00, 0x00, 0x01, 0x2d,
+            0x00, 0x00, 0x01, 0x2c, 0x00, 0x00, 0x02, 0x58,
+            0x00, 0x00, 0x02, 0xbc, 0x40, 0x03, 0x04, 0x0a,
+            0x01, 0x03, 0x01, 0x80, 0x04, 0x04, 0x00, 0x00,
+            0x00, 0x00, 0x40, 0x05, 0x04, 0x00, 0x00, 0x00,
+            0x64, 0xc0, 0x08, 0x0c, 0x00, 0x2a, 0x02, 0x06,
+            0xff, 0xff, 0xff, 0x01, 0xff, 0xff, 0xff, 0x03,
+            0xc0, 0x10, 0x10, 0x00, 0x06, 0x00, 0x00, 0x44,
+            0x9c, 0x40, 0x00, 0x40, 0x04, 0x00, 0x00, 0x44,
+            0x9c, 0x40, 0x00, 0x80, 0x0a, 0x04, 0x0a, 0x00,
+            0x00, 0x04, 0x80, 0x09, 0x04, 0x0a, 0x00, 0x00,
+            0x03, 0x00, 0x00, 0x00, 0x01, 0x19, 0xc6, 0x33,
+            0x64, 0x00
         ];
         let mut sc = SessionConfig::modern();
         sc.add_addpath(AfiSafi::Ipv4Unicast, AddpathDirection::Receive);
         let upd: UpdateMessage<_> = Message::from_octets(&buf, Some(sc))
-            .unwrap()
-            .try_into()
-            .unwrap();
+            .unwrap().try_into().unwrap();
 
         for c in upd.all_communities().unwrap().unwrap() {
             println!("{}", c);
         }
-        assert!(upd.all_communities().unwrap().unwrap().eq(&[
-            StandardCommunity::new(42.into(), Tag::new(518)).into(),
-            Wellknown::NoExport.into(),
-            Wellknown::NoExportSubconfed.into(),
-            [0x00, 0x06, 0x00, 0x00, 0x44, 0x9c, 0x40, 0x00].into(),
-            [0x40, 0x04, 0x00, 0x00, 0x44, 0x9c, 0x40, 0x00].into(),
+        assert!(upd.all_communities().unwrap().unwrap()
+            .eq(&[
+                StandardCommunity::new(42.into(), Tag::new(518)).into(),
+                Wellknown::NoExport.into(),
+                Wellknown::NoExportSubconfed.into(),
+                [0x00, 0x06, 0x00, 0x00, 0x44, 0x9c, 0x40, 0x00].into(),
+                [0x40, 0x04, 0x00, 0x00, 0x44, 0x9c, 0x40, 0x00].into(),
         ]))
     }
 
     #[test]
     fn bgpsec() {
         let buf = vec![
-            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-            0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0xab, 0x02, 0x00, 0x00, 0x00,
-            0x94, 0x90, 0x0e, 0x00, 0x11, 0x00, 0x01, 0x01, 0x04, 0xac, 0x12,
-            0x00, 0x02, 0x00, 0x18, 0xc0, 0x00, 0x02, 0x18, 0xc0, 0x00, 0x03,
-            0x40, 0x01, 0x01, 0x00, 0x40, 0x03, 0x04, 0x00, 0x00, 0x00, 0x00,
-            0x80, 0x04, 0x04, 0x00, 0x00, 0x00, 0x00, 0x90, 0x21, 0x00, 0x69,
-            0x00, 0x08, 0x01, 0x00, 0x00, 0x00, 0xfb, 0xf0, 0x00, 0x61, 0x01,
-            0xab, 0x4d, 0x91, 0x0f, 0x55, 0xca, 0xe7, 0x1a, 0x21, 0x5e, 0xf3,
-            0xca, 0xfe, 0x3a, 0xcc, 0x45, 0xb5, 0xee, 0xc1, 0x54, 0x00, 0x48,
-            0x30, 0x46, 0x02, 0x21, 0x00, 0xe7, 0xb7, 0x0b, 0xaf, 0x00, 0x0d,
-            0xe1, 0xce, 0x8b, 0xb2, 0x11, 0xaf, 0xd4, 0x8f, 0xc3, 0x76, 0x59,
-            0x54, 0x3e, 0xa5, 0x80, 0x5c, 0xa2, 0xa2, 0x06, 0x3a, 0xc9, 0x2e,
-            0x12, 0xfa, 0xc0, 0x67, 0x02, 0x21, 0x00, 0xa5, 0x8c, 0x0f, 0x37,
-            0x0e, 0xe9, 0x77, 0xae, 0xd4, 0x11, 0xbd, 0x3f, 0x0f, 0x47, 0xbb,
-            0x1f, 0x38, 0xcf, 0xde, 0x09, 0x49, 0xd5, 0x97, 0xcd, 0x2e, 0x41,
-            0xa4, 0x8a, 0x94, 0x1b, 0x7e, 0xbf,
-        ];
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0x00, 0xab, 0x02, 0x00, 0x00, 0x00, 0x94, 0x90,
+            0x0e, 0x00, 0x11, 0x00, 0x01, 0x01, 0x04, 0xac,
+            0x12, 0x00, 0x02, 0x00, 0x18, 0xc0, 0x00, 0x02,
+            0x18, 0xc0, 0x00, 0x03, 0x40, 0x01, 0x01, 0x00,
+            0x40, 0x03, 0x04, 0x00, 0x00, 0x00, 0x00, 0x80,
+            0x04, 0x04, 0x00, 0x00, 0x00, 0x00, 0x90, 0x21,
+            0x00, 0x69, 0x00, 0x08, 0x01, 0x00, 0x00, 0x00,
+            0xfb, 0xf0, 0x00, 0x61, 0x01, 0xab, 0x4d, 0x91,
+            0x0f, 0x55, 0xca, 0xe7, 0x1a, 0x21, 0x5e, 0xf3,
+            0xca, 0xfe, 0x3a, 0xcc, 0x45, 0xb5, 0xee, 0xc1,
+            0x54, 0x00, 0x48, 0x30, 0x46, 0x02, 0x21, 0x00,
+            0xe7, 0xb7, 0x0b, 0xaf, 0x00, 0x0d, 0xe1, 0xce,
+            0x8b, 0xb2, 0x11, 0xaf, 0xd4, 0x8f, 0xc3, 0x76,
+            0x59, 0x54, 0x3e, 0xa5, 0x80, 0x5c, 0xa2, 0xa2,
+            0x06, 0x3a, 0xc9, 0x2e, 0x12, 0xfa, 0xc0, 0x67,
+            0x02, 0x21, 0x00, 0xa5, 0x8c, 0x0f, 0x37, 0x0e,
+            0xe9, 0x77, 0xae, 0xd4, 0x11, 0xbd, 0x3f, 0x0f,
+            0x47, 0xbb, 0x1f, 0x38, 0xcf, 0xde, 0x09, 0x49,
+            0xd5, 0x97, 0xcd, 0x2e, 0x41, 0xa4, 0x8a, 0x94,
+            0x1b, 0x7e, 0xbf
+            ];
 
         let mut sc = SessionConfig::modern();
         sc.add_addpath(AfiSafi::Ipv4Unicast, AddpathDirection::Receive);
         let _upd: UpdateMessage<_> = Message::from_octets(&buf, Some(sc))
-            .unwrap()
-            .try_into()
-            .unwrap();
+            .unwrap().try_into().unwrap();
         //for pa in upd.path_attributes() {
         //    println!("{}", pa.type_code());
         //    println!("{:#x?}", pa.value());
@@ -2205,107 +2201,71 @@ mod tests {
     #[test]
     fn mp_ipv4_multicast() {
         let buf = vec![
-            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-            0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x52, 0x02, 0x00, 0x00, 0x00,
-            0x3b, 0x80, 0x0e, 0x1d, 0x00, 0x01, 0x02, 0x04, 0x0a, 0x09, 0x0a,
-            0x09, 0x00, 0x1a, 0xc6, 0x33, 0x64, 0x00, 0x1a, 0xc6, 0x33, 0x64,
-            0x40, 0x1a, 0xc6, 0x33, 0x64, 0x80, 0x1a, 0xc6, 0x33, 0x64, 0xc0,
-            0x40, 0x01, 0x01, 0x00, 0x40, 0x02, 0x06, 0x02, 0x01, 0x00, 0x00,
-            0x01, 0xf4, 0x40, 0x03, 0x04, 0x0a, 0x09, 0x0a, 0x09, 0x80, 0x04,
-            0x04, 0x00, 0x00, 0x00, 0x00,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0x00, 0x52, 0x02, 0x00, 0x00, 0x00, 0x3b, 0x80,
+            0x0e, 0x1d, 0x00, 0x01, 0x02, 0x04, 0x0a, 0x09,
+            0x0a, 0x09, 0x00, 0x1a, 0xc6, 0x33, 0x64, 0x00,
+            0x1a, 0xc6, 0x33, 0x64, 0x40, 0x1a, 0xc6, 0x33,
+            0x64, 0x80, 0x1a, 0xc6, 0x33, 0x64, 0xc0, 0x40,
+            0x01, 0x01, 0x00, 0x40, 0x02, 0x06, 0x02, 0x01,
+            0x00, 0x00, 0x01, 0xf4, 0x40, 0x03, 0x04, 0x0a,
+            0x09, 0x0a, 0x09, 0x80, 0x04, 0x04, 0x00, 0x00,
+            0x00, 0x00
         ];
         let sc = SessionConfig::modern();
         let upd: UpdateMessage<_> = Message::from_octets(&buf, Some(sc))
-            .unwrap()
-            .try_into()
-            .unwrap();
+            .unwrap().try_into().unwrap();
         assert_eq!(upd.mp_announcements().unwrap().unwrap().afi(), Afi::Ipv4);
-        assert_eq!(
-            upd.mp_announcements().unwrap().unwrap().safi(),
-            Safi::Multicast
-        );
+        assert_eq!(upd.mp_announcements().unwrap().unwrap().safi(), Safi::Multicast);
         let prefixes = [
             "198.51.100.0/26",
             "198.51.100.64/26",
             "198.51.100.128/26",
             "198.51.100.192/26",
-        ]
-        .map(|p| {
-            Nlri::<&[u8]>::Multicast(Prefix::from_str(p).unwrap().into())
-        });
+        ].map(|p| Nlri::<&[u8]>::Multicast(Prefix::from_str(p).unwrap().into()));
 
-        assert!(prefixes
-            .into_iter()
-            .eq(upd.announcements().unwrap().map(|n| n.unwrap())));
+        assert!(prefixes.into_iter().eq(upd.announcements().unwrap().map(|n| n.unwrap())));
     }
 
     #[test]
     fn mp_unreach_ipv4_multicast() {
         let buf = vec![
-            0xff,
-            0xff,
-            0xff,
-            0xff,
-            0xff,
-            0xff,
-            0xff,
-            0xff,
-            0xff,
-            0xff,
-            0xff,
-            0xff,
-            0xff,
-            0xff,
-            0xff,
-            0xff,
-            0x00,
-            0x1d + 5,
-            0x02,
-            0x00,
-            0x00,
-            0x00,
-            0x06 + 5,
-            0x80,
-            0x0f,
-            0x03 + 5,
-            0x00,
-            0x01,
-            0x02,
-            0x1a,
-            0xc6,
-            0x33,
-            0x64,
-            0x00,
-        ];
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0x00, 0x1d+5, 0x02, 0x00, 0x00, 0x00, 0x06+5, 0x80,
+            0x0f, 0x03+5, 0x00, 0x01, 0x02,
+            0x1a, 0xc6, 0x33, 0x64, 0x00
+        ]; 
         let sc = SessionConfig::modern();
         let upd: UpdateMessage<_> = Message::from_octets(&buf, Some(sc))
-            .unwrap()
-            .try_into()
-            .unwrap();
+            .unwrap().try_into().unwrap();
         assert_eq!(upd.mp_withdrawals().unwrap().unwrap().afi(), Afi::Ipv4);
-        assert_eq!(
-            upd.mp_withdrawals().unwrap().unwrap().safi(),
-            Safi::Multicast
-        );
+        assert_eq!(upd.mp_withdrawals().unwrap().unwrap().safi(), Safi::Multicast);
         assert_eq!(upd.mp_withdrawals().unwrap().iter().count(), 1);
     }
 
     #[test]
     fn evpn() {
         let buf = vec![
-            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-            0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x89, 0x02, 0x00, 0x00, 0x00,
-            0x72, 0x40, 0x01, 0x01, 0x00, 0x40, 0x02, 0x00, 0x40, 0x05, 0x04,
-            0x00, 0x00, 0x00, 0x64, 0xc0, 0x10, 0x08, 0x00, 0x02, 0x00, 0x64,
-            0x00, 0x00, 0x00, 0x64, 0x80, 0x09, 0x04, 0x78, 0x00, 0x02, 0x05,
-            0x80, 0x0a, 0x04, 0x78, 0x00, 0x01, 0x01, 0x90, 0x0e, 0x00, 0x47,
-            0x00, 0x19, 0x46, 0x04, 0x78, 0x00, 0x02, 0x05, 0x00, 0x01, 0x19,
-            0x00, 0x01, 0x78, 0x00, 0x02, 0x05, 0x00, 0x64, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x10, 0x00, 0x00, 0x05, 0x00, 0x00, 0x00, 0x00,
-            0x49, 0x35, 0x01, 0x02, 0x21, 0x00, 0x01, 0x78, 0x00, 0x02, 0x05,
-            0x00, 0x64, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x64, 0x30, 0x00, 0x0c, 0x29, 0x82, 0xc2,
-            0xa9, 0x00, 0x49, 0x30, 0x01,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0x00, 0x89, 0x02, 0x00, 0x00, 0x00, 0x72, 0x40,
+            0x01, 0x01, 0x00, 0x40, 0x02, 0x00, 0x40, 0x05,
+            0x04, 0x00, 0x00, 0x00, 0x64, 0xc0, 0x10, 0x08,
+            0x00, 0x02, 0x00, 0x64, 0x00, 0x00, 0x00, 0x64,
+            0x80, 0x09, 0x04, 0x78, 0x00, 0x02, 0x05, 0x80,
+            0x0a, 0x04, 0x78, 0x00, 0x01, 0x01, 0x90, 0x0e,
+            0x00, 0x47, 0x00, 0x19, 0x46, 0x04, 0x78, 0x00,
+            0x02, 0x05, 0x00, 0x01, 0x19, 0x00, 0x01, 0x78,
+            0x00, 0x02, 0x05, 0x00, 0x64, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x10, 0x00, 0x00, 0x05, 0x00,
+            0x00, 0x00, 0x00, 0x49, 0x35, 0x01, 0x02, 0x21,
+            0x00, 0x01, 0x78, 0x00, 0x02, 0x05, 0x00, 0x64,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x64, 0x30, 0x00,
+            0x0c, 0x29, 0x82, 0xc2, 0xa9, 0x00, 0x49, 0x30,
+            0x01
         ];
 
         use crate::bgp::message::nlri::EvpnRouteType;
@@ -2318,22 +2278,21 @@ mod tests {
         }
         let mut announcements = upd.announcements().unwrap();
         if let Some(Ok(Nlri::Evpn(e))) = announcements.next() {
-            assert_eq!(e.route_type(), EvpnRouteType::EthernetAutoDiscovery)
-        } else {
-            panic!()
-        }
+                assert_eq!(
+                    e.route_type(),
+                    EvpnRouteType::EthernetAutoDiscovery
+                )
+        } else { panic!() }
         if let Some(Ok(Nlri::Evpn(e))) = announcements.next() {
-            assert_eq!(e.route_type(), EvpnRouteType::MacIpAdvertisement)
-        } else {
-            panic!()
-        }
+                assert_eq!(
+                    e.route_type(),
+                    EvpnRouteType::MacIpAdvertisement)
+        } else { panic!() }
         assert!(announcements.next().is_none());
 
         assert_eq!(
             upd.mp_next_hop().unwrap(),
-            Some(NextHop::Unicast(
-                Ipv4Addr::from_str("120.0.2.5").unwrap().into()
-            ))
+            Some(NextHop::Unicast(Ipv4Addr::from_str("120.0.2.5").unwrap().into()))
         );
     }
 
@@ -2349,171 +2308,43 @@ mod tests {
         // and
         // 2 conventional nlri
         let buf = vec![
-            0xff,
-            0xff,
-            0xff,
-            0xff,
-            0xff,
-            0xff,
-            0xff,
-            0xff,
-            0xff,
-            0xff,
-            0xff,
-            0xff,
-            0xff,
-            0xff,
-            0xff,
-            0xff,
-            0x00,
-            0x88 + 6,
-            0x02,
-            0x00,
-            0x00,
-            0x00,
-            0x71,
-            0x80,
-            0x0e,
-            0x5a,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0x00, 0x88 + 6, 0x02, 0x00, 0x00, 0x00, 0x71, 0x80,
+            0x0e, 0x5a,
             //0x00, 0x02,
-            0x00,
-            0xff,
+            0x00, 0xff,
             0x01,
-            0x20,
-            0xfc,
-            0x00,
-            0x00,
-            0x10,
-            0x00,
-            0x01,
-            0x00,
-            0x10,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x10,
-            0xfe,
-            0x80,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x10,
-            0x00,
-            0x80,
-            0xfc,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x10,
-            0x40,
-            0x20,
-            0x01,
-            0x0d,
-            0xb8,
-            0xff,
-            0xff,
-            0x00,
-            0x00,
-            0x40,
-            0x20,
-            0x01,
-            0x0d,
-            0xb8,
-            0xff,
-            0xff,
-            0x00,
-            0x01,
-            0x40,
-            0x20,
-            0x01,
-            0x0d,
-            0xb8,
-            0xff,
-            0xff,
-            0x00,
-            0x02,
-            0x40,
-            0x20,
-            0x01,
-            0x0d,
-            0xb8,
-            0xff,
-            0xff,
-            0x00,
-            0x03,
-            0x40,
-            0x01,
-            0x01,
-            0x00,
-            0x40,
-            0x02,
-            0x06,
-            0x02,
-            0x01,
-            0x00,
-            0x00,
-            0x00,
-            0xc8,
-            0x80,
-            0x04,
-            0x04,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
+            0x20, 0xfc, 0x00,
+            0x00, 0x10, 0x00, 0x01, 0x00, 0x10, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0xfe, 0x80,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x80,
+            0xfc, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10,
+            0x40, 0x20, 0x01, 0x0d, 0xb8, 0xff, 0xff, 0x00,
+            0x00, 0x40, 0x20, 0x01, 0x0d, 0xb8, 0xff, 0xff,
+            0x00, 0x01, 0x40, 0x20, 0x01, 0x0d, 0xb8, 0xff,
+            0xff, 0x00, 0x02, 0x40, 0x20, 0x01, 0x0d, 0xb8,
+            0xff, 0xff, 0x00, 0x03, 0x40, 0x01, 0x01, 0x00,
+            0x40, 0x02, 0x06, 0x02, 0x01, 0x00, 0x00, 0x00,
+            0xc8, 0x80, 0x04, 0x04, 0x00, 0x00, 0x00, 0x00,
             // conventional NLRI
-            16,
-            10,
-            10, // 10.10.0.0/16
-            16,
-            10,
-            11, // 10.11.0.0/16
+            16, 10, 10, // 10.10.0.0/16
+            16, 10, 11, // 10.11.0.0/16
         ];
         //let update: UpdateMessage<_> = parse_msg(&buf);
-        let update =
-            UpdateMessage::from_octets(&buf, SessionConfig::modern())
-                .unwrap();
+        let update = UpdateMessage::from_octets(
+            &buf,
+            SessionConfig::modern()
+        ).unwrap();
 
-        assert_eq!(
-            update.mp_announcements().unwrap().unwrap().iter().count(),
-            1
-        );
-        assert!(update
-            .mp_announcements()
-            .unwrap()
-            .unwrap()
-            .iter()
-            .next()
-            .unwrap()
-            .is_err());
+        assert_eq!(update.mp_announcements().unwrap().unwrap().iter().count(), 1);
+        assert!(update.mp_announcements().unwrap().unwrap().iter().next().unwrap().is_err());
 
         // We expect only the two conventional announcements here:
         assert_eq!(update.unicast_announcements().unwrap().count(), 2);
+
     }
 
     #[test]
@@ -2524,155 +2355,42 @@ mod tests {
         // and
         // 2 conventional nlri
         let buf = vec![
-            0xff,
-            0xff,
-            0xff,
-            0xff,
-            0xff,
-            0xff,
-            0xff,
-            0xff,
-            0xff,
-            0xff,
-            0xff,
-            0xff,
-            0xff,
-            0xff,
-            0xff,
-            0xff,
-            0x00,
-            0x88 + 6,
-            0x02,
-            0x00,
-            0x00,
-            0x00,
-            0x71,
-            0x80,
-            0x0e,
-            0x5a,
-            0x00,
-            0x02, // AFI
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0x00, 0x88 + 6, 0x02, 0x00, 0x00, 0x00, 0x71, 0x80,
+            0x0e, 0x5a,
+            0x00, 0x02, // AFI
             0x01, // SAFI
             // NextHop:
             0x20,
-            0xfc,
-            0x00,
-            0x00,
-            0x10,
-            0x00,
-            0x01,
-            0x00,
-            0x10,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x10,
-            0xfe,
-            0x80,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x10,
+            0xfc, 0x00, 0x00, 0x10, 0x00, 0x01, 0x00, 0x10,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10,
+            0xfe, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10,
             0x00, // reserved byte
-            0x80,
-            0xfc,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x10,
+            0x80, 
+            0xfc, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10,
             0x81, // was 0x40, changed to 0x81 (/129)
-            0x20,
-            0x01,
-            0x0d,
-            0xb8,
-            0xff,
-            0xff,
-            0x00,
-            0x00,
+            0x20, 0x01, 0x0d, 0xb8, 0xff, 0xff, 0x00, 0x00,
             0x40,
-            0x20,
-            0x01,
-            0x0d,
-            0xb8,
-            0xff,
-            0xff,
-            0x00,
-            0x01,
+            0x20, 0x01, 0x0d, 0xb8, 0xff, 0xff, 0x00, 0x01,
             0x40,
-            0x20,
-            0x01,
-            0x0d,
-            0xb8,
-            0xff,
-            0xff,
-            0x00,
-            0x02,
+            0x20, 0x01, 0x0d, 0xb8, 0xff, 0xff, 0x00, 0x02,
             0x40,
-            0x20,
-            0x01,
-            0x0d,
-            0xb8,
-            0xff,
-            0xff,
-            0x00,
-            0x03,
+            0x20, 0x01, 0x0d, 0xb8, 0xff, 0xff, 0x00, 0x03,
             0x40,
-            0x01,
-            0x01,
-            0x00,
-            0x40,
-            0x02,
-            0x06,
-            0x02,
-            0x01,
-            0x00,
-            0x00,
-            0x00,
-            0xc8,
-            0x80,
-            0x04,
-            0x04,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
+            0x01, 0x01, 0x00, 0x40, 0x02, 0x06, 0x02, 0x01, 0x00, 0x00, 0x00,
+            0xc8, 0x80, 0x04, 0x04, 0x00, 0x00, 0x00, 0x00,
             // conventional NLRI
-            16,
-            10,
-            10, // 10.10.0.0/16
-            16,
-            10,
-            11, // 10.11.0.0/16
+            16, 10, 10, // 10.10.0.0/16
+            16, 10, 11, // 10.11.0.0/16
         ];
 
-        let update =
-            UpdateMessage::from_octets(&buf, SessionConfig::modern())
-                .unwrap();
+        let update = UpdateMessage::from_octets(
+            &buf,
+            SessionConfig::modern()
+        ).unwrap();
 
         assert!(matches!(
             update.announcements_vec(),
@@ -2687,51 +2405,69 @@ mod tests {
         assert_eq!(update.announcements().unwrap().count(), 4);
         assert_eq!(update.unicast_announcements().unwrap().count(), 4);
 
-        assert!(update.unicast_announcements().unwrap().eq([
-            Ok(BasicNlri::new(Prefix::from_str("fc00::10/128").unwrap())),
-            Err(ParseError::form_error("illegal byte size for IPv6 NLRI")),
-            Ok(BasicNlri::new(Prefix::from_str("10.10.0.0/16").unwrap())),
-            Ok(BasicNlri::new(Prefix::from_str("10.11.0.0/16").unwrap())),
-        ]));
+        assert!(
+            update.unicast_announcements().unwrap().eq(
+            [
+                Ok(BasicNlri::new(Prefix::from_str("fc00::10/128").unwrap())),
+                Err(ParseError::form_error("illegal byte size for IPv6 NLRI")), 
+                Ok(BasicNlri::new(Prefix::from_str("10.10.0.0/16").unwrap())),
+                Ok(BasicNlri::new(Prefix::from_str("10.11.0.0/16").unwrap())),
+            ]
+            )
+        );
     }
 
     #[test]
     fn unknown_afi_safi_withdrawals() {
         // botched BGP UPDATE with 4 MP_UNREACH_NLRI
         let buf = vec![
-            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-            0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x41, 0x02, 0x00, 0x00, 0x00,
-            0x2a, 0x80, 0x0f, 0x27, //0x00, 0x02, // AFI
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0x00, 0x41, 0x02, 0x00, 0x00, 0x00, 0x2a, 0x80,
+            0x0f, 0x27,
+            //0x00, 0x02, // AFI
             0x00, 0xff, // changed to unknown 255
-            0x01, // SAFI
-            0x40, 0x20, 0x01, 0x0d, 0xb8, 0xff, 0xff, 0x00, 0x00, 0x40, 0x20,
-            0x01, 0x0d, 0xb8, 0xff, 0xff, 0x00, 0x01, 0x40, 0x20, 0x01, 0x0d,
-            0xb8, 0xff, 0xff, 0x00, 0x02, 0x40, 0x20, 0x01, 0x0d, 0xb8, 0xff,
-            0xff, 0x00, 0x03,
+            0x01,       // SAFI
+            0x40,
+            0x20, 0x01, 0x0d, 0xb8, 0xff, 0xff, 0x00, 0x00,
+            0x40,
+            0x20, 0x01, 0x0d, 0xb8, 0xff, 0xff, 0x00, 0x01,
+            0x40,
+            0x20, 0x01, 0x0d, 0xb8, 0xff, 0xff, 0x00, 0x02,
+            0x40,
+            0x20, 0x01, 0x0d, 0xb8, 0xff, 0xff, 0x00, 0x03
         ];
 
-        assert!(UpdateMessage::from_octets(&buf, SessionConfig::modern())
-            .is_err());
+        assert!(
+            UpdateMessage::from_octets(&buf, SessionConfig::modern()).is_err()
+        );
     }
 
     #[test]
     fn invalid_withdrawals() {
         // botched BGP UPDATE with 4 MP_UNREACH_NLRI
         let buf = vec![
-            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-            0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x41, 0x02, 0x00, 0x00, 0x00,
-            0x2a, 0x80, 0x0f, 0x27, 0x00, 0x02, 0x01, 0x40, 0x20, 0x01, 0x0d,
-            0xb8, 0xff, 0xff, 0x00, 0x00,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0x00, 0x41, 0x02, 0x00, 0x00, 0x00, 0x2a, 0x80,
+            0x0f, 0x27,
+            0x00, 0x02,
+            0x01,
+            0x40,
+            0x20, 0x01, 0x0d, 0xb8, 0xff, 0xff, 0x00, 0x00,
             //0x40,
             0x41, // changed to 0x41, leading to a parse error somewhere in
-            // the remainder of the attribute.
-            0x20, 0x01, 0x0d, 0xb8, 0xff, 0xff, 0x00, 0x01, 0x40, 0x20, 0x01,
-            0x0d, 0xb8, 0xff, 0xff, 0x00, 0x02, 0x40, 0x20, 0x01, 0x0d, 0xb8,
-            0xff, 0xff, 0x00, 0x03,
+                  // the remainder of the attribute.
+            0x20, 0x01, 0x0d, 0xb8, 0xff, 0xff, 0x00, 0x01,
+            0x40,
+            0x20, 0x01, 0x0d, 0xb8, 0xff, 0xff, 0x00, 0x02,
+            0x40,
+            0x20, 0x01, 0x0d, 0xb8, 0xff, 0xff, 0x00, 0x03
         ];
 
-        assert!(UpdateMessage::from_octets(&buf, SessionConfig::modern())
-            .is_err());
+        assert!(
+            UpdateMessage::from_octets(&buf, SessionConfig::modern()).is_err()
+        );
 
         /*
         assert!(matches!(
@@ -2753,40 +2489,43 @@ mod tests {
                 Ok(BasicNlri::new(
                         Prefix::from_str("2001:db8:ffff::/64").unwrap())
                 ),
-                Err(ParseError::form_error("non-zero host portion")),
+                Err(ParseError::form_error("non-zero host portion")), 
             ]
             )
         );
         */
+
     }
 
     #[test]
     fn format_as_pcap() {
         let buf = vec![
             // Two identical BGP UPDATEs
-            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-            0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x37, 0x02, 0x00, 0x00, 0x00,
-            0x1b, 0x40, 0x01, 0x01, 0x00, 0x40, 0x02, 0x06, 0x02, 0x01, 0x00,
-            0x01, 0x00, 0x00, 0x40, 0x03, 0x04, 0x0a, 0xff, 0x00, 0x65, 0x80,
-            0x04, 0x04, 0x00, 0x00, 0x00, 0x01, 0x20, 0x0a, 0x0a, 0x0a, 0x02,
-            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-            0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x37, 0x02, 0x00, 0x00, 0x00,
-            0x1b, 0x40, 0x01, 0x01, 0x00, 0x40, 0x02, 0x06, 0x02, 0x01, 0x00,
-            0x01, 0x00, 0x00, 0x40, 0x03, 0x04, 0x0a, 0xff, 0x00, 0x65, 0x80,
-            0x04, 0x04, 0x00, 0x00, 0x00, 0x01, 0x20, 0x0a, 0x0a, 0x0a, 0x02,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x37, 0x02,
+            0x00, 0x00, 0x00, 0x1b, 0x40, 0x01, 0x01, 0x00, 0x40, 0x02,
+            0x06, 0x02, 0x01, 0x00, 0x01, 0x00, 0x00, 0x40, 0x03, 0x04,
+            0x0a, 0xff, 0x00, 0x65, 0x80, 0x04, 0x04, 0x00, 0x00, 0x00,
+            0x01, 0x20, 0x0a, 0x0a, 0x0a, 0x02,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x37, 0x02,
+            0x00, 0x00, 0x00, 0x1b, 0x40, 0x01, 0x01, 0x00, 0x40, 0x02,
+            0x06, 0x02, 0x01, 0x00, 0x01, 0x00, 0x00, 0x40, 0x03, 0x04,
+            0x0a, 0xff, 0x00, 0x65, 0x80, 0x04, 0x04, 0x00, 0x00, 0x00,
+            0x01, 0x20, 0x0a, 0x0a, 0x0a, 0x02,
         ];
 
         let bytes = Bytes::from(buf);
         let mut parser = Parser::from_ref(&bytes);
-        let update =
-            UpdateMessage::parse(&mut parser, SessionConfig::modern())
-                .unwrap();
+        let update = UpdateMessage::parse(
+            &mut parser,
+            SessionConfig::modern()
+        ).unwrap();
 
         let update2 = UpdateMessage::from_octets(
             parser.peek_all(),
-            SessionConfig::modern(),
-        )
-        .unwrap();
+            SessionConfig::modern()
+        ).unwrap();
 
         assert_eq!(update.fmt_pcap_string(), update2.fmt_pcap_string());
     }
@@ -2794,19 +2533,24 @@ mod tests {
     #[test]
     fn v4_mpls_unicast() {
         let raw = vec![
-            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-            0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x5c, 0x02, 0x00, 0x00, 0x00,
-            0x45, 0x80, 0x0e, 0x31, 0x00, 0x01, 0x04, 0x04, 0x0a, 0x07, 0x08,
-            0x08, 0x00, 0x38, 0x01, 0xf4, 0x01, 0x0a, 0x00, 0x00, 0x09, 0x32,
-            0x01, 0xf4, 0x11, 0xc6, 0x33, 0x64, 0x00, 0x32, 0x01, 0xf4, 0x21,
-            0xc6, 0x33, 0x64, 0x40, 0x32, 0x01, 0xf4, 0x31, 0xc6, 0x33, 0x64,
-            0x80, 0x32, 0x01, 0xf4, 0x91, 0xc6, 0x33, 0x64, 0xc0, 0x40, 0x01,
-            0x01, 0x00, 0x40, 0x02, 0x0a, 0x02, 0x02, 0x00, 0x00, 0x01, 0x2c,
-            0x00, 0x00, 0x01, 0xf4,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0x00, 0x5c, 0x02, 0x00, 0x00, 0x00, 0x45, 0x80,
+            0x0e, 0x31, 0x00, 0x01, 0x04, 0x04, 0x0a, 0x07,
+            0x08, 0x08, 0x00, 0x38, 0x01, 0xf4, 0x01, 0x0a,
+            0x00, 0x00, 0x09, 0x32, 0x01, 0xf4, 0x11, 0xc6,
+            0x33, 0x64, 0x00, 0x32, 0x01, 0xf4, 0x21, 0xc6,
+            0x33, 0x64, 0x40, 0x32, 0x01, 0xf4, 0x31, 0xc6,
+            0x33, 0x64, 0x80, 0x32, 0x01, 0xf4, 0x91, 0xc6,
+            0x33, 0x64, 0xc0, 0x40, 0x01, 0x01, 0x00, 0x40,
+            0x02, 0x0a, 0x02, 0x02, 0x00, 0x00, 0x01, 0x2c,
+            0x00, 0x00, 0x01, 0xf4
         ];
 
-        let upd = UpdateMessage::from_octets(&raw, SessionConfig::modern())
-            .unwrap();
+        let upd = UpdateMessage::from_octets(
+            &raw,
+            SessionConfig::modern()
+        ).unwrap();
         if let Ok(Some(NextHop::Unicast(a))) = upd.mp_next_hop() {
             assert_eq!(a, Ipv4Addr::from_str("10.7.8.8").unwrap());
         } else {
@@ -2821,7 +2565,7 @@ mod tests {
             assert_eq!(
                 n1.labels().as_ref(),
                 &[0x01, 0xf4, 0x01] // single label: [2012]
-                                    //Labels::from(..),
+                //Labels::from(..),
             );
         } else {
             panic!("wrong");
@@ -2833,26 +2577,35 @@ mod tests {
 
     #[test]
     fn v6_mpls_vpn_unicast() {
-        // BGP UPDATE for 2/128, one single announced NLRI
+
+        // BGP UPDATE for 2/128, one single announced NLRI 
         let raw = vec![
-            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-            0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x9a, 0x02, 0x00, 0x00, 0x00,
-            0x83, 0x80, 0x0e, 0x39, 0x00, 0x02, 0x80, 0x18, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0x0a, 0x00, 0x00, 0x02, 0x00,
-            0xd8, 0x00, 0x7d, 0xc1, 0x00, 0x00, 0x00, 0x64, 0x00, 0x00, 0x00,
-            0x01, 0xfc, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x40, 0x01, 0x01, 0x00, 0x40,
-            0x02, 0x06, 0x02, 0x01, 0x00, 0x00, 0x00, 0x01, 0x80, 0x04, 0x04,
-            0x00, 0x00, 0x00, 0x00, 0x40, 0x05, 0x04, 0x00, 0x00, 0x00, 0x64,
-            0xc0, 0x10, 0x18, 0x00, 0x02, 0x00, 0x64, 0x00, 0x00, 0x00, 0x01,
-            0x00, 0x09, 0x00, 0x64, 0x00, 0x00, 0x00, 0x00, 0x01, 0x0b, 0x0a,
-            0x00, 0x00, 0x02, 0x00, 0x01, 0xc0, 0x14, 0x0e, 0x00, 0x01, 0x00,
-            0x00, 0x00, 0x64, 0x00, 0x00, 0x00, 0x01, 0x0a, 0x00, 0x00, 0x02,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0x00, 0x9a, 0x02, 0x00, 0x00, 0x00, 0x83, 0x80,
+            0x0e, 0x39, 0x00, 0x02, 0x80, 0x18, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0xff, 0xff, 0x0a, 0x00, 0x00, 0x02, 0x00, 0xd8,
+            0x00, 0x7d, 0xc1, 0x00, 0x00, 0x00, 0x64, 0x00,
+            0x00, 0x00, 0x01, 0xfc, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x01, 0x40, 0x01, 0x01, 0x00, 0x40,
+            0x02, 0x06, 0x02, 0x01, 0x00, 0x00, 0x00, 0x01,
+            0x80, 0x04, 0x04, 0x00, 0x00, 0x00, 0x00, 0x40,
+            0x05, 0x04, 0x00, 0x00, 0x00, 0x64, 0xc0, 0x10,
+            0x18, 0x00, 0x02, 0x00, 0x64, 0x00, 0x00, 0x00,
+            0x01, 0x00, 0x09, 0x00, 0x64, 0x00, 0x00, 0x00,
+            0x00, 0x01, 0x0b, 0x0a, 0x00, 0x00, 0x02, 0x00,
+            0x01, 0xc0, 0x14, 0x0e, 0x00, 0x01, 0x00, 0x00,
+            0x00, 0x64, 0x00, 0x00, 0x00, 0x01, 0x0a, 0x00,
+            0x00, 0x02
         ];
 
-        let upd = UpdateMessage::from_octets(&raw, SessionConfig::modern())
-            .unwrap();
+        let upd = UpdateMessage::from_octets(
+            &raw,
+            SessionConfig::modern()
+        ).unwrap();
         if let Ok(Some(NextHop::MplsVpnUnicast(rd, a))) = upd.mp_next_hop() {
             assert_eq!(rd, RouteDistinguisher::new(&[0; 8]));
             assert_eq!(a, Ipv6Addr::from_str("::ffff:10.0.0.2").unwrap());
@@ -2868,7 +2621,7 @@ mod tests {
             assert_eq!(
                 n1.labels().as_ref(),
                 &[0x00, 0x7d, 0xc1] // single label: [2012]
-                                    //Labels::from([2012]),
+                //Labels::from([2012]),
             );
             assert_eq!(
                 n1.rd(),
@@ -2882,22 +2635,28 @@ mod tests {
         assert!(ann.next().is_none());
     }
 
+
     #[test]
     fn route_target_nlri() {
         let raw = vec![
-            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-            0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x5f, 0x02, 0x00, 0x00, 0x00,
-            0x48, 0x80, 0x0e, 0x30, 0x00, 0x01, 0x84, 0x04, 0x0a, 0x00, 0x00,
-            0x02, 0x00, 0x60, 0x00, 0x00, 0x00, 0x64, 0x00, 0x02, 0x00, 0x64,
-            0x00, 0x00, 0x00, 0x01, 0x60, 0x00, 0x00, 0x00, 0x64, 0x01, 0x02,
-            0x0a, 0x00, 0x00, 0x02, 0x00, 0x00, 0x60, 0x00, 0x00, 0x00, 0x64,
-            0x01, 0x02, 0x0a, 0x00, 0x00, 0x02, 0x00, 0x01, 0x40, 0x01, 0x01,
-            0x00, 0x40, 0x02, 0x00, 0x80, 0x04, 0x04, 0x00, 0x00, 0x00, 0x00,
-            0x40, 0x05, 0x04, 0x00, 0x00, 0x00, 0x64,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0x00, 0x5f, 0x02, 0x00, 0x00, 0x00, 0x48, 0x80,
+            0x0e, 0x30, 0x00, 0x01, 0x84, 0x04, 0x0a, 0x00,
+            0x00, 0x02, 0x00, 0x60, 0x00, 0x00, 0x00, 0x64,
+            0x00, 0x02, 0x00, 0x64, 0x00, 0x00, 0x00, 0x01,
+            0x60, 0x00, 0x00, 0x00, 0x64, 0x01, 0x02, 0x0a,
+            0x00, 0x00, 0x02, 0x00, 0x00, 0x60, 0x00, 0x00,
+            0x00, 0x64, 0x01, 0x02, 0x0a, 0x00, 0x00, 0x02,
+            0x00, 0x01, 0x40, 0x01, 0x01, 0x00, 0x40, 0x02,
+            0x00, 0x80, 0x04, 0x04, 0x00, 0x00, 0x00, 0x00,
+            0x40, 0x05, 0x04, 0x00, 0x00, 0x00, 0x64
         ];
 
-        let upd = UpdateMessage::from_octets(&raw, SessionConfig::modern())
-            .unwrap();
+        let upd = UpdateMessage::from_octets(
+            &raw,
+            SessionConfig::modern()
+        ).unwrap();
 
         assert_eq!(
             upd.mp_announcements().unwrap().unwrap().iter().count(),
@@ -2909,13 +2668,14 @@ mod tests {
     fn invalid_mp_unreach_nlri() {
         let raw = vec![
             255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
-            255, 255, 255, 0, 36, 2, 0, 0, 0, 13, 255, 255, 0, 0, 0, 15, 6,
-            0, 2, 133, 43, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-            0, 0, 0, 1, 0, 255, 255, 255, 254,
+            255, 255, 255, 0, 36, 2, 0, 0, 0, 13, 255, 255, 0, 0, 0, 15, 6, 0,
+            2, 133, 43, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 1, 0, 255, 255, 255, 254
         ];
 
-        assert!(UpdateMessage::from_octets(&raw, SessionConfig::modern())
-            .is_err());
+        assert!(
+            UpdateMessage::from_octets(&raw, SessionConfig::modern()).is_err()
+        );
     }
 
     #[test]
@@ -2924,14 +2684,14 @@ mod tests {
         aps.set(AfiSafi::Ipv4Unicast, AddpathDirection::SendReceive);
         aps.set(AfiSafi::L2VpnEvpn, AddpathDirection::Receive);
         assert_eq!(
-            aps.get(AfiSafi::Ipv4Unicast),
-            Some(AddpathDirection::SendReceive)
+            aps.get(AfiSafi::Ipv4Unicast), Some(AddpathDirection::SendReceive)
         );
         assert_eq!(
-            aps.get(AfiSafi::L2VpnEvpn),
-            Some(AddpathDirection::Receive)
+            aps.get(AfiSafi::L2VpnEvpn), Some(AddpathDirection::Receive)
         );
-        assert_eq!(aps.get(AfiSafi::Ipv6Unicast), None);
+        assert_eq!(
+            aps.get(AfiSafi::Ipv6Unicast), None
+        );
 
         assert_eq!(aps.enabled_addpaths().count(), 2);
 
