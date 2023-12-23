@@ -1,4 +1,4 @@
-use std::fmt;
+use std::fmt::{self, Display};
 use std::net::Ipv4Addr;
 
 use log::{debug, warn};
@@ -908,6 +908,12 @@ impl Attribute for AtomicAggregate {
 
 impl Copy for AtomicAggregate { }
 
+impl Display for AtomicAggregate {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "ATOMIC_AGGREGATE")
+    }
+}
+
 //--- Aggregator
 
 #[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -973,6 +979,12 @@ impl Attribute for Aggregator {
             check_len_exact!(parser, 6, "AGGREGATOR")?;
         }
         Ok(())
+    }
+}
+
+impl Display for AggregatorInfo {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}:{}", self.asn, self.address)
     }
 }
 
