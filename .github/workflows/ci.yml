@@ -35,10 +35,14 @@ jobs:
         rustup component add clippy
         # temporarily warn on clippy::cargo lints, to see if the next if is
         # triggered and working as expected
-        cargo clippy --all --all-features -q -- -W clippy::cargo
+        {
+          echo 'warnings=<<EOF'
+          cargo clippy --all --all-features -q -- -W clippy::cargo
+          echo EOF
+        } >> "$GITHUB_OUTPUT"
 
-    - if: ${{ steps.clippy_beta.outputs.stderr }} != ''
-      run: echo "::warning ${{ steps.clippy_beta.outputs.stderr }}"
+    - if: ${{ steps.clippy_beta.outputs.warnings }} != ''
+      run: echo "::warning ${{ steps.clippy_beta.outputs.warnings }}"
 
 
     # Build
