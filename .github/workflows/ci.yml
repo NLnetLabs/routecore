@@ -22,11 +22,24 @@ jobs:
 
     # Clippy.
     #
-    # Only do this once with all features enabled.
-    - if: matrix.rust != 'beta'
-      run: rustup component add clippy
-    - if: matrix.rust != 'beta'
-      run: cargo clippy --all --all-features -- -D warnings
+    # For stable, error out on warnings.
+    - if: matrix.rust == 'stable'
+      run: |
+        rustup component add clippy
+        cargo clippy --all --all-features -- -D warnings
+
+    # For beta, do not error out on warnings.
+    - if: matrix.rust == 'beta'
+      id: clippy_beta
+      run: |
+        rustup component add clippy
+        # temporarily warn on clippy::cargo lints, to see if the next if is
+        # triggered and working as expected
+        cargo clippy --all --all-features -q -- -W clippy::cargo
+
+    - if: ${{ clippy_beta.outputs.stderr }} != ''
+      run: echo "::warning ${{ clippy_beta.outputs.stderr }}"
+
 
     # Build
     - run: cargo build --verbose --all --all-features
@@ -37,7 +50,7 @@ jobs:
     - run: cargo test --verbose --all
 
     # Test using minimal dependency versions from Cargo.toml
-    - if: matrix.rust == 'stable'
+    - if: matrix.rust != 'beta'
       run: |
         rustup toolchain install nightly
         cargo +nightly update -Z minimal-versions
