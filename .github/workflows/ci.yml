@@ -39,6 +39,7 @@ jobs:
     # Test using minimal dependency versions from Cargo.toml
     - if: matrix.rust == 'stable'
       run: |
+        rustup toolchain install nightly
         cargo +nightly update -Z minimal-versions
         cargo build --verbose --all --all-features
         cargo test --verbose --all --all-features
