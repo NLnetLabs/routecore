@@ -6,6 +6,7 @@ use std::convert::TryInto;
 use std::str::FromStr;
 use std::iter::Peekable;
 
+#[cfg(feature = "octseq")]
 use octseq::builder::OctetsBuilder;
 
 #[cfg(feature = "bcder")]
@@ -49,6 +50,7 @@ impl Asn {
         self.0.to_be_bytes()
     }
 
+    #[cfg(feature = "octseq")]
     pub fn compose<Target: OctetsBuilder>(
         self, target: &mut Target
     ) -> Result<(), Target::AppendError> {
