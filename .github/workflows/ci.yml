@@ -30,6 +30,7 @@ jobs:
 
     - if: matrix.rust == 'beta'
       run: rustup component add clippy
+
     # For beta, do not error out on warnings.
     - if: matrix.rust == 'beta'
       uses: mathiasvr/command-output@v2.0.0
@@ -41,7 +42,7 @@ jobs:
           cargo clippy --all --all-features -q -- -W clippy::cargo
 
     - if: ${{ steps.clippy_beta.outputs.stderr }}
-      run: echo ::warning ::${{ steps.clippy_beta.outputs.stderr }}
+      run: echo "::warning ::${{ steps.clippy_beta.outputs.stderr }}"
 
 
     # Build
