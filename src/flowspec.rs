@@ -23,11 +23,17 @@ impl NumericOp {
     pub fn end_of_list(&self) -> bool {
         self.0 & 0x80 == 0x80
     }
+
     pub fn and(&self) -> bool {
         self.0 & 0x40 == 0x40
     }
+
     pub fn length(&self) -> usize {
         op_to_len(self.0)
+    }
+
+    pub fn value(&self) -> u64 {
+        self.1
     }
 }
 
@@ -35,6 +41,10 @@ pub struct BitmaskOp(u8, u64);
 impl BitmaskOp {
     pub fn end_of_list(&self) -> bool {
         self.0 & 0x80 == 0x80
+    }
+
+    pub fn value(&self) -> u64 {
+        self.1
     }
 }
 
