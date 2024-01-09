@@ -37,8 +37,8 @@ jobs:
         # triggered and working as expected
         cargo clippy --all --all-features -q -- -W clippy::cargo
 
-    - if: ${{ clippy_beta.outputs.stderr }} != ''
-      run: echo "::warning ${{ clippy_beta.outputs.stderr }}"
+    - if: ${{ steps.clippy_beta.outputs.stderr }} != ''
+      run: echo "::warning ${{ steps.clippy_beta.outputs.stderr }}"
 
 
     # Build
