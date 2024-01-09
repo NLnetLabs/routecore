@@ -11,9 +11,8 @@ keywords = ["routing", "bgp"]
 license = "BSD-3-Clause"
 
 [dependencies]
-# Optional dependencies which, if included, introduce additional functionality.
-arbitrary = { version = "1", optional = true, features = ["derive"] }
-#bcder = { version = "0.7", optional = true }
+arbitrary   = { version = "1", optional = true, features = ["derive"] }
+bcder       = { version = "0.7", optional = true }
 bytes       = { version = "1", optional = true }
 chrono      = { version = "0.4.20", optional = true }
 const-str   = { version = "0.5", optional = true, features = ["case"] }
@@ -23,8 +22,8 @@ serde       = { version = "1.0.103", optional = true, features = ["derive"] }
 tokio       = { version = "1", features = ["sync", "rt"], optional = true }
 
 [dev-dependencies]
-serde_test      = "1.0"
 memmap2         = "0.6"
+serde_test      = "1"
 
 [features]
 default = []
