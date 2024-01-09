@@ -30,15 +30,16 @@ jobs:
 
     # For beta, do not error out on warnings.
     - if: matrix.rust == 'beta'
+      uses: mathiasvr/command-output@v2.0.0
       id: clippy_beta
       run: |
         rustup component add clippy
         # temporarily warn on clippy::cargo lints, to see if the next if is
         # triggered and working as expected
-        echo "warnings=$(cargo clippy --all --all-features -q -- -W clippy::cargo 2>&1)" >> "$GITHUB_OUTPUT"
+        cargo clippy --all --all-features -q -- -W clippy::cargo
 
-    - if: ${{ steps.clippy_beta.outputs.warnings }} != ''
-      run: echo "::warning ::${{ steps.clippy_beta.outputs.warnings }}"
+    - if: ${{ steps.clippy_beta.outputs.stderr }} != ''
+      run: echo "::warning ::${{ steps.clippy_beta.outputs.stderr }}"
 
 
     # Build
