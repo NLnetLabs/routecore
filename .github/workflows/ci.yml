@@ -35,7 +35,7 @@ jobs:
         rustup component add clippy
         # temporarily warn on clippy::cargo lints, to see if the next if is
         # triggered and working as expected
-        echo "warnings=$(cargo clippy --all --all-features -q -- -W clippy::cargo)" >> "$GITHUB_OUTPUT"
+        echo "warnings=$(cargo clippy --all --all-features -q -- -W clippy::cargo 2>&1)" >> "$GITHUB_OUTPUT"
 
     - if: ${{ steps.clippy_beta.outputs.warnings }} != ''
       run: echo "::warning ::${{ steps.clippy_beta.outputs.warnings }}"
