@@ -38,7 +38,7 @@ jobs:
         echo "warnings=$(cargo clippy --all --all-features -q -- -W clippy::cargo)" >> "$GITHUB_OUTPUT"
 
     - if: ${{ steps.clippy_beta.outputs.warnings }} != ''
-      run: echo "::warning ${{ steps.clippy_beta.outputs.warnings }}"
+      run: echo "::warning ::${{ steps.clippy_beta.outputs.warnings }}"
 
 
     # Build
