@@ -36,3 +36,10 @@ jobs:
     - run: cargo test --verbose --all --all-features
     - run: cargo test --verbose --all
 
+    # Test using minimal dependency versions from Cargo.toml
+    - if: matrix.rust == 'nightly'
+      run: |
+        cargo +nightly update -Z minimal-versions
+        cargo check --all-features --verbose --all-targets
+        cargo test --all-features
+      name: Check and test with minimal-versions
