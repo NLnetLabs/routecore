@@ -3,8 +3,7 @@
 use std::{error, fmt, str};
 use std::convert::{TryFrom, TryInto};
 use std::str::FromStr;
-#[cfg(feature = "bcder")]
-use bcder::decode::{self, Source, DecodeError};
+
 use crate::util::hex;
 
 
@@ -30,65 +29,6 @@ impl KeyIdentifier {
         res
     }
 }
-
-#[cfg(feature = "bcder")]
-impl KeyIdentifier {
-    /// Takes an encoded key identifier from a constructed value.
-    ///
-    /// ```text
-    /// KeyIdentifier ::= OCTET STRING
-    /// ```
-    ///
-    /// The content of the octet string needs to be a SHA-1 hash, so it must
-    /// be exactly 20 octets long.
-    pub fn take_from<S: Source>(
-        cons: &mut decode::Constructed<S>
-    ) -> Result<Self, DecodeError<S::Error>> {
-        cons.take_value_if(bcder::Tag::OCTET_STRING, Self::from_content)
-    }
-
-    pub fn take_opt_from<S: Source>(
-        cons: &mut decode::Constructed<S>
-    ) -> Result<Option<Self>, DecodeError<S::Error>> {
-        cons.take_opt_value_if(bcder::Tag::OCTET_STRING, Self::from_content)
-    }
-
-    /// Parses an encoded key identifer from encoded content.
-    pub fn from_content<S: Source>(
-        content: &mut decode::Content<S>
-    ) -> Result<Self, DecodeError<S::Error>> {
-        let octets = bcder::OctetString::from_content(content)?;
-        if let Some(slice) = octets.as_slice() {
-            Self::try_from(slice).map_err(|_| {
-                content.content_err("invalid key identifier")
-            })
-        }
-        else if octets.len() != 20 {
-            Err(content.content_err("invalid key identifier"))
-        }
-        else {
-            let mut res = KeyIdentifier(Default::default());
-            let mut pos = 0;
-            for slice in &octets {
-                let end = pos + slice.len();
-                res.0[pos .. end].copy_from_slice(slice);
-                pos = end;
-            }
-            Ok(res)
-        }
-    }
-
-    /// Skips over an encoded key indentifier.
-    pub fn skip_opt_in<S: Source>(
-        cons: &mut decode::Constructed<S>
-    ) -> Result<Option<()>, DecodeError<S::Error>> {
-        cons.take_opt_value_if(bcder::Tag::OCTET_STRING, |cons| {
-            Self::from_content(cons)?;
-            Ok(())
-        })
-    }
-}
-
 
 //--- From, TryFrom and FromStr
 
@@ -164,27 +104,6 @@ impl fmt::Debug for KeyIdentifier {
         write!(f, "KeyIdentifier({})", self)
     }
 }
-
-
-//--- PrimitiveContent
-
-#[cfg(feature = "bcder")]
-impl bcder::encode::PrimitiveContent for KeyIdentifier {
-    const TAG: bcder::Tag = bcder::Tag::OCTET_STRING;
-
-    fn encoded_len(&self, _mode: bcder::Mode) -> usize {
-        20
-    }
-
-    fn write_encoded<W: std::io::Write>(
-        &self,
-        _mode: bcder::Mode,
-        target: &mut W
-    ) -> Result<(), std::io::Error> {
-        target.write_all(&self.0)
-    }
-}
-
 
 //--- Deserialize and Serialize
 
