@@ -24,7 +24,7 @@ Released 2024-01-10.
 
 Breaking changes
 
-* Extensive moving and refactoring of code,
+* Extensive moving and refactoring of code
 
   With the focus of _routecore_ heavily shifting towards BGP and BMP related
   functionality, we decided to copy over the few types used by dependants to
@@ -41,10 +41,9 @@ New
 
 * Parsing of BGP and BMP messages. ([#14])
 
-  The newly added feature flags `bgp` and `bmp` enable parsing capabilities
-  for these messages using the [OctSeq](https://github.com/NLnetLabs/octseq)
-  crate. This allows parsing of raw wireformat representations in multiple
-  data types, including
+  The newly added feature flags `bgp` and `bmp` enable parsing capabilities for
+  raw wireformat representations of these messages in multiple data types,
+  including
   [bytes::Bytes](https://docs.rs/bytes/latest/bytes/struct.Bytes.html). The
   parsing and the resulting types `bgp::Message` and `bmp::Message` are mostly
   non-allocating and provide (lazy) iterators to the actual data (e.g. Path
