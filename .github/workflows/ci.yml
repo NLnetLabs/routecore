@@ -16,36 +16,40 @@ jobs:
         with:
           rust-version: ${{ matrix.rust }}
 
-      # Because of all the features, we run build and test twice -- once with
-      # full features and once without any features at all -- to make it more
-      # likely that everything works.
-
       # Clippy.
+      #
+      # We run Clippy for stable and beta only, to minimize the possibility of a
+      # lint requiring something in the MSRV but the opposite thing in stable,
+      # or vice versa.
       #
       # For stable, error out on warnings.
       - if: matrix.rust == 'stable'
         run: |
           rustup component add clippy
-          cargo clippy --all --all-features -- -D warnings
+          cargo clippy --all --all-features -- -D warnings -W clippy::cargo
 
       - if: matrix.rust == 'beta'
         run: rustup component add clippy
 
-      # For beta, do not error out on warnings.
+      # For beta, turn warnings into GitHub annotations.
       - if: matrix.rust == 'beta'
         uses: mathiasvr/command-output@v2.0.0
         id: clippy_beta
         with:
           run: |
-            # temporarily warn on clippy::cargo lints, to see if the next if is
-            # triggered and working as expected
-            cargo clippy --all --all-features -q -- -W clippy::cargo
+            # We can warn on additional lints. cargo::nursery might make sense.
+            cargo clippy --all --all-features -q --message-format short -- \
+            -W clippy::cargo # -W clippy::nursery
 
       - if: ${{ steps.clippy_beta.outputs.stderr }}
         env:
           clippy_warnings: ${{ steps.clippy_beta.outputs.stderr }}
         run: echo "::warning ::$clippy_warnings"
 
+
+      # Because of all the features, we run build and test twice -- once with
+      # full features and once without any features at all -- to make it more
+      # likely that everything works.
 
       # Build
       - run: cargo build --verbose --all --all-features
