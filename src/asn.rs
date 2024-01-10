@@ -9,10 +9,6 @@ use std::iter::Peekable;
 #[cfg(feature = "octseq")]
 use octseq::builder::OctetsBuilder;
 
-#[cfg(feature = "bcder")]
-use bcder::decode::{self, DecodeError, Source};
-
-
 //------------ Asn -----------------------------------------------------------
 
 /// An AS number (ASN).
@@ -64,41 +60,6 @@ impl Asn {
     //) -> Result<(), Target::AppendError> {
     //    todo!()
     //}
-}
-
-#[cfg(feature = "bcder")]
-impl Asn {
-    /// Takes an AS number from the beginning of an encoded value.
-    pub fn take_from<S: Source>(
-        cons: &mut decode::Constructed<S>
-    ) -> Result<Self, DecodeError<S::Error>> {
-        cons.take_u32().map(Asn)
-    }
-
-    /// Skips over an AS number at the beginning of an encoded value.
-    pub fn skip_in<S: Source>(
-        cons: &mut decode::Constructed<S>
-    ) -> Result<(), DecodeError<S::Error>> {
-        cons.take_u32().map(|_| ())
-    }
-
-    /// Parses the content of an AS number value.
-    pub fn parse_content<S: Source>(
-        content: &mut decode::Content<S>,
-    ) -> Result<Self, DecodeError<S::Error>> {
-        content.to_u32().map(Asn)
-    }
-
-    /// Skips the content of an AS number value.
-    pub fn skip_content<S: Source>(
-        content: &mut decode::Content<S>
-    ) -> Result<(), DecodeError<S::Error>> {
-        content.to_u32().map(|_| ())
-    }
-
-    pub fn encode(self) -> impl bcder::encode::Values {
-        bcder::encode::PrimitiveContent::encode(self.0)
-    }
 }
 
 //--- From
