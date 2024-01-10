@@ -1,8 +1,23 @@
 # Changelog
 
-## Unreleased future version
+## 0.4.0-rc0
+
+Released 2024-01-10.
 
 Breaking changes
+
+* Extensive moving and refactoring of code,
+
+  With the focus of _routecore_ heavily shifting towards BGP and BMP related
+  functionality, we decided to copy over the few types used by dependants to
+  those dependants and remove their depedency on _routecore_. This also means we
+  could drop code from _routecore_, and get rid of certain dependencies and
+  feature flags.
+
+  In addition to that, there has been extensive renaming throughout the code
+  base, though not all of the touched code was ever properly released before.
+  All in all, the 0.4.0 release should be considered breaking and not backwards
+  compatible.
 
 New
 
@@ -59,13 +74,11 @@ New
 
 * Better parsing and creation of BGP NOTIFICATION messages. ([#35])
 
-Bug fixes
 
 Other changes
 
+* Changed the minimal supported Rust version to 1.71.
 * Changed Rust edition from 2018 to 2021.
-* Changed the the minimal supported Rust version to 1.65, as the parsing of
-  BGP and BMP messages relies on GATs.
 
 [#14]: https://github.com/NLnetLabs/routecore/pull/14
 [#22]: https://github.com/NLnetLabs/routecore/pull/22
