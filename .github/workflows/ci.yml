@@ -39,7 +39,7 @@ jobs:
           run: |
             # We can warn on additional lints. cargo::nursery might make sense.
             cargo clippy --all --all-features -q --message-format short -- \
-            -W clippy::cargo # -W clippy::nursery
+            -W clippy::cargo -W clippy::nursery
 
       - if: ${{ steps.clippy_beta.outputs.stderr }}
         env:
