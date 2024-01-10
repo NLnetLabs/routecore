@@ -5,6 +5,7 @@ authors = ["NLnet Labs <rpki-team@nlnetlabs.nl>"]
 categories = ["network-programming"]
 description = "A Library with Building Blocks for BGP Routing"
 documentation = "https://docs.rs/routecore/"
+repository = "https://github.com/NLnetLabs/routecore"
 edition = "2021"
 rust-version = "1.71"
 keywords = ["routing", "bgp"]
