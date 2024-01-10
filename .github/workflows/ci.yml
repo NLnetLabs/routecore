@@ -9,57 +9,57 @@ jobs:
         os: [ubuntu-latest, windows-latest, macOS-latest]
         rust: [1.71, stable, beta]
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v1
-    - name: Install Rust
-      uses: hecrj/setup-rust-action@v1
-      with:
-        rust-version: ${{ matrix.rust }}
+      - name: Checkout repository
+        uses: actions/checkout@v1
+      - name: Install Rust
+        uses: hecrj/setup-rust-action@v1
+        with:
+          rust-version: ${{ matrix.rust }}
 
-    # Because of all the features, we run build and test twice -- once with
-    # full features and once without any features at all -- to make it more
-    # likely that everything works.
+      # Because of all the features, we run build and test twice -- once with
+      # full features and once without any features at all -- to make it more
+      # likely that everything works.
 
-    # Clippy.
-    #
-    # For stable, error out on warnings.
-    - if: matrix.rust == 'stable'
-      run: |
-        rustup component add clippy
-        cargo clippy --all --all-features -- -D warnings
-
-    - if: matrix.rust == 'beta'
-      run: rustup component add clippy
-
-    # For beta, do not error out on warnings.
-    - if: matrix.rust == 'beta'
-      uses: mathiasvr/command-output@v2.0.0
-      id: clippy_beta
-      with:
+      # Clippy.
+      #
+      # For stable, error out on warnings.
+      - if: matrix.rust == 'stable'
         run: |
-          # temporarily warn on clippy::cargo lints, to see if the next if is
-          # triggered and working as expected
-          cargo clippy --all --all-features -q -- -W clippy::cargo
+          rustup component add clippy
+          cargo clippy --all --all-features -- -D warnings
 
-    - if: ${{ steps.clippy_beta.outputs.stderr }}
-      env:
-        clippy_warnings: ${{ steps.clippy_beta.outputs.stderr }}
-      run: echo "::warning ::$clippy_warnings"
+      - if: matrix.rust == 'beta'
+        run: rustup component add clippy
+
+      # For beta, do not error out on warnings.
+      - if: matrix.rust == 'beta'
+        uses: mathiasvr/command-output@v2.0.0
+        id: clippy_beta
+        with:
+          run: |
+            # temporarily warn on clippy::cargo lints, to see if the next if is
+            # triggered and working as expected
+            cargo clippy --all --all-features -q -- -W clippy::cargo
+
+      - if: ${{ steps.clippy_beta.outputs.stderr }}
+        env:
+          clippy_warnings: ${{ steps.clippy_beta.outputs.stderr }}
+        run: echo "::warning ::$clippy_warnings"
 
 
-    # Build
-    - run: cargo build --verbose --all --all-features
-    - run: cargo build --verbose --all
+      # Build
+      - run: cargo build --verbose --all --all-features
+      - run: cargo build --verbose --all
 
-    # Test
-    - run: cargo test --verbose --all --all-features
-    - run: cargo test --verbose --all
+      # Test
+      - run: cargo test --verbose --all --all-features
+      - run: cargo test --verbose --all
 
-    # Test using minimal dependency versions from Cargo.toml
-    - if: matrix.rust != 'beta'
-      run: |
-        rustup toolchain install nightly
-        cargo +nightly update -Z minimal-versions
-        cargo build --verbose --all --all-features
-        cargo test --verbose --all --all-features
-      name: Check and test with minimal-versions
+      # Test using minimal dependency versions from Cargo.toml
+      - if: matrix.rust != 'beta'
+        run: |
+          rustup toolchain install nightly
+          cargo +nightly update -Z minimal-versions
+          cargo build --verbose --all --all-features
+          cargo test --verbose --all --all-features
+        name: Check and test with minimal-versions
