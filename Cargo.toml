@@ -1,6 +1,6 @@
 [package]
 name = "routecore"
-version = "0.4.0-rc0"
+version = "0.4.0-rc1-dev"
 authors = ["NLnet Labs <rpki-team@nlnetlabs.nl>"]
 categories = ["network-programming"]
 description = "A Library with Building Blocks for BGP Routing"
