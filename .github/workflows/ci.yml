@@ -42,7 +42,9 @@ jobs:
           cargo clippy --all --all-features -q -- -W clippy::cargo
 
     - if: ${{ steps.clippy_beta.outputs.stderr }}
-      run: echo "::warning ::${{ steps.clippy_beta.outputs.stderr }}"
+      env:
+        clippy_warnings: ${{ steps.clippy_beta.outputs.stderr }}
+      run: echo "::warning ::$clippy_warnings"
 
 
     # Build
