@@ -38,8 +38,11 @@ jobs:
         with:
           run: |
             # We can warn on additional lints. cargo::nursery might make sense.
+            # XXX currently this only shows the first line of output. Also see
+            # https://github.com/actions/toolkit/issues/193
+            # Replacing '\n' with "%0A" might be a workaround.
             cargo clippy --all --all-features -q --message-format short -- \
-            -W clippy::cargo -W clippy::nursery
+            -W clippy::cargo # -W clippy::nursery
 
       - if: ${{ steps.clippy_beta.outputs.stderr }}
         env:
