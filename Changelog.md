@@ -1,26 +1,6 @@
-# Changelog
+## 0.4.0
 
-## 0.4.0-rc1
-
-Unreleased
-
-
-Breaking changes
-
-
-New
-
-
-Bug fixes
-
-
-Other changes
-
-
-
-## 0.4.0-rc0
-
-Released 2024-01-10.
+Released 2024-01-18.
 
 Breaking changes
 
