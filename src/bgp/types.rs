@@ -38,7 +38,7 @@ typeenum!(
 /// Not all combinations of the `AFI` and `SAFI` variants make sense. This
 /// enum explicitly comprises combinations which are described in standards
 /// documents.
-#[derive(Clone, Copy, Debug, Hash, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Hash, Eq, Ord, PartialEq, PartialOrd, rkyv::Archive, rkyv::Serialize)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum AfiSafi {
     Ipv4Unicast,
@@ -175,7 +175,7 @@ impl AddpathFamDir {
     }
 }
 
-#[derive(Clone, Copy, Debug, Hash, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Hash, Eq, Ord, PartialEq, PartialOrd, rkyv::Archive, rkyv::Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum AddpathDirection {
@@ -268,7 +268,7 @@ typeenum!(
 );
 
 /// Wrapper for the 4 byte Multi-Exit Discriminator in path attributes.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, rkyv::Archive, rkyv::Serialize)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct MultiExitDisc(pub u32);
 
@@ -279,7 +279,7 @@ impl std::fmt::Display for MultiExitDisc {
 }
 
 /// Wrapper for the 4 byte Local Preference value in path attributes.
-#[derive(Debug, Eq, PartialEq, Clone, Copy, Hash)]
+#[derive(Debug, Eq, PartialEq, Clone, Copy, Hash, rkyv::Archive, rkyv::Serialize)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct LocalPref(pub u32);
 
@@ -296,7 +296,7 @@ impl std::fmt::Display for LocalPref {
 }
 
 /// Conventional and BGP-MP Next Hop variants.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, rkyv::Archive, rkyv::Serialize)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum NextHop {
     Unicast(IpAddr),

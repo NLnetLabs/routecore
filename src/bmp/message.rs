@@ -59,7 +59,7 @@ impl Error for MessageError { }
 /// including the [`CommonHeader`], possibly a [`PerPeerHeader`] and the
 /// additional payload. The payload often comprises one or multiple
 /// [`bgp::Message`](crate::bgp::Message)s.
-#[derive(Clone, Eq)]
+#[derive(Clone, Eq, rkyv::Archive, rkyv::Serialize)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub enum Message<Octets: AsRef<[u8]>> {
     RouteMonitoring(RouteMonitoring<Octets>),
@@ -552,7 +552,7 @@ typeenum!(
 /// Route Monitoring message.
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, rkyv::Archive, rkyv::Serialize)]
 pub struct RouteMonitoring<Octets: AsRef<[u8]>>
 {
     octets: Octets
@@ -603,7 +603,7 @@ impl<Octs: Octets> RouteMonitoring<Octs> {
 
 /// Statistics Report message.
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
-#[derive(Clone, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq, rkyv::Archive, rkyv::Serialize)]
 pub struct StatisticsReport<Octs> {
     octets: Octs,
 }
@@ -666,7 +666,7 @@ impl<Octs: Octets> Debug for StatisticsReport<Octs> {
 
 /// Peer Down Notification. 
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, rkyv::Archive, rkyv::Serialize)]
 pub struct PeerDownNotification<Octets: AsRef<[u8]>> {
     octets: Octets,
 }
@@ -775,7 +775,7 @@ impl<Octs: Octets> PeerDownNotification<Octs> {
 
 /// Peer Up Notification.
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, rkyv::Archive, rkyv::Serialize)]
 pub struct PeerUpNotification<Octets: AsRef<[u8]>> {
     octets: Octets,
 }
@@ -1016,7 +1016,7 @@ impl<Octs: Octets> PeerUpNotification<Octs> {
 
 /// Initiation Message.
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, rkyv::Archive, rkyv::Serialize)]
 pub struct InitiationMessage<Octets: AsRef<[u8]>> {
     octets: Octets,
 }
@@ -1057,7 +1057,7 @@ impl<Octs: Octets> InitiationMessage<Octs> {
 
 /// Termination message.
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, rkyv::Archive, rkyv::Serialize)]
 pub struct TerminationMessage<Octets: AsRef<[u8]>> {
     octets: Octets,
 }
@@ -1103,7 +1103,7 @@ impl<Octs: Octets> TerminationMessage<Octs> {
 ///
 /// NB: Not well tested/supported at this moment!  
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, rkyv::Archive, rkyv::Serialize)]
 pub struct RouteMirroring<Octs> {
     octets: Octs,
 }

@@ -989,7 +989,7 @@ impl UpdateBuilder<BytesMut> {
 // size allowed on the BGP session.
 
 
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq, rkyv::Archive, rkyv::Serialize)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct MpReachNlriBuilder {
     announcements: Vec<Nlri<Vec<u8>>>,
@@ -1215,7 +1215,7 @@ impl NextHop {
 //    add_withdrawal should check whether the remote side is able to receive
 //    path ids if the Nlri passed to add_withdrawal contains Some(PathId).
 //
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq, rkyv::Archive, rkyv::Serialize)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct MpUnreachNlriBuilder {
     withdrawals: Vec<Nlri<Vec<u8>>>,
@@ -1300,7 +1300,7 @@ impl MpUnreachNlriBuilder {
 //
 //
 
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq, rkyv::Archive, rkyv::Serialize)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct StandardCommunitiesBuilder {
     communities: Vec<StandardCommunity>,

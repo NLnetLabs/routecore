@@ -61,7 +61,7 @@ macro_rules! typeenum {
             $( $x1:pat => $y1:ident ),* $(,)*
         })?
     ) => {
-            #[derive(Clone, Copy, Debug, Hash, Eq, Ord, PartialEq, PartialOrd)]
+            #[derive(Clone, Copy, Debug, Hash, Eq, Ord, PartialEq, PartialOrd, rkyv::Archive, rkyv::Serialize)]
             #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
             $(#[$attr])*
             pub enum $name {

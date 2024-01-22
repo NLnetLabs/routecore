@@ -19,7 +19,7 @@ use crate::bgp::types::{Afi, Safi, AfiSafi};
 use crate::util::parser::{ParseError, parse_ipv4addr};
 
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, rkyv::Archive, rkyv::Serialize)]
 pub struct Flags(u8);
 
 impl Flags {
@@ -85,7 +85,7 @@ macro_rules! attribute {
      ) => {
 
         // TODO Serialize
-        #[derive(Clone, Debug, Eq, Hash, PartialEq)]
+        #[derive(Clone, Debug, Eq, Hash, PartialEq, rkyv::Archive, rkyv::Serialize)]
         #[cfg_attr(feature = "serde", derive(serde::Serialize))]
         pub struct $name($data);
         impl $name {
@@ -142,7 +142,7 @@ macro_rules! path_attributes {
 
 //------------ PathAttribute -------------------------------------------------
 
-        #[derive(Clone, Debug, Eq, PartialEq)]
+        #[derive(Clone, Debug, Eq, PartialEq, rkyv::Archive, rkyv::Serialize)]
         pub enum PathAttribute {
             $( $name($name) ),+,
             Unimplemented(UnimplementedPathAttribute),
@@ -516,7 +516,7 @@ path_attributes!(
 
 );
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, rkyv::Archive, rkyv::Serialize)]
 pub struct UnimplementedPathAttribute {
     flags: Flags,
     type_code: u8,
@@ -657,7 +657,7 @@ pub trait Attribute: AttributeHeader + Clone {
     
 }
 
-#[derive(Debug)]
+#[derive(Debug, rkyv::Archive, rkyv::Serialize)]
 pub struct PathAttributes<'a, Octs> {
     pub parser: Parser<'a, Octs>,
     pub session_config: SessionConfig,
@@ -916,7 +916,7 @@ impl Display for AtomicAggregate {
 
 //--- Aggregator
 
-#[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, rkyv::Archive, rkyv::Serialize)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct AggregatorInfo {
     asn: Asn,
@@ -1059,7 +1059,7 @@ impl Attribute for OriginatorId {
 
 //--- ClusterList
 
-#[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, rkyv::Archive, rkyv::Serialize)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct BgpIdentifier([u8; 4]);
 
@@ -1077,7 +1077,7 @@ impl From<u32> for BgpIdentifier {
 }
 */
 
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, rkyv::Archive, rkyv::Serialize)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct ClusterIds {
     cluster_ids: Vec<BgpIdentifier>
@@ -1379,7 +1379,7 @@ impl Attribute for MpUnreachNlri {
 //--- ExtendedCommunities
 
 use crate::bgp::communities::ExtendedCommunity;
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, rkyv::Archive, rkyv::Serialize)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct ExtendedCommunitiesList {
     communities: Vec<ExtendedCommunity>
@@ -1544,7 +1544,7 @@ impl Attribute for Connector {
 
 //--- AsPathLimit (deprecated)
 
-#[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, rkyv::Archive, rkyv::Serialize)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct AsPathLimitInfo {
     upper_bound: u8,
@@ -1592,7 +1592,7 @@ impl Attribute for AsPathLimit {
 //--- Ipv6ExtendedCommunities
 
 use crate::bgp::communities::Ipv6ExtendedCommunity;
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, rkyv::Archive, rkyv::Serialize)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct Ipv6ExtendedCommunitiesList {
     communities: Vec<Ipv6ExtendedCommunity>
@@ -1654,7 +1654,7 @@ impl Attribute for Ipv6ExtendedCommunities {
 //--- LargeCommunities
 
 use crate::bgp::communities::LargeCommunity;
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, rkyv::Archive, rkyv::Serialize)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct LargeCommunitiesList {
     communities: Vec<LargeCommunity>
@@ -1743,7 +1743,7 @@ impl Attribute for Otc {
 
 //--- AttributeSet
 
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, rkyv::Archive, rkyv::Serialize)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct AttributeSet {
     origin: Asn,
@@ -1797,7 +1797,7 @@ impl Attribute for AttrSet {
 
 //--- ReservedRaw
 
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, rkyv::Archive, rkyv::Serialize)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct ReservedRaw {
     raw: Vec<u8>,

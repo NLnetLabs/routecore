@@ -58,7 +58,7 @@ pub trait SerializeForOperators: Serialize {
 ///     
 /// ```Hop(AS10), Hop(AS20), Hop(AS30), Hop(Set(AS40, AS50))```
 ///
-#[derive(Clone, Debug, Default, Eq, PartialEq, Hash)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Hash, rkyv::Archive, rkyv::Serialize)]
 pub struct HopPath {
     /// The hops in this HopPath.
     hops: Vec<OwnedHop>,
@@ -750,7 +750,7 @@ impl<'a, Octs: Octets> Iterator for PathSegments<'a, Octs> {
 //----------- Segment --------------------------------------------------------
 
 /// AS_PATH Segment generic over [`Octets`].
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, rkyv::Archive, rkyv::Serialize)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct Segment<Octs> {
     stype: SegmentType,
@@ -972,7 +972,7 @@ impl<Octs: Octets> fmt::Display for Segment<Octs> {
 
 
 /// AS_PATH Segment types as defined in RFC4271 and RFC5065.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, rkyv::Archive, rkyv::Serialize)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum SegmentType {
     Set,
@@ -1030,7 +1030,7 @@ impl fmt::Display for SegmentType {
 /// AS_SEQUENCE segments. Other segment types are represented by the other
 /// variant `Segment`, which contain the entire segment and thus (possibly)
 /// multiple ASNs.
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, rkyv::Archive, rkyv::Serialize)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub enum Hop<Octs> {
     Asn(Asn),

@@ -111,7 +111,8 @@ pub trait SerializeForOperators: Serialize {
 //------------ Community -----------------------------------------------------
 
 /// Standard and Extended/Large Communities variants.
-#[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, )]
+#[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, 
+rkyv::Archive, rkyv::Serialize)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub enum Community {
     Standard(StandardCommunity),
@@ -259,7 +260,7 @@ impl Display for Community {
 /// We therefore provide our Serialize impl which will be used by callers when
 /// serializing our Community type and in turn the contained routecore
 /// Community type and its children.
-#[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, )]
+#[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, rkyv::Archive, rkyv::Serialize)]
 pub struct HumanReadableCommunity(pub Community);
 
 impl From<Community> for HumanReadableCommunity {
@@ -481,7 +482,7 @@ wellknown!(Wellknown,
 //--- StandardCommunity ------------------------------------------------------
 
 /// Conventional, RFC1997 4-byte community.
-#[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd )]
+#[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, rkyv::Archive, rkyv::Serialize )]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct StandardCommunity([u8; 4]);
 
@@ -750,7 +751,7 @@ impl Display for Tag {
 //--- ExtendedCommunity ------------------------------------------------------
 
 /// Extended Community as defined in RFC4360.
-#[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd )]
+#[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, rkyv::Archive, rkyv::Serialize )]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct ExtendedCommunity([u8; 8]);
 
@@ -1308,7 +1309,7 @@ impl SerializeForOperators for ExtendedCommunity {
 //--- Ipv6ExtendedCommunity --------------------------------------------------
 
 /// IPv6 Extended Community as defined in RFC5701.
-#[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd )]
+#[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, rkyv::Archive, rkyv::Serialize )]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct Ipv6ExtendedCommunity([u8; 20]);
 
@@ -1436,7 +1437,7 @@ impl Display for Ipv6ExtendedCommunity {
 //--- LargeCommunity ---------------------------------------------------------
 
 /// Large Community as defined in RFC8092.
-#[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd )]
+#[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, rkyv::Archive, rkyv::Serialize )]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct LargeCommunity([u8; 12]);
 

@@ -32,7 +32,7 @@ use crate::bgp::communities::{
 };
 
 /// BGP UPDATE message, variant of the [`Message`] enum.
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq, rkyv::Archive, rkyv::Serialize)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct UpdateMessage<Octs: Octets> {
     octets: Octs,
@@ -1013,7 +1013,7 @@ impl<Octs: Octets> UpdateMessage<Octs> {
 /// available in the UPDATE messages themselves, but are only exchanged in the
 /// BGP OPEN messages when the session was established.
 ///
-#[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, rkyv::Archive, rkyv::Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct SessionConfig {
@@ -1022,7 +1022,7 @@ pub struct SessionConfig {
 }
 
 
-#[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, rkyv::Archive, rkyv::Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 struct SessionAddpaths([Option<AddpathDirection>; 16]);
@@ -1153,7 +1153,7 @@ impl SessionConfig {
 }
 
 /// Indicates whether this session is Four Octet capable.
-#[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, rkyv::Archive, rkyv::Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub enum FourOctetAsn {

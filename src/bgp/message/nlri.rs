@@ -744,7 +744,7 @@ impl NextHop {
 /// Path Identifier for BGP Multiple Paths (RFC7911).
 ///
 /// Optionally used in [`BasicNlri`].
-#[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, Hash, PartialEq, rkyv::Archive, rkyv::Serialize)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct PathId(u32);
 
@@ -784,7 +784,7 @@ impl fmt::Display for PathId {
 }
 
 /// MPLS labels, part of [`MplsNlri`] and [`MplsVpnNlri`].
-#[derive(Copy, Clone, Debug, Hash)]
+#[derive(Copy, Clone, Debug, Hash, rkyv::Archive, rkyv::Serialize)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct Labels<Octs> {
     octets: Octs
@@ -883,7 +883,7 @@ impl<Octs: Octets> Labels<Octs> {
 /// Route Distinguisher (RD) as defined in RFC4364.
 ///
 /// Used in [`MplsVpnNlri`], [`VplsNlri`] and [`NextHop`].
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd, rkyv::Archive, rkyv::Serialize)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct RouteDistinguisher {
     bytes: [u8; 8]
@@ -965,7 +965,7 @@ pub enum RouteDistinguisherType {
 /// NLRI comprised of a [`Prefix`] and an optional [`PathId`].
 ///
 /// The `BasicNlri` is extended in [`MplsNlri`] and [`MplsVpnNlri`].
-#[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, Hash, PartialEq, rkyv::Archive, rkyv::Serialize)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct BasicNlri {
     pub prefix: Prefix,
@@ -973,7 +973,7 @@ pub struct BasicNlri {
 }
 
 /// NLRI comprised of a [`BasicNlri`] and MPLS `Labels`.
-#[derive(Copy, Clone, Debug, Hash)]
+#[derive(Copy, Clone, Debug, Hash, rkyv::Archive, rkyv::Serialize)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct MplsNlri<Octs> {
     basic: BasicNlri,
@@ -991,7 +991,7 @@ where Octs: AsRef<[u8]>,
 
 /// NLRI comprised of a [`BasicNlri`], MPLS `Labels` and a VPN
 /// `RouteDistinguisher`.
-#[derive(Copy, Clone, Debug, Hash)]
+#[derive(Copy, Clone, Debug, Hash, rkyv::Archive, rkyv::Serialize)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct MplsVpnNlri<Octs> {
     basic: BasicNlri,
@@ -1025,7 +1025,7 @@ where Octs: AsRef<[u8]>,
 }
 
 /// VPLS Information as defined in RFC4761.
-#[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, Hash, PartialEq, rkyv::Archive, rkyv::Serialize)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct VplsNlri {
     rd: RouteDistinguisher,
@@ -1038,7 +1038,7 @@ pub struct VplsNlri {
 /// NLRI containing a FlowSpec v1 specification.
 ///
 /// Also see [`crate::flowspec`].
-#[derive(Copy, Clone, Debug, Hash)]
+#[derive(Copy, Clone, Debug, Hash, rkyv::Archive, rkyv::Serialize)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct FlowSpecNlri<Octs> {
     #[allow(dead_code)]
@@ -1058,7 +1058,7 @@ where Octs: AsRef<[u8]>,
 /// NLRI containing a Route Target membership as defined in RFC4684.
 ///
 /// **TODO**: implement accessor methods for the contents of this NLRI.
-#[derive(Copy, Clone, Debug, Hash)]
+#[derive(Copy, Clone, Debug, Hash, rkyv::Archive, rkyv::Serialize)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct RouteTargetNlri<Octs> {
     #[allow(dead_code)]
@@ -1077,7 +1077,7 @@ where Octs: AsRef<[u8]>,
 /// NLRI containing a EVPN NLRI as defined in RFC7432.
 ///
 /// **TODO**: implement accessor methods for the contents of this NLRI.
-#[derive(Copy, Clone, Debug, Hash)]
+#[derive(Copy, Clone, Debug, Hash, rkyv::Archive, rkyv::Serialize)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct EvpnNlri<Octs> {
     #[allow(dead_code)]
@@ -1119,7 +1119,7 @@ where Octs: AsRef<[u8]>,
 }
 
 /// Conventional and BGP-MP NLRI variants.
-#[derive(Copy, Clone, Debug, Hash)]
+#[derive(Copy, Clone, Debug, Hash, rkyv::Archive, rkyv::Serialize)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub enum Nlri<Octets> {                     // (AFIs  , SAFIs):
     Unicast(BasicNlri),                     // (v4/v6, unicast)

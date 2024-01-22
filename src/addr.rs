@@ -21,7 +21,7 @@ use std::str::FromStr;
 ///
 /// There is no way of distinguishing between IPv4 and IPv6 from just a value
 /// of this type. This information needs to be carried separately.
-#[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd, rkyv::Archive, rkyv::Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 struct Bits(u128);
 
@@ -159,7 +159,7 @@ impl fmt::Debug for Bits {
 /// the value as their prefix length. If the left-most bit is set, the value
 /// is a IPv6 prefix with the length encoded by flipping all the bits. The
 /// value of 64 stands in for an IPv6 prefix with length 128.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, rkyv::Archive, rkyv::Serialize)]
 struct FamilyAndLen(u8);
 
 impl FamilyAndLen {
@@ -237,7 +237,7 @@ impl<'a> arbitrary::Arbitrary<'a> for FamilyAndLen {
 /// prefix matching in routing/forwarding)) or preventing unwanted
 /// intermediate stage (i.e. ROAs/VRPs for less-specifics making
 /// not-yet-processed more-specifics Invalid).
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, rkyv::Archive, rkyv::Serialize)]
 pub struct Prefix {
     /// The address family and prefix length all in one.
     family_and_len: FamilyAndLen,
