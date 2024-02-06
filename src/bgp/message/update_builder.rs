@@ -1,6 +1,5 @@
 use std::fmt;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
-use std::collections::BTreeMap;
 
 use bytes::BytesMut;
 use octseq::{FreezeBuilder, Octets, OctetsBuilder, OctetsFrom, OctetsInto, ShortBuf};
@@ -25,7 +24,7 @@ use crate::bgp::path_attributes::{
     MultiExitDisc,
     NextHop as NextHopAttribute,
     Origin,
-    PathAttribute, PathAttributesBuilder, PathAttributeType
+    AttributesMap, PathAttribute, PathAttributesBuilder, PathAttributeType
 };
 
 //------------ UpdateBuilder -------------------------------------------------
@@ -38,7 +37,7 @@ pub struct UpdateBuilder<Target> {
     withdrawals: Vec<Nlri<Vec<u8>>>,
     addpath_enabled: Option<bool>, // for conventional nlri (unicast v4)
     // attributes:
-    attributes: BTreeMap<PathAttributeType, PathAttribute>,
+    attributes: AttributesMap
 }
 
 impl<T> UpdateBuilder<T> {
@@ -61,7 +60,7 @@ where Target: octseq::Truncate
             announcements: Vec::new(),
             withdrawals: Vec::new(),
             addpath_enabled: None,
-            attributes: BTreeMap::new(),
+            attributes: AttributesMap::new()
         })
     }
 
@@ -603,7 +602,7 @@ impl<Target> UpdateBuilder<Target>
         )?)
     }
 
-    pub fn into_attributes(self) -> BTreeMap<PathAttributeType, PathAttribute> {
+    pub fn into_attributes(self) -> AttributesMap {
         self.attributes
     }
 

@@ -463,10 +463,10 @@ macro_rules! path_attributes {
         }
 */
 
-type AttributeMap = BTreeMap<PathAttributeType, PathAttribute>;
+pub type AttributesMap = BTreeMap<PathAttributeType, PathAttribute>;
 
 pub struct PathAttributesBuilder {
-    attributes: AttributeMap,
+    attributes: AttributesMap,
 }
 
 impl PathAttributesBuilder {
@@ -507,7 +507,7 @@ impl PathAttributesBuilder {
         Ok(())
     }
 
-    pub fn into_inner(self) -> AttributeMap {
+    pub fn into_inner(self) -> AttributesMap {
         self.attributes
     }
 
