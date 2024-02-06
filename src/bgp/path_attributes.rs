@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::fmt::{self, Display};
 use std::net::Ipv4Addr;
 
@@ -7,8 +8,10 @@ use octseq::{Octets, OctetsBuilder, OctetsFrom, Parser};
 use crate::asn::Asn;
 use crate::bgp::aspath::HopPath;
 use crate::bgp::message::{
+    SessionConfig,
+    UpdateMessage,
     nlri::FixedNlriIter,
-    SessionConfig
+    update_builder::{ComposeError, UpdateBuilder},
 };
 use crate::bgp::message::update_builder::{
     MpReachNlriBuilder,
@@ -432,6 +435,150 @@ macro_rules! path_attributes {
                 }
             }
         }
+
+/*
+//------------ MaterializedPathAttributes ------------------------------------
+
+    paste! {
+        #[derive(Clone, Debug, Eq, Hash, PartialEq)]
+        pub struct MaterializedPathAttributes {
+            $( pub [<$name:snake>] : Option<$name> ),+,
+            pub unknown_transitives: Vec<UnimplementedPathAttribute>,
+        }
+    }
+
+        impl MaterializedPathAttributes {
+
+            pub fn from_message(msg: super::message::UpdateMessage<()>) -> Self {
+                todo!()
+            }
+        }
+    
+        impl<I> From<I> for MaterializedPathAttributes
+            where I: Iterator<Item = PathAttribute>
+        {
+            fn from(_iter: I) -> Self {
+                todo!()
+            }
+        }
+*/
+
+type AttributeMap = BTreeMap<PathAttributeType, PathAttribute>;
+
+pub struct PathAttributesBuilder {
+    attributes: AttributeMap,
+}
+
+impl PathAttributesBuilder {
+
+    pub fn empty() -> Self {
+        Self {
+            attributes: BTreeMap::new()
+        }
+    }
+
+    pub fn from_update_pdu<Octs: Octets>(pdu: &UpdateMessage<Octs>)
+        -> Result<Self, ComposeError>
+    where
+        for<'a> Vec<u8>: OctetsFrom<Octs::Range<'a>>
+    {
+        let mut res = Self::empty();
+        for pa in pdu.path_attributes()? {
+            if let Ok(pa) = pa {
+                if pa.type_code() != PathAttributeType::MpReachNlri
+                    && pa.type_code() != PathAttributeType::MpUnreachNlri
+                {
+                    if let PathAttributeType::Invalid(n) = pa.type_code() {
+                        warn!("invalid PA {}:\n{}", n, pdu.fmt_pcap_string());
+                    }
+                    res.add_attribute(pa.to_owned()?)?;
+                }
+            } else {
+                return Err(ComposeError::InvalidAttribute);
+            }
+        }
+        Ok(res)
+    }
+
+    pub fn merge(&mut self, other: &Self) -> Result<(), ComposeError> {
+        for val in other.attributes.values().cloned() {
+            self.add_attribute(val)?;
+        }
+        Ok(())
+    }
+
+    pub fn into_inner(self) -> AttributeMap {
+        self.attributes
+    }
+
+    pub fn into_update_builder(self) -> UpdateBuilder<Vec<u8>>  {
+        UpdateBuilder::<Vec<u8>>::from_attributes_builder(self)
+    }
+
+    pub fn from_update_builder<T>(builder: UpdateBuilder<T>) -> Self {
+        Self {
+            attributes: builder.into_attributes()
+        }
+    }
+
+    pub fn add_attribute(&mut self, pa: PathAttribute)
+        -> Result<(), ComposeError>
+    {
+        if let PathAttribute::Invalid(..) = pa {
+            warn!(
+                "adding Invalid attribute to UpdateBuilder: {}",
+                  &pa.type_code()
+            );
+        }
+        if let Some(existing_pa) = self.attributes.get_mut(&pa.type_code()) {
+            *existing_pa = pa;
+        } else {
+            self.attributes.insert(pa.type_code(), pa);
+        }
+        
+        Ok(())
+    }
+
+    //-------- Specific path attribute methods -------------------------------
+    //
+    pub fn set_origin(&mut self, origin: OriginType)
+        -> Result<(), ComposeError>
+    {
+        self.add_attribute(Origin::new(origin).into())
+    }
+
+    pub fn set_aspath(&mut self , aspath: HopPath)
+        -> Result<(), ComposeError>
+    {
+        // XXX there should be a HopPath::compose_len really, instead of
+        // relying on .to_as_path() first.
+        if let Ok(wireformat) = aspath.to_as_path::<Vec<u8>>() {
+            if wireformat.compose_len() > u16::MAX.into() {
+                return Err(ComposeError::AttributeTooLarge(
+                     PathAttributeType::AsPath,
+                     wireformat.compose_len()
+                ));
+            }
+        } else {
+            return Err(ComposeError::InvalidAttribute)
+        }
+
+        self.add_attribute(AsPath::new(aspath).into())
+    }
+
+    pub fn set_multi_exit_disc(&mut self, med: MultiExitDisc)
+    -> Result<(), ComposeError>
+    {
+        self.add_attribute(med.into())
+    }
+
+    pub fn set_local_pref(&mut self, local_pref: LocalPref)
+    -> Result<(), ComposeError>
+    {
+        self.add_attribute(local_pref.into())
+    }
+}
+
 
 //------------ PathAttributeType ---------------------------------------------
 

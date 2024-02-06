@@ -25,7 +25,7 @@ use crate::bgp::path_attributes::{
     MultiExitDisc,
     NextHop as NextHopAttribute,
     Origin,
-    PathAttribute, PathAttributeType
+    PathAttribute, PathAttributesBuilder, PathAttributeType
 };
 
 //------------ UpdateBuilder -------------------------------------------------
@@ -63,6 +63,14 @@ where Target: octseq::Truncate
             addpath_enabled: None,
             attributes: BTreeMap::new(),
         })
+    }
+
+    pub fn from_attributes_builder(attributes: PathAttributesBuilder)
+        -> UpdateBuilder<Vec<u8>>
+    {
+        let mut res = UpdateBuilder::<Vec<u8>>::new_vec();
+        res.attributes = attributes.into_inner();
+        res
     }
 
     /// Creates an UpdateBuilder with Path Attributes from an UpdateMessage
@@ -594,6 +602,11 @@ impl<Target> UpdateBuilder<Target>
             self.finish().map_err(|_| ShortBuf)?, SessionConfig::modern()
         )?)
     }
+
+    pub fn into_attributes(self) -> BTreeMap<PathAttributeType, PathAttribute> {
+        self.attributes
+    }
+
 
     // Check whether the combination of NLRI and attributes would produce a
     // valid UPDATE pdu.
