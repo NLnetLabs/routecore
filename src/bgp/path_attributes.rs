@@ -539,6 +539,12 @@ impl PathAttributesBuilder {
         Ok(())
     }
 
+    pub fn remove_attribute(&mut self, pat: PathAttributeType)
+        -> Option<PathAttribute>
+    {
+        self.attributes.remove(&pat)
+    }
+
     //-------- Specific path attribute methods -------------------------------
     //
     pub fn set_origin(&mut self, origin: OriginType)
