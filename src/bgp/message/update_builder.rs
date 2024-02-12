@@ -17,7 +17,7 @@ use crate::util::parser::ParseError;
 
 use crate::bgp::path_attributes::{
     AsPath,
-    Communities,
+    StandardCommunities,
     LocalPref,
     MpReachNlri,
     MpUnreachNlri,
@@ -396,15 +396,15 @@ where Target: octseq::Truncate
     pub fn add_community(&mut self, community: StandardCommunity)
         -> Result<(), ComposeError>
     {
-        if !self.attributes.contains_key(&PathAttributeType::Communities) {
-            self.add_attribute(Communities::new(
+        if !self.attributes.contains_key(&PathAttributeType::StandardCommunities) {
+            self.add_attribute(StandardCommunities::new(
                     StandardCommunitiesBuilder::new()
             ).into())?;
         }
-        let pa = self.attributes.get_mut(&PathAttributeType::Communities)
+        let pa = self.attributes.get_mut(&PathAttributeType::StandardCommunities)
             .unwrap(); // Just added it, so we know it is there.
             
-        if let PathAttribute::Communities(ref mut pa) = pa {
+        if let PathAttribute::StandardCommunities(ref mut pa) = pa {
             let builder = pa.as_mut();
             builder.add_community(community);
             Ok(())
@@ -604,6 +604,16 @@ impl<Target> UpdateBuilder<Target>
 
     pub fn into_attributes(self) -> AttributesMap {
         self.attributes
+    }
+
+    pub fn attributes(&self) -> &AttributesMap {
+        &self.attributes
+    }
+
+    pub fn from_map(&self, map: &mut AttributesMap) -> PathAttributesBuilder {
+        let mut pab = PathAttributesBuilder::empty();
+        pab.append(map);
+        pab
     }
 
 
@@ -1337,7 +1347,7 @@ impl StandardCommunitiesBuilder {
         }
     }
 
-    pub(crate) fn communities(&self) -> &Vec<StandardCommunity> {
+    pub fn communities(&self) -> &Vec<StandardCommunity> {
         &self.communities
     }
 
@@ -1349,7 +1359,7 @@ impl StandardCommunitiesBuilder {
     //    }
     //}
 
-    pub(crate) fn add_community(&mut self, community: StandardCommunity) {
+    pub fn add_community(&mut self, community: StandardCommunity) {
         if !self.extended && self.len + 4 > 255 {
             self.extended = true;
         }
@@ -1743,7 +1753,7 @@ mod tests {
                 //    .unwrap()
             ).unwrap();
         }
-        builder.set_local_pref(LocalPref::new(123)).unwrap();
+        builder.set_local_pref(LocalPref::new(crate::bgp::types::LocalPref(123))).unwrap();
         builder.set_multi_exit_disc(MultiExitDisc::new(123)).unwrap();
         (1..=300).for_each(|n| {
             builder.add_community(StandardCommunity::new(n.into(), Tag::new(123))).unwrap();
@@ -2109,7 +2119,7 @@ mod tests {
         builder.set_aspath(path).unwrap();
 
         builder.set_multi_exit_disc(MultiExitDisc::new(1234)).unwrap();
-        builder.set_local_pref(LocalPref::new(9876)).unwrap();
+        builder.set_local_pref(LocalPref::new(crate::bgp::types::LocalPref(9876))).unwrap();
 
         let msg = builder.into_message().unwrap();
         msg.print_pcap();

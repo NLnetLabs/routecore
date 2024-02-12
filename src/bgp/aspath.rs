@@ -83,6 +83,10 @@ impl HopPath {
         self.hops.iter().any(|h| h == hop)
     }
 
+    pub fn get_hop(&self, index: usize) -> Option<&OwnedHop> {
+        self.hops.get(index)
+    }
+
     /// Returns the number of [`Hop`]s in this HopPath.
     ///
     /// Note that this counts AS_SETs, AS_CONFED_SEQUENCEs and AS_CONFED_SETs

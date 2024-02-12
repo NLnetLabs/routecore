@@ -750,7 +750,7 @@ impl<Octs: Octets> UpdateMessage<Octs> {
     fn _communities<T: From<[u8; 4]>>(&self)
         -> Result<Option<CommunityIter<Octs::Range<'_>, T>>, ParseError>
     {
-        if let Some(WireformatPathAttribute::Communities(epa)) = self.path_attributes()?.get(PathAttributeType::Communities) {
+        if let Some(WireformatPathAttribute::StandardCommunities(epa)) = self.path_attributes()?.get(PathAttributeType::StandardCommunities) {
             let mut p = epa.value_into_parser();
             Ok(Some(CommunityIter::new(p.parse_octets(p.remaining())?)))
         } else {

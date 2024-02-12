@@ -483,7 +483,7 @@ wellknown!(Wellknown,
 /// Conventional, RFC1997 4-byte community.
 #[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd )]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
-pub struct StandardCommunity([u8; 4]);
+pub struct StandardCommunity(pub(crate) [u8; 4]);
 
 impl StandardCommunity {
     pub fn new(asn: Asn16, tag: Tag) -> StandardCommunity {
