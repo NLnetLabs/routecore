@@ -1,10 +1,9 @@
 use std::collections::BTreeMap;
 use std::fmt::{self, Display};
-use std::net::{IpAddr, Ipv4Addr};
+use std::net::Ipv4Addr;
 
 use log::{debug, warn};
 use octseq::{Octets, OctetsBuilder, OctetsFrom, Parser};
-use serde::{Deserialize, Serialize};
 
 use crate::asn::Asn;
 use crate::bgp::aspath::HopPath;

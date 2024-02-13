@@ -1,16 +1,14 @@
 use std::fmt::Debug;
 use std::hash::Hash;
-use std::marker::PhantomData;
 use std::net::Ipv4Addr;
 
 use octseq::{Octets, OctetsFrom};
 use serde::Serialize;
 
 use crate::bgp::communities::Community;
-use crate::bgp::message::update::MultiExitDisc;
 use crate::bgp::message::update_builder::ComposeError;
 use crate::bgp::message::UpdateMessage;
-use crate::bgp::path_attributes::{Attribute, PathAttributesBuilder};
+use crate::bgp::path_attributes::PathAttributesBuilder;
 use crate::{
     asn::Asn,
     bgp::{
@@ -29,10 +27,8 @@ use crate::{
     },
 };
 
-use super::afisafi_nlri::AfiSafiNlri;
-
 #[derive(Debug)]
-pub enum TypedRoute<N: Clone + Debug + Hash + AfiSafiNlri<bytes::Bytes>> {
+pub enum TypedRoute<N: Clone + Debug + Hash> {
     Announce(Route<N>),
     Withdraw(Nlri<N>),
 }
@@ -42,7 +38,7 @@ pub struct Route<N: Clone + Debug + Hash>(N, AttributesMap);
 
 impl<N: Clone + Debug + Hash> Route<N> {
     pub fn new(nlri: N, attrs: AttributesMap) -> Self {
-        Self ( nlri, attrs )
+        Self(nlri, attrs)
     }
 
     pub fn nlri(&self) -> &N {
@@ -302,7 +298,9 @@ impl From<Asn> for PathAttribute {
 
 impl From<StandardCommunitiesBuilder> for PathAttribute {
     fn from(value: StandardCommunitiesBuilder) -> Self {
-        PathAttribute::StandardCommunities(crate::bgp::path_attributes::StandardCommunities(value))
+        PathAttribute::StandardCommunities(
+            crate::bgp::path_attributes::StandardCommunities(value),
+        )
     }
 }
 
@@ -425,21 +423,19 @@ impl<N: Clone + Debug + Hash> RouteWorkshop<N> {
 
     pub fn make_route(&self) -> Option<Route<N>> {
         match self {
-            RouteWorkshop(Some(nlri), Some(pab),) => Some(Route::<N>(
-                nlri.clone(),
-                pab.attributes().clone(),
-            )),
-            _ => None
+            RouteWorkshop(Some(nlri), Some(pab)) => {
+                Some(Route::<N>(nlri.clone(), pab.attributes().clone()))
+            }
+            _ => None,
         }
     }
 
     pub fn make_route_with_nlri(&self, nlri: N) -> Option<Route<N>> {
         match self {
-            RouteWorkshop(_, Some(pab),) => Some(Route::<N>(
-                nlri.clone(),
-                pab.attributes().clone(),
-            )),
-            _ => None
+            RouteWorkshop(_, Some(pab)) => {
+                Some(Route::<N>(nlri.clone(), pab.attributes().clone()))
+            }
+            _ => None,
         }
     }
 }
@@ -449,7 +445,7 @@ macro_rules! impl_workshop {
         $( $attr:ty )+
     ) => {
         $(
-            impl<N: Clone + Hash + Debug + AfiSafiNlri<bytes::Bytes>> Workshop<N> for $attr {
+            impl<N: Clone + Hash + Debug> Workshop<N> for $attr {
                 fn to_value(local_attrs: Self, attrs: &mut PathAttributesBuilder) ->
                     Result<(), ComposeError> { attrs.set(local_attrs); Ok(()) }
                 fn into_retrieved(self, _attrs: &PathAttributesBuilder) ->
@@ -476,9 +472,7 @@ impl_workshop!(
     crate::bgp::message::update_builder::StandardCommunitiesBuilder
 );
 
-impl<N: Clone + Hash + AfiSafiNlri<bytes::Bytes>> Workshop<N> for () {
-    // type Output = Self;
-
+impl<N: Clone + Hash> Workshop<N> for () {
     fn into_retrieved(self, _attrs: &PathAttributesBuilder) -> Self {
         self
     }
@@ -504,7 +498,7 @@ pub trait Workshop<N> {
 
 //------------ CommunitiesWorkshop -------------------------------------------
 
-impl<N: Clone + Hash + Debug + AfiSafiNlri<bytes::Bytes>> Workshop<N> for Vec<Community> {
+impl<N: Clone + Hash + Debug> Workshop<N> for Vec<Community> {
     fn into_retrieved(self, attrs: &PathAttributesBuilder) -> Self {
         let mut c = attrs
             .get::<StandardCommunitiesBuilder>()
