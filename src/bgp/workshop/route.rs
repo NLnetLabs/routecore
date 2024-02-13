@@ -32,7 +32,7 @@ use crate::{
 use super::afisafi_nlri::AfiSafiNlri;
 
 #[derive(Debug)]
-pub enum TypedRoute<N: Clone + Debug + Hash + AfiSafiNlri<Octs>> {
+pub enum TypedRoute<N: Clone + Debug + Hash + AfiSafiNlri<bytes::Bytes>> {
     Announce(Route<N>),
     Withdraw(Nlri<N>),
 }
