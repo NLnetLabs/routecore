@@ -381,7 +381,6 @@ impl From<crate::bgp::path_attributes::ClusterIds> for PathAttribute {
 pub struct RouteWorkshop<N>(
     Option<N>,
     Option<PathAttributesBuilder>,
-    // PhantomData<O>
 );
 
 impl<N: Clone + Debug + Hash> RouteWorkshop<N> {
@@ -399,7 +398,7 @@ impl<N: Clone + Debug + Hash> RouteWorkshop<N> {
         &self.0
     }
 
-    pub fn set_attr<A: Workshop<N> + FromAttribute>(
+    pub fn set_attr<A: WorkshopAttribute<N> + FromAttribute>(
         &mut self,
         attr: A,
     ) -> Result<(), ComposeError> {
@@ -414,7 +413,7 @@ impl<N: Clone + Debug + Hash> RouteWorkshop<N> {
         &self,
     ) -> Option<<A as FromAttribute>::Output>
     where
-        A::Output: Workshop<N>,
+        A::Output: WorkshopAttribute<N>,
     {
         self.1
             .as_ref()
@@ -445,7 +444,7 @@ macro_rules! impl_workshop {
         $( $attr:ty )+
     ) => {
         $(
-            impl<N: Clone + Hash + Debug> Workshop<N> for $attr {
+            impl<N: Clone + Hash + Debug> WorkshopAttribute<N> for $attr {
                 fn to_value(local_attrs: Self, attrs: &mut PathAttributesBuilder) ->
                     Result<(), ComposeError> { attrs.set(local_attrs); Ok(()) }
                 fn into_retrieved(self, _attrs: &PathAttributesBuilder) ->
@@ -472,7 +471,7 @@ impl_workshop!(
     crate::bgp::message::update_builder::StandardCommunitiesBuilder
 );
 
-impl<N: Clone + Hash> Workshop<N> for () {
+impl<N: Clone + Hash> WorkshopAttribute<N> for () {
     fn into_retrieved(self, _attrs: &PathAttributesBuilder) -> Self {
         self
     }
@@ -488,7 +487,7 @@ impl<N: Clone + Hash> Workshop<N> for () {
 
 //------------ Workshop ------------------------------------------------------
 
-pub trait Workshop<N> {
+pub trait WorkshopAttribute<N> {
     fn into_retrieved(self, attrs: &PathAttributesBuilder) -> Self;
     fn to_value(
         local_attrs: Self,
@@ -498,7 +497,7 @@ pub trait Workshop<N> {
 
 //------------ CommunitiesWorkshop -------------------------------------------
 
-impl<N: Clone + Hash + Debug> Workshop<N> for Vec<Community> {
+impl<N: Clone + Hash + Debug> WorkshopAttribute<N> for Vec<Community> {
     fn into_retrieved(self, attrs: &PathAttributesBuilder) -> Self {
         let mut c = attrs
             .get::<StandardCommunitiesBuilder>()
@@ -683,7 +682,7 @@ impl FromAttribute for Vec<Community> {
 
 //------------ NextHopWorkshop -----------------------------------------------
 
-impl<N: Clone + Hash> Workshop<N> for crate::bgp::types::NextHop {
+impl<N: Clone + Hash> WorkshopAttribute<N> for crate::bgp::types::NextHop {
     fn into_retrieved(self, attrs: &PathAttributesBuilder) -> Self {
         if let Some(next_hop) = attrs.get::<crate::bgp::types::NextHop>() {
             crate::bgp::types::NextHop::Unicast(next_hop.inner().into())
