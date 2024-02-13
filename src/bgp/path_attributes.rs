@@ -4,6 +4,7 @@ use std::net::{IpAddr, Ipv4Addr};
 
 use log::{debug, warn};
 use octseq::{Octets, OctetsBuilder, OctetsFrom, Parser};
+use serde::{Deserialize, Serialize};
 
 use crate::asn::Asn;
 use crate::bgp::aspath::HopPath;
@@ -24,6 +25,7 @@ use crate::util::parser::{ParseError, parse_ipv4addr};
 
 
 #[derive(Copy, Clone, Debug, Eq, Hash, PartialEq, Ord, PartialOrd)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct Flags(u8);
 
 impl Flags {
@@ -138,11 +140,18 @@ macro_rules! attribute {
 }
 
 
+#[derive(Debug, Eq, PartialEq, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+pub struct MaterializedRoute2 {
+    pub path_attributes: AttributesMap,
+}
+
 //------------ PathAttributesBuilder -----------------------------------------
 
 pub type AttributesMap = BTreeMap<PathAttributeType, PathAttribute>;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct PathAttributesBuilder {
     attributes: AttributesMap,
 }
@@ -160,6 +169,10 @@ impl PathAttributesBuilder {
 
     pub fn attributes_mut(&mut self) -> &mut AttributesMap {
         &mut self.attributes
+    }
+
+    pub fn attributes_owned(self) -> AttributesMap {
+        self.attributes
     }
 
     pub fn set<A: FromAttribute + Into<PathAttribute>>(
@@ -224,6 +237,8 @@ impl PathAttributesBuilder {
         self.attributes.remove(&pat)
     }
 
+    // Assemble a AttributesMap, but skipping MP_*REACH_NLRI, so that the
+    // returned result is valid for all NLRI in this message.
     pub fn from_update_pdu<Octs: Octets>(pdu: &UpdateMessage<Octs>)
     -> Result<Self, ComposeError>
     where
@@ -448,6 +463,7 @@ macro_rules! path_attributes {
 //------------ PathAttribute -------------------------------------------------
 
         #[derive(Clone, Debug, Eq, Hash, PartialEq)]
+        #[cfg_attr(feature = "serde", derive(serde::Serialize))]
         pub enum PathAttribute {
             $( $name($name) ),+,
             Unimplemented(UnimplementedPathAttribute),
@@ -784,6 +800,7 @@ macro_rules! path_attributes {
 //------------ PathAttributeType ---------------------------------------------
 
         #[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        #[cfg_attr(feature = "serde", derive(serde::Serialize))]
         pub enum PathAttributeType {
             $( $name ),+,
             Unimplemented(u8),
@@ -865,6 +882,7 @@ path_attributes!(
 );
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct UnimplementedPathAttribute {
     flags: Flags,
     type_code: u8,
