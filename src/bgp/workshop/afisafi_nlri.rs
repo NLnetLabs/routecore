@@ -102,10 +102,10 @@ impl<O: Octets> AfiSafiNlri<O> for Ipv6MulticastNlri {
 }
 
 #[derive(Clone, Debug, Hash)]
-pub struct Ipv4FlowSpecNlri(pub FlowSpecNlri<bytes::Bytes>);
+pub struct Ipv4FlowSpecNlri<O>(pub FlowSpecNlri<O>);
 
-impl<O: Octets> AfiSafiNlri<O> for Ipv4FlowSpecNlri {
-    type Nlri = Ipv4FlowSpecNlri;
+impl<O: Octets + Clone + Debug + Hash> AfiSafiNlri<O> for Ipv4FlowSpecNlri<O> {
+    type Nlri = Ipv4FlowSpecNlri<O>;
 
     fn nlri(&self) -> Self::Nlri { Ipv4FlowSpecNlri(self.0.clone()) }
 
