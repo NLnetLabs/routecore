@@ -1,5 +1,5 @@
 use std::fmt;
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use std::net::{IpAddr, Ipv6Addr};
 
 use bytes::BytesMut;
 use octseq::{FreezeBuilder, Octets, OctetsBuilder, OctetsFrom, OctetsInto, ShortBuf};
@@ -10,23 +10,12 @@ use crate::bgp::communities::StandardCommunity;
 use crate::bgp::message::{Header, MsgType, SessionConfig, UpdateMessage};
 use crate::bgp::message::nlri::Nlri;
 use crate::bgp::message::update::{Afi, Safi, AfiSafi, NextHop};
-use crate::bgp::types::OriginType;
 use crate::util::parser::ParseError;
 
 //use rotonda_fsm::bgp::session::AgreedConfig;
 
 use crate::bgp::path_attributes::{
-    AsPath,
-    StandardCommunities,
-    LocalPref,
-    MpReachNlri,
-    MpUnreachNlri,
-    MultiExitDisc,
-    ConventionalNextHop,
-    Origin,
-    PaMap,
-    PathAttribute,
-    PathAttributeType
+    PaMap, PathAttribute, PathAttributeType
 };
 
 //------------ UpdateBuilder -------------------------------------------------
@@ -146,14 +135,13 @@ where Target: octseq::Truncate
                         .attributes
                         .contains_attr::<MpUnreachNlriBuilder>()
                     {
-                        self.add_attribute(
-                            MpUnreachNlri::new(MpUnreachNlriBuilder::new(
+                        self.attributes.set(
+                            MpUnreachNlriBuilder::new(
                                 Afi::Ipv6,
                                 Safi::Unicast,
                                 b.is_addpath(),
-                            ))
-                            .into(),
-                        )?;
+                            )
+                        );
                     }
 
                     let mut builder = self
@@ -222,21 +210,16 @@ where Target: octseq::Truncate
                 &pa.type_code()
             );
         }
-        if let Some(existing_pa) =
-            self.attributes.attributes_mut().get_mut(&pa.type_code())
-        {
-            *existing_pa = pa;
-        } else {
-            self.attributes.attributes_mut().insert(pa.type_code(), pa);
-        }
+        // if let Some(existing_pa) =
+        //     self.attributes.attributes_mut().get_mut(&pa.type_code())
+        // {
+        //     *existing_pa = pa;
+        // } else {
+        //     self.attributes.attributes_mut().insert(pa.type_code(), pa);
+        // }
+        self.attributes.attributes_mut().insert(pa.type_code(), pa);
 
         Ok(())
-    }
-
-    pub fn set_origin(&mut self, origin: OriginType)
-        -> Result<(), ComposeError>
-    {
-        self.add_attribute(Origin::new(origin).into())
     }
 
     pub fn set_aspath(&mut self , aspath: HopPath)
@@ -255,19 +238,8 @@ where Target: octseq::Truncate
             return Err(ComposeError::InvalidAttribute)
         }
 
-        self.add_attribute(AsPath::new(aspath).into())
-    }
-
-    pub fn set_conventional_nexthop(
-        &mut self,
-        addr: Ipv4Addr,
-    ) -> Result<(), ComposeError> {
-        self.add_attribute(
-            ConventionalNextHop::new(crate::bgp::types::ConventionalNextHop(
-                addr,
-            ))
-            .into(),
-        )
+        self.attributes.set(aspath);
+        Ok(())
     }
 
     pub fn set_mp_nexthop(
@@ -285,7 +257,10 @@ where Target: octseq::Truncate
 
     pub fn set_nexthop_unicast(&mut self, addr: IpAddr) -> Result<(), ComposeError> {
         match addr {
-            IpAddr::V4(a) => self.set_conventional_nexthop(a),
+            IpAddr::V4(a) => {
+                self.attributes.set(crate::bgp::types::ConventionalNextHop(a));
+                Ok(())
+            },
             IpAddr::V6(_) => self.set_mp_nexthop(NextHop::Unicast(addr))
         }
     }
@@ -307,33 +282,20 @@ where Target: octseq::Truncate
             builder.set_nexthop_ll_addr(addr);
             self.attributes.set(builder);
         } else {
-            self.add_attribute(
-                MpReachNlri::new(MpReachNlriBuilder::new(
+            self.attributes.set(
+                MpReachNlriBuilder::new(
                     Afi::Ipv6,
                     Safi::Unicast,
                     NextHop::Ipv6LL(0.into(), addr),
                     false,
-                ))
-                .into(),
-            )?;
+                )
+            );
         }
 
         Ok(())
     }
 
-    pub fn set_multi_exit_disc(&mut self, med: MultiExitDisc)
-    -> Result<(), ComposeError>
-    {
-        self.add_attribute(med.into())
-    }
-
-    pub fn set_local_pref(&mut self, local_pref: LocalPref)
-    -> Result<(), ComposeError>
-    {
-        self.add_attribute(local_pref.into())
-    }
-
-
+    
     //--- Announcements
 
     pub fn add_announcement<T>(&mut self, announcement: &Nlri<T>)
@@ -360,10 +322,9 @@ where Target: octseq::Truncate
             }
             n => {
                 if !self.attributes.contains_attr::<MpReachNlriBuilder>() {
-                    self.add_attribute(
-                        MpReachNlri::new(MpReachNlriBuilder::new_for_nlri(n))
-                            .into(),
-                    )?;
+                    self.attributes.set(
+                        MpReachNlriBuilder::new_for_nlri(n)
+                    );
                 }
 
                 let mut builder = self
@@ -407,10 +368,7 @@ where Target: octseq::Truncate
         community: StandardCommunity,
     ) -> Result<(), ComposeError> {
         if !self.attributes.contains_attr::<StandardCommunitiesList>() {
-            self.add_attribute(
-                StandardCommunities::new(StandardCommunitiesList::new())
-                    .into(),
-            )?;
+            self.attributes.set(StandardCommunitiesList::new());
         }
         let mut builder = self
             .attributes
@@ -812,8 +770,8 @@ impl<Target> UpdateBuilder<Target>
                     let this_batch = reach_builder.split(split_at);
                     let mut builder = Self::from_target(self.target.clone()).unwrap();
                     builder.attributes = self.attributes.clone();
-                    self.add_attribute(MpReachNlri::new(reach_builder).into()).unwrap();
-                    builder.add_attribute(MpReachNlri::new(this_batch).into()).unwrap();
+                    self.attributes.set(reach_builder);
+                    builder.attributes.set(this_batch);
 
                     Some(builder.into_message())
                 } else {
@@ -1455,7 +1413,7 @@ mod tests {
 
     use octseq::Parser;
 
-    use crate::addr::Prefix;
+    use crate::{addr::Prefix, bgp::message::update::OriginType};
     use crate::asn::Asn;
     //use crate::bgp::communities::Wellknown;
     use crate::bgp::message::nlri::BasicNlri;
@@ -1740,8 +1698,8 @@ mod tests {
                 //    .unwrap()
             ).unwrap();
         }
-        builder.set_local_pref(LocalPref::new(crate::bgp::types::LocalPref(123))).unwrap();
-        builder.set_multi_exit_disc(MultiExitDisc::new(crate::bgp::types::MultiExitDisc(123))).unwrap();
+        builder.attributes.set(crate::bgp::types::LocalPref(123));
+        builder.attributes.set(crate::bgp::types::MultiExitDisc(123));
         (1..=300).for_each(|n| {
             builder.add_community(StandardCommunity::new(n.into(), Tag::new(123))).unwrap();
         });
@@ -1937,7 +1895,7 @@ mod tests {
             "1.0.4.0/24",
         ].map(|p| Nlri::unicast_from_str(p).unwrap());
         builder.announcements_from_iter(prefixes).unwrap();
-        builder.set_origin(OriginType::Igp).unwrap();
+        builder.attributes.set(OriginType::Igp);
         builder.set_nexthop_unicast(Ipv4Addr::from_str("1.2.3.4").unwrap().into()).unwrap();
         let path = HopPath::from([
              Asn::from_u32(123); 70
@@ -1964,7 +1922,7 @@ mod tests {
             "2001:db8:3::/48",
         ].map(|p| Nlri::unicast_from_str(p).unwrap());
         builder.announcements_from_iter(prefixes).unwrap();
-        builder.set_origin(OriginType::Igp).unwrap();
+        builder.attributes.set(OriginType::Igp);
         builder.set_nexthop_unicast(Ipv6Addr::from_str("fe80:1:2:3::").unwrap().into()).unwrap();
         let path = HopPath::from([
              Asn::from_u32(100),
@@ -1984,7 +1942,7 @@ mod tests {
         use crate::bgp::aspath::HopPath;
 
         let mut builder = UpdateBuilder::new_vec();
-        builder.set_origin(OriginType::Igp).unwrap();
+        builder.attributes.set(OriginType::Igp);
         builder.set_nexthop_unicast(Ipv6Addr::from_str("fe80:1:2:3::").unwrap().into()).unwrap();
         let path = HopPath::from([
              Asn::from_u32(100),
@@ -2012,7 +1970,7 @@ mod tests {
         ].map(|p| Nlri::unicast_from_str(p).unwrap());
 
         builder.announcements_from_iter(prefixes).unwrap();
-        builder.set_origin(OriginType::Igp).unwrap();
+        builder.attributes.set(OriginType::Igp);
         builder.set_nexthop_ll_addr("fe80:1:2:3::".parse().unwrap()).unwrap();
 
 
@@ -2035,7 +1993,7 @@ mod tests {
         use crate::bgp::aspath::HopPath;
 
         let mut builder = UpdateBuilder::new_vec();
-        builder.set_origin(OriginType::Igp).unwrap();
+        builder.attributes.set(OriginType::Igp);
         //builder.set_nexthop("2001:db8::1".parse().unwrap()).unwrap();
         builder.set_nexthop_ll_addr("fe80:1:2:3::".parse().unwrap()).unwrap();
         let path = HopPath::from([
@@ -2062,7 +2020,7 @@ mod tests {
             "1.0.4.0/24",
         ].map(|p| Nlri::unicast_from_str(p).unwrap());
         builder.announcements_from_iter(prefixes).unwrap();
-        builder.set_origin(OriginType::Igp).unwrap();
+        builder.attributes.set(OriginType::Igp);
         builder.set_nexthop_unicast("1.2.3.4".parse::<Ipv4Addr>().unwrap().into()).unwrap();
         let path = HopPath::from([
              Asn::from_u32(100),
@@ -2095,7 +2053,7 @@ mod tests {
             "1.0.4.0/24",
         ].map(|p| Nlri::unicast_from_str(p).unwrap());
         builder.announcements_from_iter(prefixes).unwrap();
-        builder.set_origin(OriginType::Igp).unwrap();
+        builder.attributes.set(OriginType::Igp);
         builder.set_nexthop_unicast(Ipv4Addr::from_str("1.2.3.4").unwrap().into()).unwrap();
         let path = HopPath::from([
              Asn::from_u32(100),
@@ -2105,8 +2063,8 @@ mod tests {
         //builder.set_aspath::<Vec<u8>>(path.to_as_path().unwrap()).unwrap();
         builder.set_aspath(path).unwrap();
 
-        builder.set_multi_exit_disc(MultiExitDisc::new(crate::bgp::types::MultiExitDisc(1234))).unwrap();
-        builder.set_local_pref(LocalPref::new(crate::bgp::types::LocalPref(9876))).unwrap();
+        builder.attributes.set(crate::bgp::types::MultiExitDisc(1234));
+        builder.attributes.set(crate::bgp::types::LocalPref(9876));
 
         let msg = builder.into_message().unwrap();
         msg.print_pcap();
@@ -2164,9 +2122,9 @@ mod tests {
         
         assert_eq!(builder.attributes.len(), 4);
 
-        builder.set_origin(OriginType::Igp).unwrap();
-        builder.set_origin(OriginType::Egp).unwrap();
-        builder.set_origin(OriginType::Igp).unwrap();
+        builder.attributes.set(OriginType::Igp);
+        builder.attributes.set(OriginType::Egp);
+        builder.attributes.set(OriginType::Igp);
 
         assert_eq!(builder.attributes.len(), 4);
 
@@ -2184,7 +2142,7 @@ mod tests {
         builder.add_community(
             StandardCommunity::from_str("AS1234:999").unwrap()
         ).unwrap();
-        builder.set_origin(OriginType::Igp).unwrap();
+        builder.attributes.set(OriginType::Igp);
         builder.add_community(
             StandardCommunity::from_str("AS1234:1000").unwrap()
         ).unwrap();
@@ -2232,7 +2190,7 @@ mod tests {
 
             if let Some(nh) = original.conventional_next_hop().unwrap() {
                 if let NextHop::Unicast(IpAddr::V4(a))= nh {
-                    builder.set_conventional_nexthop(a).unwrap();
+                    builder.attributes.set(crate::bgp::types::ConventionalNextHop(a));
                 } else {
                     unreachable!()
                 }
@@ -2271,7 +2229,7 @@ mod tests {
 
 
             // compare as much as possible:
-            #[allow(clippy::blocks_in_if_conditions)]
+            #[allow(clippy::blocks_in_conditions)]
             if std::panic::catch_unwind(|| {
             assert_eq!(original.origin(), composed.origin());
             //assert_eq!(original.aspath(), composed.aspath());
