@@ -1,3 +1,4 @@
+use crate::asn::Asn;
 use crate::typeenum; // from util::macros
 use std::fmt;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
@@ -265,6 +266,7 @@ typeenum!(
         25 => Ipv6ExtendedCommunities,
         32 => LargeCommunities,
         33 => BgpsecAsPath,
+        35 => Otc,
         128 => AttrSet,
         255 => RsrvdDevelopment
     }
@@ -293,6 +295,23 @@ impl From<LocalPref> for u32 {
 }
 
 impl std::fmt::Display for LocalPref {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+/// Wrapper for the 4 byte OnlyToCustomer (Otc) value in path attributes.
+#[derive(Debug, Eq, PartialEq, Clone, Copy, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct Otc(pub Asn);
+
+impl From<Otc> for u32 {
+    fn from(value: Otc) -> Self {
+        value.0.into()
+    }
+}
+
+impl std::fmt::Display for Otc {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0)
     }

@@ -871,23 +871,23 @@ macro_rules! path_attributes {
         attribute!($name($data), $flags, $type_code);
         )+
 
-        // $(
-        // impl FromAttribute for $data {
-        //     type Output = $name;
+        $(
+        impl FromAttribute for $data {
+            type Output = $data;
 
-        //     fn from_attribute(value: PathAttribute) -> Option<$name> {
-        //         if let PathAttribute::$name(pa) = value {
-        //             Some(pa.inner())
-        //         } else {
-        //             None
-        //         }
-        //     }
+            fn from_attribute(value: PathAttribute) -> Option<$data> {
+                if let PathAttribute::$name(pa) = value {
+                    Some(pa.inner())
+                } else {
+                    None
+                }
+            }
 
-        //     fn attribute_type() -> Option<PathAttributeType> {
-        //         Some(PathAttributeType::$name)
-        //     }
-        // }
-        // )+
+            fn attribute_type() -> Option<PathAttributeType> {
+                Some(PathAttributeType::$name)
+            }
+        }
+        )+
     }
 }
 
@@ -898,51 +898,28 @@ path_attributes!(
     4   => MultiExitDisc(crate::bgp::types::MultiExitDisc), Flags::OPT_NON_TRANS,
     5   => LocalPref(crate::bgp::types::LocalPref), Flags::WELLKNOWN,
     6   => AtomicAggregate(()), Flags::WELLKNOWN,
-    7   => Aggregator(AggregatorInfo), Flags::OPT_TRANS,
-    8   => StandardCommunities(StandardCommunitiesList), Flags::OPT_TRANS,
+    7   => Aggregator(crate::bgp::path_attributes::AggregatorInfo), Flags::OPT_TRANS,
+    8   => StandardCommunities(crate::bgp::message::update_builder::StandardCommunitiesList), Flags::OPT_TRANS,
     9   => OriginatorId(crate::bgp::types::OriginatorId), Flags::OPT_NON_TRANS,
-    10  => ClusterList(ClusterIds), Flags::OPT_NON_TRANS,
-    14  => MpReachNlri(MpReachNlriBuilder), Flags::OPT_NON_TRANS,
-    15  => MpUnreachNlri(MpUnreachNlriBuilder), Flags::OPT_NON_TRANS,
-    16  => ExtendedCommunities(ExtendedCommunitiesList), Flags::OPT_TRANS,
+    10  => ClusterList(crate::bgp::path_attributes::ClusterIds), Flags::OPT_NON_TRANS,
+    14  => MpReachNlri(crate::bgp::message::update_builder::MpReachNlriBuilder), Flags::OPT_NON_TRANS,
+    15  => MpUnreachNlri(crate::bgp::message::update_builder::MpUnreachNlriBuilder), Flags::OPT_NON_TRANS,
+    16  => ExtendedCommunities(crate::bgp::path_attributes::ExtendedCommunitiesList), Flags::OPT_TRANS,
     17  => As4Path(crate::bgp::types::As4Path), Flags::OPT_TRANS,
     18  => As4Aggregator(crate::bgp::types::As4Aggregator), Flags::OPT_TRANS,
     20  => Connector(crate::bgp::types::Connector), Flags::OPT_TRANS,
-    21  => AsPathLimit(AsPathLimitInfo), Flags::OPT_TRANS,
+    21  => AsPathLimit(crate::bgp::path_attributes::AsPathLimitInfo), Flags::OPT_TRANS,
     //22  => PmsiTunnel(todo), Flags::OPT_TRANS,
-    25  => Ipv6ExtendedCommunities(Ipv6ExtendedCommunitiesList), Flags::OPT_TRANS,
-    32  => LargeCommunities(LargeCommunitiesList), Flags::OPT_TRANS,
+    25  => Ipv6ExtendedCommunities(crate::bgp::path_attributes::Ipv6ExtendedCommunitiesList), Flags::OPT_TRANS,
+    32  => LargeCommunities(crate::bgp::path_attributes::LargeCommunitiesList), Flags::OPT_TRANS,
     // 33 => BgpsecAsPath,
-    35 => Otc(Asn), Flags::OPT_TRANS,
+    35 => Otc(crate::bgp::types::Otc), Flags::OPT_TRANS,
     //36 => BgpDomainPath(TODO), Flags:: , // https://datatracker.ietf.org/doc/draft-ietf-bess-evpn-ipvpn-interworking/06/
     //40 => BgpPrefixSid(TODO), Flags::OPT_TRANS, // https://datatracker.ietf.org/doc/html/rfc8669#name-bgp-prefix-sid-attribute
-    128 => AttrSet(AttributeSet), Flags::OPT_TRANS,
-    255 => Reserved(ReservedRaw), Flags::OPT_TRANS,
+    128 => AttrSet(crate::bgp::path_attributes::AttributeSet), Flags::OPT_TRANS,
+    255 => Reserved(crate::bgp::path_attributes::ReservedRaw), Flags::OPT_TRANS,
 
 );
-
-//$( $variant:ident($output_ty:ty), $attr:ty )+
-
-// from_attributes_impl!(
-//     Origin(OriginType), crate::bgp::types::OriginType
-//     AsPath(HopPath), crate::bgp::aspath::AsPath<bytes::Bytes>
-//     ConventionalNextHop(ConventionalNextHop), crate::bgp::types::ConventionalNextHop
-//     MultiExitDisc(MultiExitDisc), crate::bgp::message::update::MultiExitDisc
-//     LocalPref(crate::bgp::types::LocalPref), crate::bgp::message::update::LocalPref
-//     AtomicAggregate(()), AtomicAggregate
-//     Aggregator(AggregatorInfo), AggregatorInfo
-//     StandardCommunities(StandardCommunitiesList), StandardCommunitiesList
-//     OriginatorId(OriginatorId), crate::bgp::types::OriginatorId
-//     ClusterList(ClusterIds), ClusterList
-//     ExtendedCommunities(ExtendedCommunitiesList), ExtendedCommunitiesList
-//     As4Path(As4Path), crate::bgp::aspath::AsPath<Vec<u8>>
-//     As4Aggregator(As4Aggregator), crate::bgp::types::As4Aggregator
-//     Connector(Connector), crate::bgp::types::Connector
-//     AsPathLimit(AsPathLimitInfo), AsPathLimitInfo
-//     Ipv6ExtendedCommunities(Ipv6ExtendedCommunitiesList), Ipv6ExtendedCommunitiesList
-//     LargeCommunities(LargeCommunitiesList), LargeCommunitiesList
-//     Otc(Asn), Otc
-// );
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
@@ -2183,13 +2160,13 @@ impl Attribute for Otc {
     fn compose_value<Target: OctetsBuilder>(&self, target: &mut Target)
         -> Result<(), Target::AppendError>
     {
-        target.append_slice(&self.0.to_raw())
+        target.append_slice(&self.0.0.to_raw())
     }
 
     fn parse<'a, Octs: 'a + Octets>(parser: &mut Parser<'a, Octs>, _sc: SessionConfig) 
         -> Result<Otc, ParseError>
     {
-        Ok(Otc(Asn::from_u32(parser.parse_u32_be()?)))
+        Ok(Otc(crate::bgp::types::Otc(Asn::from_u32(parser.parse_u32_be()?))))
     }
 
     fn validate<Octs: Octets>(
@@ -2563,7 +2540,7 @@ mod tests {
 
         check(
             vec![0xc0, 0x23, 0x04, 0x00, 0x00, 0x04, 0xd2],
-            Otc::new(Asn::from_u32(1234)).into()
+            Otc::new(crate::bgp::types::Otc(Asn::from_u32(1234))).into()
         );
 
         // TODO AttrSet

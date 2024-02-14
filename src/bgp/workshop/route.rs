@@ -6,30 +6,25 @@ use octseq::{Octets, OctetsFrom};
 use serde::Serialize;
 
 use crate::bgp::communities::Community;
-use crate::bgp::message::update::{MultiExitDisc, NextHop};
+use crate::bgp::message::update::NextHop;
 use crate::bgp::message::update_builder::ComposeError;
 use crate::bgp::message::UpdateMessage;
 use crate::bgp::path_attributes::PathAttributesBuilder;
-use crate::bgp::types::As4Path;
 use crate::{
     asn::Asn,
     bgp::{
         aspath::HopPath,
         message::{
-            nlri::Nlri, update::OriginType,
+            nlri::Nlri,
             update_builder::StandardCommunitiesList,
         },
         path_attributes::{
-            AggregatorInfo, AsPathLimitInfo, AtomicAggregate,
-            AttributesMap, ClusterIds, ClusterList,
+            AttributesMap, ClusterIds,
             ExtendedCommunitiesList, Ipv6ExtendedCommunitiesList,
-            LargeCommunitiesList, Otc, PathAttribute,
+            LargeCommunitiesList, PathAttribute,
             PathAttributeType,
         },
     },
-    bgp::types::{
-        OriginatorId, ConventionalNextHop, As4Aggregator, Connector
-    }
 };
 
 #[derive(Debug)]
@@ -75,29 +70,29 @@ pub trait FromAttribute {
     fn attribute_type() -> Option<PathAttributeType>;
 }
 
-macro_rules! from_attributes_impl {
-    (
-        $( $variant:ident($output_ty:ty), $attr:ty )+
-    ) => {
-        $(
-            impl FromAttribute for $attr {
-                type Output = $output_ty;
+// macro_rules! from_attributes_impl {
+//     (
+//         $( $variant:ident($output_ty:ty), $attr:ty )+
+//     ) => {
+//         $(
+//             impl FromAttribute for $attr {
+//                 type Output = $output_ty;
 
-                fn from_attribute(value: PathAttribute) -> Option<$output_ty> {
-                    if let PathAttribute::$variant(pa) = value {
-                        Some(pa.inner())
-                    } else {
-                        None
-                    }
-                }
+//                 fn from_attribute(value: PathAttribute) -> Option<$output_ty> {
+//                     if let PathAttribute::$variant(pa) = value {
+//                         Some(pa.inner())
+//                     } else {
+//                         None
+//                     }
+//                 }
 
-                fn attribute_type() -> Option<PathAttributeType> {
-                    Some(PathAttributeType::$variant)
-                }
-            }
-        )+
-    }
-}
+//                 fn attribute_type() -> Option<PathAttributeType> {
+//                     Some(PathAttributeType::$variant)
+//                 }
+//             }
+//         )+
+//     }
+// }
 
 //        ident(ty)
 // 1   => Origin(crate::bgp::types::OriginType), Flags::WELLKNOWN,
@@ -128,26 +123,26 @@ macro_rules! from_attributes_impl {
 // 255 => Reserved(ReservedRaw), Flags::OPT_TRANS,
 
 // PathAttribute variant(output type), impl for Attribute
-from_attributes_impl!(
-    AsPath(HopPath), crate::bgp::aspath::AsPath<bytes::Bytes>
-    ConventionalNextHop(ConventionalNextHop), crate::bgp::types::ConventionalNextHop
-    MultiExitDisc(MultiExitDisc), crate::bgp::message::update::MultiExitDisc
-    Origin(OriginType), crate::bgp::types::OriginType
-    LocalPref(crate::bgp::types::LocalPref), crate::bgp::message::update::LocalPref
-    StandardCommunities(StandardCommunitiesList), StandardCommunitiesList
-    As4Path(As4Path), crate::bgp::aspath::AsPath<Vec<u8>>
-    AtomicAggregate(()), AtomicAggregate
-    Aggregator(AggregatorInfo), AggregatorInfo
-    OriginatorId(OriginatorId), crate::bgp::types::OriginatorId
-    ClusterList(ClusterIds), ClusterList
-    ExtendedCommunities(ExtendedCommunitiesList), ExtendedCommunitiesList
-    As4Aggregator(As4Aggregator), crate::bgp::types::As4Aggregator
-    Connector(Connector), crate::bgp::types::Connector
-    AsPathLimit(AsPathLimitInfo), AsPathLimitInfo
-    Ipv6ExtendedCommunities(Ipv6ExtendedCommunitiesList), Ipv6ExtendedCommunitiesList
-    LargeCommunities(LargeCommunitiesList), LargeCommunitiesList
-    Otc(Asn), Otc
-);
+// from_attributes_impl!(
+//     AsPath(crate::bgp::aspath::HopPath), crate::bgp::aspath::AsPath<bytes::Bytes>
+//     ConventionalNextHop(crate::bgp::types::ConventionalNextHop), crate::bgp::types::ConventionalNextHop
+//     MultiExitDisc(crate::bgp::types::MultiExitDisc), crate::bgp::message::update::MultiExitDisc
+//     Origin(crate::bgp::types::OriginType), crate::bgp::types::OriginType
+//     LocalPref(crate::bgp::types::LocalPref), crate::bgp::message::update::LocalPref
+//     StandardCommunities(crate::bgp::message::update_builder::StandardCommunitiesList), crate::bgp::message::update_builder::StandardCommunitiesList
+//     As4Path(crate::bgp::types::As4Path), crate::bgp::aspath::AsPath<Vec<u8>>
+//     AtomicAggregate(()), crate::bgp::path_attributes::AtomicAggregate
+//     Aggregator(crate::bgp::path_attributes::AggregatorInfo), crate::bgp::path_attributes::AggregatorInfo
+//     OriginatorId(crate::bgp::types::OriginatorId), crate::bgp::types::OriginatorId
+//     ClusterList(crate::bgp::path_attributes::ClusterIds), crate::bgp::path_attributes::ClusterList
+//     ExtendedCommunities(crate::bgp::path_attributes::ExtendedCommunitiesList), crate::bgp::path_attributes::ExtendedCommunitiesList
+//     As4Aggregator(crate::bgp::types::As4Aggregator), crate::bgp::types::As4Aggregator
+//     Connector(crate::bgp::types::Connector), crate::bgp::types::Connector
+//     AsPathLimit(crate::bgp::path_attributes::AsPathLimitInfo), crate::bgp::path_attributes::AsPathLimitInfo
+//     Ipv6ExtendedCommunities(crate::bgp::path_attributes::Ipv6ExtendedCommunitiesList), crate::bgp::path_attributes::Ipv6ExtendedCommunitiesList
+//     LargeCommunities(crate::bgp::path_attributes::LargeCommunitiesList), crate::bgp::path_attributes::LargeCommunitiesList
+//     Otc(crate::asn::Asn), crate::bgp::path_attributes::Otc
+// );
 
 //------------ StandardCommunitiesList ---------------------------------------
 
@@ -171,21 +166,21 @@ from_attributes_impl!(
 
 //------------ FromAttribute impls -------------------------------------------
 
-impl FromAttribute for crate::bgp::aspath::HopPath {
-    type Output = HopPath;
+// impl FromAttribute for crate::bgp::aspath::HopPath {
+//     type Output = HopPath;
 
-    fn attribute_type() -> Option<PathAttributeType> {
-        Some(PathAttributeType::AsPath)
-    }
+//     fn attribute_type() -> Option<PathAttributeType> {
+//         Some(PathAttributeType::AsPath)
+//     }
 
-    fn from_attribute(value: PathAttribute) -> Option<Self::Output> {
-        if let PathAttribute::AsPath(as_path) = value {
-            Some(as_path.0)
-        } else {
-            None
-        }
-    }
-}
+//     fn from_attribute(value: PathAttribute) -> Option<Self::Output> {
+//         if let PathAttribute::AsPath(as_path) = value {
+//             Some(as_path.0)
+//         } else {
+//             None
+//         }
+//     }
+// }
 
 impl FromAttribute for crate::bgp::types::NextHop {
     type Output = NextHop;
@@ -215,21 +210,21 @@ impl FromAttribute for crate::bgp::types::NextHop {
 //     }
 // }
 
-impl FromAttribute for crate::bgp::path_attributes::ClusterIds {
-    type Output = ClusterIds;
+// impl FromAttribute for crate::bgp::path_attributes::ClusterIds {
+//     type Output = ClusterIds;
 
-    fn attribute_type() -> Option<PathAttributeType> {
-        Some(PathAttributeType::ClusterList)
-    }
+//     fn attribute_type() -> Option<PathAttributeType> {
+//         Some(PathAttributeType::ClusterList)
+//     }
 
-    fn from_attribute(value: PathAttribute) -> Option<Self::Output> {
-        if let PathAttribute::ClusterList(cl) = value {
-            Some(cl.inner())
-        } else {
-            None
-        }
-    }
-}
+//     fn from_attribute(value: PathAttribute) -> Option<Self::Output> {
+//         if let PathAttribute::ClusterList(cl) = value {
+//             Some(cl.inner())
+//         } else {
+//             None
+//         }
+//     }
+// }
 
 // impl FromAttribute for crate::bgp::path_attributes::OriginatorId {
 //     type Output = OriginatorId;
@@ -477,7 +472,7 @@ macro_rules! impl_workshop {
 }
 
 impl_workshop!(
-    crate::bgp::aspath::AsPath<bytes::Bytes>
+    // crate::bgp::aspath::AsPath<bytes::Bytes>
     crate::bgp::aspath::HopPath
     // crate::bgp::types::NextHop
     crate::bgp::types::LocalPref
