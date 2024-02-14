@@ -6,12 +6,11 @@ use log::{debug, warn};
 use octseq::{Octets, OctetsBuilder, OctetsFrom, Parser};
 
 use crate::asn::Asn;
-use crate::bgp::aspath::HopPath;
 use crate::bgp::message::{
     SessionConfig,
     UpdateMessage,
     nlri::FixedNlriIter,
-    update_builder::{ComposeError, UpdateBuilder},
+    update_builder::ComposeError,
 };
 use crate::bgp::message::update_builder::{
     MpReachNlriBuilder,
@@ -139,26 +138,64 @@ macro_rules! attribute {
 }
 
 
-#[derive(Debug, Eq, PartialEq, Clone)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize))]
-pub struct MaterializedRoute2 {
-    pub path_attributes: AttributesMap,
-}
-
 //------------ PathAttributesBuilder -----------------------------------------
 
 pub type AttributesMap = BTreeMap<PathAttributeType, PathAttribute>;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
-pub struct PathAttributesBuilder {
+pub struct PaMap {
     attributes: AttributesMap,
 }
 
-impl PathAttributesBuilder {
+impl PaMap {
     pub fn empty() -> Self {
         Self {
             attributes: BTreeMap::new()
+        }
+    }
+
+    // Assemble a AttributesMap, but skipping MP_*REACH_NLRI, so that the
+    // returned result is valid for all NLRI in this message.
+    pub fn from_update_pdu<Octs: Octets>(pdu: &UpdateMessage<Octs>)
+    -> Result<Self, ComposeError>
+    where
+        for<'a> Vec<u8>: OctetsFrom<Octs::Range<'a>>
+    {
+        let mut pa_map = Self::empty();
+        for pa in pdu.path_attributes()? {
+            if let Ok(pa) = pa {
+                if pa.type_code() != PathAttributeType::MpReachNlri
+                    && pa.type_code() != PathAttributeType::MpUnreachNlri
+                {
+                    if let PathAttributeType::Invalid(n) = pa.type_code() {
+                        warn!("invalid PA {}:\n{}", n, pdu.fmt_pcap_string());
+                    }
+                    pa_map.attributes_mut().insert(pa.type_code(), pa.to_owned()?);
+                }
+            } else {
+                return Err(ComposeError::InvalidAttribute);
+            }
+        }
+        Ok(pa_map)
+    }
+
+    pub fn set<A: FromAttribute + Into<PathAttribute>>(
+        &mut self, attr: A
+    ) {
+        if let Some(attr_type) = A::attribute_type() {
+            self.attributes.insert(attr_type, attr.into());
+        }
+    }
+
+    pub fn get<A: FromAttribute>(
+        &self,
+    ) -> Option<A> {
+        if let Some(attr_type) = A::attribute_type() {
+            self.attributes
+                .get(&attr_type).and_then(|a| A::from_attribute(a.clone()))
+        } else {
+            None
         }
     }
 
@@ -174,288 +211,155 @@ impl PathAttributesBuilder {
         self.attributes
     }
 
-    pub fn set<A: FromAttribute + Into<PathAttribute>>(
-        &mut self, attr: A
-    ) {
+    pub fn remove<A: FromAttribute>(&mut self) -> Option<A>
+    {
         if let Some(attr_type) = A::attribute_type() {
-            self.attributes.insert(attr_type, attr.into());
-        }
-    }
-
-    pub fn get<A: FromAttribute>(
-        &self,
-    ) -> Option<A::Output> {
-        if let Some(attr_type) = A::attribute_type() {
-            self.attributes
-                .get(&attr_type).and_then(|a| A::from_attribute(a.clone()))
+            self.attributes.remove(&attr_type).and_then(|a| A::from_attribute(a))
         } else {
             None
         }
     }
 
-    pub fn append(&mut self, other: &mut AttributesMap) {
-        self.attributes.append(other)
+    pub fn merge_upsert(&mut self, other: &mut Self) {
+        self.attributes_mut().append(other.attributes_mut())
     }
 
-    pub fn merge(&mut self, other: &Self) -> Result<(), ComposeError> {
-        for val in other.attributes.values().cloned() {
-            self.add_attribute(val)?;
-        }
-        Ok(())
-    }
-
-    pub fn into_inner(self) -> AttributesMap {
-        self.attributes
-    }
-
-    pub fn into_update_builder(self) -> UpdateBuilder<Vec<u8>>  {
-        UpdateBuilder::<Vec<u8>>::from_attributes_builder(self)
-    }
-
-    pub fn from_update_builder<T>(builder: UpdateBuilder<T>) -> Self {
-        Self {
-            attributes: builder.into_attributes()
-        }
-    }
-
-    pub fn add_attribute(&mut self, pa: PathAttribute)
-        -> Result<(), ComposeError>
-    {
-        if let PathAttribute::Invalid(..) = pa {
-            warn!(
-                "adding Invalid attribute to UpdateBuilder: {}",
-                  &pa.type_code()
-            );
-        }
-        if let Some(existing_pa) = self.attributes.get_mut(&pa.type_code()) {
-            *existing_pa = pa;
+    pub(in crate::bgp) fn get_owned<A: FromAttribute>(&mut self) -> Option<A> {
+        if let Some(attr_type) = A::attribute_type() {
+            self.attributes_mut()
+                .get_mut(&attr_type).and_then(|a| A::from_attribute(std::mem::take(a)))
         } else {
-            self.attributes.insert(pa.type_code(), pa);
+            None
         }
+    }
+
+    pub(in crate::bgp) fn contains_attr<A: FromAttribute>(&self) -> bool {
+        if let Some(attr_type) = A::attribute_type() {
+            self.attributes().contains_key(&attr_type)
+        } else {
+            false
+        }
+    }
+
+    pub fn len(&self) -> usize { self.attributes().len() }
+
+    pub fn is_empty(&self) -> bool { self.attributes().is_empty() }
+
+    // Length of the Path attributes in bytes
+    pub fn bytes_len(&self) -> usize {
+        self.attributes.values()
+            .fold(0, |sum, a| sum + a.compose_len())
+    }
+
+
+    // pub fn append(&mut self, other: &mut AttributesMap) {
+    //     self.attributes.append(other)
+    // }
+
+    // pub fn merge(&mut self, other: &Self) -> Result<(), ComposeError> {
+    //     for val in other.attributes.values().cloned() {
+    //         self.add_attribute(val)?;
+    //     }
+    //     Ok(())
+    // }
+
+    // pub fn into_inner(self) -> AttributesMap {
+    //     self.attributes
+    // }
+
+    // pub fn into_update_builder(self) -> UpdateBuilder<Vec<u8>>  {
+    //     UpdateBuilder::<Vec<u8>>::from_attributes_builder(self)
+    // }
+
+    // pub fn from_update_builder<T>(builder: UpdateBuilder<T>) -> Self {
+    //     Self {
+    //         attributes: builder.into_attributes()
+    //     }
+    // }
+
+    // fn add_attribute(&mut self, pa: PathAttribute)
+    //     -> Result<(), ComposeError>
+    // {
+    //     if let PathAttribute::Invalid(..) = pa {
+    //         warn!(
+    //             "adding Invalid attribute to UpdateBuilder: {}",
+    //               &pa.type_code()
+    //         );
+    //     }
+    //     if let Some(existing_pa) = self.attributes.get_mut(&pa.type_code()) {
+    //         *existing_pa = pa;
+    //     } else {
+    //         self.attributes.insert(pa.type_code(), pa);
+    //     }
         
-        Ok(())
-    }
-
-    pub fn remove_attribute(&mut self, pat: PathAttributeType)
-        -> Option<PathAttribute>
-    {
-        self.attributes.remove(&pat)
-    }
-
-    // Assemble a AttributesMap, but skipping MP_*REACH_NLRI, so that the
-    // returned result is valid for all NLRI in this message.
-    pub fn from_update_pdu<Octs: Octets>(pdu: &UpdateMessage<Octs>)
-    -> Result<Self, ComposeError>
-    where
-        for<'a> Vec<u8>: OctetsFrom<Octs::Range<'a>>
-    {
-        let mut res = Self::empty();
-        for pa in pdu.path_attributes()? {
-            if let Ok(pa) = pa {
-                if pa.type_code() != PathAttributeType::MpReachNlri
-                    && pa.type_code() != PathAttributeType::MpUnreachNlri
-                {
-                    if let PathAttributeType::Invalid(n) = pa.type_code() {
-                        warn!("invalid PA {}:\n{}", n, pdu.fmt_pcap_string());
-                    }
-                    res.add_attribute(pa.to_owned()?)?;
-                }
-            } else {
-                return Err(ComposeError::InvalidAttribute);
-            }
-        }
-        Ok(res)
-    }
+    //     Ok(())
+    // }
+}
 
     //-------- Specific path attribute methods -------------------------------
     //
-    pub fn set_origin(&mut self, origin: OriginType)
-        -> Result<(), ComposeError>
-    {
-        self.add_attribute(Origin::new(origin).into())
-    }
+//     pub fn set_origin(&mut self, origin: OriginType)
+//         -> Result<(), ComposeError>
+//     {
+//         self.add_attribute(Origin::new(origin).into())
+//     }
 
-    pub fn set_aspath(&mut self , aspath: HopPath)
-        -> Result<(), ComposeError>
-    {
-        // XXX there should be a HopPath::compose_len really, instead of
-        // relying on .to_as_path() first.
-        if let Ok(wireformat) = aspath.to_as_path::<Vec<u8>>() {
-            if wireformat.compose_len() > u16::MAX.into() {
-                return Err(ComposeError::AttributeTooLarge(
-                     PathAttributeType::AsPath,
-                     wireformat.compose_len()
-                ));
-            }
-        } else {
-            return Err(ComposeError::InvalidAttribute)
-        }
+//     pub fn set_aspath(&mut self , aspath: HopPath)
+//         -> Result<(), ComposeError>
+//     {
+//         // XXX there should be a HopPath::compose_len really, instead of
+//         // relying on .to_as_path() first.
+//         if let Ok(wireformat) = aspath.to_as_path::<Vec<u8>>() {
+//             if wireformat.compose_len() > u16::MAX.into() {
+//                 return Err(ComposeError::AttributeTooLarge(
+//                      PathAttributeType::AsPath,
+//                      wireformat.compose_len()
+//                 ));
+//             }
+//         } else {
+//             return Err(ComposeError::InvalidAttribute)
+//         }
 
-        self.add_attribute(AsPath::new(aspath).into())
-    }
+//         self.add_attribute(AsPath::new(aspath).into())
+//     }
 
-    pub fn prepend_to_aspath(&mut self, asn: Asn) -> Result<(), ComposeError> {
-        if let Some(PathAttribute::AsPath(as_path)) = self.attributes.get_mut(&PathAttributeType::AsPath) {
-            as_path.0.prepend(
-                asn,
-            )
-        };
+//     pub fn prepend_to_aspath(&mut self, asn: Asn) -> Result<(), ComposeError> {
+//         if let Some(PathAttribute::AsPath(as_path)) = self.attributes.get_mut(&PathAttributeType::AsPath) {
+//             as_path.0.prepend(
+//                 asn,
+//             )
+//         };
 
-        Ok(())
-    }
+//         Ok(())
+//     }
 
-    pub fn aspath(&self) -> Option<HopPath> {
-        self.attributes.get(&PathAttributeType::AsPath).and_then(|pa| 
-            if let PathAttribute::AsPath(as_path) = pa { 
-                Some(as_path.clone().inner())
-            } else { 
-                None 
-            })
-    }
+//     pub fn aspath(&self) -> Option<HopPath> {
+//         self.attributes.get(&PathAttributeType::AsPath).and_then(|pa| 
+//             if let PathAttribute::AsPath(as_path) = pa { 
+//                 Some(as_path.clone().inner())
+//             } else { 
+//                 None 
+//             })
+//     }
 
-    pub fn set_multi_exit_disc(&mut self, med: MultiExitDisc)
-    -> Result<(), ComposeError>
-    {
-        self.add_attribute(med.into())
-    }
+//     pub fn set_multi_exit_disc(&mut self, med: MultiExitDisc)
+//     -> Result<(), ComposeError>
+//     {
+//         self.add_attribute(med.into())
+//     }
 
-    pub fn set_local_pref(&mut self, local_pref: LocalPref)
-    -> Result<(), ComposeError>
-    {
-        self.add_attribute(local_pref.into())
-    }
-}
+//     pub fn set_local_pref(&mut self, local_pref: LocalPref)
+//     -> Result<(), ComposeError>
+//     {
+//         self.add_attribute(local_pref.into())
+//     }
+// }
 
-impl From<AttributesMap> for PathAttributesBuilder {
+impl From<AttributesMap> for PaMap {
     fn from(value: AttributesMap) -> Self {
         Self {attributes: value }
     }
 }
-
-// macro_rules! from_attributes_impl {
-//     (
-//         $( $variant:ident($output_ty:ty), $attr:ty )+
-//     ) => {
-
-//         $(
-//             impl FromAttribute for $attr {
-//                 type Output = $output_ty;
-            
-//                 fn from_attribute(value: PathAttribute) -> Option<$output_ty> {
-//                     if let PathAttribute::$variant(pa) = value {
-//                         Some(pa.inner())
-//                     } else {
-//                         None
-//                     }
-//                 }
-            
-//                 fn attribute_type() -> PathAttributeType {
-//                     PathAttributeType::$variant
-//                 }
-//             }
-//         )+
-//     }
-// }
-
-//        ident(ty)
-// 1   => Origin(crate::bgp::types::OriginType), Flags::WELLKNOWN,
-// 2   => AsPath(HopPath), Flags::WELLKNOWN,
-// 3   => NextHop(Ipv4Addr), Flags::WELLKNOWN,
-// 4   => MultiExitDisc(u32), Flags::OPT_NON_TRANS,
-// 5   => LocalPref(u32), Flags::WELLKNOWN,
-// 6   => AtomicAggregate(()), Flags::WELLKNOWN,
-// 7   => Aggregator(AggregatorInfo), Flags::OPT_TRANS,
-// 8   => Communities(StandardCommunitiesBuilder), Flags::OPT_TRANS,
-// 9   => OriginatorId(Ipv4Addr), Flags::OPT_NON_TRANS,
-// 10  => ClusterList(ClusterIds), Flags::OPT_NON_TRANS,
-// 14  => MpReachNlri(MpReachNlriBuilder), Flags::OPT_NON_TRANS,
-// 15  => MpUnreachNlri(MpUnreachNlriBuilder), Flags::OPT_NON_TRANS,
-// 16  => ExtendedCommunities(ExtendedCommunitiesList), Flags::OPT_TRANS,
-// 17  => As4Path(HopPath), Flags::OPT_TRANS,
-// 18  => As4Aggregator(AggregatorInfo), Flags::OPT_TRANS,
-// 20  => Connector(Ipv4Addr), Flags::OPT_TRANS,
-// 21  => AsPathLimit(AsPathLimitInfo), Flags::OPT_TRANS,
-// //22  => PmsiTunnel(todo), Flags::OPT_TRANS,
-// 25  => Ipv6ExtendedCommunities(Ipv6ExtendedCommunitiesList), Flags::OPT_TRANS,
-// 32  => LargeCommunities(LargeCommunitiesList), Flags::OPT_TRANS,
-// // 33 => BgpsecAsPath,
-// 35 => Otc(Asn), Flags::OPT_TRANS,
-// //36 => BgpDomainPath(TODO), Flags:: , // https://datatracker.ietf.org/doc/draft-ietf-bess-evpn-ipvpn-interworking/06/
-// //40 => BgpPrefixSid(TODO), Flags::OPT_TRANS, // https://datatracker.ietf.org/doc/html/rfc8669#name-bgp-prefix-sid-attribute
-// 128 => AttrSet(AttributeSet), Flags::OPT_TRANS,
-// 255 => Reserved(ReservedRaw), Flags::OPT_TRANS,
-
-
-// PathAttribute variant(output type), impl for Attribute
-// from_attributes_impl!(
-//     AsPath(HopPath), crate::bgp::aspath::AsPath<bytes::Bytes>
-//     AsPath(HopPath), crate::bgp::aspath::HopPath
-//     NextHop(Ipv4Addr), crate::bgp::types::NextHop
-//     MultiExitDisc(u32), crate::bgp::message::update::MultiExitDisc
-//     Origin(OriginType), crate::bgp::types::OriginType
-//     LocalPref(u32), crate::bgp::message::update::LocalPref
-//     Communities(StandardCommunitiesBuilder), crate::bgp::message::update_builder::StandardCommunitiesBuilder
-//     As4Path(HopPath), crate::bgp::aspath::AsPath<Vec<u8>>
-//     AtomicAggregate(()), AtomicAggregate
-//     Aggregator(AggregatorInfo), AggregatorInfo
-//     OriginatorId(Ipv4Addr), OriginatorId
-//     ClusterList(ClusterIds), ClusterList
-//     MpReachNlri(MpReachNlriBuilder), MpReachNlriBuilder
-//     MpUnreachNlri(MpUnreachNlriBuilder), MpUnreachNlriBuilder
-//     ExtendedCommunities(ExtendedCommunitiesList), ExtendedCommunitiesList
-//     As4Aggregator(AggregatorInfo), As4Aggregator
-//     Connector(Ipv4Addr), Connector
-//     AsPathLimit(AsPathLimitInfo), AsPathLimitInfo
-//     Ipv6ExtendedCommunities(Ipv6ExtendedCommunitiesList), Ipv6ExtendedCommunities
-//     LargeCommunities(LargeCommunitiesList), LargeCommunitiesList
-//     Otc(Asn), Otc
-// );
-
-// impl From<crate::bgp::aspath::AsPath<bytes::Bytes>> for PathAttribute {
-//     fn from(value: crate::bgp::aspath::AsPath<bytes::Bytes>) -> Self {
-//         PathAttribute::AsPath(crate::bgp::path_attributes::AsPath(value.to_hop_path()))
-//     }
-// }
-
-// impl From<crate::bgp::aspath::AsPath<Vec<u8>>> for PathAttribute {
-//     fn from(value: crate::bgp::aspath::AsPath<Vec<u8>>) -> Self {
-//         PathAttribute::AsPath(crate::bgp::path_attributes::AsPath(value.to_hop_path()))
-//     }
-// }
-
-// impl From<crate::bgp::types::NextHop> for PathAttribute {
-//     fn from(value: crate::bgp::types::NextHop) -> Self {
-//         if let crate::bgp::message::update::NextHop::Unicast(IpAddr::V4(ipv4)) = value {
-//             PathAttribute::NextHop(NextHop(ipv4))
-//         } else {
-//             panic!("WHERE'S MY TRANSPARANT NEXTHOP IMPLEMENTATION!!@!@!?!?!?!?!?");
-//         }
-//     }
-// }
-
-// impl From<crate::bgp::types::MultiExitDisc> for PathAttribute {
-//     fn from(value: crate::bgp::types::MultiExitDisc) -> Self {
-//         PathAttribute::MultiExitDisc(crate::bgp::path_attributes::MultiExitDisc(value.0))
-//     }
-// }
-
-// impl From<crate::bgp::types::OriginType> for PathAttribute {
-//     fn from(value: crate::bgp::types::OriginType) -> Self {
-//         PathAttribute::Origin(crate::bgp::path_attributes::Origin(value))
-//     }
-// }
-
-// impl From<crate::bgp::types::LocalPref> for PathAttribute {
-//     fn from(value: crate::bgp::types::LocalPref) -> Self {
-//         PathAttribute::LocalPref(crate::bgp::path_attributes::LocalPref(value.0))
-//     }
-// }
-
-// impl From<crate::bgp::message::update_builder::StandardCommunitiesBuilder> for PathAttribute {
-//     fn from(value: crate::bgp::message::update_builder::StandardCommunitiesBuilder) -> Self {
-//         PathAttribute::Communities(crate::bgp::path_attributes::Communities(value))
-//     }
-// }
 
 
 macro_rules! path_attributes {
@@ -534,36 +438,15 @@ macro_rules! path_attributes {
             }
         }
 
-        // $(
-        // impl TryFrom<PathAttribute> for $name {
-        //     type Error = ComposeError;
-
-        //     fn try_from(value: PathAttribute) -> Result<$name, ComposeError> {
-        //         if let PathAttribute::$name(pa) = value {
-        //             Ok(pa)
-        //         } else {
-        //             Err(ComposeError::Todo)
-        //         }
-        //     }
-        // }
-        // )+
         $(
-            // impl From<StandardCommunitiesList> for PathAttribute {
-            //     fn from(value: StandardCommunitiesList) -> Self {
-            //         PathAttribute::StandardCommunities(
-            //             crate::bgp::path_attributes::StandardCommunities(value),
-            //         )
-            //     }
-            // }
-            impl From<$data> for PathAttribute {
-                fn from(value: $data) -> Self {
-                    PathAttribute::$name(
-                        $name(value),
-                    )
-                }
+        impl From<$data> for PathAttribute {
+            fn from(value: $data) -> Self {
+                PathAttribute::$name(
+                    $name(value),
+                )
             }
+        }
         )+
-
 
         $(
         impl From<$name> for PathAttribute {
@@ -819,6 +702,12 @@ macro_rules! path_attributes {
         }
 */
 
+impl Default for PathAttribute {
+    fn default() -> Self {
+        Self::Unimplemented(UnimplementedPathAttribute{flags: Flags(0), type_code: 0, value: vec![]})
+    }
+}
+
 //------------ PathAttributeType ---------------------------------------------
 
         #[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -873,7 +762,7 @@ macro_rules! path_attributes {
 
         $(
         impl FromAttribute for $data {
-            type Output = $data;
+            // type Output = $data;
 
             fn from_attribute(value: PathAttribute) -> Option<$data> {
                 if let PathAttribute::$name(pa) = value {
@@ -1130,8 +1019,6 @@ macro_rules! check_len_exact {
 }
 
 //--- Origin
-
-use crate::bgp::message::update::OriginType;
 
 impl Attribute for Origin {
     fn value_len(&self) -> usize { 1 }
@@ -2083,8 +1970,7 @@ impl Attribute for Ipv6ExtendedCommunities {
 
 use crate::bgp::communities::LargeCommunity;
 
-// use super::types::ConventionalNextHop;
-use super::workshop::route::{FromAttribute, WorkshopAttribute};
+use super::workshop::route::FromAttribute;
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct LargeCommunitiesList {
@@ -2320,6 +2206,7 @@ mod tests {
     use crate::bgp::communities::Wellknown;
     use crate::bgp::message::nlri::Nlri;
     use crate::bgp::message::update::NextHop;
+    use crate::bgp::aspath::HopPath;
 
     #[test]
     fn wireformat_to_owned_and_back() {
