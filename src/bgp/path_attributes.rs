@@ -762,8 +762,6 @@ impl Default for PathAttribute {
 
         $(
         impl FromAttribute for $data {
-            // type Output = $data;
-
             fn from_attribute(value: PathAttribute) -> Option<$data> {
                 if let PathAttribute::$name(pa) = value {
                     Some(pa.inner())
