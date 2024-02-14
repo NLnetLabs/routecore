@@ -379,12 +379,6 @@ impl std::fmt::Display for NextHop {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct ConventionalNextHop(pub Ipv4Addr);
 
-impl ConventionalNextHop {
-    fn new() -> Self {
-        Self(Ipv4Addr::from(0))
-    }
-}
-
 impl std::fmt::Display for ConventionalNextHop {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
