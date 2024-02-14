@@ -582,7 +582,7 @@ impl<Octs: Octets> UpdateMessage<Octs> {
     pub fn conventional_next_hop(&self)
         -> Result<Option<NextHop>, ParseError>
     {
-        if let Some(WireformatPathAttribute::NextHop(epa)) = self.path_attributes()?.get(PathAttributeType::NextHop) {
+        if let Some(WireformatPathAttribute::ConventionalNextHop(epa)) = self.path_attributes()?.get(PathAttributeType::ConventionalNextHop) {
             Ok(Some(NextHop::Unicast(Ipv4Addr::from(epa.value_into_parser().parse_u32_be()?).into())))
         } else {
             Ok(None)
@@ -1597,7 +1597,7 @@ mod tests {
         assert_eq!(update.aspath().unwrap().unwrap(), asp);
 
         let pa3 = pa_iter.next().unwrap().unwrap();
-        assert_eq!(pa3.type_code(), PathAttributeType::NextHop);
+        assert_eq!(pa3.type_code(), PathAttributeType::ConventionalNextHop);
         assert_eq!(pa3.flags(), 0x40.into());
         assert_eq!(pa3.length(), 4);
         //assert_eq!(pa3.as_ref(), &[10, 255, 0, 101]);

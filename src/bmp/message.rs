@@ -1807,7 +1807,7 @@ mod tests {
         // TODO check actual AS_PATH contents
 
         let pa3 = pas.next().unwrap().unwrap();
-        assert_eq!(pa3.type_code(), PathAttributeType::NextHop);
+        assert_eq!(pa3.type_code(), PathAttributeType::ConventionalNextHop);
         assert_eq!(pa3.flags(), 0x40.into());
         //assert_eq!(pa3.as_ref(), [10, 255, 0, 101]); 
 

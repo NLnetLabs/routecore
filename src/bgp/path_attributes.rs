@@ -16,7 +16,7 @@ use crate::bgp::message::{
 use crate::bgp::message::update_builder::{
     MpReachNlriBuilder,
     MpUnreachNlriBuilder,
-    StandardCommunitiesBuilder
+    StandardCommunitiesList
 };
 use crate::bgp::communities::StandardCommunity;
 use crate::bgp::types::{Afi, Safi, AfiSafi};
@@ -177,14 +177,20 @@ impl PathAttributesBuilder {
     pub fn set<A: FromAttribute + Into<PathAttribute>>(
         &mut self, attr: A
     ) {
-        self.attributes.insert(A::attribute_type(), attr.into());
+        if let Some(attr_type) = A::attribute_type() {
+            self.attributes.insert(attr_type, attr.into());
+        }
     }
 
     pub fn get<A: FromAttribute>(
         &self,
     ) -> Option<A::Output> {
-        self.attributes
-            .get(&A::attribute_type()).and_then(|a| A::from_attribute(a.clone()))
+        if let Some(attr_type) = A::attribute_type() {
+            self.attributes
+                .get(&attr_type).and_then(|a| A::from_attribute(a.clone()))
+        } else {
+            None
+        }
     }
 
     pub fn append(&mut self, other: &mut AttributesMap) {
@@ -528,19 +534,36 @@ macro_rules! path_attributes {
             }
         }
 
-        $(
-        impl TryFrom<PathAttribute> for $name {
-            type Error = ComposeError;
+        // $(
+        // impl TryFrom<PathAttribute> for $name {
+        //     type Error = ComposeError;
 
-            fn try_from(value: PathAttribute) -> Result<$name, ComposeError> {
-                if let PathAttribute::$name(pa) = value {
-                    Ok(pa)
-                } else {
-                    Err(ComposeError::Todo)
+        //     fn try_from(value: PathAttribute) -> Result<$name, ComposeError> {
+        //         if let PathAttribute::$name(pa) = value {
+        //             Ok(pa)
+        //         } else {
+        //             Err(ComposeError::Todo)
+        //         }
+        //     }
+        // }
+        // )+
+        $(
+            // impl From<StandardCommunitiesList> for PathAttribute {
+            //     fn from(value: StandardCommunitiesList) -> Self {
+            //         PathAttribute::StandardCommunities(
+            //             crate::bgp::path_attributes::StandardCommunities(value),
+            //         )
+            //     }
+            // }
+            impl From<$data> for PathAttribute {
+                fn from(value: $data) -> Self {
+                    PathAttribute::$name(
+                        $name(value),
+                    )
                 }
             }
-        }
         )+
+
 
         $(
         impl From<$name> for PathAttribute {
@@ -847,26 +870,44 @@ macro_rules! path_attributes {
         $(
         attribute!($name($data), $flags, $type_code);
         )+
+
+        // $(
+        // impl FromAttribute for $data {
+        //     type Output = $name;
+
+        //     fn from_attribute(value: PathAttribute) -> Option<$name> {
+        //         if let PathAttribute::$name(pa) = value {
+        //             Some(pa.inner())
+        //         } else {
+        //             None
+        //         }
+        //     }
+
+        //     fn attribute_type() -> Option<PathAttributeType> {
+        //         Some(PathAttributeType::$name)
+        //     }
+        // }
+        // )+
     }
 }
 
 path_attributes!(
     1   => Origin(crate::bgp::types::OriginType), Flags::WELLKNOWN,
-    2   => AsPath(HopPath), Flags::WELLKNOWN,
-    3   => NextHop(Ipv4Addr), Flags::WELLKNOWN,
-    4   => MultiExitDisc(u32), Flags::OPT_NON_TRANS,
+    2   => AsPath(crate::bgp::aspath::HopPath), Flags::WELLKNOWN,
+    3   => ConventionalNextHop(crate::bgp::types::ConventionalNextHop), Flags::WELLKNOWN,
+    4   => MultiExitDisc(crate::bgp::types::MultiExitDisc), Flags::OPT_NON_TRANS,
     5   => LocalPref(crate::bgp::types::LocalPref), Flags::WELLKNOWN,
     6   => AtomicAggregate(()), Flags::WELLKNOWN,
     7   => Aggregator(AggregatorInfo), Flags::OPT_TRANS,
-    8   => StandardCommunities(StandardCommunitiesBuilder), Flags::OPT_TRANS,
-    9   => OriginatorId(Ipv4Addr), Flags::OPT_NON_TRANS,
+    8   => StandardCommunities(StandardCommunitiesList), Flags::OPT_TRANS,
+    9   => OriginatorId(crate::bgp::types::OriginatorId), Flags::OPT_NON_TRANS,
     10  => ClusterList(ClusterIds), Flags::OPT_NON_TRANS,
     14  => MpReachNlri(MpReachNlriBuilder), Flags::OPT_NON_TRANS,
     15  => MpUnreachNlri(MpUnreachNlriBuilder), Flags::OPT_NON_TRANS,
     16  => ExtendedCommunities(ExtendedCommunitiesList), Flags::OPT_TRANS,
-    17  => As4Path(HopPath), Flags::OPT_TRANS,
-    18  => As4Aggregator(AggregatorInfo), Flags::OPT_TRANS,
-    20  => Connector(Ipv4Addr), Flags::OPT_TRANS,
+    17  => As4Path(crate::bgp::types::As4Path), Flags::OPT_TRANS,
+    18  => As4Aggregator(crate::bgp::types::As4Aggregator), Flags::OPT_TRANS,
+    20  => Connector(crate::bgp::types::Connector), Flags::OPT_TRANS,
     21  => AsPathLimit(AsPathLimitInfo), Flags::OPT_TRANS,
     //22  => PmsiTunnel(todo), Flags::OPT_TRANS,
     25  => Ipv6ExtendedCommunities(Ipv6ExtendedCommunitiesList), Flags::OPT_TRANS,
@@ -879,6 +920,29 @@ path_attributes!(
     255 => Reserved(ReservedRaw), Flags::OPT_TRANS,
 
 );
+
+//$( $variant:ident($output_ty:ty), $attr:ty )+
+
+// from_attributes_impl!(
+//     Origin(OriginType), crate::bgp::types::OriginType
+//     AsPath(HopPath), crate::bgp::aspath::AsPath<bytes::Bytes>
+//     ConventionalNextHop(ConventionalNextHop), crate::bgp::types::ConventionalNextHop
+//     MultiExitDisc(MultiExitDisc), crate::bgp::message::update::MultiExitDisc
+//     LocalPref(crate::bgp::types::LocalPref), crate::bgp::message::update::LocalPref
+//     AtomicAggregate(()), AtomicAggregate
+//     Aggregator(AggregatorInfo), AggregatorInfo
+//     StandardCommunities(StandardCommunitiesList), StandardCommunitiesList
+//     OriginatorId(OriginatorId), crate::bgp::types::OriginatorId
+//     ClusterList(ClusterIds), ClusterList
+//     ExtendedCommunities(ExtendedCommunitiesList), ExtendedCommunitiesList
+//     As4Path(As4Path), crate::bgp::aspath::AsPath<Vec<u8>>
+//     As4Aggregator(As4Aggregator), crate::bgp::types::As4Aggregator
+//     Connector(Connector), crate::bgp::types::Connector
+//     AsPathLimit(AsPathLimitInfo), AsPathLimitInfo
+//     Ipv6ExtendedCommunities(Ipv6ExtendedCommunitiesList), Ipv6ExtendedCommunitiesList
+//     LargeCommunities(LargeCommunitiesList), LargeCommunitiesList
+//     Otc(Asn), Otc
+// );
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
@@ -1169,19 +1233,19 @@ impl Attribute for AsPath {
 
 //--- NextHop
 
-impl Attribute for NextHop {
+impl Attribute for ConventionalNextHop {
     fn value_len(&self) -> usize { 4 }
 
     fn compose_value<Target: OctetsBuilder>(&self, target: &mut Target)
         -> Result<(), Target::AppendError>
     {
-        target.append_slice(&self.0.octets())
+        target.append_slice(&self.0.0.octets())
     }
 
     fn parse<'a, Octs: 'a + Octets>(parser: &mut Parser<'a, Octs>, _sc: SessionConfig) 
-        -> Result<NextHop, ParseError>
+        -> Result<ConventionalNextHop, ParseError>
     {
-        Ok(NextHop(parse_ipv4addr(parser)?))
+        Ok(Self(crate::bgp::types::ConventionalNextHop(parse_ipv4addr(parser)?)))
     }
 
     fn validate<Octs: Octets>(
@@ -1201,13 +1265,13 @@ impl Attribute for MultiExitDisc {
     fn compose_value<Target: OctetsBuilder>(&self, target: &mut Target)
         -> Result<(), Target::AppendError>
     {
-        target.append_slice(&self.0.to_be_bytes()) 
+        target.append_slice(&self.0.0.to_be_bytes()) 
     }
 
     fn parse<'a, Octs: 'a + Octets>(parser: &mut Parser<'a, Octs>, _sc: SessionConfig) 
         -> Result<MultiExitDisc, ParseError>
     {
-        Ok(MultiExitDisc(parser.parse_u32_be()?))
+        Ok(MultiExitDisc(crate::bgp::types::MultiExitDisc(parser.parse_u32_be()?)))
     }
 
     fn validate<Octs: Octets>(
@@ -1282,7 +1346,7 @@ impl Display for AtomicAggregate {
 //--- Aggregator
 
 #[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct AggregatorInfo {
     asn: Asn,
     address: Ipv4Addr,
@@ -1372,7 +1436,7 @@ impl Attribute for StandardCommunities {
     fn parse<'a, Octs: 'a + Octets>(parser: &mut Parser<'a, Octs>, _sc: SessionConfig) 
         -> Result<StandardCommunities, ParseError>
     {
-        let mut builder = StandardCommunitiesBuilder::with_capacity(
+        let mut builder = StandardCommunitiesList::with_capacity(
             parser.remaining() / 4
         );
         while parser.remaining() > 0 {
@@ -1396,7 +1460,7 @@ impl Attribute for StandardCommunities {
     }
 }
 
-impl StandardCommunitiesBuilder {
+impl StandardCommunitiesList {
     pub fn fmap<T, F: Fn(&StandardCommunity) -> T>(self, fmap: F) -> Vec<T> {
         self.communities().iter().map(fmap).collect::<Vec<T>>()
     }
@@ -1411,13 +1475,13 @@ impl Attribute for OriginatorId {
     fn compose_value<Target: OctetsBuilder>(&self, target: &mut Target)
         -> Result<(), Target::AppendError>
     {
-        target.append_slice(&self.0.octets())
+        target.append_slice(&self.0.0.octets())
     }
 
     fn parse<'a, Octs: 'a + Octets>(parser: &mut Parser<'a, Octs>, _sc: SessionConfig) 
         -> Result<OriginatorId, ParseError>
     {
-        Ok(OriginatorId(parse_ipv4addr(parser)?))
+        Ok(OriginatorId(crate::bgp::types::OriginatorId(parse_ipv4addr(parser)?)))
     }
 
     fn validate<Octs: Octets>(
@@ -1822,14 +1886,14 @@ impl Attribute for ExtendedCommunities {
 
 impl Attribute for As4Path {
     fn value_len(&self) -> usize {
-        self.0.to_as_path::<Vec<u8>>().unwrap().into_inner().len()
+        self.0.0.to_as_path::<Vec<u8>>().unwrap().into_inner().len()
     }
 
     fn compose_value<Target: OctetsBuilder>(&self, target: &mut Target)
         -> Result<(), Target::AppendError>
     {
         target.append_slice(
-            self.0.to_as_path::<Vec<u8>>().unwrap().into_inner().as_ref()
+            self.0.0.to_as_path::<Vec<u8>>().unwrap().into_inner().as_ref()
         )
     }
 
@@ -1841,7 +1905,7 @@ impl Attribute for As4Path {
             parser.peek_all().to_vec(),
             sc.has_four_octet_asn()
         ).map_err(|_| ParseError::form_error("invalid AS4_PATH"))?;
-        Ok(As4Path(asp.to_hop_path()))
+        Ok(As4Path(crate::bgp::types::As4Path(asp.to_hop_path())))
     }
 
     fn validate<Octs: Octets>(
@@ -1872,8 +1936,8 @@ impl Attribute for As4Aggregator {
     fn compose_value<Target: OctetsBuilder>(&self, target: &mut Target)
         -> Result<(), Target::AppendError>
     {
-        target.append_slice(&self.0.asn().to_raw())?;
-        target.append_slice(&self.0.address().octets())
+        target.append_slice(&self.0.0.asn().to_raw())?;
+        target.append_slice(&self.0.0.address().octets())
     }
 
     fn parse<'a, Octs: 'a + Octets>(parser: &mut Parser<'a, Octs>, _sc: SessionConfig) 
@@ -1881,7 +1945,7 @@ impl Attribute for As4Aggregator {
     {
         let asn = Asn::from_u32(parser.parse_u32_be()?);
         let address = parse_ipv4addr(parser)?;
-        Ok(As4Aggregator(AggregatorInfo::new(asn, address)))
+        Ok(As4Aggregator(crate::bgp::types::As4Aggregator(AggregatorInfo::new(asn, address))))
     }
 
     fn validate<Octs: Octets>(
@@ -1902,13 +1966,13 @@ impl Attribute for Connector {
     fn compose_value<Target: OctetsBuilder>(&self, target: &mut Target)
         -> Result<(), Target::AppendError>
     {
-        target.append_slice(&self.0.octets())
+        target.append_slice(&self.0.0.octets())
     }
 
     fn parse<'a, Octs: 'a + Octets>(parser: &mut Parser<'a, Octs>, _sc: SessionConfig) 
         -> Result<Connector, ParseError>
     {
-        Ok(Connector(parse_ipv4addr(parser)?))
+        Ok(Connector(crate::bgp::types::Connector(parse_ipv4addr(parser)?)))
     }
 
     fn validate<Octs: Octets>(
@@ -2042,7 +2106,8 @@ impl Attribute for Ipv6ExtendedCommunities {
 
 use crate::bgp::communities::LargeCommunity;
 
-use super::workshop::route::FromAttribute;
+// use super::types::ConventionalNextHop;
+use super::workshop::route::{FromAttribute, WorkshopAttribute};
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct LargeCommunitiesList {
@@ -2309,12 +2374,12 @@ mod tests {
 
         check(
             vec![0x40, 0x03, 0x04, 0x01, 0x02, 0x03, 0x04],
-            PA::NextHop(NextHop("1.2.3.4".parse().unwrap()))
+            PA::ConventionalNextHop(ConventionalNextHop(crate::bgp::types::ConventionalNextHop("1.2.3.4".parse().unwrap())))
         );
 
         check(
             vec![0x80, 0x04, 0x04, 0x00, 0x00, 0x00, 0xff],
-            PA::MultiExitDisc(MultiExitDisc::new(255))
+            PA::MultiExitDisc(MultiExitDisc::new(crate::bgp::types::MultiExitDisc(255)))
         );
 
         check(
@@ -2345,7 +2410,7 @@ mod tests {
                 0xff, 0xff, 0x03
             ],
             {
-                let mut builder = StandardCommunitiesBuilder::new();
+                let mut builder = StandardCommunitiesList::new();
                 builder.add_community("AS42:518".parse().unwrap());
                 builder.add_community(Wellknown::NoExport.into());
                 builder.add_community(Wellknown::NoAdvertise.into());
@@ -2356,7 +2421,7 @@ mod tests {
 
         check(
             vec![0x80, 0x09, 0x04, 0x0a, 0x00, 0x00, 0x04],
-            OriginatorId("10.0.0.4".parse().unwrap()).into()
+            OriginatorId(crate::bgp::types::OriginatorId("10.0.0.4".parse().unwrap())).into()
         );
 
         check(
@@ -2442,10 +2507,10 @@ mod tests {
                 0x00, 0x00, 0x00, 100,
                 0x00, 0x00, 0x00, 200,
             ],
-            PA::As4Path(As4Path::new(HopPath::from(vec![
+            PA::As4Path(As4Path::new(crate::bgp::types::As4Path(HopPath::from(vec![
                 Asn::from_u32(100),
                 Asn::from_u32(200)]
-            )))
+            ))))
         );
 
         check(
@@ -2453,15 +2518,15 @@ mod tests {
                 0xc0, 0x12, 0x08, 0x00, 0x00, 0x04, 0xd2,
                 10, 0, 0, 99
             ],
-            As4Aggregator(AggregatorInfo::new(
+            As4Aggregator(crate::bgp::types::As4Aggregator(AggregatorInfo::new(
                 Asn::from_u32(1234),
                 "10.0.0.99".parse().unwrap()
-            )).into()
+            ))).into()
         );
 
         check(
             vec![0xc0, 0x14, 0x04, 1, 2, 3, 4],
-            Connector("1.2.3.4".parse().unwrap()).into()
+            Connector(crate::bgp::types::Connector("1.2.3.4".parse().unwrap())).into()
         );
 
         check(
@@ -2536,7 +2601,7 @@ mod tests {
         assert!(pas.get(PathAttributeType::Origin).is_some());
         assert!(pas.get(PathAttributeType::AsPath).is_none());
         assert!(pas.get(PathAttributeType::MultiExitDisc).is_some());
-        assert!(pas.get(PathAttributeType::NextHop).is_some());
+        assert!(pas.get(PathAttributeType::ConventionalNextHop).is_some());
     }
 
     #[test]

@@ -22,7 +22,7 @@ use crate::bgp::path_attributes::{
     MpReachNlri,
     MpUnreachNlri,
     MultiExitDisc,
-    NextHop as NextHopAttribute,
+    ConventionalNextHop,
     Origin,
     AttributesMap, PathAttribute, PathAttributesBuilder, PathAttributeType
 };
@@ -255,7 +255,7 @@ where Target: octseq::Truncate
     }
 
     pub fn set_conventional_nexthop(&mut self, addr: Ipv4Addr) -> Result<(), ComposeError> {
-        self.add_attribute(NextHopAttribute::new(addr).into())
+        self.add_attribute(ConventionalNextHop::new(crate::bgp::types::ConventionalNextHop(addr)).into())
     }
 
     pub fn set_mp_nexthop(&mut self, nexthop: NextHop) -> Result<(), ComposeError> {
@@ -398,7 +398,7 @@ where Target: octseq::Truncate
     {
         if !self.attributes.contains_key(&PathAttributeType::StandardCommunities) {
             self.add_attribute(StandardCommunities::new(
-                    StandardCommunitiesBuilder::new()
+                    StandardCommunitiesList::new()
             ).into())?;
         }
         let pa = self.attributes.get_mut(&PathAttributeType::StandardCommunities)
@@ -1324,23 +1324,23 @@ impl MpUnreachNlriBuilder {
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
-pub struct StandardCommunitiesBuilder {
+pub struct StandardCommunitiesList {
     communities: Vec<StandardCommunity>,
     len: usize, // size of value, excluding path attribute flags+type_code+len
     extended: bool,
 }
 
-impl StandardCommunitiesBuilder {
-    pub(crate) fn new() -> StandardCommunitiesBuilder {
-        StandardCommunitiesBuilder {
+impl StandardCommunitiesList {
+    pub(crate) fn new() -> StandardCommunitiesList {
+        StandardCommunitiesList {
             communities: Vec::new(),
             len: 0,
             extended: false
         }
     }
 
-    pub(crate) fn with_capacity(c: usize) -> StandardCommunitiesBuilder {
-        StandardCommunitiesBuilder {
+    pub(crate) fn with_capacity(c: usize) -> StandardCommunitiesList {
+        StandardCommunitiesList {
             communities: Vec::with_capacity(c),
             len: 0,
             extended: false
@@ -1754,7 +1754,7 @@ mod tests {
             ).unwrap();
         }
         builder.set_local_pref(LocalPref::new(crate::bgp::types::LocalPref(123))).unwrap();
-        builder.set_multi_exit_disc(MultiExitDisc::new(123)).unwrap();
+        builder.set_multi_exit_disc(MultiExitDisc::new(crate::bgp::types::MultiExitDisc(123))).unwrap();
         (1..=300).for_each(|n| {
             builder.add_community(StandardCommunity::new(n.into(), Tag::new(123))).unwrap();
         });
@@ -2118,7 +2118,7 @@ mod tests {
         //builder.set_aspath::<Vec<u8>>(path.to_as_path().unwrap()).unwrap();
         builder.set_aspath(path).unwrap();
 
-        builder.set_multi_exit_disc(MultiExitDisc::new(1234)).unwrap();
+        builder.set_multi_exit_disc(MultiExitDisc::new(crate::bgp::types::MultiExitDisc(1234))).unwrap();
         builder.set_local_pref(LocalPref::new(crate::bgp::types::LocalPref(9876))).unwrap();
 
         let msg = builder.into_message().unwrap();

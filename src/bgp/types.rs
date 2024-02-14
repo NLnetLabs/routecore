@@ -7,6 +7,9 @@ use crate::bgp::message::nlri::RouteDistinguisher;
 #[cfg(feature = "serde")]
 use serde::{Serialize, Deserialize};
 
+use super::aspath::HopPath;
+use super::path_attributes::AggregatorInfo;
+
 typeenum!(
 /// AFI as used in BGP OPEN and UPDATE messages.
 #[cfg_attr(feature = "serde", serde(from = "u16"))]
@@ -243,7 +246,7 @@ typeenum!(
         0 => Reserved,
         1 => Origin,
         2 => AsPath,
-        3 => NextHop,
+        3 => ConventionalNextHop,
         4 => MultiExitDisc,
         5 => LocalPref,
         6 => AtomicAggregate,
@@ -349,3 +352,38 @@ impl std::fmt::Display for NextHop {
         }
     }
 }
+
+
+/// Conventional NextHop only, this gets stored in the
+/// `PathAttribute::ConventionalNextHop` variant.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct ConventionalNextHop(pub Ipv4Addr);
+
+impl ConventionalNextHop {
+    fn new() -> Self {
+        Self(Ipv4Addr::from(0))
+    }
+}
+
+impl std::fmt::Display for ConventionalNextHop {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct OriginatorId(pub Ipv4Addr);
+
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct Connector(pub Ipv4Addr);
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize))]
+pub struct As4Path(pub HopPath);
+
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct As4Aggregator(pub AggregatorInfo);
