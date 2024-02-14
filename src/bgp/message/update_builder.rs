@@ -24,7 +24,9 @@ use crate::bgp::path_attributes::{
     MultiExitDisc,
     ConventionalNextHop,
     Origin,
-    AttributesMap, PathAttribute, PathAttributesBuilder, PathAttributeType
+    PaMap,
+    PathAttribute,
+    PathAttributeType
 };
 
 //------------ UpdateBuilder -------------------------------------------------
@@ -37,7 +39,7 @@ pub struct UpdateBuilder<Target> {
     withdrawals: Vec<Nlri<Vec<u8>>>,
     addpath_enabled: Option<bool>, // for conventional nlri (unicast v4)
     // attributes:
-    attributes: AttributesMap
+    attributes: PaMap,
 }
 
 impl<T> UpdateBuilder<T> {
@@ -53,22 +55,22 @@ where Target: octseq::Truncate
         let mut h = Header::<&[u8]>::new();
         h.set_length(19 + 2 + 2);
         h.set_type(MsgType::Update);
-        let _ =target.append_slice(h.as_ref());
+        let _ = target.append_slice(h.as_ref());
 
         Ok(UpdateBuilder {
             target,
             announcements: Vec::new(),
             withdrawals: Vec::new(),
             addpath_enabled: None,
-            attributes: AttributesMap::new()
+            attributes: PaMap::empty(),
         })
     }
 
-    pub fn from_attributes_builder(attributes: PathAttributesBuilder)
-        -> UpdateBuilder<Vec<u8>>
-    {
+    pub fn from_attributes_builder(
+        attributes: PaMap,
+    ) -> UpdateBuilder<Vec<u8>> {
         let mut res = UpdateBuilder::<Vec<u8>>::new_vec();
-        res.attributes = attributes.into_inner();
+        res.attributes = attributes;
         res
     }
 
@@ -139,22 +141,25 @@ where Target: octseq::Truncate
                     // Again, like with Communities, we cant rely on
                     // entry().or_insert(), because that does not do a max pdu
                     // length check and it does not allow us to error out.
-                    
-                    if !self.attributes.contains_key(
-                        &PathAttributeType::MpUnreachNlri
-                    ) {
-                        self.add_attribute(MpUnreachNlri::new(
-                                MpUnreachNlriBuilder::new(
-                                    Afi::Ipv6, Safi::Unicast,
-                                    b.is_addpath()
-                                )
-                        ).into())?;
+
+                    if !self
+                        .attributes
+                        .contains_attr::<MpUnreachNlriBuilder>()
+                    {
+                        self.add_attribute(
+                            MpUnreachNlri::new(MpUnreachNlriBuilder::new(
+                                Afi::Ipv6,
+                                Safi::Unicast,
+                                b.is_addpath(),
+                            ))
+                            .into(),
+                        )?;
                     }
-                    let pa = self.attributes.get_mut(&PathAttributeType::MpUnreachNlri)
+
+                    let mut builder = self
+                        .attributes
+                        .get_owned::<MpUnreachNlriBuilder>()
                         .unwrap(); // Just added it, so we know it is there.
-            
-                    if let PathAttribute::MpUnreachNlri(ref mut pa) = pa {
-                        let builder = pa.as_mut();
 
                         if !builder.valid_combination(
                             Afi::Ipv6, Safi::Unicast, b.is_addpath()
@@ -166,15 +171,11 @@ where Target: octseq::Truncate
                             return Err(ComposeError::IllegalCombination);
                         }
 
-                        builder.add_withdrawal(withdrawal);
-
-                    } else {
-                        unreachable!()
-                    }
+                    builder.add_withdrawal(withdrawal);
+                    self.attributes.set::<MpUnreachNlriBuilder>(builder);
                 }
-
             }
-            _ => todo!() // TODO 
+            _ => todo!(), // TODO
         };
         Ok(())
     }
@@ -211,21 +212,24 @@ where Target: octseq::Truncate
     /// the new Path Attribute would cause the total PDU length to exceed the
     /// maximum, a `ComposeError::PduTooLarge` is returned.
 
-    pub fn add_attribute(&mut self, pa: PathAttribute)
-        -> Result<(), ComposeError>
-    {
+    pub fn add_attribute(
+        &mut self,
+        pa: PathAttribute,
+    ) -> Result<(), ComposeError> {
         if let PathAttribute::Invalid(..) = pa {
             warn!(
                 "adding Invalid attribute to UpdateBuilder: {}",
-                  &pa.type_code()
+                &pa.type_code()
             );
         }
-        if let Some(existing_pa) = self.attributes.get_mut(&pa.type_code()) {
+        if let Some(existing_pa) =
+            self.attributes.attributes_mut().get_mut(&pa.type_code())
+        {
             *existing_pa = pa;
         } else {
-            self.attributes.insert(pa.type_code(), pa);
+            self.attributes.attributes_mut().insert(pa.type_code(), pa);
         }
-        
+
         Ok(())
     }
 
@@ -254,21 +258,29 @@ where Target: octseq::Truncate
         self.add_attribute(AsPath::new(aspath).into())
     }
 
-    pub fn set_conventional_nexthop(&mut self, addr: Ipv4Addr) -> Result<(), ComposeError> {
-        self.add_attribute(ConventionalNextHop::new(crate::bgp::types::ConventionalNextHop(addr)).into())
+    pub fn set_conventional_nexthop(
+        &mut self,
+        addr: Ipv4Addr,
+    ) -> Result<(), ComposeError> {
+        self.add_attribute(
+            ConventionalNextHop::new(crate::bgp::types::ConventionalNextHop(
+                addr,
+            ))
+            .into(),
+        )
     }
 
-    pub fn set_mp_nexthop(&mut self, nexthop: NextHop) -> Result<(), ComposeError> {
-        if let Some(PathAttribute::MpReachNlri(ref mut pa)) = self.attributes.get_mut(
-            &PathAttributeType::MpReachNlri
-        ) {
-            let builder = pa.as_mut();
-            builder.set_nexthop(nexthop)
-        } else {
-            // We need to know the AfiSafi of MP_REACH_NLRI, so it should be
-            // added first via either an NLRI, or explicitly via fn new.
-            Err(ComposeError::IllegalCombination)
-        }
+    pub fn set_mp_nexthop(
+        &mut self,
+        nexthop: NextHop,
+    ) -> Result<(), ComposeError> {
+        let mut builder = self
+            .attributes
+            .get_owned::<MpReachNlriBuilder>()
+            .ok_or(ComposeError::IllegalCombination)?;
+        builder.set_nexthop(nexthop)?;
+        self.attributes.set(builder);
+        Ok(())
     }
 
     pub fn set_nexthop_unicast(&mut self, addr: IpAddr) -> Result<(), ComposeError> {
@@ -283,29 +295,27 @@ where Target: octseq::Truncate
     {
         // We could/should check for addr.is_unicast_link_local() once that
         // lands in stable.
-        
-        if let Some(ref mut pa) = self.attributes.get_mut(
-            &PathAttributeType::MpReachNlri
-        ) {
-            if let PathAttribute::MpReachNlri(ref mut pa) = pa {
-                let builder = pa.as_mut();
-                match builder.get_nexthop() {
-                    NextHop::Unicast(a) if a.is_ipv6() => { } ,
-                    NextHop::Ipv6LL(_,_) => { },
-                    _ => return Err(ComposeError::IllegalCombination),
-                }
-                
-                builder.set_nexthop_ll_addr(addr);
-            } else {
-                unreachable!()
+        if let Some(mut builder) =
+            self.attributes.get_owned::<MpReachNlriBuilder>()
+        {
+            match builder.get_nexthop() {
+                NextHop::Unicast(a) if a.is_ipv6() => {}
+                NextHop::Ipv6LL(_, _) => {}
+                _ => return Err(ComposeError::IllegalCombination),
             }
+
+            builder.set_nexthop_ll_addr(addr);
+            self.attributes.set(builder);
         } else {
-            self.add_attribute(MpReachNlri::new(
-                MpReachNlriBuilder::new(
-                    Afi::Ipv6, Safi::Unicast, NextHop::Ipv6LL(0.into(), addr),
-                    false
-                )
-            ).into())?;
+            self.add_attribute(
+                MpReachNlri::new(MpReachNlriBuilder::new(
+                    Afi::Ipv6,
+                    Safi::Unicast,
+                    NextHop::Ipv6LL(0.into(), addr),
+                    false,
+                ))
+                .into(),
+            )?;
         }
 
         Ok(())
@@ -349,30 +359,29 @@ where Target: octseq::Truncate
                 );
             }
             n => {
-                if !self.attributes.contains_key(&PathAttributeType::MpReachNlri) {
-                    self.add_attribute(MpReachNlri::new(
-                            MpReachNlriBuilder::new_for_nlri(n)
-                    ).into())?;
+                if !self.attributes.contains_attr::<MpReachNlriBuilder>() {
+                    self.add_attribute(
+                        MpReachNlri::new(MpReachNlriBuilder::new_for_nlri(n))
+                            .into(),
+                    )?;
                 }
 
-                let pa = self.attributes.get_mut(&PathAttributeType::MpReachNlri)
+                let mut builder = self
+                    .attributes
+                    .get_owned::<MpReachNlriBuilder>()
                     .unwrap(); // Just added it, so we know it is there.
-        
-                if let PathAttribute::MpReachNlri(ref mut pa) = pa {
-                    let builder = pa.as_mut();
 
-                    if !builder.valid_combination(n) {
-                        // We are already constructing a
-                        // MP_UNREACH_NLRI but for a different
-                        // AFI,SAFI than the prefix in `announcement`,
-                        // or we are mixing addpath with non-addpath.
-                        return Err(ComposeError::IllegalCombination);
-                    }
-
-                    builder.add_announcement(announcement);
-                } else {
-                    unreachable!()
+                if !builder.valid_combination(n) {
+                    // We are already constructing a
+                    // MP_UNREACH_NLRI but for a different
+                    // AFI,SAFI than the prefix in `announcement`,
+                    // or we are mixing addpath with non-addpath.
+                    self.attributes.set(builder);
+                    return Err(ComposeError::IllegalCombination);
                 }
+
+                builder.add_announcement(announcement);
+                self.attributes.set(builder);
             }
         }
 
@@ -392,25 +401,24 @@ where Target: octseq::Truncate
     }
 
     //--- Standard communities
-    
-    pub fn add_community(&mut self, community: StandardCommunity)
-        -> Result<(), ComposeError>
-    {
-        if !self.attributes.contains_key(&PathAttributeType::StandardCommunities) {
-            self.add_attribute(StandardCommunities::new(
-                    StandardCommunitiesList::new()
-            ).into())?;
+
+    pub fn add_community(
+        &mut self,
+        community: StandardCommunity,
+    ) -> Result<(), ComposeError> {
+        if !self.attributes.contains_attr::<StandardCommunitiesList>() {
+            self.add_attribute(
+                StandardCommunities::new(StandardCommunitiesList::new())
+                    .into(),
+            )?;
         }
-        let pa = self.attributes.get_mut(&PathAttributeType::StandardCommunities)
+        let mut builder = self
+            .attributes
+            .get_owned::<StandardCommunitiesList>()
             .unwrap(); // Just added it, so we know it is there.
-            
-        if let PathAttribute::StandardCommunities(ref mut pa) = pa {
-            let builder = pa.as_mut();
-            builder.add_community(community);
-            Ok(())
-        } else {
-            unreachable!()
-        }
+        builder.add_community(community);
+        self.attributes.set(builder);
+        Ok(())
     }
 }
 
@@ -602,20 +610,14 @@ impl<Target> UpdateBuilder<Target>
         )?)
     }
 
-    pub fn into_attributes(self) -> AttributesMap {
-        self.attributes
-    }
-
-    pub fn attributes(&self) -> &AttributesMap {
+    pub fn attributes(&self) -> &PaMap {
         &self.attributes
     }
-
-    pub fn from_map(&self, map: &mut AttributesMap) -> PathAttributesBuilder {
-        let mut pab = PathAttributesBuilder::empty();
-        pab.append(map);
+    pub fn from_map(&self, map: &mut PaMap) -> PaMap {
+        let mut pab = PaMap::empty();
+        pab.merge_upsert(map);
         pab
     }
-
 
     // Check whether the combination of NLRI and attributes would produce a
     // valid UPDATE pdu.
@@ -623,29 +625,17 @@ impl<Target> UpdateBuilder<Target>
         // If we have builders for MP_(UN)REACH_NLRI, they should carry
         // prefixes.
 
-        if let Some(pa) = self.attributes.get(
-            &PathAttributeType::MpReachNlri
-        ) {
-            if let PathAttribute::MpReachNlri(pa) = pa {
-                if pa.as_ref().is_empty() {
-                    return Err(ComposeError::EmptyMpReachNlri);
-                }
-            } else {
-                unreachable!()
+        if let Some(pa) = self.attributes.get::<MpReachNlriBuilder>() {
+            if pa.is_empty() {
+                return Err(ComposeError::EmptyMpReachNlri);
             }
         }
 
-        if let Some(pa) = self.attributes.get(
-            &PathAttributeType::MpUnreachNlri
-        ) {
-            if let PathAttribute::MpUnreachNlri(pa) = pa {
-                // FIXME an empty MP_UNREACH_NLRI can be valid when signaling
-                // EoR, but then it has to be the only path attribute.
-                if pa.as_ref().is_empty() {
-                    return Err(ComposeError::EmptyMpUnreachNlri);
-                }
-            } else {
-                unreachable!()
+        if let Some(pa) = self.attributes.get::<MpUnreachNlriBuilder>() {
+            // FIXME an empty MP_UNREACH_NLRI can be valid when signaling
+            // EoR, but then it has to be the only path attribute.
+            if pa.is_empty() {
+                return Err(ComposeError::EmptyMpUnreachNlri);
             }
         }
 
@@ -661,8 +651,7 @@ impl<Target> UpdateBuilder<Target>
             .fold(0, |sum, w| sum + w.compose_len());
 
         // Path attributes, 2 bytes for length + N bytes for attributes:
-        res += 2 + self.attributes.values()
-            .fold(0, |sum, pa| sum + pa.compose_len());
+        res += 2 + self.attributes.bytes_len();
 
         // Announcements, no length bytes:
         res += self.announcements.iter()
@@ -675,9 +664,9 @@ impl<Target> UpdateBuilder<Target>
         // TODO add more 'quick returns' here, e.g. for MpUnreachNlri or
         // conventional withdrawals/announcements.
 
-        if let Some(PathAttribute::MpReachNlri(b)) = self.attributes.get(&PathAttributeType::MpReachNlri) {
-            if b.as_ref().announcements.len() * 2 > max {
-                return true
+        if let Some(b) = self.attributes.get::<MpReachNlriBuilder>() {
+            if b.announcements.len() * 2 > max {
+                return true;
             }
         }
         self.calculate_pdu_length() > max
@@ -736,33 +725,35 @@ impl<Target> UpdateBuilder<Target>
 
         // Scenario 2: many withdrawals in MP_UNREACH_NLRI
         // At this point, we have no conventional withdrawals anymore.
-        
-        let maybe_pdu = 
-            if let Some(PathAttribute::MpUnreachNlri(b)) = self.attributes.get_mut(&PathAttributeType::MpUnreachNlri) {
-                let unreach_builder = b.as_mut();
-                let mut split_at = 0;
-                if !unreach_builder.withdrawals.is_empty() {
-                    let mut compose_len = 0;
-                    for (idx, w) in unreach_builder.withdrawals.iter().enumerate() {
-                        compose_len += w.compose_len();
-                        if compose_len > 4000 {
-                            split_at = idx;
-                            break;
-                        }
+
+        let maybe_pdu = if let Some(mut unreach_builder) =
+            self.attributes.get_owned::<MpUnreachNlriBuilder>()
+        {
+            let mut split_at = 0;
+            if !unreach_builder.withdrawals.is_empty() {
+                let mut compose_len = 0;
+                for (idx, w) in unreach_builder.withdrawals.iter().enumerate()
+                {
+                    compose_len += w.compose_len();
+                    if compose_len > 4000 {
+                        split_at = idx;
+                        break;
                     }
-
-                    let this_batch = unreach_builder.split(split_at);
-                    let mut builder = Self::from_target(self.target.clone()).unwrap();
-                    builder.add_attribute(MpUnreachNlri::new(this_batch).into()).unwrap();
-
-                    Some(builder.into_message())
-                } else {
-                    None
                 }
+
+                let this_batch = unreach_builder.split(split_at);
+                self.attributes.set(unreach_builder);
+                let mut builder =
+                    Self::from_target(self.target.clone()).unwrap();
+                builder.attributes.set(this_batch);
+
+                Some(builder.into_message())
             } else {
                 None
             }
-        ;
+        } else {
+            None
+        };
         // Bit of a clumsy workaround as we can not return Some(self) from
         // within the if let ... self.attributes.get_mut above
         if let Some(pdu) = maybe_pdu {
@@ -775,10 +766,7 @@ impl<Target> UpdateBuilder<Target>
         // have no conventional withdrawals left, and no MP_UNREACH_NLRI.
 
         if !self.announcements.is_empty() {
-            //let announcement_len = self.announcements.iter()
-            //    .fold(0, |sum, a| sum + a.compose_len());
-
-            let split_at = std::cmp::min(self.announcements.len() / 2,  450);
+            let split_at = std::cmp::min(self.announcements.len() / 2, 450);
             let this_batch = self.announcements.drain(..split_at);
             let mut builder = Self::from_target(self.target.clone()).unwrap();
 
@@ -786,7 +774,6 @@ impl<Target> UpdateBuilder<Target>
             builder.attributes = self.attributes.clone();
 
             return (builder.into_message(), Some(self));
-
         }
 
         // Scenario 4: many MP_REACH_NLRI announcements
@@ -799,13 +786,13 @@ impl<Target> UpdateBuilder<Target>
         // sets. The first PDUs take longer to construct than the later ones.
         // Flamegraph currently hints at the fn split on MpReachNlriBuilder.
 
-        let maybe_pdu = 
-            if let Some(PathAttribute::MpReachNlri(b)) = self.attributes.remove(&PathAttributeType::MpReachNlri) {
-                let mut reach_builder = b.inner();
-                let mut split_at = 0;
+        let maybe_pdu = if let Some(mut reach_builder) =
+            self.attributes.remove::<MpReachNlriBuilder>()
+        {
+            let mut split_at = 0;
 
-                let other_attrs_len = self.attributes.values().fold(0, |sum, pa| sum + pa.compose_len());
-                let limit = Self::MAX_PDU 
+            let other_attrs_len = self.attributes.bytes_len();
+            let limit = Self::MAX_PDU 
                     // marker/len/type, wdraw len, total pa len
                     - (16 + 2 + 1 + 2 + 2)
                     // MP_REACH_NLRI flags/type/len/afi/safi/rsrved, next_hop
@@ -917,15 +904,15 @@ impl<Target> UpdateBuilder<Target>
 
         // attributes_len` is checked to be <= 4096 or <= 65535
         // so it will always fit in a u16.
-        let attributes_len = self.attributes.values()
-            .fold(0, |sum, a| sum + a.compose_len());
+        let attributes_len = self.attributes.bytes_len();
         let _ = self.target.append_slice(
             &u16::try_from(attributes_len).unwrap().to_be_bytes()
         );
 
-        self.attributes.iter().try_for_each(
-            |(_tc, pa)| pa.compose(&mut self.target)
-        )?;
+        self.attributes
+            .attributes()
+            .iter()
+            .try_for_each(|(_tc, pa)| pa.compose(&mut self.target))?;
 
         // XXX Here, in the conventional NLRI field at the end of the PDU, we
         // write IPv4 Unicast announcements. But what if we have agreed to do
