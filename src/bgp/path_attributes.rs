@@ -224,7 +224,7 @@ impl PaMap {
         self.attributes_mut().append(other.attributes_mut())
     }
 
-    pub(in crate::bgp) fn get_owned<A: FromAttribute>(&mut self) -> Option<A> {
+    pub(in crate::bgp) fn take<A: FromAttribute>(&mut self) -> Option<A> {
         if let Some(attr_type) = A::attribute_type() {
             self.attributes_mut()
                 .get_mut(&attr_type).and_then(|a| A::from_attribute(std::mem::take(a)))
@@ -233,7 +233,7 @@ impl PaMap {
         }
     }
 
-    pub(in crate::bgp) fn contains_attr<A: FromAttribute>(&self) -> bool {
+    pub(in crate::bgp) fn contains<A: FromAttribute>(&self) -> bool {
         if let Some(attr_type) = A::attribute_type() {
             self.attributes().contains_key(&attr_type)
         } else {
@@ -357,7 +357,7 @@ impl PaMap {
 
 impl From<AttributesMap> for PaMap {
     fn from(value: AttributesMap) -> Self {
-        Self {attributes: value }
+        Self { attributes: value }
     }
 }
 
@@ -455,13 +455,6 @@ macro_rules! path_attributes {
             }
         }
         )+
-
-        impl From<UnimplementedPathAttribute> for PathAttribute {
-            fn from(u: UnimplementedPathAttribute) -> PathAttribute {
-                PathAttribute::Unimplemented(u)
-            }
-        }
-
 
 //------------ WireformatPathAttribute --------------------------------------
 
@@ -702,12 +695,6 @@ macro_rules! path_attributes {
         }
 */
 
-impl Default for PathAttribute {
-    fn default() -> Self {
-        Self::Unimplemented(UnimplementedPathAttribute{flags: Flags(0), type_code: 0, value: vec![]})
-    }
-}
-
 //------------ PathAttributeType ---------------------------------------------
 
         #[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -736,7 +723,6 @@ impl Default for PathAttribute {
             }
         }
 
-
         impl From<u8> for PathAttributeType {
             fn from(code: u8) -> PathAttributeType {
                 match code {
@@ -760,6 +746,14 @@ impl Default for PathAttribute {
         attribute!($name($data), $flags, $type_code);
         )+
 
+        // You might think that the Attribute trait (implemented for all path
+        // attributes with the attribute! macro above this comment), can be
+        // merged with the FromAttribute trait down here. There are however
+        // types that do not and should not implement `Attribute`, but they
+        // should implement `FromAttribute`, namely types that are usable by
+        // end-users, but are internally reworked to be stored in multiple
+        // path attributes, e.g. Vec<Community>, or a value that can be stored
+        // in one of several path attributes, e.g. NextHop.
         $(
         impl FromAttribute for $data {
             fn from_attribute(value: PathAttribute) -> Option<$data> {
@@ -805,8 +799,18 @@ path_attributes!(
     //40 => BgpPrefixSid(TODO), Flags::OPT_TRANS, // https://datatracker.ietf.org/doc/html/rfc8669#name-bgp-prefix-sid-attribute
     128 => AttrSet(crate::bgp::path_attributes::AttributeSet), Flags::OPT_TRANS,
     255 => Reserved(crate::bgp::path_attributes::ReservedRaw), Flags::OPT_TRANS,
-
 );
+
+// Default implementation is needed to be able to take() an attribute. When
+// done so it gets replaced with Unimplemented.
+impl Default for PathAttribute {
+    fn default() -> Self {
+        Self::Unimplemented(UnimplementedPathAttribute{flags: Flags(0), type_code: 0, value: vec![]})
+    }
+}
+
+
+//------------ UnimplementedPathAttribute ------------------------------------
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
@@ -847,6 +851,12 @@ impl UnimplementedPathAttribute {
     }
 }
 
+impl From<UnimplementedPathAttribute> for PathAttribute {
+    fn from(u: UnimplementedPathAttribute) -> PathAttribute {
+        PathAttribute::Unimplemented(u)
+    }
+}
+
 pub struct UnimplementedWireformat<'a, Octs: Octets> {
     flags: Flags,
     type_code: u8,
@@ -883,6 +893,8 @@ impl<'a, Octs: Octets> UnimplementedWireformat<'a, Octs> {
 }
 
 
+//------------ Attribute trait -----------------------------------------------
+
 pub trait Attribute: AttributeHeader + Clone {
     fn compose_len(&self) -> usize {
         self.header_len() + self.value_len()
@@ -899,8 +911,6 @@ pub trait Attribute: AttributeHeader + Clone {
             3
         }
     }
-
-    // fn inner(&self) -> &Self { todo!() }
 
     fn value_len(&self) -> usize;
 
@@ -950,6 +960,8 @@ pub trait Attribute: AttributeHeader + Clone {
     ;
     
 }
+
+//------------ PathAttributes ------------------------------------------------
 
 #[derive(Debug)]
 pub struct PathAttributes<'a, Octs> {

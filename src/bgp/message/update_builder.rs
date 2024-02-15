@@ -10,6 +10,7 @@ use crate::bgp::communities::StandardCommunity;
 use crate::bgp::message::{Header, MsgType, SessionConfig, UpdateMessage};
 use crate::bgp::message::nlri::Nlri;
 use crate::bgp::message::update::{Afi, Safi, AfiSafi, NextHop};
+use crate::bgp::workshop::route::FromAttribute;
 use crate::util::parser::ParseError;
 
 //use rotonda_fsm::bgp::session::AgreedConfig;
@@ -27,7 +28,8 @@ pub struct UpdateBuilder<Target> {
     announcements: Vec<Nlri<Vec<u8>>>,
     withdrawals: Vec<Nlri<Vec<u8>>>,
     addpath_enabled: Option<bool>, // for conventional nlri (unicast v4)
-    // attributes:
+    // data structure that stores all path attributes, by default not the NLRI
+    // (but it could).
     attributes: PaMap,
 }
 
@@ -133,7 +135,7 @@ where Target: octseq::Truncate
 
                     if !self
                         .attributes
-                        .contains_attr::<MpUnreachNlriBuilder>()
+                        .contains::<MpUnreachNlriBuilder>()
                     {
                         self.attributes.set(
                             MpUnreachNlriBuilder::new(
@@ -146,7 +148,7 @@ where Target: octseq::Truncate
 
                     let mut builder = self
                         .attributes
-                        .get_owned::<MpUnreachNlriBuilder>()
+                        .take::<MpUnreachNlriBuilder>()
                         .unwrap(); // Just added it, so we know it is there.
 
                         if !builder.valid_combination(
@@ -202,12 +204,12 @@ where Target: octseq::Truncate
 
     pub fn add_attribute(
         &mut self,
-        pa: PathAttribute,
+        attr: PathAttribute,
     ) -> Result<(), ComposeError> {
-        if let PathAttribute::Invalid(..) = pa {
+        if let PathAttribute::Invalid(..) = attr {
             warn!(
                 "adding Invalid attribute to UpdateBuilder: {}",
-                &pa.type_code()
+                &attr.type_code()
             );
         }
         // if let Some(existing_pa) =
@@ -217,7 +219,7 @@ where Target: octseq::Truncate
         // } else {
         //     self.attributes.attributes_mut().insert(pa.type_code(), pa);
         // }
-        self.attributes.attributes_mut().insert(pa.type_code(), pa);
+        self.attributes.attributes_mut().insert(attr.type_code(),attr);
 
         Ok(())
     }
@@ -248,7 +250,7 @@ where Target: octseq::Truncate
     ) -> Result<(), ComposeError> {
         let mut builder = self
             .attributes
-            .get_owned::<MpReachNlriBuilder>()
+            .take::<MpReachNlriBuilder>()
             .ok_or(ComposeError::IllegalCombination)?;
         builder.set_nexthop(nexthop)?;
         self.attributes.set(builder);
@@ -271,7 +273,7 @@ where Target: octseq::Truncate
         // We could/should check for addr.is_unicast_link_local() once that
         // lands in stable.
         if let Some(mut builder) =
-            self.attributes.get_owned::<MpReachNlriBuilder>()
+            self.attributes.take::<MpReachNlriBuilder>()
         {
             match builder.get_nexthop() {
                 NextHop::Unicast(a) if a.is_ipv6() => {}
@@ -321,7 +323,7 @@ where Target: octseq::Truncate
                 );
             }
             n => {
-                if !self.attributes.contains_attr::<MpReachNlriBuilder>() {
+                if !self.attributes.contains::<MpReachNlriBuilder>() {
                     self.attributes.set(
                         MpReachNlriBuilder::new_for_nlri(n)
                     );
@@ -329,7 +331,7 @@ where Target: octseq::Truncate
 
                 let mut builder = self
                     .attributes
-                    .get_owned::<MpReachNlriBuilder>()
+                    .take::<MpReachNlriBuilder>()
                     .unwrap(); // Just added it, so we know it is there.
 
                 if !builder.valid_combination(n) {
@@ -367,12 +369,12 @@ where Target: octseq::Truncate
         &mut self,
         community: StandardCommunity,
     ) -> Result<(), ComposeError> {
-        if !self.attributes.contains_attr::<StandardCommunitiesList>() {
+        if !self.attributes.contains::<StandardCommunitiesList>() {
             self.attributes.set(StandardCommunitiesList::new());
         }
         let mut builder = self
             .attributes
-            .get_owned::<StandardCommunitiesList>()
+            .take::<StandardCommunitiesList>()
             .unwrap(); // Just added it, so we know it is there.
         builder.add_community(community);
         self.attributes.set(builder);
@@ -685,7 +687,7 @@ impl<Target> UpdateBuilder<Target>
         // At this point, we have no conventional withdrawals anymore.
 
         let maybe_pdu = if let Some(mut unreach_builder) =
-            self.attributes.get_owned::<MpUnreachNlriBuilder>()
+            self.attributes.take::<MpUnreachNlriBuilder>()
         {
             let mut split_at = 0;
             if !unreach_builder.withdrawals.is_empty() {

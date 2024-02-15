@@ -16,11 +16,17 @@ use crate::bgp::{
     },
 };
 
+
+//------------ TypedRoute ----------------------------------------------------
+
 #[derive(Debug)]
 pub enum TypedRoute<N: Clone + Debug + Hash> {
     Announce(Route<N>),
     Withdraw(Nlri<N>),
 }
+
+
+//------------ Route ---------------------------------------------------------
 
 #[derive(Debug, Eq, PartialEq, Clone, Hash, Serialize)]
 pub struct Route<N: Clone + Debug + Hash>(N, AttributesMap);
@@ -60,10 +66,8 @@ pub trait FromAttribute {
     fn attribute_type() -> Option<PathAttributeType>;
 }
 
-//------------ From impls for PathAttribute ----------------------------------
 
-// These conversions are used on the `set()` method of the
-// PaMap, so not in the Workshop!
+//------------ From impls for PathAttribute ----------------------------------
 
 impl From<crate::bgp::aspath::AsPath<bytes::Bytes>> for PathAttribute {
     fn from(value: crate::bgp::aspath::AsPath<bytes::Bytes>) -> Self {
@@ -80,6 +84,7 @@ impl From<crate::bgp::aspath::AsPath<Vec<u8>>> for PathAttribute {
         ))
     }
 }
+
 
 //------------ The Workshop --------------------------------------------------
 
@@ -103,11 +108,11 @@ impl<N: Clone + Debug + Hash> RouteWorkshop<N> {
 
     pub fn set_attr<WA: WorkshopAttribute<N>>(
         &mut self,
-        attr: WA,
+        value: WA,
     ) -> Result<(), ComposeError> {
         let mut res = Err(ComposeError::InvalidAttribute);
         if let Some(b) = &mut self.1 {
-            res = WA::to_value(attr, b);
+            res = WA::store(value, b);
         }
         res
     }
@@ -117,7 +122,7 @@ impl<N: Clone + Debug + Hash> RouteWorkshop<N> {
     ) -> Option<A> {
         self.1
             .as_ref()
-            .and_then(|b| b.get::<A>().or_else(|| <A>::into_retrieved(b)))
+            .and_then(|b| b.get::<A>().or_else(|| <A>::retrieve(b)))
     }
 
     pub fn make_route(&self) -> Option<Route<N>> {
@@ -145,9 +150,9 @@ macro_rules! impl_workshop {
     ) => {
         $(
             impl<N: Clone + Hash + Debug> WorkshopAttribute<N> for $attr {
-                fn to_value(local_attrs: Self, attrs: &mut PaMap) ->
+                fn store(local_attrs: Self, attrs: &mut PaMap) ->
                     Result<(), ComposeError> { attrs.set(local_attrs); Ok(()) }
-                fn into_retrieved(_attrs: &PaMap) ->
+                fn retrieve(_attrs: &PaMap) ->
                     Option<Self> { None }
             }
         )+
@@ -173,10 +178,10 @@ impl_workshop!(
 //------------ WorkshopAttribute ---------------------------------------------
 
 pub trait WorkshopAttribute<N>: FromAttribute {
-    fn into_retrieved(attrs: &PaMap) -> Option<Self>
+    fn retrieve(attrs: &PaMap) -> Option<Self>
     where
         Self: Sized;
-    fn to_value(
+    fn store(
         local_attrs: Self,
         attrs: &mut PaMap,
     ) -> Result<(), ComposeError>;
@@ -185,7 +190,7 @@ pub trait WorkshopAttribute<N>: FromAttribute {
 //------------ CommunitiesWorkshop -------------------------------------------
 
 impl<N: Clone + Hash + Debug> WorkshopAttribute<N> for Vec<Community> {
-    fn into_retrieved(attrs: &PaMap) -> Option<Self> {
+    fn retrieve(attrs: &PaMap) -> Option<Self> {
         let mut c = attrs
             .get::<StandardCommunitiesList>()
             .unwrap()
@@ -212,7 +217,7 @@ impl<N: Clone + Hash + Debug> WorkshopAttribute<N> for Vec<Community> {
         Some(c)
     }
 
-    fn to_value(
+    fn store(
         local_attr: Self,
         attrs: &mut PaMap,
     ) -> Result<(), ComposeError> {
@@ -270,7 +275,7 @@ impl FromAttribute for crate::bgp::types::NextHop {
 }
 
 impl<N: Clone + Hash> WorkshopAttribute<N> for crate::bgp::types::NextHop {
-    fn into_retrieved(attrs: &PaMap) -> Option<Self> {
+    fn retrieve(attrs: &PaMap) -> Option<Self> {
         if let Some(next_hop) =
             attrs.get::<crate::bgp::types::ConventionalNextHop>()
         {
@@ -284,7 +289,7 @@ impl<N: Clone + Hash> WorkshopAttribute<N> for crate::bgp::types::NextHop {
         }
     }
 
-    fn to_value(
+    fn store(
         local_attr: Self,
         attrs: &mut PaMap,
     ) -> Result<(), ComposeError> {
