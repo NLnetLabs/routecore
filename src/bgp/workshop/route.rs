@@ -5,13 +5,13 @@ use octseq::{Octets, OctetsFrom};
 use serde::Serialize;
 
 use crate::bgp::communities::Community;
-use crate::bgp::message::update_builder::ComposeError;
+use crate::bgp::message::update_builder::{ComposeError, MpReachNlriBuilder};
 use crate::bgp::message::UpdateMessage;
-use crate::bgp::path_attributes::PaMap;
+use crate::bgp::path_attributes::{PaMap, FromAttribute};
 use crate::bgp::{
     message::{nlri::Nlri, update_builder::StandardCommunitiesList},
     path_attributes::{
-        AttributesMap, ExtendedCommunitiesList, Ipv6ExtendedCommunitiesList,
+        ExtendedCommunitiesList, Ipv6ExtendedCommunitiesList,
         LargeCommunitiesList, PathAttribute, PathAttributeType,
     },
 };
@@ -29,10 +29,10 @@ pub enum TypedRoute<N: Clone + Debug + Hash> {
 //------------ Route ---------------------------------------------------------
 
 #[derive(Debug, Eq, PartialEq, Clone, Hash, Serialize)]
-pub struct Route<N: Clone + Debug + Hash>(N, AttributesMap);
+pub struct Route<N: Clone + Debug + Hash>(N, PaMap);
 
 impl<N: Clone + Debug + Hash> Route<N> {
-    pub fn new(nlri: N, attrs: AttributesMap) -> Self {
+    pub fn new(nlri: N, attrs: PaMap) -> Self {
         Self(nlri, attrs)
     }
 
@@ -40,30 +40,21 @@ impl<N: Clone + Debug + Hash> Route<N> {
         &self.0
     }
 
-    pub fn get_attr<A: FromAttribute>(&self) -> Option<A> {
-        if let Some(attr_type) = A::attribute_type() {
-            self.1
-                .get(&attr_type)
-                .and_then(|a| A::from_attribute(a.clone()))
+    pub fn get_attr<A: FromAttribute + Clone>(&self) -> Option<A> {
+        if A::attribute_type().is_some() {
+            self.1.get::<A>()
         } else {
             None
         }
     }
 
-    pub fn attributes(&self) -> &AttributesMap {
+    pub fn attributes(&self) -> &PaMap {
         &self.1
     }
 
-    pub fn attributes_mut(&mut self) -> &mut AttributesMap {
+    pub fn attributes_mut(&mut self) -> &mut PaMap {
         &mut self.1
     }
-}
-
-pub trait FromAttribute {
-    fn from_attribute(value: PathAttribute) -> Option<Self>
-    where
-        Self: Sized;
-    fn attribute_type() -> Option<PathAttributeType>;
 }
 
 
@@ -88,7 +79,7 @@ impl From<crate::bgp::aspath::AsPath<Vec<u8>>> for PathAttribute {
 
 //------------ The Workshop --------------------------------------------------
 
-#[derive(Debug)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct RouteWorkshop<N>(Option<N>, Option<PaMap>);
 
 impl<N: Clone + Debug + Hash> RouteWorkshop<N> {
@@ -125,10 +116,19 @@ impl<N: Clone + Debug + Hash> RouteWorkshop<N> {
             .and_then(|b| b.get::<A>().or_else(|| <A>::retrieve(b)))
     }
 
-    pub fn make_route(&self) -> Option<Route<N>> {
+    pub fn clone_into_route(&self) -> Option<Route<N>> {
         match self {
             RouteWorkshop(Some(nlri), Some(pab)) => {
-                Some(Route::<N>(nlri.clone(), pab.attributes().clone()))
+                Some(Route::<N>(nlri.clone(), pab.clone()))
+            }
+            _ => None,
+        }
+    }
+
+    pub fn into_route(self) -> Option<Route<N>> {
+        match self {
+            RouteWorkshop(Some(nlri), Some(pab)) => {
+                Some(Route::<N>(nlri, pab))
             }
             _ => None,
         }
@@ -137,7 +137,7 @@ impl<N: Clone + Debug + Hash> RouteWorkshop<N> {
     pub fn make_route_with_nlri(&self, nlri: N) -> Option<Route<N>> {
         match self {
             RouteWorkshop(_, Some(pab)) => {
-                Some(Route::<N>(nlri.clone(), pab.attributes().clone()))
+                Some(Route::<N>(nlri.clone(), pab.clone()))
             }
             _ => None,
         }
@@ -280,10 +280,10 @@ impl<N: Clone + Hash> WorkshopAttribute<N> for crate::bgp::types::NextHop {
             attrs.get::<crate::bgp::types::ConventionalNextHop>()
         {
             Some(crate::bgp::types::NextHop::Unicast(next_hop.0.into()))
-        } else if let Some(PathAttribute::MpReachNlri(nlri)) =
-            attrs.attributes().get(&PathAttributeType::MpReachNlri)
+        } else if let Some(nlri) =
+            attrs.get::<MpReachNlriBuilder>()
         {
-            Some(*(nlri.clone().inner().get_nexthop()))
+            Some(*nlri.get_nexthop())
         } else {
             Some(crate::bgp::types::NextHop::Empty)
         }
@@ -293,10 +293,10 @@ impl<N: Clone + Hash> WorkshopAttribute<N> for crate::bgp::types::NextHop {
         local_attr: Self,
         attrs: &mut PaMap,
     ) -> Result<(), ComposeError> {
-        if let Some(PathAttribute::MpReachNlri(nlri)) =
-            attrs.attributes().get(&PathAttributeType::MpReachNlri)
+        if let Some(mut nlri) =
+            attrs.get::<MpReachNlriBuilder>()
         {
-            nlri.clone().inner().set_nexthop(local_attr)
+            nlri.set_nexthop(local_attr)
         } else {
             Err(ComposeError::InvalidAttribute)
         }

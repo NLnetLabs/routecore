@@ -10,13 +10,12 @@ use crate::bgp::communities::StandardCommunity;
 use crate::bgp::message::{Header, MsgType, SessionConfig, UpdateMessage};
 use crate::bgp::message::nlri::Nlri;
 use crate::bgp::message::update::{Afi, Safi, AfiSafi, NextHop};
-use crate::bgp::workshop::route::FromAttribute;
 use crate::util::parser::ParseError;
 
 //use rotonda_fsm::bgp::session::AgreedConfig;
 
 use crate::bgp::path_attributes::{
-    PaMap, PathAttribute, PathAttributeType
+    PaMap, PathAttributeType
 };
 
 //------------ UpdateBuilder -------------------------------------------------
@@ -80,22 +79,8 @@ where Target: octseq::Truncate
         let mut builder = UpdateBuilder::from_target(target)
             .map_err(|_| ComposeError::ShortBuf)?;
 
-        // Add all path attributes, except for MP_(UN)REACH_NLRI, ordered by
-        // their type_code.
-        for pa in pdu.path_attributes()? {
-            if let Ok(pa) = pa {
-                if pa.type_code() != PathAttributeType::MpReachNlri
-                    && pa.type_code() != PathAttributeType::MpUnreachNlri
-                {
-                    if let PathAttributeType::Invalid(n) = pa.type_code() {
-                        warn!("invalid PA {}:\n{}", n, pdu.fmt_pcap_string());
-                    }
-                    builder.add_attribute(pa.to_owned()?)?;
-                }
-            } else {
-                return Err(ComposeError::InvalidAttribute);
-            }
-        }
+        let pa_map = PaMap::from_update_pdu(pdu)?;
+        builder.attributes = pa_map;
 
         Ok(builder)
     }
@@ -196,33 +181,6 @@ where Target: octseq::Truncate
     //--- Path Attributes
 
 
-    /// Upsert a Path Attribute.
-    ///
-    /// Insert a new, or update an existing Path Attribute in this builder. If
-    /// the new Path Attribute would cause the total PDU length to exceed the
-    /// maximum, a `ComposeError::PduTooLarge` is returned.
-
-    pub fn add_attribute(
-        &mut self,
-        attr: PathAttribute,
-    ) -> Result<(), ComposeError> {
-        if let PathAttribute::Invalid(..) = attr {
-            warn!(
-                "adding Invalid attribute to UpdateBuilder: {}",
-                &attr.type_code()
-            );
-        }
-        // if let Some(existing_pa) =
-        //     self.attributes.attributes_mut().get_mut(&pa.type_code())
-        // {
-        //     *existing_pa = pa;
-        // } else {
-        //     self.attributes.attributes_mut().insert(pa.type_code(), pa);
-        // }
-        self.attributes.attributes_mut().insert(attr.type_code(),attr);
-
-        Ok(())
-    }
 
     pub fn set_aspath(&mut self , aspath: HopPath)
         -> Result<(), ComposeError>
@@ -1415,6 +1373,7 @@ mod tests {
 
     use octseq::Parser;
 
+    use crate::bgp::path_attributes::AttributeHeader;
     use crate::{addr::Prefix, bgp::message::update::OriginType};
     use crate::asn::Asn;
     //use crate::bgp::communities::Wellknown;
@@ -2154,7 +2113,7 @@ mod tests {
         let pdu = builder.into_message().unwrap();
         let mut prev_type_code = 0_u8;
         for pa in pdu.path_attributes().unwrap() {
-            let type_code = u8::from(pa.unwrap().type_code());
+            let type_code = pa.unwrap().type_code();
             assert!(prev_type_code < type_code);
             prev_type_code = type_code; 
         }
@@ -2258,10 +2217,10 @@ mod tests {
             ).collect();
             if !diff_pas.is_empty() {
                 for d in &diff_pas {
-                    match d {
+                    match *d {
                         // FIXME: check if MPU is the _only_ attribute,
                         // perhaps we are dealing with an EoR here?
-                        PathAttributeType::MpUnreachNlri => {
+                        &crate::bgp::path_attributes::MpUnreachNlri::TYPE_CODE => {
                             // XXX RIS data contains empty-but-non-EoR
                             // MP_UNREACH_NLRI for some reason. 
                             //assert!(original.is_eor().is_some());
@@ -2269,7 +2228,7 @@ mod tests {
 
                         }
                         _ => {
-                            dbg!(&diff_pas);
+                            dbg!(diff_pas);
                             panic!("unclear why PAs differ")
                         }
                     }
