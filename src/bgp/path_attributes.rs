@@ -140,9 +140,9 @@ macro_rules! attribute {
 
 //------------ PathAttributesBuilder -----------------------------------------
 
-pub type AttributesMap = BTreeMap<PathAttributeType, PathAttribute>;
+pub type AttributesMap = BTreeMap<u8, PathAttribute>;
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct PaMap {
     attributes: AttributesMap,
@@ -157,18 +157,18 @@ impl PaMap {
 
     // Assemble a AttributesMap, but skipping MP_*REACH_NLRI, so that the
     // returned result is valid for all NLRI in this message.
-    pub fn from_update_pdu<Octs: Octets>(pdu: &UpdateMessage<Octs>)
+    pub fn from_update_pdu<'a, Octs: Octets>(pdu: &'a UpdateMessage<Octs>)
     -> Result<Self, ComposeError>
     where
-        for<'a> Vec<u8>: OctetsFrom<Octs::Range<'a>>
+        Vec<u8>: OctetsFrom<Octs::Range<'a>>
     {
         let mut pa_map = Self::empty();
         for pa in pdu.path_attributes()? {
             if let Ok(pa) = pa {
-                if pa.type_code() != PathAttributeType::MpReachNlri
-                    && pa.type_code() != PathAttributeType::MpUnreachNlri
+                if pa.type_code() != MpReachNlri::TYPE_CODE
+                    && pa.type_code() != MpUnreachNlri::TYPE_CODE
                 {
-                    if let PathAttributeType::Invalid(n) = pa.type_code() {
+                    if let PathAttributeType::Invalid(n) = pa.type_code().into() {
                         warn!("invalid PA {}:\n{}", n, pdu.fmt_pcap_string());
                     }
                     pa_map.attributes_mut().insert(pa.type_code(), pa.to_owned()?);
@@ -184,7 +184,7 @@ impl PaMap {
         &mut self, attr: A
     ) {
         if let Some(attr_type) = A::attribute_type() {
-            self.attributes.insert(attr_type, attr.into());
+            self.attributes.insert(attr_type.into(), attr.into());
         }
     }
 
@@ -193,10 +193,33 @@ impl PaMap {
     ) -> Option<A> {
         if let Some(attr_type) = A::attribute_type() {
             self.attributes
-                .get(&attr_type).and_then(|a| A::from_attribute(a.clone()))
+                .get(&attr_type.into()).and_then(|a| A::from_attribute(a.clone()))
         } else {
             None
         }
+    }
+
+    pub fn get_by_type_code(&self, type_code: u8) -> Option<&PathAttribute> {
+        self.attributes.get(&type_code)
+    }
+
+    pub fn get_mut_by_type_code(&mut self, type_code: u8) -> Option<&mut PathAttribute> {
+        self.attributes.get_mut(&type_code)
+    }
+
+    pub fn add_attribute(
+        &mut self,
+        attr: PathAttribute,
+    ) -> Result<(), ComposeError> {
+        if let PathAttribute::Invalid(..) = attr {
+            warn!(
+                "adding Invalid attribute to UpdateBuilder: {}",
+                &attr.type_code()
+            );
+        }
+        self.attributes_mut().insert(attr.type_code(),attr);
+
+        Ok(())
     }
 
     pub fn attributes(&self) -> &AttributesMap {
@@ -214,7 +237,7 @@ impl PaMap {
     pub fn remove<A: FromAttribute>(&mut self) -> Option<A>
     {
         if let Some(attr_type) = A::attribute_type() {
-            self.attributes.remove(&attr_type).and_then(|a| A::from_attribute(a))
+            self.attributes.remove(&attr_type.into()).and_then(|a| A::from_attribute(a))
         } else {
             None
         }
@@ -227,7 +250,7 @@ impl PaMap {
     pub(in crate::bgp) fn take<A: FromAttribute>(&mut self) -> Option<A> {
         if let Some(attr_type) = A::attribute_type() {
             self.attributes_mut()
-                .get_mut(&attr_type).and_then(|a| A::from_attribute(std::mem::take(a)))
+                .get_mut(&attr_type.into()).and_then(|a| A::from_attribute(std::mem::take(a)))
         } else {
             None
         }
@@ -235,7 +258,7 @@ impl PaMap {
 
     pub(in crate::bgp) fn contains<A: FromAttribute>(&self) -> bool {
         if let Some(attr_type) = A::attribute_type() {
-            self.attributes().contains_key(&attr_type)
+            self.attributes().contains_key(&attr_type.into())
         } else {
             false
         }
@@ -251,7 +274,7 @@ impl PaMap {
             .fold(0, |sum, a| sum + a.compose_len())
     }
 
-
+    
     // pub fn append(&mut self, other: &mut AttributesMap) {
     //     self.attributes.append(other)
     // }
@@ -355,6 +378,14 @@ impl PaMap {
 //     }
 // }
 
+
+pub trait FromAttribute {
+    fn from_attribute(value: PathAttribute) -> Option<Self>
+    where
+        Self: Sized;
+    fn attribute_type() -> Option<PathAttributeType>;
+}
+
 impl From<AttributesMap> for PaMap {
     fn from(value: AttributesMap) -> Self {
         Self { attributes: value }
@@ -422,17 +453,17 @@ macro_rules! path_attributes {
                 }
             }
 
-            pub fn type_code(&self) -> PathAttributeType {
+            pub fn type_code(&self) -> u8 {
                 match self {
                     $(
-                    PathAttribute::$name(_) =>
-                        PathAttributeType::$name
+                    PathAttribute::$name(_pa) =>
+                        $name::TYPE_CODE
                     ),+,
                     PathAttribute::Unimplemented(u) => {
-                        PathAttributeType::Unimplemented(u.type_code())
+                        u.type_code()
                     }
                     PathAttribute::Invalid(_, tc, _) => {
-                        PathAttributeType::Invalid(*tc)
+                        *tc
                     }
                 }
             }
@@ -614,20 +645,21 @@ macro_rules! path_attributes {
                 }
             }
 
-            pub fn type_code(&self) -> PathAttributeType {
+            pub fn type_code(&self) -> u8 {
                 match self {
                     $(
-                        WireformatPathAttribute::$name(..) =>
-                            PathAttributeType::$name
+                        WireformatPathAttribute::$name(_) =>
+                            $type_code
                     ),+,
                     WireformatPathAttribute::Unimplemented(u) => {
-                        PathAttributeType::Unimplemented(u.type_code())
+                        u.type_code()
                     }
                     WireformatPathAttribute::Invalid(_, tc, _) => {
-                        PathAttributeType::Invalid(*tc)
+                        *tc
                     }
                 }
             }
+
 
             pub fn flags(&self) -> Flags {
                 match self {
@@ -992,13 +1024,12 @@ impl<'a, Octs: Octets> PathAttributes<'a, Octs> {
               //XXX We need Rust 1.70 for is_ok_and()
               //pa.as_ref().is_ok_and(|pa| pa.type_code() == pat)
               if let Ok(pa) = pa.as_ref() {
-                  pa.type_code() == pat
+                  pat == pa.type_code().into()
               } else {
                   false
               }
         ).map(|res| res.unwrap()) // res is Ok(pa), so we can unwrap.
     }
-
 }
 
 impl<'a, Octs: Octets> Iterator for PathAttributes<'a, Octs> {
@@ -1980,7 +2011,6 @@ impl Attribute for Ipv6ExtendedCommunities {
 
 use crate::bgp::communities::LargeCommunity;
 
-use super::workshop::route::FromAttribute;
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct LargeCommunitiesList {
