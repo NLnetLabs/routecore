@@ -1,5 +1,6 @@
 use std::fmt::Debug;
 use std::hash::Hash;
+use std::marker::PhantomData;
 
 use octseq::{Octets, OctetsFrom};
 use serde::Serialize;
@@ -7,7 +8,7 @@ use serde::Serialize;
 use crate::bgp::communities::Community;
 use crate::bgp::message::update_builder::{ComposeError, MpReachNlriBuilder};
 use crate::bgp::message::UpdateMessage;
-use crate::bgp::path_attributes::{PaMap, FromAttribute};
+use crate::bgp::path_attributes::{FromAttribute, PaMap};
 use crate::bgp::{
     message::{nlri::Nlri, update_builder::StandardCommunitiesList},
     path_attributes::{
@@ -79,21 +80,30 @@ impl From<crate::bgp::aspath::AsPath<Vec<u8>>> for PathAttribute {
 
 //------------ The Workshop --------------------------------------------------
 
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct RouteWorkshop<N>(Option<N>, Option<PaMap>);
+#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize)]
+pub struct RouteWorkshop<O, N>(N, PaMap, PhantomData<O>);
 
-impl<N: Clone + Debug + Hash> RouteWorkshop<N> {
-    pub fn from_update_pdu<Octs: Octets>(
+impl<Octs: Octets, N: Clone + Debug + Hash> RouteWorkshop<Octs, N> {
+    pub fn new(nlri: N) -> Self {
+        Self(nlri, PaMap::empty(), PhantomData)
+    }
+
+    pub fn from_pa_map(nlri: N, pa_map: PaMap) -> Self {
+        Self(nlri, pa_map, PhantomData)
+    }
+        
+    pub fn from_update_pdu(
+        nlri: N,
         pdu: &UpdateMessage<Octs>,
     ) -> Result<Self, ComposeError>
     where
         for<'a> Vec<u8>: OctetsFrom<Octs::Range<'a>>,
     {
         PaMap::from_update_pdu(pdu)
-            .map(|r| Self(None, Some(r)))
+            .map(|r| Self(nlri, r, PhantomData))
     }
 
-    pub fn nlri(&self) -> &Option<N> {
+    pub fn nlri(&self) -> &N {
         &self.0
     }
 
@@ -101,46 +111,29 @@ impl<N: Clone + Debug + Hash> RouteWorkshop<N> {
         &mut self,
         value: WA,
     ) -> Result<(), ComposeError> {
-        let mut res = Err(ComposeError::InvalidAttribute);
-        if let Some(b) = &mut self.1 {
-            res = WA::store(value, b);
-        }
-        res
+        WA::store(value, &mut self.1)
     }
 
     pub fn get_attr<A: FromAttribute + WorkshopAttribute<N>>(
         &self,
     ) -> Option<A> {
-        self.1
-            .as_ref()
-            .and_then(|b| b.get::<A>().or_else(|| <A>::retrieve(b)))
+        self.1.get::<A>()
     }
 
-    pub fn clone_into_route(&self) -> Option<Route<N>> {
-        match self {
-            RouteWorkshop(Some(nlri), Some(pab)) => {
-                Some(Route::<N>(nlri.clone(), pab.clone()))
-            }
-            _ => None,
-        }
+    pub fn clone_into_route(&self) -> Route<N> {
+        Route::<N>(self.0.clone(), self.1.clone())
     }
 
-    pub fn into_route(self) -> Option<Route<N>> {
-        match self {
-            RouteWorkshop(Some(nlri), Some(pab)) => {
-                Some(Route::<N>(nlri, pab))
-            }
-            _ => None,
-        }
+    pub fn into_route(self) -> Route<N> {
+        Route::<N>(self.0, self.1)
     }
 
-    pub fn make_route_with_nlri(&self, nlri: N) -> Option<Route<N>> {
-        match self {
-            RouteWorkshop(_, Some(pab)) => {
-                Some(Route::<N>(nlri.clone(), pab.clone()))
-            }
-            _ => None,
-        }
+    pub fn attributes(&self) -> &PaMap {
+        &self.1
+    }
+
+    pub fn attributes_mut(&mut self) -> &mut PaMap {
+        &mut self.1
     }
 }
 
@@ -262,6 +255,39 @@ impl FromAttribute for Vec<Community> {
     }
 }
 
+//------------ NlriWorkshop --------------------------------------------------
+
+impl FromAttribute for crate::bgp::message::nlri::Nlri<Vec<u8>> {
+    fn from_attribute(_value: PathAttribute) -> Option<Self>
+    where
+        Self: Sized {
+        None
+    }
+
+    fn attribute_type() -> Option<PathAttributeType> {
+        None
+    }
+}
+
+impl<N: Clone + Hash> WorkshopAttribute<N> for crate::bgp::message::nlri::Nlri<Vec<u8>> {
+    fn retrieve(attrs: &PaMap) -> Option<Self>
+    where
+        Self: Sized {
+        attrs.get::<MpReachNlriBuilder>().and_then(|mr| mr.first_nlri())
+    }
+
+    fn store(
+        local_attr: Self,
+        attrs: &mut PaMap,
+    ) -> Result<(), ComposeError> {
+        if let Some(mut nlri) = attrs.get::<MpReachNlriBuilder>() {
+            nlri.set_nlri(local_attr)
+        } else {
+            Err(ComposeError::InvalidAttribute)
+        }
+    }
+}
+
 //------------ NextHopWorkshop -----------------------------------------------
 
 impl FromAttribute for crate::bgp::types::NextHop {
@@ -280,9 +306,7 @@ impl<N: Clone + Hash> WorkshopAttribute<N> for crate::bgp::types::NextHop {
             attrs.get::<crate::bgp::types::ConventionalNextHop>()
         {
             Some(crate::bgp::types::NextHop::Unicast(next_hop.0.into()))
-        } else if let Some(nlri) =
-            attrs.get::<MpReachNlriBuilder>()
-        {
+        } else if let Some(nlri) = attrs.get::<MpReachNlriBuilder>() {
             Some(*nlri.get_nexthop())
         } else {
             Some(crate::bgp::types::NextHop::Empty)
@@ -293,9 +317,7 @@ impl<N: Clone + Hash> WorkshopAttribute<N> for crate::bgp::types::NextHop {
         local_attr: Self,
         attrs: &mut PaMap,
     ) -> Result<(), ComposeError> {
-        if let Some(mut nlri) =
-            attrs.get::<MpReachNlriBuilder>()
-        {
+        if let Some(mut nlri) = attrs.get::<MpReachNlriBuilder>() {
             nlri.set_nexthop(local_attr)
         } else {
             Err(ComposeError::InvalidAttribute)
