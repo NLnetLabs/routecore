@@ -967,7 +967,7 @@ impl MpReachNlriBuilder {
         }
     }
 
-    fn new_for_nlri<T>(nlri: &Nlri<T>) -> Self
+    pub(crate) fn new_for_nlri<T>(nlri: &Nlri<T>) -> Self
     where T: Octets,
           Vec<u8>: OctetsFrom<T>
     {
@@ -987,8 +987,21 @@ impl MpReachNlriBuilder {
         self.announcements.is_empty()
     }
 
+    pub(crate) fn first_nlri(self) -> Option<Nlri<Vec<u8>>> {
+        self.announcements.first().cloned()
+    }
+
     pub(crate) fn get_nexthop(&self) -> &NextHop {
         &self.nexthop
+    }
+
+    pub(crate) fn set_nlri(&mut self, nlri: Nlri<Vec<u8>>) -> Result<(), ComposeError> {
+        let (afi, safi) = nlri.afi_safi().split();
+        self.afi = afi;
+        self.safi = safi;
+        self.addpath_enabled = nlri.is_addpath();
+        self.announcements = vec![nlri];
+        Ok(())
     }
 
     pub(crate) fn set_nexthop(&mut self, nexthop: NextHop) -> Result<(), ComposeError> {
