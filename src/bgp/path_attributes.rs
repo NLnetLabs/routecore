@@ -209,12 +209,15 @@ impl PaMap {
     }
 
     pub(in crate::bgp) fn take<A: FromAttribute>(&mut self) -> Option<A> {
+        /*
         if let Some(attr_type) = A::attribute_type() {
             self.attributes_mut()
                 .get_mut(&attr_type.into()).and_then(|a| A::from_attribute(std::mem::take(a)))
         } else {
             None
         }
+        */
+        self.remove::<A>()
     }
 
     pub(in crate::bgp) fn contains<A: FromAttribute>(&self) -> bool {
@@ -769,11 +772,13 @@ path_attributes!(
 
 // Default implementation is needed to be able to take() an attribute. When
 // done so it gets replaced with Unimplemented.
+/*
 impl Default for PathAttribute {
     fn default() -> Self {
         Self::Unimplemented(UnimplementedPathAttribute{flags: Flags(0), type_code: 0, value: vec![]})
     }
 }
+*/
 
 
 //------------ UnimplementedPathAttribute ------------------------------------
