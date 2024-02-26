@@ -13,7 +13,7 @@ use crate::bgp::{
     message::{nlri::Nlri, update_builder::StandardCommunitiesList},
     path_attributes::{
         ExtendedCommunitiesList, Ipv6ExtendedCommunitiesList,
-        LargeCommunitiesList, PathAttribute, PathAttributeType,
+        LargeCommunitiesList, PathAttribute, 
     },
 };
 
@@ -241,29 +241,11 @@ impl<N: Clone + Hash + Debug> WorkshopAttribute<N> for Vec<Community> {
     }
 }
 
-impl FromAttribute for Vec<Community> {
-    fn from_attribute(_value: PathAttribute) -> Option<Self> {
-        None
-    }
-
-    fn attribute_type() -> Option<PathAttributeType> {
-        None
-    }
-}
+impl FromAttribute for Vec<Community> { }
 
 //------------ NlriWorkshop --------------------------------------------------
 
-impl FromAttribute for crate::bgp::message::nlri::Nlri<Vec<u8>> {
-    fn from_attribute(_value: PathAttribute) -> Option<Self>
-    where
-        Self: Sized {
-        None
-    }
-
-    fn attribute_type() -> Option<PathAttributeType> {
-        None
-    }
-}
+impl FromAttribute for crate::bgp::message::nlri::Nlri<Vec<u8>> { }
 
 impl<N: Clone + Hash> WorkshopAttribute<N> for crate::bgp::message::nlri::Nlri<Vec<u8>> {
     fn retrieve(attrs: &PaMap) -> Option<Self>
@@ -286,15 +268,7 @@ impl<N: Clone + Hash> WorkshopAttribute<N> for crate::bgp::message::nlri::Nlri<V
 
 //------------ NextHopWorkshop -----------------------------------------------
 
-impl FromAttribute for crate::bgp::types::NextHop {
-    fn attribute_type() -> Option<PathAttributeType> {
-        None
-    }
-
-    fn from_attribute(_value: PathAttribute) -> Option<Self> {
-        None
-    }
-}
+impl FromAttribute for crate::bgp::types::NextHop { }
 
 impl<N: Clone + Hash> WorkshopAttribute<N> for crate::bgp::types::NextHop {
     fn retrieve(attrs: &PaMap) -> Option<Self> {

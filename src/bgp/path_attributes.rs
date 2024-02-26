@@ -341,15 +341,21 @@ impl PaMap {
 
 
 pub trait FromAttribute {
-    fn from_attribute(value: PathAttribute) -> Option<Self>
+    fn from_attribute(_value: PathAttribute) -> Option<Self>
     where
-        Self: Sized;
-    fn attribute_type() -> Option<PathAttributeType>;
+        Self: Sized {
+            None
+    }
+
+    fn attribute_type() -> Option<PathAttributeType> {
+        None
+    }
+
 }
 
 impl From<AttributesMap> for PaMap {
-    fn from(value: AttributesMap) -> Self {
-        Self { attributes: value }
+    fn from(attributes: AttributesMap) -> Self {
+        Self { attributes }
     }
 }
 
