@@ -143,10 +143,9 @@ impl PaMap {
 
     pub fn set<A: FromAttribute + Into<PathAttribute>>(
         &mut self, attr: A
-    ) {
-        if let Some(attr_type) = A::attribute_type() {
-            self.attributes.insert(attr_type.into(), attr.into());
-        }
+    ) -> Option<A> {
+        let attr = attr.into();
+        self.attributes.insert(attr.type_code(), attr).map(A::from_attribute)?
     }
 
     pub fn get<A: FromAttribute>(
@@ -171,16 +170,16 @@ impl PaMap {
     pub fn add_attribute(
         &mut self,
         attr: PathAttribute,
-    ) -> Result<(), ComposeError> {
+    ) -> Result<Option<PathAttribute>, ComposeError> {
         if let PathAttribute::Invalid(..) = attr {
             warn!(
                 "adding Invalid attribute to UpdateBuilder: {}",
                 &attr.type_code()
             );
         }
-        self.attributes_mut().insert(attr.type_code(),attr);
 
-        Ok(())
+        let replaced = self.attributes_mut().insert(attr.type_code(),attr);
+        Ok(replaced)
     }
 
     pub fn attributes(&self) -> &AttributesMap {
