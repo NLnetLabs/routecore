@@ -26,6 +26,22 @@ use crate::util::parser::{ParseError, parse_ipv4addr};
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct Flags(u8);
 
+impl core::ops::BitOr<u8> for Flags {
+    type Output = Self;
+
+    fn bitor(self, rhs: u8) -> Self::Output {
+        Self(self.0 | rhs)
+    }
+}
+
+impl core::ops::BitOr for Flags {
+    type Output = Self;
+
+    fn bitor(self, rhs: Self) -> Self::Output {
+        Self(self.0 | rhs.0)
+    }
+}
+
 impl Flags {
     // 0 1 2 3 4 5 6 7
     //
@@ -2219,10 +2235,12 @@ impl UnimplementedPathAttribute {
         -> Result<(), Target::AppendError>
     {
         let len = self.value().len();
+        // We did not recognize this attribute, so we set the Partial flag.
+        let flags = self.flags() | Flags::PARTIAL;
         target.append_slice(
-            &[self.flags().into(), self.type_code()]
+            &[flags.into(), self.type_code()]
         )?;
-        if self.flags().is_extended_length() {
+        if flags.is_extended_length() {
             target.append_slice(
                 &u16::try_from(len).unwrap_or(u16::MAX)
                 .to_be_bytes()
