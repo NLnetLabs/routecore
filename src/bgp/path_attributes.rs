@@ -98,62 +98,6 @@ pub trait AttributeHeader {
     const TYPE_CODE: u8;
 }
 
-/*
-macro_rules! attribute {
-    ($name:ident($data:ty),
-     $flags:expr,
-     $type_code:expr
-     ) => {
-
-        #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-        #[cfg_attr(feature = "serde", derive(serde::Serialize))]
-        pub struct $name(pub(crate) $data);
-        impl $name {
-            pub fn new(data: $data) -> $name {
-                $name(data)
-            }
-
-            pub fn inner(self) -> $data {
-                self.0
-            }
-        }
-
-        impl std::convert::AsRef<$data> for $name {
-            fn as_ref(&self) -> &$data {
-                &self.0
-            }
-        }
-
-        impl std::convert::AsMut<$data> for $name {
-            fn as_mut(&mut self) -> &mut $data {
-                &mut self.0
-            }
-        }
-
-        /*
-        impl std::ops::Deref for $name {
-            type Target = $data;
-
-            fn deref(&self) -> &Self::Target {
-                &self.0
-            }
-        }
-
-        impl std::ops::DerefMut for $name {
-            fn deref_mut(&mut self) -> &mut Self::Target {
-                &mut self.0
-            }
-        }
-        */
-
-        impl AttributeHeader for $name {
-            const FLAGS: u8 = $flags;
-            const TYPE_CODE: u8 = $type_code;
-        }
-    }
-}
-*/
-
 
 //------------ PathAttributesBuilder -----------------------------------------
 
@@ -422,7 +366,6 @@ macro_rules! path_attributes {
         #[derive(Clone, Debug, Eq, Hash, PartialEq)]
         #[cfg_attr(feature = "serde", derive(serde::Serialize))]
         pub enum PathAttribute {
-            //$( $name($name) ),+,
             $( $name($data) ),+,
             Unimplemented(UnimplementedPathAttribute),
             Invalid(Flags, u8, Vec<u8>),
@@ -495,15 +438,6 @@ macro_rules! path_attributes {
         }
         )+
 
-            /*
-        $(
-        impl From<$name> for PathAttribute {
-            fn from(pa: $name) -> PathAttribute {
-                PathAttribute::$name(pa)
-            }
-        }
-        )+
-            */
 
 //------------ WireformatPathAttribute --------------------------------------
 
@@ -717,32 +651,6 @@ macro_rules! path_attributes {
             }
         }
 
-/*
-//------------ MaterializedPathAttributes ------------------------------------
-
-    paste! {
-        #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-        pub struct MaterializedPathAttributes {
-            $( pub [<$name:snake>] : Option<$name> ),+,
-            pub unknown_transitives: Vec<UnimplementedPathAttribute>,
-        }
-    }
-
-        impl MaterializedPathAttributes {
-
-            pub fn from_message(msg: super::message::UpdateMessage<()>) -> Self {
-                todo!()
-            }
-        }
-    
-        impl<I> From<I> for MaterializedPathAttributes
-            where I: Iterator<Item = PathAttribute>
-        {
-            fn from(_iter: I) -> Self {
-                todo!()
-            }
-        }
-*/
 
 //------------ PathAttributeType ---------------------------------------------
 
@@ -791,11 +699,6 @@ macro_rules! path_attributes {
             }
         }
 
-        /*
-        $(
-        attribute!($name($data), $flags, $type_code);
-        )+
-        */
         $(
         impl AttributeHeader for $data {
             const FLAGS: u8 = $flags;
@@ -1110,17 +1013,7 @@ impl Attribute for crate::bgp::types::Origin {
     }
 }
 
-//--- AsPath (see bgp::aspath)
-
-
-// attempt to impl on actual type instead of inner wrapper
-
-/*
-impl AttributeHeader for crate::bgp::aspath::HopPath {
-    const FLAGS: u8 = Flags::WELLKNOWN; 
-    const TYPE_CODE: u8 = 2;
-}
-*/
+//--- AsPath (HopPath)
 
 impl Attribute for crate::bgp::aspath::HopPath {
     fn value_len(&self) -> usize {
@@ -1171,60 +1064,6 @@ impl Attribute for crate::bgp::aspath::HopPath {
     }
 }
 
-// end of attempt
-
-
-/*
-impl Attribute for AsPath {
-    fn value_len(&self) -> usize {
-        self.0.to_as_path::<Vec<u8>>().unwrap().into_inner().len()
-    }
-
-    fn compose_value<Target: OctetsBuilder>(&self, target: &mut Target)
-        -> Result<(), Target::AppendError>
-    {
-       target.append_slice(
-           self.0.to_as_path::<Vec<u8>>().unwrap().into_inner().as_ref()
-        )
-    }
-
-    fn parse<'a, Octs: 'a + Octets>(parser: &mut Parser<'a, Octs>, sc: SessionConfig) 
-        -> Result<AsPath, ParseError>
-    {
-        // XXX reusing the old/existing AsPath here for the time being
-        let asp = crate::bgp::aspath::AsPath::new(
-            parser.peek_all().to_vec(),
-            sc.has_four_octet_asn()
-        ).map_err(|_| ParseError::form_error("invalid AS_PATH"))?;
-
-        Ok(AsPath(asp.to_hop_path()))
-    }
-
-    fn validate<Octs: Octets>(
-        _flags: Flags,
-        parser: &mut Parser<'_, Octs>,
-        session_config: SessionConfig
-    ) -> Result<(), ParseError> {
-        let asn_size = if session_config.has_four_octet_asn() {
-            4
-        } else {
-            2
-        };
-        while parser.remaining() > 0 {
-            let segment_type = parser.parse_u8()?;
-            if !(1..=4).contains(&segment_type) {
-                return Err(ParseError::form_error(
-                    "illegal segment type in AS_PATH"
-                ));
-            }
-            let len = usize::from(parser.parse_u8()?); // ASNs in segment
-            parser.advance(len * asn_size)?; // ASNs.
-        }
-        Ok(())
-    }
-}
-*/
-
 //--- NextHop
 
 impl Attribute for crate::bgp::types::ConventionalNextHop {
@@ -1253,14 +1092,6 @@ impl Attribute for crate::bgp::types::ConventionalNextHop {
 
 //--- MultiExitDisc
 
-// attempt to impl traits on the actual type instead of the inner wrapper
-// generated by attribute! / path_attributes!
-/*
-impl AttributeHeader for crate::bgp::types::MultiExitDisc {
-    const FLAGS: u8 = Flags::OPT_NON_TRANS; 
-    const TYPE_CODE: u8 = 4;
-}
-*/
 impl Attribute for crate::bgp::types::MultiExitDisc {
     fn value_len(&self) -> usize { 4 }
 
@@ -1284,53 +1115,6 @@ impl Attribute for crate::bgp::types::MultiExitDisc {
         check_len_exact!(parser, 4, "MULTI_EXIT_DISC")
     }
 }
-
-/* works, but commented out because this impl conflicts with the one in the
- * macro
-impl FromAttribute for crate::bgp::types::MultiExitDisc {
-    fn from_attribute(pa: PathAttribute) -> Option<Self> {
-        if let PathAttribute::MultiExitDisc(value) = pa {
-            Some(value)
-        } else {
-            None
-        }
-    }
-
-    fn attribute_type() -> Option<PathAttributeType> {
-        Some(PathAttributeType::MultiExitDisc)
-    }
-}
-*/
-
-
-// end of attempt
-
-
-/*
-impl Attribute for MultiExitDisc {
-    fn value_len(&self) -> usize { 4 }
-
-    fn compose_value<Target: OctetsBuilder>(&self, target: &mut Target)
-        -> Result<(), Target::AppendError>
-    {
-        target.append_slice(&self.0.0.to_be_bytes()) 
-    }
-
-    fn parse<'a, Octs: 'a + Octets>(parser: &mut Parser<'a, Octs>, _sc: SessionConfig) 
-        -> Result<MultiExitDisc, ParseError>
-    {
-        Ok(MultiExitDisc(crate::bgp::types::MultiExitDisc(parser.parse_u32_be()?)))
-    }
-
-    fn validate<Octs: Octets>(
-        _flags: Flags,
-        parser: &mut Parser<'_, Octs>,
-        _session_config: SessionConfig
-    ) -> Result<(), ParseError> {
-        check_len_exact!(parser, 4, "MULTI_EXIT_DISC")
-    }
-}
-*/
 
 //--- LocalPref
 
@@ -1551,14 +1335,6 @@ impl From<[u8; 4]> for BgpIdentifier {
         BgpIdentifier(raw)
     }
 }
-
-/*
-impl From<u32> for BgpIdentifier {
-    fn from(raw: u32) -> BgpIdentifier {
-        BgpIdentifier(raw.to_be_bytes())
-    }
-}
-*/
 
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]

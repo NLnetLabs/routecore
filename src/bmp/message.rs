@@ -1799,8 +1799,6 @@ mod tests {
         assert_eq!(pa1.flags(), 0x40.into());
         assert!( pa1.flags().is_transitive());
         assert!(!pa1.flags().is_optional());
-        //TODO implement enum for Origins
-        //assert_eq!(pa1.as_ref(), [0x00]); 
         
         let pa2 = pas.next().unwrap().unwrap();
         assert_eq!(pa2.type_code(), crate::bgp::aspath::HopPath::TYPE_CODE);

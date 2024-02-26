@@ -272,7 +272,7 @@ typeenum!(
     }
 );
 
-/// Wrapper for the 1 byte Origin
+/// Wrapper for the 1 byte Origin.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Origin(pub OriginType);
