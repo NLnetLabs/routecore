@@ -307,35 +307,6 @@ impl<Octs: Octets> UpdateMessage<Octs> {
        Ok(None)
     }
 
-    pub fn single_afi_safi_nlri<'a, N:
-        Clone + 
-        Debug +
-        Hash +
-        AfiSafiNlri<Octs> +
-        TryFrom<Nlri<<Octs as octseq::Octets>::Range<'a>>, 
-            Error = ComposeError>>(&'a self) -> Result<N, ComposeError> where
-                Octs: 
-                    'a,
-                    <N as TryFrom<Nlri<<Octs as Octets
-                        >::Range<'a>>>>::Error: Debug {
-            let pp = Parser::with_range(
-                self.octets(),
-                self.announcements.clone()
-            );
-
-            let iter = Nlris {
-                parser: pp,
-                session_config: self.session_config,
-                afi_safi: AfiSafi::Ipv4Unicast,
-            };
-    
-            if let Some(n) = iter.iter().next() {
-                n?.try_into()
-            } else {
-                Err(ComposeError::EmptyMpReachNlri)
-            }
-    }
-
     /// Returns a combined iterator of conventional and MP_REACH_NLRI.
     ///
     /// Consuming the returned iterator requires care. The `Item` is a
