@@ -1869,7 +1869,7 @@ mod tests {
             "1.0.4.0/24",
         ].map(|p| Nlri::unicast_from_str(p).unwrap());
         builder.announcements_from_iter(prefixes).unwrap();
-        builder.attributes.set(OriginType::Igp);
+        builder.attributes.set(crate::bgp::types::Origin(OriginType::Igp));
         builder.set_nexthop_unicast(Ipv4Addr::from_str("1.2.3.4").unwrap().into()).unwrap();
         let path = HopPath::from([
              Asn::from_u32(123); 70
@@ -1896,7 +1896,7 @@ mod tests {
             "2001:db8:3::/48",
         ].map(|p| Nlri::unicast_from_str(p).unwrap());
         builder.announcements_from_iter(prefixes).unwrap();
-        builder.attributes.set(OriginType::Igp);
+        builder.attributes.set(crate::bgp::types::Origin(OriginType::Igp));
         builder.set_nexthop_unicast(Ipv6Addr::from_str("fe80:1:2:3::").unwrap().into()).unwrap();
         let path = HopPath::from([
              Asn::from_u32(100),
@@ -1916,7 +1916,7 @@ mod tests {
         use crate::bgp::aspath::HopPath;
 
         let mut builder = UpdateBuilder::new_vec();
-        builder.attributes.set(OriginType::Igp);
+        builder.attributes.set(crate::bgp::types::Origin(OriginType::Igp));
         builder.set_nexthop_unicast(Ipv6Addr::from_str("fe80:1:2:3::").unwrap().into()).unwrap();
         let path = HopPath::from([
              Asn::from_u32(100),
@@ -1944,7 +1944,7 @@ mod tests {
         ].map(|p| Nlri::unicast_from_str(p).unwrap());
 
         builder.announcements_from_iter(prefixes).unwrap();
-        builder.attributes.set(OriginType::Igp);
+        builder.attributes.set(crate::bgp::types::Origin(OriginType::Igp));
         builder.set_nexthop_ll_addr("fe80:1:2:3::".parse().unwrap()).unwrap();
 
 
@@ -1967,7 +1967,7 @@ mod tests {
         use crate::bgp::aspath::HopPath;
 
         let mut builder = UpdateBuilder::new_vec();
-        builder.attributes.set(OriginType::Igp);
+        builder.attributes.set(crate::bgp::types::Origin(OriginType::Igp));
         //builder.set_nexthop("2001:db8::1".parse().unwrap()).unwrap();
         builder.set_nexthop_ll_addr("fe80:1:2:3::".parse().unwrap()).unwrap();
         let path = HopPath::from([
@@ -1994,7 +1994,7 @@ mod tests {
             "1.0.4.0/24",
         ].map(|p| Nlri::unicast_from_str(p).unwrap());
         builder.announcements_from_iter(prefixes).unwrap();
-        builder.attributes.set(OriginType::Igp);
+        builder.attributes.set(crate::bgp::types::Origin(OriginType::Igp));
         builder.set_nexthop_unicast("1.2.3.4".parse::<Ipv4Addr>().unwrap().into()).unwrap();
         let path = HopPath::from([
              Asn::from_u32(100),
@@ -2027,7 +2027,7 @@ mod tests {
             "1.0.4.0/24",
         ].map(|p| Nlri::unicast_from_str(p).unwrap());
         builder.announcements_from_iter(prefixes).unwrap();
-        builder.attributes.set(OriginType::Igp);
+        builder.attributes.set(crate::bgp::types::Origin(OriginType::Igp));
         builder.set_nexthop_unicast(Ipv4Addr::from_str("1.2.3.4").unwrap().into()).unwrap();
         let path = HopPath::from([
              Asn::from_u32(100),
@@ -2096,9 +2096,9 @@ mod tests {
         
         assert_eq!(builder.attributes.len(), 4);
 
-        builder.attributes.set(OriginType::Igp);
-        builder.attributes.set(OriginType::Egp);
-        builder.attributes.set(OriginType::Igp);
+        builder.attributes.set(crate::bgp::types::Origin(OriginType::Igp));
+        builder.attributes.set(crate::bgp::types::Origin(OriginType::Egp));
+        builder.attributes.set(crate::bgp::types::Origin(OriginType::Igp));
 
         assert_eq!(builder.attributes.len(), 4);
 
@@ -2116,7 +2116,7 @@ mod tests {
         builder.add_community(
             StandardCommunity::from_str("AS1234:999").unwrap()
         ).unwrap();
-        builder.attributes.set(OriginType::Igp);
+        builder.attributes.set(crate::bgp::types::Origin(OriginType::Igp));
         builder.add_community(
             StandardCommunity::from_str("AS1234:1000").unwrap()
         ).unwrap();
@@ -2233,7 +2233,7 @@ mod tests {
                     match *d {
                         // FIXME: check if MPU is the _only_ attribute,
                         // perhaps we are dealing with an EoR here?
-                        &crate::bgp::path_attributes::MpUnreachNlri::TYPE_CODE => {
+                        &crate::bgp::message::update_builder::MpUnreachNlriBuilder::TYPE_CODE => {
                             // XXX RIS data contains empty-but-non-EoR
                             // MP_UNREACH_NLRI for some reason. 
                             //assert!(original.is_eor().is_some());

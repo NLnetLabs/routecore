@@ -1677,8 +1677,8 @@ mod tests {
     use std::str::FromStr;
     use crate::addr::Prefix;
     use crate::bgp::types::{Afi, Safi};
-    use crate::bgp::path_attributes::{AsPath, AttributeHeader,
-        ConventionalNextHop, MultiExitDisc};
+    use crate::bgp::path_attributes::AttributeHeader;
+    use crate::bgp::types::{ConventionalNextHop, MultiExitDisc};
     use crate::bgp::message::nlri::Nlri;
     use crate::bgp::message::update::{FourOctetAsn, SessionConfig};
 
@@ -1795,7 +1795,7 @@ mod tests {
         
         let mut pas = bgp_update.path_attributes().unwrap().into_iter();
         let pa1 = pas.next().unwrap().unwrap();
-        assert_eq!(pa1.type_code(), crate::bgp::path_attributes::Origin::TYPE_CODE);
+        assert_eq!(pa1.type_code(), crate::bgp::types::Origin::TYPE_CODE);
         assert_eq!(pa1.flags(), 0x40.into());
         assert!( pa1.flags().is_transitive());
         assert!(!pa1.flags().is_optional());
@@ -1803,7 +1803,7 @@ mod tests {
         //assert_eq!(pa1.as_ref(), [0x00]); 
         
         let pa2 = pas.next().unwrap().unwrap();
-        assert_eq!(pa2.type_code(), AsPath::TYPE_CODE);
+        assert_eq!(pa2.type_code(), crate::bgp::aspath::HopPath::TYPE_CODE);
         assert_eq!(pa2.flags(), 0x40.into());
         // TODO check actual AS_PATH contents
 

@@ -2391,6 +2391,7 @@ mod tests {
     use crate::bgp::message::nlri::Nlri;
     use crate::bgp::message::update::NextHop;
     use crate::bgp::aspath::HopPath;
+    use crate::bgp::types::OriginType;
 
     #[test]
     fn wireformat_to_owned_and_back() {
@@ -2406,7 +2407,7 @@ mod tests {
             assert_eq!(target, raw);
         }
 
-        check(vec![0x40, 0x01, 0x01, 0x00], PA::Origin(Origin::new(0.into())));
+        check(vec![0x40, 0x01, 0x01, 0x00], PA::Origin(OriginType::Igp.into()));
 
         check(
             vec![0x40, 0x02, 10,
@@ -2414,30 +2415,30 @@ mod tests {
             0x00, 0x00, 0x00, 100,
             0x00, 0x00, 0x00, 200,
             ],
-            PA::AsPath(AsPath(HopPath::from(vec![
+            PA::AsPath(HopPath::from(vec![
                 Asn::from_u32(100),
                 Asn::from_u32(200)]
-            )))
+            ))
         );
 
         check(
             vec![0x40, 0x03, 0x04, 0x01, 0x02, 0x03, 0x04],
-            PA::ConventionalNextHop(ConventionalNextHop(crate::bgp::types::ConventionalNextHop("1.2.3.4".parse().unwrap())))
+            PA::ConventionalNextHop(crate::bgp::types::ConventionalNextHop("1.2.3.4".parse().unwrap()))
         );
 
         check(
             vec![0x80, 0x04, 0x04, 0x00, 0x00, 0x00, 0xff],
-            PA::MultiExitDisc(MultiExitDisc::new(crate::bgp::types::MultiExitDisc(255)))
+            PA::MultiExitDisc(crate::bgp::types::MultiExitDisc(255))
         );
 
         check(
             vec![0x40, 0x05, 0x04, 0x00, 0x00, 0x00, 0x0a],
-            PA::LocalPref(LocalPref::new(crate::bgp::types::LocalPref(10)))
+            PA::LocalPref(crate::bgp::types::LocalPref(10))
         );
 
         check(
             vec![0x40, 0x06, 0x00],
-            PA::AtomicAggregate(AtomicAggregate::new(()))
+            PA::AtomicAggregate(crate::bgp::types::AtomicAggregate)
         );
         
         check(
@@ -2445,10 +2446,10 @@ mod tests {
                 0xc0, 0x07, 0x08, 0x00, 0x00, 0x00, 0x65, 0xc6,
                 0x33, 0x64, 0x01
             ],
-            PA::Aggregator(Aggregator(AggregatorInfo::new(
+            PA::Aggregator(AggregatorInfo::new(
                     Asn::from_u32(101),
                     "198.51.100.1".parse().unwrap()
-            )))
+            ))
         );
 
         check(
@@ -2463,20 +2464,18 @@ mod tests {
                 builder.add_community(Wellknown::NoExport.into());
                 builder.add_community(Wellknown::NoAdvertise.into());
                 builder.add_community(Wellknown::NoExportSubconfed.into());
-                PA::StandardCommunities(StandardCommunities(builder))
+                PA::StandardCommunities(builder)
             }
         );
 
         check(
             vec![0x80, 0x09, 0x04, 0x0a, 0x00, 0x00, 0x04],
-            OriginatorId(crate::bgp::types::OriginatorId("10.0.0.4".parse().unwrap())).into()
+            crate::bgp::types::OriginatorId("10.0.0.4".parse().unwrap()).into()
         );
 
         check(
             vec![0x80, 0x0a, 0x04, 0x0a, 0x00, 0x00, 0x03],
-            ClusterList(ClusterIds::new(
-                    vec![[10, 0, 0, 3].into()]
-            )).into()
+            ClusterIds::new(vec![[10, 0, 0, 3].into()]).into()
         );
         
         check(
@@ -2500,7 +2499,7 @@ mod tests {
                 &Nlri::unicast_from_str("2001:db8:aabb::/48").unwrap()
             );
 
-            MpReachNlri(builder).into()
+            builder.into()
             }
         );
 
@@ -2534,7 +2533,7 @@ mod tests {
                 );
             });
 
-            MpUnreachNlri(builder).into()
+            builder.into()
             }
         );
 
@@ -2543,9 +2542,9 @@ mod tests {
                 0xc0, 0x10, 0x08, 0x00, 0x02, 0xfc, 0x85, 0x00,
                 0x00, 0xcf, 0x08
             ],
-            ExtendedCommunities(ExtendedCommunitiesList::new(vec![
+            ExtendedCommunitiesList::new(vec![
                 "rt:64645:53000".parse().unwrap()
-            ])).into()
+            ]).into()
         );
 
         check(
@@ -2555,10 +2554,10 @@ mod tests {
                 0x00, 0x00, 0x00, 100,
                 0x00, 0x00, 0x00, 200,
             ],
-            PA::As4Path(As4Path::new(crate::bgp::types::As4Path(HopPath::from(vec![
+            PA::As4Path(crate::bgp::types::As4Path(HopPath::from(vec![
                 Asn::from_u32(100),
                 Asn::from_u32(200)]
-            ))))
+            )))
         );
 
         check(
@@ -2566,22 +2565,20 @@ mod tests {
                 0xc0, 0x12, 0x08, 0x00, 0x00, 0x04, 0xd2,
                 10, 0, 0, 99
             ],
-            As4Aggregator(crate::bgp::types::As4Aggregator(AggregatorInfo::new(
+            crate::bgp::types::As4Aggregator(AggregatorInfo::new(
                 Asn::from_u32(1234),
                 "10.0.0.99".parse().unwrap()
-            ))).into()
+            )).into()
         );
 
         check(
             vec![0xc0, 0x14, 0x04, 1, 2, 3, 4],
-            Connector(crate::bgp::types::Connector("1.2.3.4".parse().unwrap())).into()
+            crate::bgp::types::Connector("1.2.3.4".parse().unwrap()).into()
         );
 
         check(
             vec![0xc0, 0x15, 0x05, 0x14, 0x00, 0x00, 0x04, 0xd2],
-            AsPathLimit(
-                AsPathLimitInfo::new(20, Asn::from_u32(1234))
-            ).into()
+            AsPathLimitInfo::new(20, Asn::from_u32(1234)).into()
         );
 
         //TODO 22 PmsiTunnel
@@ -2598,7 +2595,7 @@ mod tests {
                 0x00, 0x00, 0x01, 0x00, 0x00, 0xe2, 0x0a, 0x00,
                 0x00, 0x00, 0x68, 0x00, 0x00, 0x00, 0x1f
             ],
-            LargeCommunities(LargeCommunitiesList::new(
+            LargeCommunitiesList::new(
                 vec![
                     "AS8283:6:15".parse().unwrap(),
                     "AS57866:100:2914".parse().unwrap(),
@@ -2606,29 +2603,29 @@ mod tests {
                     "AS57866:103:1".parse().unwrap(),
                     "AS57866:104:31".parse().unwrap(),
                 ]
-            )).into()
+            ).into()
         );
 
         check(
             vec![0xc0, 0x23, 0x04, 0x00, 0x00, 0x04, 0xd2],
-            Otc::new(crate::bgp::types::Otc(Asn::from_u32(1234))).into()
+            crate::bgp::types::Otc(Asn::from_u32(1234)).into()
         );
 
         // TODO AttrSet
         // TODO Reserved?
 
         // UnimplementedPathAttribute
+        // Note that we need to set the Partial flag on the input already,
+        // otherwise the first assert_eq in fn check fails. 
+        let flags = Flags::OPT_TRANS | Flags::PARTIAL;
         check(
-            vec![0xc0, 254, 0x04, 0x01, 0x02, 0x03, 0x04],
+            vec![flags, 254, 0x04, 0x01, 0x02, 0x03, 0x04],
             UnimplementedPathAttribute::new(
-                Flags::OPT_TRANS.into(),
+                flags.into(),
                 254,
                 vec![0x01, 0x02, 0x03, 0x04]
             ).into()
         );
-
-
-
     }
 
     #[test]
@@ -2726,10 +2723,10 @@ mod tests {
         ).unwrap();
         let mut owned = pa.to_owned().unwrap();
         if let PathAttribute::AsPath(ref mut asp) = owned  {
-            assert_eq!(format!("{}", asp.as_ref()), "AS100 AS200");
-            asp.as_mut().prepend(Asn::from_u32(50));
-            assert_eq!(format!("{}", asp.as_ref()), "AS50 AS100 AS200");
-            assert_eq!(3, asp.as_ref().hop_count());
+            assert_eq!(format!("{}", asp), "AS100 AS200");
+            asp.prepend(Asn::from_u32(50));
+            assert_eq!(format!("{}", asp), "AS50 AS100 AS200");
+            assert_eq!(3, asp.hop_count());
         }
 
         let mut composed = Vec::new();

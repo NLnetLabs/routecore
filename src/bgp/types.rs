@@ -277,6 +277,12 @@ typeenum!(
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Origin(pub OriginType);
 
+impl From<OriginType> for Origin {
+    fn from(t: OriginType) -> Origin {
+        Origin(t)
+    }
+}
+
 /// Wrapper for the 4 byte Multi-Exit Discriminator in path attributes.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
