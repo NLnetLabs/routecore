@@ -98,13 +98,13 @@ pub trait AttributeHeader {
     const TYPE_CODE: u8;
 }
 
+/*
 macro_rules! attribute {
     ($name:ident($data:ty),
      $flags:expr,
      $type_code:expr
      ) => {
 
-        // TODO Serialize
         #[derive(Clone, Debug, Eq, Hash, PartialEq)]
         #[cfg_attr(feature = "serde", derive(serde::Serialize))]
         pub struct $name(pub(crate) $data);
@@ -152,6 +152,7 @@ macro_rules! attribute {
         }
     }
 }
+*/
 
 
 //------------ PathAttributesBuilder -----------------------------------------
@@ -181,8 +182,8 @@ impl PaMap {
         let mut pa_map = Self::empty();
         for pa in pdu.path_attributes()? {
             if let Ok(pa) = pa {
-                if pa.type_code() != MpReachNlri::TYPE_CODE
-                    && pa.type_code() != MpUnreachNlri::TYPE_CODE
+                if pa.type_code() != MpReachNlriBuilder::TYPE_CODE
+                    && pa.type_code() != MpUnreachNlriBuilder::TYPE_CODE
                 {
                     if let PathAttributeType::Invalid(n) = pa.type_code().into() {
                         warn!("invalid PA {}:\n{}", n, pdu.fmt_pcap_string());
@@ -421,7 +422,8 @@ macro_rules! path_attributes {
         #[derive(Clone, Debug, Eq, Hash, PartialEq)]
         #[cfg_attr(feature = "serde", derive(serde::Serialize))]
         pub enum PathAttribute {
-            $( $name($name) ),+,
+            //$( $name($name) ),+,
+            $( $name($data) ),+,
             Unimplemented(UnimplementedPathAttribute),
             Invalid(Flags, u8, Vec<u8>),
         }
@@ -473,7 +475,7 @@ macro_rules! path_attributes {
                 match self {
                     $(
                     PathAttribute::$name(_pa) =>
-                        $name::TYPE_CODE
+                        <$data>::TYPE_CODE
                     ),+,
                     PathAttribute::Unimplemented(u) => {
                         u.type_code()
@@ -488,13 +490,12 @@ macro_rules! path_attributes {
         $(
         impl From<$data> for PathAttribute {
             fn from(value: $data) -> Self {
-                PathAttribute::$name(
-                    $name(value),
-                )
+                PathAttribute::$name(value)
             }
         }
         )+
 
+            /*
         $(
         impl From<$name> for PathAttribute {
             fn from(pa: $name) -> PathAttribute {
@@ -502,6 +503,7 @@ macro_rules! path_attributes {
             }
         }
         )+
+            */
 
 //------------ WireformatPathAttribute --------------------------------------
 
@@ -560,7 +562,6 @@ macro_rules! path_attributes {
 
         #[derive(Debug)]
         pub enum WireformatPathAttribute<'a, Octs: Octets> {
-            //$( $name(Parser<'a, Octs>, SessionConfig) ),+,
             $( $name(EncodedPathAttribute<'a, Octs>) ),+, 
             Unimplemented(UnimplementedWireformat<'a, Octs>),
             Invalid(Flags, u8, Parser<'a, Octs>),
@@ -584,7 +585,7 @@ macro_rules! path_attributes {
                 let res = match type_code {
                     $(
                     $type_code => {
-                        if let Err(e) = $name::validate(
+                        if let Err(e) = <$data>::validate(
                             flags.into(), &mut pp, sc
                         ) {
                             debug!("failed to parse path attribute: {e}");
@@ -637,7 +638,7 @@ macro_rules! path_attributes {
                     WireformatPathAttribute::$name(epa) => {
                         Ok(PathAttribute::$name(
                             //$name::parse(&mut p.clone(), *sc)?
-                            $name::parse(
+                            <$data>::parse(
                                 &mut epa.value_into_parser(),
                                 epa.session_config()
                             )?
@@ -790,8 +791,16 @@ macro_rules! path_attributes {
             }
         }
 
+        /*
         $(
         attribute!($name($data), $flags, $type_code);
+        )+
+        */
+        $(
+        impl AttributeHeader for $data {
+            const FLAGS: u8 = $flags;
+            const TYPE_CODE: u8 = $type_code;
+        }
         )+
 
         // You might think that the Attribute trait (implemented for all path
@@ -806,7 +815,7 @@ macro_rules! path_attributes {
         impl FromAttribute for $data {
             fn from_attribute(value: PathAttribute) -> Option<$data> {
                 if let PathAttribute::$name(pa) = value {
-                    Some(pa.inner())
+                    Some(pa)
                 } else {
                     None
                 }
@@ -821,12 +830,12 @@ macro_rules! path_attributes {
 }
 
 path_attributes!(
-    1   => Origin(crate::bgp::types::OriginType), Flags::WELLKNOWN,
+    1   => Origin(crate::bgp::types::Origin), Flags::WELLKNOWN,
     2   => AsPath(crate::bgp::aspath::HopPath), Flags::WELLKNOWN,
     3   => ConventionalNextHop(crate::bgp::types::ConventionalNextHop), Flags::WELLKNOWN,
     4   => MultiExitDisc(crate::bgp::types::MultiExitDisc), Flags::OPT_NON_TRANS,
     5   => LocalPref(crate::bgp::types::LocalPref), Flags::WELLKNOWN,
-    6   => AtomicAggregate(()), Flags::WELLKNOWN,
+    6   => AtomicAggregate(crate::bgp::types::AtomicAggregate), Flags::WELLKNOWN,
     7   => Aggregator(crate::bgp::path_attributes::AggregatorInfo), Flags::OPT_TRANS,
     8   => StandardCommunities(crate::bgp::message::update_builder::StandardCommunitiesList), Flags::OPT_TRANS,
     9   => OriginatorId(crate::bgp::types::OriginatorId), Flags::OPT_NON_TRANS,
@@ -1077,7 +1086,7 @@ macro_rules! check_len_exact {
 
 //--- Origin
 
-impl Attribute for Origin {
+impl Attribute for crate::bgp::types::Origin {
     fn value_len(&self) -> usize { 1 }
 
     fn compose_value<Target: OctetsBuilder>(&self, target: &mut Target)
@@ -1087,9 +1096,9 @@ impl Attribute for Origin {
     }
 
     fn parse<'a, Octs: 'a + Octets>(parser: &mut Parser<'_, Octs>, _sc: SessionConfig) 
-        -> Result<Origin, ParseError>
+        -> Result<Self, ParseError>
     {
-        Ok(Origin(parser.parse_u8()?.into()))
+        Ok(Self(parser.parse_u8()?.into()))
     }
 
     fn validate<Octs: Octets>(
@@ -1103,6 +1112,69 @@ impl Attribute for Origin {
 
 //--- AsPath (see bgp::aspath)
 
+
+// attempt to impl on actual type instead of inner wrapper
+
+/*
+impl AttributeHeader for crate::bgp::aspath::HopPath {
+    const FLAGS: u8 = Flags::WELLKNOWN; 
+    const TYPE_CODE: u8 = 2;
+}
+*/
+
+impl Attribute for crate::bgp::aspath::HopPath {
+    fn value_len(&self) -> usize {
+        self.to_as_path::<Vec<u8>>().unwrap().into_inner().len()
+    }
+
+    fn compose_value<Target: OctetsBuilder>(&self, target: &mut Target)
+        -> Result<(), Target::AppendError>
+    {
+       target.append_slice(
+           self.to_as_path::<Vec<u8>>().unwrap().into_inner().as_ref()
+        )
+    }
+
+    fn parse<'a, Octs: 'a + Octets>(parser: &mut Parser<'a, Octs>, sc: SessionConfig) 
+        -> Result<Self, ParseError>
+    {
+        // XXX reusing the old/existing AsPath here for the time being
+        let asp = crate::bgp::aspath::AsPath::new(
+            parser.peek_all().to_vec(),
+            sc.has_four_octet_asn()
+        ).map_err(|_| ParseError::form_error("invalid AS_PATH"))?;
+
+        Ok(asp.to_hop_path())
+    }
+
+    fn validate<Octs: Octets>(
+        _flags: Flags,
+        parser: &mut Parser<'_, Octs>,
+        session_config: SessionConfig
+    ) -> Result<(), ParseError> {
+        let asn_size = if session_config.has_four_octet_asn() {
+            4
+        } else {
+            2
+        };
+        while parser.remaining() > 0 {
+            let segment_type = parser.parse_u8()?;
+            if !(1..=4).contains(&segment_type) {
+                return Err(ParseError::form_error(
+                    "illegal segment type in AS_PATH"
+                ));
+            }
+            let len = usize::from(parser.parse_u8()?); // ASNs in segment
+            parser.advance(len * asn_size)?; // ASNs.
+        }
+        Ok(())
+    }
+}
+
+// end of attempt
+
+
+/*
 impl Attribute for AsPath {
     fn value_len(&self) -> usize {
         self.0.to_as_path::<Vec<u8>>().unwrap().into_inner().len()
@@ -1151,22 +1223,23 @@ impl Attribute for AsPath {
         Ok(())
     }
 }
+*/
 
 //--- NextHop
 
-impl Attribute for ConventionalNextHop {
+impl Attribute for crate::bgp::types::ConventionalNextHop {
     fn value_len(&self) -> usize { 4 }
 
     fn compose_value<Target: OctetsBuilder>(&self, target: &mut Target)
         -> Result<(), Target::AppendError>
     {
-        target.append_slice(&self.0.0.octets())
+        target.append_slice(&self.0.octets())
     }
 
     fn parse<'a, Octs: 'a + Octets>(parser: &mut Parser<'a, Octs>, _sc: SessionConfig) 
-        -> Result<ConventionalNextHop, ParseError>
+        -> Result<Self, ParseError>
     {
-        Ok(Self(crate::bgp::types::ConventionalNextHop(parse_ipv4addr(parser)?)))
+        Ok(Self(parse_ipv4addr(parser)?))
     }
 
     fn validate<Octs: Octets>(
@@ -1180,6 +1253,60 @@ impl Attribute for ConventionalNextHop {
 
 //--- MultiExitDisc
 
+// attempt to impl traits on the actual type instead of the inner wrapper
+// generated by attribute! / path_attributes!
+/*
+impl AttributeHeader for crate::bgp::types::MultiExitDisc {
+    const FLAGS: u8 = Flags::OPT_NON_TRANS; 
+    const TYPE_CODE: u8 = 4;
+}
+*/
+impl Attribute for crate::bgp::types::MultiExitDisc {
+    fn value_len(&self) -> usize { 4 }
+
+    fn compose_value<Target: OctetsBuilder>(&self, target: &mut Target)
+        -> Result<(), Target::AppendError>
+    {
+        target.append_slice(&self.0.to_be_bytes()) 
+    }
+
+    fn parse<'a, Octs: 'a + Octets>(parser: &mut Parser<'a, Octs>, _sc: SessionConfig) 
+        -> Result<Self, ParseError>
+    {
+        Ok(Self(parser.parse_u32_be()?))
+    }
+
+    fn validate<Octs: Octets>(
+        _flags: Flags,
+        parser: &mut Parser<'_, Octs>,
+        _session_config: SessionConfig
+    ) -> Result<(), ParseError> {
+        check_len_exact!(parser, 4, "MULTI_EXIT_DISC")
+    }
+}
+
+/* works, but commented out because this impl conflicts with the one in the
+ * macro
+impl FromAttribute for crate::bgp::types::MultiExitDisc {
+    fn from_attribute(pa: PathAttribute) -> Option<Self> {
+        if let PathAttribute::MultiExitDisc(value) = pa {
+            Some(value)
+        } else {
+            None
+        }
+    }
+
+    fn attribute_type() -> Option<PathAttributeType> {
+        Some(PathAttributeType::MultiExitDisc)
+    }
+}
+*/
+
+
+// end of attempt
+
+
+/*
 impl Attribute for MultiExitDisc {
     fn value_len(&self) -> usize { 4 }
 
@@ -1203,22 +1330,23 @@ impl Attribute for MultiExitDisc {
         check_len_exact!(parser, 4, "MULTI_EXIT_DISC")
     }
 }
+*/
 
 //--- LocalPref
 
-impl Attribute for LocalPref {
+impl Attribute for crate::bgp::types::LocalPref {
     fn value_len(&self) -> usize { 4 }
 
     fn compose_value<Target: OctetsBuilder>(&self, target: &mut Target)
         -> Result<(), Target::AppendError>
     {
-        target.append_slice(&self.0.0.to_be_bytes()) 
+        target.append_slice(&self.0.to_be_bytes()) 
     }
 
     fn parse<'a, Octs: 'a + Octets>(parser: &mut Parser<'a, Octs>, _sc: SessionConfig) 
-        -> Result<LocalPref, ParseError>
+        -> Result<Self, ParseError>
     {
-        Ok(LocalPref(crate::bgp::types::LocalPref(parser.parse_u32_be()?)))
+        Ok(Self(parser.parse_u32_be()?))
     }
 
     fn validate<Octs: Octets>(
@@ -1232,7 +1360,7 @@ impl Attribute for LocalPref {
 
 //--- AtomicAggregate
 
-impl Attribute for AtomicAggregate {
+impl Attribute for crate::bgp::types::AtomicAggregate {
     fn value_len(&self) -> usize { 0 }
 
     fn compose_value<Target: OctetsBuilder>(&self, _target: &mut Target)
@@ -1242,9 +1370,9 @@ impl Attribute for AtomicAggregate {
     }
 
     fn parse<'a, Octs: 'a + Octets>(_parser: &mut Parser<'a, Octs>, _sc: SessionConfig) 
-        -> Result<AtomicAggregate, ParseError>
+        -> Result<Self, ParseError>
     {
-        Ok(AtomicAggregate(()))
+        Ok(Self)
     }
 
     fn validate<Octs: Octets>(
@@ -1256,9 +1384,7 @@ impl Attribute for AtomicAggregate {
     }
 }
 
-impl Copy for AtomicAggregate { }
-
-impl Display for AtomicAggregate {
+impl Display for crate::bgp::types::AtomicAggregate {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "ATOMIC_AGGREGATE")
     }
@@ -1286,7 +1412,7 @@ impl AggregatorInfo {
 }
 
 
-impl Attribute for Aggregator {
+impl Attribute for AggregatorInfo {
     // FIXME for legacy 2-byte ASNs, this should be 6.
     // Should we pass a (&)SessionConfig to this method as well?
     // Note that `fn compose_len` would then also need a SessionConfig,
@@ -1298,12 +1424,12 @@ impl Attribute for Aggregator {
     fn compose_value<Target: OctetsBuilder>(&self, target: &mut Target)
         -> Result<(), Target::AppendError>
     {
-        target.append_slice(&self.0.asn().to_raw())?;
-        target.append_slice(&self.0.address().octets())
+        target.append_slice(&self.asn().to_raw())?;
+        target.append_slice(&self.address().octets())
     }
 
     fn parse<'a, Octs: 'a + Octets>(parser: &mut Parser<'a, Octs>, sc: SessionConfig) 
-        -> Result<Aggregator, ParseError>
+        -> Result<Self, ParseError>
     {
         let asn = if sc.has_four_octet_asn() {
             Asn::from_u32(parser.parse_u32_be()?)
@@ -1312,7 +1438,7 @@ impl Attribute for Aggregator {
         };
 
         let address = parse_ipv4addr(parser)?;
-        Ok(Aggregator(AggregatorInfo::new(asn, address)))
+        Ok(Self::new(asn, address))
     }
 
     fn validate<Octs: Octets>(
@@ -1340,22 +1466,22 @@ impl Display for AggregatorInfo {
 
 //--- StandardCommunities
 
-impl Attribute for StandardCommunities {
+impl Attribute for crate::bgp::message::update_builder::StandardCommunitiesList {
     fn value_len(&self) -> usize { 
-        self.0.communities().len() * 4
+        self.communities().len() * 4
     }
 
     fn compose_value<Target: OctetsBuilder>(&self, target: &mut Target)
         -> Result<(), Target::AppendError>
     {
-        for c in self.0.communities() {
+        for c in self.communities() {
             target.append_slice(&c.to_raw())?;
         }
         Ok(())
     }
 
     fn parse<'a, Octs: 'a + Octets>(parser: &mut Parser<'a, Octs>, _sc: SessionConfig) 
-        -> Result<StandardCommunities, ParseError>
+        -> Result<Self, ParseError>
     {
         let mut builder = StandardCommunitiesList::with_capacity(
             parser.remaining() / 4
@@ -1364,7 +1490,7 @@ impl Attribute for StandardCommunities {
             builder.add_community(parser.parse_u32_be()?.into());
         }
 
-        Ok(StandardCommunities(builder))
+        Ok(builder)
     }
 
     fn validate<Octs: Octets>(
@@ -1390,19 +1516,19 @@ impl StandardCommunitiesList {
 
 //--- OriginatorId
 
-impl Attribute for OriginatorId {
+impl Attribute for crate::bgp::types::OriginatorId {
     fn value_len(&self) -> usize { 4 }
 
     fn compose_value<Target: OctetsBuilder>(&self, target: &mut Target)
         -> Result<(), Target::AppendError>
     {
-        target.append_slice(&self.0.0.octets())
+        target.append_slice(&self.0.octets())
     }
 
     fn parse<'a, Octs: 'a + Octets>(parser: &mut Parser<'a, Octs>, _sc: SessionConfig) 
-        -> Result<OriginatorId, ParseError>
+        -> Result<Self, ParseError>
     {
-        Ok(OriginatorId(crate::bgp::types::OriginatorId(parse_ipv4addr(parser)?)))
+        Ok(Self(parse_ipv4addr(parser)?))
     }
 
     fn validate<Octs: Octets>(
@@ -1450,28 +1576,28 @@ impl ClusterIds {
 }
 
 
-impl Attribute for ClusterList {
+impl Attribute for ClusterIds {
     fn value_len(&self) -> usize { 
-        self.0.cluster_ids.len() * 4
+        self.cluster_ids.len() * 4
     }
 
     fn compose_value<Target: OctetsBuilder>(&self, target: &mut Target)
         -> Result<(), Target::AppendError>
     {
-        for c in &self.0.cluster_ids {
+        for c in &self.cluster_ids {
             target.append_slice(&c.0)?;
         }
         Ok(())
     }
 
     fn parse<'a, Octs: 'a + Octets>(parser: &mut Parser<'a, Octs>, _sc: SessionConfig) 
-        -> Result<ClusterList, ParseError>
+        -> Result<Self, ParseError>
     {
         let mut cluster_ids = Vec::with_capacity(parser.remaining() / 4);
         while parser.remaining() > 0 {
             cluster_ids.push(parser.parse_u32_be()?.to_be_bytes().into());
         }
-        Ok(ClusterList(ClusterIds::new(cluster_ids)))
+        Ok(ClusterIds::new(cluster_ids))
     }
 
     fn validate<Octs: Octets>(
@@ -1489,19 +1615,19 @@ impl Attribute for ClusterList {
 }
 
 //--- MpReachNlri
-impl Attribute for MpReachNlri {
+impl Attribute for crate::bgp::message::update_builder::MpReachNlriBuilder {
     fn value_len(&self) -> usize { 
-        self.0.value_len()
+        self.value_len()
     }
 
     fn compose_value<Target: OctetsBuilder>(&self, target: &mut Target)
         -> Result<(), Target::AppendError>
     {
-        self.0.compose_value(target)
+        self.compose_value(target)
     }
 
     fn parse<'a, Octs: 'a + Octets>(parser: &mut Parser<'a, Octs>, sc: SessionConfig) 
-        -> Result<MpReachNlri, ParseError>
+        -> Result<Self, ParseError>
         where
             Vec<u8>: OctetsFrom<Octs::Range<'a>>
     {
@@ -1536,7 +1662,7 @@ impl Attribute for MpReachNlri {
             builder.add_announcement(&nlri?);
         }
 
-        Ok(MpReachNlri(builder))
+        Ok(builder)
     }
 
     fn validate<Octs: Octets>(
@@ -1620,19 +1746,19 @@ impl Attribute for MpReachNlri {
 }
 
 //--- MpUnreachNlri
-impl Attribute for MpUnreachNlri {
+impl Attribute for crate::bgp::message::update_builder::MpUnreachNlriBuilder {
     fn value_len(&self) -> usize { 
-        self.0.value_len()
+        self.value_len()
     }
 
     fn compose_value<Target: OctetsBuilder>(&self, target: &mut Target)
         -> Result<(), Target::AppendError>
     {
-        self.0.compose_value(target)
+        self.compose_value(target)
     }
 
     fn parse<'a, Octs: 'a + Octets>(parser: &mut Parser<'a, Octs>, sc: SessionConfig) 
-        -> Result<MpUnreachNlri, ParseError>
+        -> Result<Self, ParseError>
     where
         Vec<u8>: OctetsFrom<Octs::Range<'a>>
     {
@@ -1656,7 +1782,7 @@ impl Attribute for MpUnreachNlri {
         for nlri in nlri_iter {
             builder.add_withdrawal(&nlri?);
         }
-        Ok(MpUnreachNlri(builder))
+        Ok(builder)
     }
 
     fn validate<Octs: Octets>(
@@ -1763,22 +1889,22 @@ impl ExtendedCommunitiesList {
 }
 
 
-impl Attribute for ExtendedCommunities {
+impl Attribute for crate::bgp::path_attributes::ExtendedCommunitiesList {
     fn value_len(&self) -> usize { 
-        self.0.communities.len() * 8
+        self.communities.len() * 8
     }
 
     fn compose_value<Target: OctetsBuilder>(&self, target: &mut Target)
         -> Result<(), Target::AppendError>
     {
-        for c in &self.0.communities {
+        for c in &self.communities {
             target.append_slice(&c.to_raw())?;
         }
         Ok(())
     }
 
     fn parse<'a, Octs: 'a + Octets>(parser: &mut Parser<'a, Octs>, _sc: SessionConfig) 
-        -> Result<ExtendedCommunities, ParseError>
+        -> Result<Self, ParseError>
     {
         let mut communities = Vec::with_capacity(parser.remaining() / 8);
         let mut buf = [0u8; 8];
@@ -1786,7 +1912,7 @@ impl Attribute for ExtendedCommunities {
             parser.parse_buf(&mut buf)?;
             communities.push(buf.into());
         }
-        Ok(ExtendedCommunities(ExtendedCommunitiesList::new(communities)))
+        Ok(Self::new(communities))
     }
 
     fn validate<Octs: Octets>(
@@ -1805,28 +1931,28 @@ impl Attribute for ExtendedCommunities {
 
 //--- As4Path (see bgp::aspath)
 
-impl Attribute for As4Path {
+impl Attribute for crate::bgp::types::As4Path {
     fn value_len(&self) -> usize {
-        self.0.0.to_as_path::<Vec<u8>>().unwrap().into_inner().len()
+        self.0.to_as_path::<Vec<u8>>().unwrap().into_inner().len()
     }
 
     fn compose_value<Target: OctetsBuilder>(&self, target: &mut Target)
         -> Result<(), Target::AppendError>
     {
         target.append_slice(
-            self.0.0.to_as_path::<Vec<u8>>().unwrap().into_inner().as_ref()
+            self.0.to_as_path::<Vec<u8>>().unwrap().into_inner().as_ref()
         )
     }
 
     fn parse<'a, Octs: 'a + Octets>(parser: &mut Parser<'a, Octs>, sc: SessionConfig) 
-        -> Result<As4Path, ParseError>
+        -> Result<Self, ParseError>
     {
         // XXX Same as with AsPath, reusing the old/existing As4Path here
         let asp = crate::bgp::aspath::AsPath::new(
             parser.peek_all().to_vec(),
             sc.has_four_octet_asn()
         ).map_err(|_| ParseError::form_error("invalid AS4_PATH"))?;
-        Ok(As4Path(crate::bgp::types::As4Path(asp.to_hop_path())))
+        Ok(Self(asp.to_hop_path()))
     }
 
     fn validate<Octs: Octets>(
@@ -1851,22 +1977,22 @@ impl Attribute for As4Path {
 
 //--- As4Aggregator 
 
-impl Attribute for As4Aggregator {
+impl Attribute for crate::bgp::types::As4Aggregator {
     fn value_len(&self) -> usize { 8 }
 
     fn compose_value<Target: OctetsBuilder>(&self, target: &mut Target)
         -> Result<(), Target::AppendError>
     {
-        target.append_slice(&self.0.0.asn().to_raw())?;
-        target.append_slice(&self.0.0.address().octets())
+        target.append_slice(&self.0.asn().to_raw())?;
+        target.append_slice(&self.0.address().octets())
     }
 
     fn parse<'a, Octs: 'a + Octets>(parser: &mut Parser<'a, Octs>, _sc: SessionConfig) 
-        -> Result<As4Aggregator, ParseError>
+        -> Result<Self, ParseError>
     {
         let asn = Asn::from_u32(parser.parse_u32_be()?);
         let address = parse_ipv4addr(parser)?;
-        Ok(As4Aggregator(crate::bgp::types::As4Aggregator(AggregatorInfo::new(asn, address))))
+        Ok(Self(AggregatorInfo::new(asn, address)))
     }
 
     fn validate<Octs: Octets>(
@@ -1881,19 +2007,19 @@ impl Attribute for As4Aggregator {
 
 //--- Connector (deprecated)
 
-impl Attribute for Connector {
+impl Attribute for crate::bgp::types::Connector {
     fn value_len(&self) -> usize { 4 }
 
     fn compose_value<Target: OctetsBuilder>(&self, target: &mut Target)
         -> Result<(), Target::AppendError>
     {
-        target.append_slice(&self.0.0.octets())
+        target.append_slice(&self.0.octets())
     }
 
     fn parse<'a, Octs: 'a + Octets>(parser: &mut Parser<'a, Octs>, _sc: SessionConfig) 
-        -> Result<Connector, ParseError>
+        -> Result<Self, ParseError>
     {
-        Ok(Connector(crate::bgp::types::Connector(parse_ipv4addr(parser)?)))
+        Ok(Self(parse_ipv4addr(parser)?))
     }
 
     fn validate<Octs: Octets>(
@@ -1922,25 +2048,25 @@ impl AsPathLimitInfo {
     }
 }
 
-impl Attribute for AsPathLimit {
+impl Attribute for AsPathLimitInfo {
     fn value_len(&self) -> usize { 5 }
 
     fn compose_value<Target: OctetsBuilder>(&self, target: &mut Target)
         -> Result<(), Target::AppendError>
     {
-        target.append_slice(&[self.0.upper_bound])?;
-        target.append_slice(&self.0.attacher.to_raw())
+        target.append_slice(&[self.upper_bound])?;
+        target.append_slice(&self.attacher.to_raw())
     }
 
     fn parse<'a, Octs: 'a + Octets>(parser: &mut Parser<'a, Octs>, _sc: SessionConfig) 
-        -> Result<AsPathLimit, ParseError>
+        -> Result<Self, ParseError>
     {
         let info = AsPathLimitInfo {
             upper_bound: parser.parse_u8()?,
             attacher: Asn::from_u32(parser.parse_u32_be()?)
         };
 
-        Ok(AsPathLimit(info))
+        Ok(info)
     }
 
     fn validate<Octs: Octets>(
@@ -1983,22 +2109,22 @@ impl Ipv6ExtendedCommunitiesList {
     }
 }
 
-impl Attribute for Ipv6ExtendedCommunities {
+impl Attribute for Ipv6ExtendedCommunitiesList {
     fn value_len(&self) -> usize { 
-        self.0.communities.len() * 20
+        self.communities.len() * 20
     }
 
     fn compose_value<Target: OctetsBuilder>(&self, target: &mut Target)
         -> Result<(), Target::AppendError>
     {
-        for c in &self.0.communities {
+        for c in &self.communities {
             target.append_slice(&c.to_raw())?;
         }
         Ok(())
     }
 
     fn parse<'a, Octs: 'a + Octets>(parser: &mut Parser<'a, Octs>, _sc: SessionConfig) 
-        -> Result<Ipv6ExtendedCommunities, ParseError>
+        -> Result<Self, ParseError>
     {
         let mut communities = Vec::with_capacity(parser.remaining() / 20);
         let mut buf = [0u8; 20];
@@ -2006,7 +2132,7 @@ impl Attribute for Ipv6ExtendedCommunities {
             parser.parse_buf(&mut buf)?;
             communities.push(buf.into());
         }
-        Ok(Ipv6ExtendedCommunities(Ipv6ExtendedCommunitiesList::new(communities)))
+        Ok(Ipv6ExtendedCommunitiesList::new(communities))
     }
 
     fn validate<Octs: Octets>(
@@ -2054,22 +2180,22 @@ impl LargeCommunitiesList {
 }
 
 
-impl Attribute for LargeCommunities {
+impl Attribute for LargeCommunitiesList {
     fn value_len(&self) -> usize { 
-        self.0.communities.len() * 12
+        self.communities.len() * 12
     }
 
     fn compose_value<Target: OctetsBuilder>(&self, target: &mut Target)
         -> Result<(), Target::AppendError>
     {
-        for c in &self.0.communities {
+        for c in &self.communities {
             target.append_slice(&c.to_raw())?;
         }
         Ok(())
     }
 
     fn parse<'a, Octs: 'a + Octets>(parser: &mut Parser<'a, Octs>, _sc: SessionConfig) 
-        -> Result<LargeCommunities, ParseError>
+        -> Result<Self, ParseError>
     {
         let mut communities = Vec::with_capacity(parser.remaining() / 12);
         let mut buf = [0u8; 12];
@@ -2077,7 +2203,7 @@ impl Attribute for LargeCommunities {
             parser.parse_buf(&mut buf)?;
             communities.push(buf.into());
         }
-        Ok(LargeCommunities(LargeCommunitiesList::new(communities)))
+        Ok(Self::new(communities))
     }
 
     fn validate<Octs: Octets>(
@@ -2096,19 +2222,19 @@ impl Attribute for LargeCommunities {
 
 //--- Otc 
 
-impl Attribute for Otc {
+impl Attribute for crate::bgp::types::Otc {
     fn value_len(&self) -> usize { 4 }
 
     fn compose_value<Target: OctetsBuilder>(&self, target: &mut Target)
         -> Result<(), Target::AppendError>
     {
-        target.append_slice(&self.0.0.to_raw())
+        target.append_slice(&self.0.to_raw())
     }
 
     fn parse<'a, Octs: 'a + Octets>(parser: &mut Parser<'a, Octs>, _sc: SessionConfig) 
-        -> Result<Otc, ParseError>
+        -> Result<Self, ParseError>
     {
-        Ok(Otc(crate::bgp::types::Otc(Asn::from_u32(parser.parse_u32_be()?))))
+        Ok(Self(Asn::from_u32(parser.parse_u32_be()?)))
     }
 
     fn validate<Octs: Octets>(
@@ -2137,24 +2263,24 @@ impl AttributeSet {
     }
 }
 
-impl Attribute for AttrSet {
+impl Attribute for AttributeSet {
     fn value_len(&self) -> usize {
-        4 + self.0.attributes.len()
+        4 + self.attributes.len()
     }
 
     fn compose_value<Target: OctetsBuilder>(&self, target: &mut Target)
         -> Result<(), Target::AppendError>
     {
-        target.append_slice(&self.0.origin.to_raw())?;
-        target.append_slice(&self.0.attributes)
+        target.append_slice(&self.origin.to_raw())?;
+        target.append_slice(&self.attributes)
     }
 
     fn parse<'a, Octs: 'a + Octets>(parser: &mut Parser<'a, Octs>, _sc: SessionConfig) 
-        -> Result<AttrSet, ParseError>
+        -> Result<Self, ParseError>
     {
         let origin = Asn::from_u32(parser.parse_u32_be()?);
         let attributes = parser.peek_all().to_vec();
-        Ok(AttrSet(AttributeSet::new(origin, attributes)))
+        Ok(Self::new(origin, attributes))
     }
 
     fn validate<Octs: Octets>(
@@ -2190,22 +2316,22 @@ impl ReservedRaw {
     }
 }
 
-impl Attribute for Reserved {
+impl Attribute for ReservedRaw {
     fn value_len(&self) -> usize {
-        self.0.raw.len()
+        self.raw.len()
     }
 
     fn compose_value<Target: OctetsBuilder>(&self, target: &mut Target)
         -> Result<(), Target::AppendError>
     {
-        target.append_slice(&self.0.raw)
+        target.append_slice(&self.raw)
     }
 
     fn parse<'a, Octs: 'a + Octets>(parser: &mut Parser<'a, Octs>, _sc: SessionConfig) 
-        -> Result<Reserved, ParseError>
+        -> Result<Self, ParseError>
     {
         let raw = parser.peek_all().to_vec();
-        Ok(Reserved(ReservedRaw::new(raw)))
+        Ok(Self::new(raw))
     }
 
     fn validate<Octs: Octets>(

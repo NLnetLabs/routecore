@@ -63,17 +63,13 @@ impl<N: Clone + Debug + Hash> Route<N> {
 
 impl From<crate::bgp::aspath::AsPath<bytes::Bytes>> for PathAttribute {
     fn from(value: crate::bgp::aspath::AsPath<bytes::Bytes>) -> Self {
-        PathAttribute::AsPath(crate::bgp::path_attributes::AsPath(
-            value.to_hop_path(),
-        ))
+        PathAttribute::AsPath(value.to_hop_path())
     }
 }
 
 impl From<crate::bgp::aspath::AsPath<Vec<u8>>> for PathAttribute {
     fn from(value: crate::bgp::aspath::AsPath<Vec<u8>>) -> Self {
-        PathAttribute::AsPath(crate::bgp::path_attributes::AsPath(
-            value.to_hop_path(),
-        ))
+        PathAttribute::AsPath(value.to_hop_path())
     }
 }
 
@@ -156,7 +152,7 @@ impl_workshop!(
     crate::bgp::aspath::HopPath
     crate::bgp::types::LocalPref
     crate::bgp::types::MultiExitDisc
-    crate::bgp::types::OriginType
+    crate::bgp::types::Origin
     crate::bgp::types::OriginatorId
     crate::bgp::path_attributes::AggregatorInfo
     crate::bgp::path_attributes::ExtendedCommunitiesList

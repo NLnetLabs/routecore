@@ -272,6 +272,11 @@ typeenum!(
     }
 );
 
+/// Wrapper for the 1 byte Origin
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct Origin(pub OriginType);
+
 /// Wrapper for the 4 byte Multi-Exit Discriminator in path attributes.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -299,6 +304,11 @@ impl std::fmt::Display for LocalPref {
         write!(f, "{}", self.0)
     }
 }
+
+
+#[derive(Debug, Eq, PartialEq, Clone, Copy, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct AtomicAggregate;
 
 /// Wrapper for the 4 byte OnlyToCustomer (Otc) value in path attributes.
 #[derive(Debug, Eq, PartialEq, Clone, Copy, Hash)]
