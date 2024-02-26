@@ -2,9 +2,7 @@ use std::fmt::Debug;
 use std::hash::Hash;
 
 use crate::bgp::message::Header;
-use crate::bgp::workshop::afisafi_nlri::AfiSafiNlri;
 use octseq::{Octets, Parser};
-//use log::debug;
 
 use crate::asn::Asn;
 use crate::bgp::aspath::AsPath;
@@ -34,8 +32,6 @@ use crate::bgp::communities::{
     ExtendedCommunity, Ipv6ExtendedCommunity, 
     LargeCommunity,
 };
-
-use super::update_builder::ComposeError;
 
 /// BGP UPDATE message, variant of the [`Message`] enum.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
