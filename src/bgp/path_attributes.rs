@@ -191,7 +191,7 @@ impl PaMap {
         &mut self.attributes
     }
 
-    pub fn attributes_owned(self) -> AttributesMap {
+    pub fn into_attributes(self) -> AttributesMap {
         self.attributes
     }
 
