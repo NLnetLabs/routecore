@@ -1,8 +1,12 @@
 //use crate::typeenum; // from util::macros
 
+use crate::addr::Prefix;
 use crate::bgp::message::nlri::{BasicNlri, PathId};
 use paste::paste;
 
+use std::fmt;
+
+use octseq::Octets;
 
 use core::hash::Hash;
 use core::fmt::Debug;
@@ -10,7 +14,7 @@ use core::fmt::Debug;
 macro_rules! afisafi {
     (
         $(
-            $afi_code:expr => $afi_name:ident [ $( $safi_code:expr => $safi_name:ident ),+ $(,)* ]
+            $afi_code:expr => $afi_name:ident [ $( $safi_code:expr => $safi_name:ident$(<$gen:ident>)? ),+ $(,)* ]
         ),+ $(,)*
     ) => {
             #[derive(Debug)]
@@ -29,15 +33,15 @@ macro_rules! afisafi {
 
                 // this enforces these derives on all *Nlri structs.
                 #[derive(Clone, Debug, Hash)]
-                pub enum Nlri {
+                pub enum Nlri<Octs> {
                     $(
                         $(
-                            [<$afi_name $safi_name>]([<$afi_name $safi_name Nlri>])
+                            [<$afi_name $safi_name>]([<$afi_name $safi_name Nlri>]$(<$gen>)?)
                         ,)+
                     )+
                 }
 
-                impl Nlri {
+                impl<Octs> Nlri<Octs> {
                     pub fn afi_safi(&self) -> AfiSafiType {
                         match self {
                     $(
@@ -59,15 +63,15 @@ macro_rules! afisafi {
                     // create the $Afi$SafiNlri struct, along with all its
                     // basic or exotic data fields and whatnot. We can not do
                     // that in a generic way in this macro.
-                    impl AfiSafi for [<$afi_name $safi_name Nlri>] { 
+                    impl$(<$gen>)? AfiSafi for [<$afi_name $safi_name Nlri>]$(<$gen>)? { 
                         fn afi(&self) -> Afi { Afi::$afi_name }
                         fn afi_safi(&self) -> AfiSafiType {
                             AfiSafiType::[<$afi_name $safi_name>]
                         }
                     }
 
-                    impl From<[<$afi_name $safi_name Nlri>]> for Nlri {
-                        fn from(n: [<$afi_name $safi_name Nlri>]) -> Self {
+                    impl<Octs> From<[<$afi_name $safi_name Nlri>]$(<$gen>)?> for Nlri<Octs> {
+                        fn from(n: [<$afi_name $safi_name Nlri>]$(<$gen>)?) -> Self {
                             Nlri::[<$afi_name $safi_name>](n)
                         }
 
@@ -115,11 +119,17 @@ pub trait HasBasicNlri {
 }
 
 // blanket impl
-impl <T>HasBasicNlri for T where T: AfiSafiNlri<Nlri = BasicNlri> {
+//impl <T>HasBasicNlri for T where T: AfiSafiNlri<Nlri = BasicNlri> {
+//    fn basic_nlri(&self) -> BasicNlri {
+//        self.nlri()
+//    }
+//}
+impl <T, B>HasBasicNlri for T where T: AfiSafiNlri<Nlri = B>, B: Into<BasicNlri> {
     fn basic_nlri(&self) -> BasicNlri {
-        self.nlri()
+        self.nlri().into()
     }
 }
+
 
 //afisafi! {
 //    1 => Ipv4 [ 1 => Unicast, 2 => Multicast, 4 => MplsUnicast ],
@@ -131,7 +141,7 @@ impl <T>HasBasicNlri for T where T: AfiSafiNlri<Nlri = BasicNlri> {
 // - at the least, add a struct for $Afi$SafiNlri , deriving Clone,Debug,Hash
 // - impl AfiSafiNlri for it to make it useful
 afisafi! {
-    1 => Ipv4 [ 1 => Unicast, 2 => Multicast ],
+    1 => Ipv4 [ 1 => Unicast, 2 => Multicast, 4 => MplsUnicast<Octs>],
     2 => Ipv6 [ 1 => Unicast ],
 }
 
@@ -172,6 +182,22 @@ impl AfiSafiNlri for Ipv6UnicastNlri {
     }
 }
 
+use crate::bgp::message::nlri::MplsNlri;
+#[derive(Clone, Hash)]
+pub struct Ipv4MplsUnicastNlri<Octs>(MplsNlri<Octs>);
+
+impl<Octs: Clone + Hash> AfiSafiNlri for Ipv4MplsUnicastNlri<Octs> {
+    type Nlri = MplsNlri<Octs>;
+    fn nlri(&self) -> Self::Nlri {
+        self.0.clone()
+    }
+}
+impl<Octs> Debug for Ipv4MplsUnicastNlri<Octs> {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        write!(fmt, "")
+    }
+}
+
 // what about a 'custom' Nlri, like an ADD-PATH one?
 //
 // This needs some more conversion magic and manual typy typy, but seems
@@ -186,11 +212,33 @@ impl AfiSafiNlri for Ipv6UnicastNlri {
 // Maybe it is not that bad of an idea to make the PathId more explicit
 // instead of hiding it behind an Option<>: it is crucial to distinguish
 // between two ADD-PATH'd announcements.
-//
+
+// some more thoughts:
+// if we split up BasicNlri into an AddPath and a non-AddPath version, the
+// latter is basically just a addr::Prefix. 
+
+#[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+pub struct BasicAddpathNlri {
+    pub prefix: Prefix,
+    pub path_id: PathId,
+}
+impl BasicAddpathNlri {
+    pub fn new(prefix: Prefix, path_id: PathId) -> Self {
+        Self{ prefix, path_id }
+    }
+}
+impl From<BasicAddpathNlri> for BasicNlri {
+    fn from(b: BasicAddpathNlri) -> Self {
+        Self::with_path_id(b.prefix, b.path_id)
+    }
+}
+
 #[derive(Clone, Debug, Hash)]
-pub struct Ipv4UnicastAddpathNlri(BasicNlri, PathId);
+pub struct Ipv4UnicastAddpathNlri(BasicAddpathNlri);
 impl AfiSafiNlri for Ipv4UnicastAddpathNlri {
-    type Nlri = BasicNlri;
+    //type Nlri = BasicNlri;
+    type Nlri = BasicAddpathNlri;
     fn nlri(&self) -> Self::Nlri {
         self.0
     }
@@ -203,17 +251,17 @@ impl AfiSafi for Ipv4UnicastAddpathNlri {
 
 impl AddPath for Ipv4UnicastAddpathNlri {
     fn path_id(&self) -> PathId {
-        self.1
+        self.0.path_id
     }
 }
 
 impl From<Ipv4UnicastAddpathNlri> for Ipv4UnicastNlri {
     fn from(n: Ipv4UnicastAddpathNlri) -> Self {
-        Self(n.0)
+        Self(n.0.prefix.into())
     }
 }
-impl From<Ipv4UnicastAddpathNlri> for Nlri {
-    fn from(n: Ipv4UnicastAddpathNlri) -> Nlri {
+impl<Octs> From<Ipv4UnicastAddpathNlri> for Nlri<Octs> {
+    fn from(n: Ipv4UnicastAddpathNlri) -> Nlri<Octs> {
         Nlri::Ipv4Unicast(n.into())
     }
 }
@@ -243,11 +291,11 @@ mod tests {
 
         let b2 = n.basic_nlri();
 
-        let nlri_type: Nlri = n.into();
+        let nlri_type: Nlri<()> = n.into();
         dbg!(&nlri_type);
 
         let mc = Ipv4MulticastNlri(b);
-        let nlri_type2: Nlri = mc.clone().into();
+        let nlri_type2: Nlri<()> = mc.clone().into();
         dbg!(&mc);
 
         dbg!(nlri_type2);
@@ -255,17 +303,20 @@ mod tests {
 
     #[test]
     fn addpath() {
-        let b = BasicNlri::with_path_id(
-            Prefix::from_str("1.2.3.0/24").unwrap(),
-            PathId::from_u32(12)
-            );
-        let n = Ipv4UnicastAddpathNlri(b, PathId::from_u32(13));
+        //let b = BasicNlri::with_path_id(
+        //    Prefix::from_str("1.2.3.0/24").unwrap(),
+        //    PathId::from_u32(12)
+        //    );
+        let n = Ipv4UnicastAddpathNlri(BasicAddpathNlri::new(
+                Prefix::from_str("1.2.3.0/24").unwrap(),
+                PathId::from_u32(13)
+        ));
         dbg!(&n);
-        let nlri: Nlri = n.clone().into();
+        let nlri: Nlri<()> = n.clone().into();
         dbg!(&nlri.afi_safi());
         dbg!(&n.afi());
         dbg!(&n.path_id());
-        dbg!(&b.path_id());
+        dbg!(&n.basic_nlri());
        
         // and this is why we need a distinc BasicNlriWithPathId type:
         //assert_eq!(n.path_id(), b.path_id().unwrap());
