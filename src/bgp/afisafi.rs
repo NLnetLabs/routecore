@@ -254,21 +254,6 @@ where Octs: AsRef<[u8]>,
     }
 }
 
-//impl<O: Octets> Ipv4MplsUnicastNlri<O> {
-//    // TODO clean up, this is just to test trait bounds et al
-//    pub fn parse<'a, P: Octets<Range<'a> = O>>(parser: &mut Parser<'a, P>)
-//        -> Result<Self, ParseError>
-//    {
-//        let (prefix, labels) = MplsNlri::parse_labels_and_prefix(parser, crate::bgp::types::AfiSafi::Ipv4Unicast)?;
-//        let basic = BasicNlri::new(prefix);
-//
-//        Ok(
-//            Self(MplsNlri::new(basic,labels,))
-//        )
-//    }
-//}
-
-//impl<'a, O: Octets, P: 'a + Octets<Range<'a> = O>> AfiSafiParse<'a, O, P> for Ipv4MplsUnicastNlri<O>
 impl<'a, O, P> AfiSafiParse<'a, O, P> for Ipv4MplsUnicastNlri<O>
 where
     O: Octets,
@@ -278,7 +263,6 @@ where
 
     fn parse(parser: &mut Parser<'a, P>)
         -> Result<Self::Output, ParseError>
-           // where P: Octets<Range<'a> = Octs>
     {
         // XXX not sure how correct this all is, just testing trait bounds etc
         let (prefix, labels) = MplsNlri::parse_labels_and_prefix(parser, crate::bgp::types::AfiSafi::Ipv4Unicast)?;
@@ -354,6 +338,21 @@ impl AfiSafi for Ipv4UnicastAddpathNlri {
     fn afi_safi(&self) -> AfiSafiType { AfiSafiType::Ipv4Unicast }
 }
 
+impl<'a, O, P> AfiSafiParse<'a, O, P> for Ipv4UnicastAddpathNlri
+where
+    O: Octets,
+    P: 'a + Octets<Range<'a> = O>
+{
+    type Output = Self;
+    fn parse(parser: &mut Parser<'a, P>) -> Result<Self::Output, ParseError> {
+        let path_id = PathId::from_u32(parser.parse_u32_be()?);
+        let prefix = parse_prefix(parser, Afi::Ipv4)?;
+        Ok(
+            Self(BasicAddpathNlri::new(prefix, path_id))
+        )
+    }
+}
+
 impl AddPath for Ipv4UnicastAddpathNlri {
     fn path_id(&self) -> PathId {
         self.0.path_id
@@ -395,7 +394,6 @@ pub trait AddPath: AfiSafiNlri {
 // .. to turn a specific iterator into a generic one, returning the Nlri enum
 // type.
 //
-//
 
 
 pub struct NlriIter<'a, O, P, ASP> {
@@ -407,7 +405,8 @@ pub struct NlriIter<'a, O, P, ASP> {
 impl<'a, O, P, ASP> NlriIter<'a, O, P, ASP>
 where
     O: Octets,
-    P: Octets<Range<'a> = O>
+    P: Octets<Range<'a> = O>,
+    ASP: AfiSafiParse<'a, O, P>
 {
     pub fn new(parser: Parser<'a, P>) -> Self {
         NlriIter {
@@ -416,7 +415,6 @@ where
             output: std::marker::PhantomData
         }
     }
-
 
     // 
     // Validate the entire parser so we can safely return items from this
@@ -435,6 +433,16 @@ where
     }
 }
 
+impl<'a, O, P> NlriIter<'a, O, P, Ipv4UnicastAddpathNlri>
+where
+    O: Octets,
+    P: Octets<Range<'a> = O>
+{
+    pub fn ipv4_unicast_addpath(parser: Parser<'a, P>) -> Self {
+        NlriIter::<'a, O, P, Ipv4UnicastAddpathNlri>::new(parser)
+    }
+}
+
 impl<'a, O, P> NlriIter<'a, O, P, Ipv4MplsUnicastNlri<O>>
 where
     O: Octets,
@@ -444,6 +452,9 @@ where
         NlriIter::<'a, O, P, Ipv4MplsUnicastNlri<O>>::new(parser)
     }
 }
+
+
+
 
 impl<'a, O, P, ASP: AfiSafiParse<'a, O, P>> Iterator for NlriIter<'a, O, P, ASP>
 where 
@@ -490,10 +501,6 @@ mod tests {
 
     #[test]
     fn addpath() {
-        //let b = BasicNlri::with_path_id(
-        //    Prefix::from_str("1.2.3.0/24").unwrap(),
-        //    PathId::from_u32(12)
-        //    );
         let n = Ipv4UnicastAddpathNlri(BasicAddpathNlri::new(
                 Prefix::from_str("1.2.3.0/24").unwrap(),
                 PathId::from_u32(13)
@@ -568,6 +575,25 @@ mod tests {
 
 
         for n in v4_iter.map(Nlri::<_>::from).chain(mpls_iter.map(Nlri::<_>::from)) {
+            dbg!(&n);
+        }
+    }
+
+    #[test]
+    fn iter_addpath() {
+        let raw = vec![
+            0, 0, 0, 1, 24, 1, 2, 1,
+            0, 0, 0, 2, 24, 1, 2, 2,
+            0, 0, 0, 3, 24, 1, 2, 3,
+            0, 0, 0, 4, 24, 1, 2, 4,
+        ];
+
+        let parser = Parser::from_ref(&raw);
+        let iter = NlriIter::ipv4_unicast_addpath(parser);
+        assert_eq!(iter.count(), 4);
+
+        let iter = NlriIter::ipv4_unicast_addpath(parser);
+        for n in iter.map(|e| e.basic_nlri()) {
             dbg!(&n);
         }
     }
