@@ -388,6 +388,14 @@ pub trait AddPath: AfiSafiNlri {
 // For convenience or whatever other use cases, we might still want to provide
 // an iterator yielding variants of the Nlri enum, probably based on the
 // type-specific ones.
+// Because of the From impls generated in the macro call, we can already do:
+//
+//     NlriIter::ipv4_mplsunicast(parser).map(Nlri::<_>::from)
+//
+// .. to turn a specific iterator into a generic one, returning the Nlri enum
+// type.
+//
+//
 
 
 pub struct NlriIter<'a, O, P, ASP> {
@@ -415,8 +423,18 @@ where
     // iterator, instead of returning Option<Result<Nlri>, ParseError>
     //
     //pub fn validate(&self) { }
-
 }
+
+impl<'a, O, P> NlriIter<'a, O, P, Ipv4UnicastNlri>
+where
+    O: Octets,
+    P: Octets<Range<'a> = O>
+{
+    pub fn ipv4_unicast(parser: Parser<'a, P>) -> Self {
+        NlriIter::<'a, O, P, Ipv4UnicastNlri>::new(parser)
+    }
+}
+
 impl<'a, O, P> NlriIter<'a, O, P, Ipv4MplsUnicastNlri<O>>
 where
     O: Octets,
@@ -440,8 +458,6 @@ where
         Some(ASP::parse(&mut self.parser).unwrap())
     }
 }
-
-
 
 #[cfg(test)]
 mod tests {
@@ -535,5 +551,24 @@ mod tests {
         let parser = Parser::from_ref(&raw);
         let iter = NlriIter::ipv4_mplsunicast(parser);
         assert_eq!(iter.count(), 2);
+    }
+
+    #[test]
+    fn iter_generic() {
+        let mpls_raw = vec![
+            0x38, 0x01, 0xf4, 0x01, 0x0a, 0x00, 0x00, 0x09,
+            0x38, 0x01, 0xf4, 0x01, 0x0a, 0x00, 0x00, 0x0a,
+        ];
+        let parser = Parser::from_ref(&mpls_raw);
+        let mpls_iter = NlriIter::ipv4_mplsunicast(parser);
+
+        let v4_raw = vec![24, 1, 2, 3];
+        let parser = Parser::from_ref(&v4_raw);
+        let v4_iter = NlriIter::ipv4_unicast(parser); 
+
+
+        for n in v4_iter.map(Nlri::<_>::from).chain(mpls_iter.map(Nlri::<_>::from)) {
+            dbg!(&n);
+        }
     }
 }
