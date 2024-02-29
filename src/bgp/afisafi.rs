@@ -109,7 +109,7 @@ pub trait AfiSafiNlri: AfiSafi + Clone + Hash + Debug {
 pub trait AfiSafiParse<'a, O, P>: Sized
     where P: 'a + Octets<Range<'a> = O>
 {
-    type Output;
+    type Output; // XXX do we actually still need this?
     fn parse(
         parser: &mut Parser<'a, P>
     )
@@ -335,6 +335,57 @@ impl<Octs> From<Ipv4UnicastAddpathNlri> for Nlri<Octs> {
     }
 }
 
+
+// As basically every NLRI can carry a PathId, perhaps we should not put it in
+// the BasicNlri / MplsNlri etc, but in a more generic way. The danger of that
+// is, that one can more easily lose it as it's not tied to the Nlri as much.
+// This is an attempt, using v6 unicast, to try this alternative.
+//
+// notes:
+//  - Display impl is not forced as it's not included in the Nlri enum
+//    generation in the enum (yet)
+//  - if we remove PathId from BasicNlri/MplsNlri etc, we can't impl From for
+//    Nlri without losing the PathId. Or, we have to make the Addpath types
+//    also variants of the Nlri enum, but then that must be possible in the
+//    macro.
+//  - 
+
+#[derive(Clone, Debug, Hash)]
+pub struct Ipv6UnicastAddpathNlri(PathId, Prefix);
+impl AfiSafiNlri for Ipv6UnicastAddpathNlri {
+    type Nlri = Prefix;
+    fn nlri(&self) -> Self::Nlri {
+        self.1
+    }
+}
+
+impl AfiSafi for Ipv6UnicastAddpathNlri {
+    fn afi(&self) -> Afi { Afi::Ipv6}
+    fn afi_safi(&self) -> AfiSafiType { AfiSafiType::Ipv6Unicast }
+}
+
+impl<'a, O, P> AfiSafiParse<'a, O, P> for Ipv6UnicastAddpathNlri
+where
+    O: Octets,
+    P: 'a + Octets<Range<'a> = O>
+{
+    type Output = Self;
+    fn parse(parser: &mut Parser<'a, P>) -> Result<Self::Output, ParseError> {
+        let path_id = PathId::from_u32(parser.parse_u32_be()?);
+        let prefix = parse_prefix(parser, Afi::Ipv6)?;
+        Ok(
+            Self(path_id, prefix)
+        )
+    }
+}
+
+impl AddPath for Ipv6UnicastAddpathNlri {
+    fn path_id(&self) -> PathId {
+        self.0
+    }
+}
+
+
 //------------ Iteration ------------------------------------------------------
 
 // Iterating over NLRI likely mostly happens when ingesting UPDATE PDUs, i.e.
@@ -368,13 +419,15 @@ where
     P: Octets<Range<'a> = O>,
     ASP: AfiSafiParse<'a, O, P>
 {
-    pub fn new(parser: Parser<'a, P>) -> Self {
+    fn new(parser: Parser<'a, P>) -> Self {
         NlriIter {
             parser,
             asp: std::marker::PhantomData,
             output: std::marker::PhantomData
         }
     }
+
+    //pub fn for_afisafi(parser, afisafitype) -> Self { }
 
     // 
     // Validate the entire parser so we can safely return items from this
@@ -400,6 +453,16 @@ where
 {
     pub fn ipv4_unicast_addpath(parser: Parser<'a, P>) -> Self {
         NlriIter::<'a, O, P, Ipv4UnicastAddpathNlri>::new(parser)
+    }
+}
+
+impl<'a, O, P> NlriIter<'a, O, P, Ipv6UnicastAddpathNlri>
+where
+    O: Octets,
+    P: Octets<Range<'a> = O>
+{
+    pub fn ipv6_unicast_addpath(parser: Parser<'a, P>) -> Self {
+        NlriIter::<'a, O, P, Ipv6UnicastAddpathNlri>::new(parser)
     }
 }
 
@@ -557,4 +620,22 @@ mod tests {
             dbg!(&n);
         }
     }
+
+    #[test]
+    fn iter_addpath_alternative() {
+        let raw = vec![
+            0, 0, 0, 1, 24, 1, 2, 1,
+            0, 0, 0, 2, 24, 1, 2, 2,
+            0, 0, 0, 3, 24, 1, 2, 3,
+            0, 0, 0, 4, 24, 1, 2, 4,
+        ];
+
+        let parser = Parser::from_ref(&raw);
+        let iter = NlriIter::ipv6_unicast_addpath(parser);
+        //assert_eq!(iter.count(), 4);
+        for n in iter {
+            dbg!(&n);
+        }
+    }
+
 }
