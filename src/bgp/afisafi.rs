@@ -376,6 +376,72 @@ pub trait AddPath: AfiSafiNlri {
     fn path_id(&self) -> PathId;
 }
 
+//------------ Iteration ------------------------------------------------------
+
+// Iterating over NLRI likely mostly happens when ingesting UPDATE PDUs, i.e.
+// one or more (possibly >1000) NLRI of one single AfiSafiType. We therefore
+// want type specific iterators, yielding exact types (e.g. Ipv6UnicastNlri)
+// instead of the Nlri enum, as that would require the user to match/unpack
+// every single item returned by next() (which would/should always be of the
+// same type, anyway).
+//
+// For convenience or whatever other use cases, we might still want to provide
+// an iterator yielding variants of the Nlri enum, probably based on the
+// type-specific ones.
+
+
+pub struct NlriIter<'a, O, P, ASP> {
+    parser: Parser<'a, P>,
+    asp: std::marker::PhantomData<ASP>,
+    output: std::marker::PhantomData<O>,
+}
+
+impl<'a, O, P, ASP> NlriIter<'a, O, P, ASP>
+where
+    O: Octets,
+    P: Octets<Range<'a> = O>
+{
+    pub fn new(parser: Parser<'a, P>) -> Self {
+        NlriIter {
+            parser,
+            asp: std::marker::PhantomData,
+            output: std::marker::PhantomData
+        }
+    }
+
+
+    // 
+    // Validate the entire parser so we can safely return items from this
+    // iterator, instead of returning Option<Result<Nlri>, ParseError>
+    //
+    //pub fn validate(&self) { }
+
+}
+impl<'a, O, P> NlriIter<'a, O, P, Ipv4MplsUnicastNlri<O>>
+where
+    O: Octets,
+    P: Octets<Range<'a> = O>
+{
+    pub fn ipv4_mplsunicast(parser: Parser<'a, P>) -> Self {
+        NlriIter::<'a, O, P, Ipv4MplsUnicastNlri<O>>::new(parser)
+    }
+}
+
+impl<'a, O, P, ASP: AfiSafiParse<'a, O, P>> Iterator for NlriIter<'a, O, P, ASP>
+where 
+    P: Octets<Range<'a> = O>
+{
+    type Item = ASP::Output;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.parser.remaining() == 0 {
+            return None;
+        }
+        Some(ASP::parse(&mut self.parser).unwrap())
+    }
+}
+
+
 
 #[cfg(test)]
 mod tests {
@@ -446,13 +512,28 @@ mod tests {
         let raw = bytes::Bytes::from_static(&[0x38, 0x01, 0xf4, 0x01, 0x0a, 0x00, 0x00, 0x09]);
         let mut parser = Parser::from_ref(&raw);
         let n2 = Ipv4MplsUnicastNlri::parse(&mut parser).unwrap();
-        eprintln!("{}", &n);
+        eprintln!("{}", &n2);
+
         assert_eq!(n, n2);
+
+        let _n: Nlri<_> = n.into();
+        let _n2: Nlri<_> = n2.into();
     }
 
     #[test]
     fn display() {
         let n: Nlri<_> = Ipv4UnicastNlri(Prefix::from_str("1.2.3.0/24").unwrap().into()).into();
         eprintln!("{}", n);
+    }
+
+    #[test]
+    fn iter() {
+        let raw = vec![
+            0x38, 0x01, 0xf4, 0x01, 0x0a, 0x00, 0x00, 0x09,
+            0x38, 0x01, 0xf4, 0x01, 0x0a, 0x00, 0x00, 0x0a,
+        ];
+        let parser = Parser::from_ref(&raw);
+        let iter = NlriIter::ipv4_mplsunicast(parser);
+        assert_eq!(iter.count(), 2);
     }
 }
