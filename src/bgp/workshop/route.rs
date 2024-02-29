@@ -113,7 +113,7 @@ impl<Octs: Octets, N: Clone + Debug + Hash> RouteWorkshop<Octs, N> {
     pub fn get_attr<A: FromAttribute + WorkshopAttribute<N>>(
         &self,
     ) -> Option<A> {
-        self.1.get::<A>()
+        self.1.get::<A>().or_else(|| A::retrieve(&self.1))
     }
 
     pub fn clone_into_route(&self) -> Route<N> {
@@ -162,6 +162,7 @@ impl_workshop!(
     crate::bgp::path_attributes::ClusterIds
     crate::bgp::message::update_builder::StandardCommunitiesList
     crate::bgp::types::Otc
+    crate::bgp::message::update_builder::MpReachNlriBuilder
 );
 
 //------------ WorkshopAttribute ---------------------------------------------
@@ -182,25 +183,25 @@ impl<N: Clone + Hash + Debug> WorkshopAttribute<N> for Vec<Community> {
     fn retrieve(attrs: &PaMap) -> Option<Self> {
         let mut c = attrs
             .get::<StandardCommunitiesList>()
-            .unwrap()
-            .fmap(|c| Community::Standard(*c));
+            .map(|c| c.fmap(|c| Community::Standard(*c)))
+            .unwrap_or_default();
         c.append(
             &mut attrs
                 .get::<ExtendedCommunitiesList>()
-                .unwrap()
-                .fmap(Community::Extended),
+                .map(|c| c.fmap(Community::Extended))
+                .unwrap_or_default()
         );
         c.append(
             &mut attrs
                 .get::<Ipv6ExtendedCommunitiesList>()
-                .unwrap()
-                .fmap(Community::Ipv6Extended),
+                .map(|c| c.fmap(Community::Ipv6Extended))
+                .unwrap_or_default()
         );
         c.append(
             &mut attrs
                 .get::<LargeCommunitiesList>()
-                .unwrap()
-                .fmap(Community::Large),
+                .map(|c| c.fmap(Community::Large))
+                .unwrap_or_default()
         );
 
         Some(c)
@@ -288,7 +289,9 @@ impl<N: Clone + Hash> WorkshopAttribute<N> for crate::bgp::types::NextHop {
         attrs: &mut PaMap,
     ) -> Result<(), ComposeError> {
         if let Some(mut nlri) = attrs.get::<MpReachNlriBuilder>() {
-            nlri.set_nexthop(local_attr)
+            nlri.set_nexthop(local_attr)?;
+            attrs.set(nlri).ok_or(ComposeError::InvalidAttribute)?;
+            Ok(())
         } else {
             Err(ComposeError::InvalidAttribute)
         }
