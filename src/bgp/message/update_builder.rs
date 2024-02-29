@@ -794,7 +794,7 @@ impl MpReachNlriBuilder {
         }
     }
 
-    pub(crate) fn new_for_nlri<T>(nlri: &Nlri<T>) -> Self
+    pub fn new_for_nlri<T>(nlri: &Nlri<T>) -> Self
     where T: Octets,
           Vec<u8>: OctetsFrom<T>
     {
