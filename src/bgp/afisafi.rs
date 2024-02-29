@@ -18,92 +18,77 @@ macro_rules! afisafi {
         $(
             $afi_code:expr => $afi_name:ident [ $( $safi_code:expr => $safi_name:ident$(<$gen:ident>)? ),+ $(,)* ]
         ),+ $(,)*
-    ) => {
-        /*
-         // not generating this so we can use the existing one in types.rs
-         // while this is all WIP
-            #[derive(Debug)]
-            pub enum Afi {
-                $( $afi_name ),+
-            }
-        */
+    ) =>
+{
+    /*
+     // not generating this so we can use the existing one in types.rs
+     // while this is all WIP
+        #[derive(Debug)]
+        pub enum Afi {
+            $( $afi_name ),+
+        }
+    */
 
+paste! {
+    #[derive(Debug)]
+    pub enum AfiSafiType {
+        $( $( [<$afi_name $safi_name>] ,)+)+
+    }
 
-            paste! {
-                #[derive(Debug)]
-                pub enum AfiSafiType {
-                    $(
-                        $( [<$afi_name $safi_name>] ,)+
-                    )+
-                }
+    // this enforces these derives on all *Nlri structs.
+    #[derive(Clone, Debug, Hash)]
+    pub enum Nlri<Octs> {
+    $($(
+        [<$afi_name $safi_name>]([<$afi_name $safi_name Nlri>]$(<$gen>)?)
+    ,)+)+
+    }
 
-                // this enforces these derives on all *Nlri structs.
-                #[derive(Clone, Debug, Hash)]
-                pub enum Nlri<Octs> {
-                    $(
-                        $(
-                            [<$afi_name $safi_name>]([<$afi_name $safi_name Nlri>]$(<$gen>)?)
-                        ,)+
-                    )+
-                }
-
-                impl<Octs> Nlri<Octs> {
-                    pub fn afi_safi(&self) -> AfiSafiType {
-                        match self {
-                    $(
-                        $(
-                            Self::[<$afi_name $safi_name>](..) => AfiSafiType::[<$afi_name $safi_name >]
-                        ,)+
-                    )+
-                        }
-                    }
-                }
-
-                impl fmt::Display for Nlri<()> {
-                    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                        match self {
-                    $(
-                        $(
-                            Self::[<$afi_name $safi_name>](i) => fmt::Display::fmt(i, f)
-                        ,)+
-                    )+
-                        
-                        }
-                    }
-                }
-
-
-
-                $(
-                    $(
-                    // Instead of doing:
-                    //pub struct [<$afi_name $safi_name Nlri>];
-                    //
-                    // .. we rely on the impl below, forcing us to actually
-                    // create the $Afi$SafiNlri struct, along with all its
-                    // basic or exotic data fields and whatnot. We can not do
-                    // that in a generic way in this macro.
-                    impl$(<$gen>)? AfiSafi for [<$afi_name $safi_name Nlri>]$(<$gen>)? { 
-                        fn afi(&self) -> Afi { Afi::$afi_name }
-                        fn afi_safi(&self) -> AfiSafiType {
-                            AfiSafiType::[<$afi_name $safi_name>]
-                        }
-                    }
-
-                    impl<Octs> From<[<$afi_name $safi_name Nlri>]$(<$gen>)?> for Nlri<Octs> {
-                        fn from(n: [<$afi_name $safi_name Nlri>]$(<$gen>)?) -> Self {
-                            Nlri::[<$afi_name $safi_name>](n)
-                        }
-
-                    }
-
-                    )+
-                )+
+    impl<Octs> Nlri<Octs> {
+        pub fn afi_safi(&self) -> AfiSafiType {
+            match self {
+            $($(
+                Self::[<$afi_name $safi_name>](..) => AfiSafiType::[<$afi_name $safi_name >],
+            )+)+
             }
         }
+    }
+
+    impl fmt::Display for Nlri<()> {
+        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            match self {
+            $($(
+                Self::[<$afi_name $safi_name>](i) => fmt::Display::fmt(i, f),
+            )+)+
+            }
+        }
+    }
+
+$($(
+    // Instead of doing:
+    //pub struct [<$afi_name $safi_name Nlri>];
+    //
+    // .. we rely on the impl below, forcing us to actually create the
+    // $Afi$SafiNlri struct, along with all its basic or exotic data fields
+    // and whatnot. We can not do that in a generic way in this macro.
+    impl$(<$gen>)? AfiSafi for [<$afi_name $safi_name Nlri>]$(<$gen>)? { 
+        fn afi(&self) -> Afi { Afi::$afi_name }
+        fn afi_safi(&self) -> AfiSafiType {
+            AfiSafiType::[<$afi_name $safi_name>]
+        }
+    }
+
+    impl<Octs> From<[<$afi_name $safi_name Nlri>]$(<$gen>)?> for Nlri<Octs> {
+        fn from(n: [<$afi_name $safi_name Nlri>]$(<$gen>)?) -> Self {
+            Nlri::[<$afi_name $safi_name>](n)
+        }
+
+    }
+)+)+
+
+}}
 }
 
-
+//------------ Traits ---------------------------------------------------------
 
 /// A type characterized by an AFI and SAFI.
 pub trait AfiSafi {
@@ -146,6 +131,13 @@ impl <T, B>HasBasicNlri for T where T: AfiSafiNlri<Nlri = B>, B: Into<BasicNlri>
     }
 }
 
+/// An Nlri containing a Path Id.
+pub trait AddPath: AfiSafiNlri {
+    fn path_id(&self) -> PathId;
+}
+
+
+//------------ Implementations -----------------------------------------------
 
 //afisafi! {
 //    1 => Ipv4 [ 1 => Unicast, 2 => Multicast, 4 => MplsUnicast ],
@@ -341,11 +333,6 @@ impl<Octs> From<Ipv4UnicastAddpathNlri> for Nlri<Octs> {
     fn from(n: Ipv4UnicastAddpathNlri) -> Nlri<Octs> {
         Nlri::Ipv4Unicast(n.into())
     }
-}
-
-/// An Nlri containing a Path Id.
-pub trait AddPath: AfiSafiNlri {
-    fn path_id(&self) -> PathId;
 }
 
 //------------ Iteration ------------------------------------------------------
