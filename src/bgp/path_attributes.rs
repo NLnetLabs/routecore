@@ -1655,7 +1655,7 @@ pub struct ExtendedCommunitiesList {
 }
 
 impl ExtendedCommunitiesList {
-    fn new(communities: Vec<ExtendedCommunity>)
+    pub fn new(communities: Vec<ExtendedCommunity>)
         -> ExtendedCommunitiesList
     {
         ExtendedCommunitiesList {communities }
@@ -1876,7 +1876,7 @@ pub struct Ipv6ExtendedCommunitiesList {
 }
 
 impl Ipv6ExtendedCommunitiesList {
-    fn new(communities: Vec<Ipv6ExtendedCommunity>)
+    pub fn new(communities: Vec<Ipv6ExtendedCommunity>)
         -> Ipv6ExtendedCommunitiesList
     {
         Ipv6ExtendedCommunitiesList {communities }
