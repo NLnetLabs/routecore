@@ -20,6 +20,8 @@ macro_rules! afisafi {
         ),+ $(,)*
     ) => {
         /*
+         // not generating this so we can use the existing one in types.rs
+         // while this is all WIP
             #[derive(Debug)]
             pub enum Afi {
                 $( $afi_name ),+
@@ -138,12 +140,6 @@ pub trait HasBasicNlri {
     // fn into_routeworkshop() -> RouteWorkshop<_>;
 }
 
-// blanket impl
-//impl <T>HasBasicNlri for T where T: AfiSafiNlri<Nlri = BasicNlri> {
-//    fn basic_nlri(&self) -> BasicNlri {
-//        self.nlri()
-//    }
-//}
 impl <T, B>HasBasicNlri for T where T: AfiSafiNlri<Nlri = B>, B: Into<BasicNlri> {
     fn basic_nlri(&self) -> BasicNlri {
         self.nlri().into()
@@ -167,22 +163,7 @@ afisafi! {
 
 #[derive(Clone, Debug, Hash)]
 pub struct Ipv4MulticastNlri(BasicNlri);
-/*
-impl AfiSafi for BasicNlri {
-    fn afi(&self) -> Afi {
-        match self.is_v4() {
-            true => Afi::Ipv4,
-            false => Afi::Ipv6
-        }
-    }
-    //fn safi(&self) -> u8 {
-    //    panic!() // we don't know!
-    //}
-    //fn afi_safi(&self) -> AfiSafiType {
-    //    panic!() // we still don't know!
-    //}
-}
-*/
+
 impl fmt::Display for Ipv4MulticastNlri {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.0.prefix())
@@ -198,13 +179,6 @@ impl AfiSafiNlri for Ipv4UnicastNlri {
     }
 }
 
-//impl Ipv4UnicastNlri {
-//    pub fn parse<P: Octets>(parser: &mut Parser<P>) -> Result<Self, ParseError> {
-//        Ok(
-//            Self(BasicNlri::new(parse_prefix(parser, Afi::Ipv4)?))
-//        )
-//    }
-//}
 impl<'a, O, P> AfiSafiParse<'a, O, P> for Ipv4UnicastNlri
 where
     O: Octets,
@@ -326,7 +300,6 @@ impl From<BasicAddpathNlri> for BasicNlri {
 #[derive(Clone, Debug, Hash)]
 pub struct Ipv4UnicastAddpathNlri(BasicAddpathNlri);
 impl AfiSafiNlri for Ipv4UnicastAddpathNlri {
-    //type Nlri = BasicNlri;
     type Nlri = BasicAddpathNlri;
     fn nlri(&self) -> Self::Nlri {
         self.0
