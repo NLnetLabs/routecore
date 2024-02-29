@@ -1611,7 +1611,7 @@ fn skip_prefix_addpath<R: Octets>(parser: &mut Parser<'_, R>)
     Ok(parser.advance(prefix_bytes)?)
 }
 
-fn parse_prefix<R: Octets>(parser: &mut Parser<'_, R>, afi: Afi)
+pub(crate) fn parse_prefix<R: Octets>(parser: &mut Parser<'_, R>, afi: Afi)
     -> Result<Prefix, ParseError>
 {
     let prefix_bits = parser.parse_u8()?;
@@ -1938,11 +1938,24 @@ impl<Octs: Octets> MplsNlri<Octs> {
         check_prefix(parser, prefix_bits, afisafi.afi())?;
         Ok(())
     }
+}
 
+impl<T> MplsNlri<T> {
+    pub fn new(basic: BasicNlri, labels: Labels<T>) -> Self {
+        Self { basic, labels }
+    }
     pub fn basic(&self) -> BasicNlri {
         self.basic
     }
 }
+
+impl<T> fmt::Display for MplsNlri<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "MPLS:{}", self.basic().prefix())
+
+    }
+}
+
 
 impl<Octs: Octets> MplsNlri<Octs> {
     pub fn parse<'a, R>(
@@ -2007,7 +2020,7 @@ impl<Octs: Octets> MplsNlri<Octs> {
         )
     }
 
-    fn parse_labels_and_prefix<'a, R>(
+    pub fn parse_labels_and_prefix<'a, R>(
         parser: &mut Parser<'a, R>,
         afisafi: AfiSafi,
     ) -> Result<(Prefix, Labels<Octs>), ParseError>

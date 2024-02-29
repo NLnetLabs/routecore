@@ -1,12 +1,14 @@
 //use crate::typeenum; // from util::macros
 
 use crate::addr::Prefix;
-use crate::bgp::message::nlri::{BasicNlri, PathId};
+use crate::bgp::message::nlri::{BasicNlri, PathId, parse_prefix};
+use crate::util::parser::ParseError;
+use crate::bgp::types::Afi;
 use paste::paste;
 
 use std::fmt;
 
-use octseq::Octets;
+use octseq::{Octets, Parser};
 
 use core::hash::Hash;
 use core::fmt::Debug;
@@ -17,10 +19,12 @@ macro_rules! afisafi {
             $afi_code:expr => $afi_name:ident [ $( $safi_code:expr => $safi_name:ident$(<$gen:ident>)? ),+ $(,)* ]
         ),+ $(,)*
     ) => {
+        /*
             #[derive(Debug)]
             pub enum Afi {
                 $( $afi_name ),+
             }
+        */
 
 
             paste! {
@@ -53,6 +57,20 @@ macro_rules! afisafi {
                     }
                 }
 
+                impl fmt::Display for Nlri<()> {
+                    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                        match self {
+                    $(
+                        $(
+                            Self::[<$afi_name $safi_name>](i) => fmt::Display::fmt(i, f)
+                        ,)+
+                    )+
+                        
+                        }
+                    }
+                }
+
+
 
                 $(
                     $(
@@ -83,6 +101,8 @@ macro_rules! afisafi {
         }
 }
 
+
+
 /// A type characterized by an AFI and SAFI.
 pub trait AfiSafi {
     fn afi(&self) -> Afi;
@@ -94,19 +114,19 @@ pub trait AfiSafiNlri: AfiSafi + Clone + Hash + Debug {
     type Nlri; //: AfiSafi;
     fn nlri(&self) -> Self::Nlri;
 
-    // TODO  adapt these from nlri.rs:
-    //fn parse_nlri<'a, Octs: Octets>(
-    //    parser: &mut Parser<'a, Octs>
-    //) -> Result<Self::Item<Octs::Range<'a>>, ParseError>;
+    // TODO
+    // can/should we merge in AfiSafiParse here?
 
-    //fn skip_nlri<Octs: Octets>(parser: &mut Parser<'_, Octs>)
-    //    -> Result<(), ParseError>;
+}
 
-    //perhaps something like
-    //fn parse(&mut parser) -> Result<Self, ParseError>;
-    //so do not return Self::Item, but Self
-    //though perhaps we need Self::item in the actual parsing logic
-
+pub trait AfiSafiParse<'a, O, P>: Sized
+    where P: 'a + Octets<Range<'a> = O>
+{
+    type Output;
+    fn parse(
+        parser: &mut Parser<'a, P>
+    )
+    -> Result<Self::Output, ParseError>;
 }
 
 
@@ -163,6 +183,11 @@ impl AfiSafi for BasicNlri {
     //}
 }
 */
+impl fmt::Display for Ipv4MulticastNlri {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.0.prefix())
+    }
+}
 
 #[derive(Clone, Debug, Hash)]
 pub struct Ipv4UnicastNlri(BasicNlri);
@@ -173,6 +198,34 @@ impl AfiSafiNlri for Ipv4UnicastNlri {
     }
 }
 
+//impl Ipv4UnicastNlri {
+//    pub fn parse<P: Octets>(parser: &mut Parser<P>) -> Result<Self, ParseError> {
+//        Ok(
+//            Self(BasicNlri::new(parse_prefix(parser, Afi::Ipv4)?))
+//        )
+//    }
+//}
+impl<'a, O, P> AfiSafiParse<'a, O, P> for Ipv4UnicastNlri
+where
+    O: Octets,
+    P: 'a + Octets<Range<'a> = O>
+{
+    type Output = Self;
+    fn parse(parser: &mut Parser<'a, P>) -> Result<Self::Output, ParseError> {
+        Ok(
+            Self(BasicNlri::new(parse_prefix(parser, Afi::Ipv4)?))
+        )
+    }
+}
+
+impl fmt::Display for Ipv4UnicastNlri {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.0.prefix())
+    }
+}
+
+
+
 #[derive(Clone, Debug, Hash)]
 pub struct Ipv6UnicastNlri(BasicNlri);
 impl AfiSafiNlri for Ipv6UnicastNlri {
@@ -182,19 +235,71 @@ impl AfiSafiNlri for Ipv6UnicastNlri {
     }
 }
 
+impl fmt::Display for Ipv6UnicastNlri {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.0.prefix())
+    }
+}
+
 use crate::bgp::message::nlri::MplsNlri;
-#[derive(Clone, Hash)]
+#[derive(Clone, Debug, Hash)]
 pub struct Ipv4MplsUnicastNlri<Octs>(MplsNlri<Octs>);
 
-impl<Octs: Clone + Hash> AfiSafiNlri for Ipv4MplsUnicastNlri<Octs> {
+impl<Octs, Other> PartialEq<Ipv4MplsUnicastNlri<Other>> for Ipv4MplsUnicastNlri<Octs>
+where Octs: AsRef<[u8]>,
+      Other: AsRef<[u8]>
+{
+    fn eq(&self, other: &Ipv4MplsUnicastNlri<Other>) -> bool {
+        self.0 == other.0
+    }
+}
+
+//impl<O: Octets> Ipv4MplsUnicastNlri<O> {
+//    // TODO clean up, this is just to test trait bounds et al
+//    pub fn parse<'a, P: Octets<Range<'a> = O>>(parser: &mut Parser<'a, P>)
+//        -> Result<Self, ParseError>
+//    {
+//        let (prefix, labels) = MplsNlri::parse_labels_and_prefix(parser, crate::bgp::types::AfiSafi::Ipv4Unicast)?;
+//        let basic = BasicNlri::new(prefix);
+//
+//        Ok(
+//            Self(MplsNlri::new(basic,labels,))
+//        )
+//    }
+//}
+
+//impl<'a, O: Octets, P: 'a + Octets<Range<'a> = O>> AfiSafiParse<'a, O, P> for Ipv4MplsUnicastNlri<O>
+impl<'a, O, P> AfiSafiParse<'a, O, P> for Ipv4MplsUnicastNlri<O>
+where
+    O: Octets,
+    P: 'a + Octets<Range<'a> = O>
+{
+    type Output = Self;
+
+    fn parse(parser: &mut Parser<'a, P>)
+        -> Result<Self::Output, ParseError>
+           // where P: Octets<Range<'a> = Octs>
+    {
+        // XXX not sure how correct this all is, just testing trait bounds etc
+        let (prefix, labels) = MplsNlri::parse_labels_and_prefix(parser, crate::bgp::types::AfiSafi::Ipv4Unicast)?;
+        let basic = BasicNlri::new(prefix);
+
+        Ok(
+            Self(MplsNlri::new(basic,labels,))
+        )
+    }
+}
+
+impl<Octs: Clone + Debug + Hash> AfiSafiNlri for Ipv4MplsUnicastNlri<Octs> {
     type Nlri = MplsNlri<Octs>;
     fn nlri(&self) -> Self::Nlri {
         self.0.clone()
     }
 }
-impl<Octs> Debug for Ipv4MplsUnicastNlri<Octs> {
-    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        write!(fmt, "")
+
+impl<T> fmt::Display for Ipv4MplsUnicastNlri<T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.0)
     }
 }
 
@@ -320,5 +425,34 @@ mod tests {
        
         // and this is why we need a distinc BasicNlriWithPathId type:
         //assert_eq!(n.path_id(), b.path_id().unwrap());
+    }
+
+    #[test]
+    fn parse_ipv4unicast() {
+        let raw = vec![24,1,2,3];
+        let mut parser = Parser::from_ref(&raw);
+        let n = Ipv4UnicastNlri::parse(&mut parser).unwrap();
+        //dbg!(&n);
+        eprintln!("{}", &n);
+    }
+    #[test]
+    fn parse_ipv4mplsunicast() {
+        // Label 8000 10.0.0.9/32
+        let raw = vec![0x38, 0x01, 0xf4, 0x01, 0x0a, 0x00, 0x00, 0x09];
+        let mut parser = Parser::from_ref(&raw);
+        let n = Ipv4MplsUnicastNlri::parse(&mut parser).unwrap();
+        eprintln!("{}", &n);
+
+        let raw = bytes::Bytes::from_static(&[0x38, 0x01, 0xf4, 0x01, 0x0a, 0x00, 0x00, 0x09]);
+        let mut parser = Parser::from_ref(&raw);
+        let n2 = Ipv4MplsUnicastNlri::parse(&mut parser).unwrap();
+        eprintln!("{}", &n);
+        assert_eq!(n, n2);
+    }
+
+    #[test]
+    fn display() {
+        let n: Nlri<_> = Ipv4UnicastNlri(Prefix::from_str("1.2.3.0/24").unwrap().into()).into();
+        eprintln!("{}", n);
     }
 }
