@@ -13,6 +13,46 @@ use octseq::{Octets, Parser};
 use core::hash::Hash;
 use core::fmt::Debug;
 
+macro_rules! addpath { ($nlri:ident $(<$gen:ident>)? ) =>
+{
+
+paste! {
+    #[derive(Clone, Debug, Hash)]
+    pub struct [<$nlri AddpathNlri>]$(<$gen>)?(PathId, [<$nlri Nlri>]$(<$gen>)?);
+    impl$(<$gen: Clone + Debug + Hash>)? AfiSafiNlri for [<$nlri AddpathNlri>]$(<$gen>)? {
+        type Nlri = <[<$nlri Nlri>]$(<$gen>)? as AfiSafiNlri>::Nlri;
+        fn nlri(&self) -> Self::Nlri {
+            self.1.nlri()
+        }
+    }
+
+    impl$(<$gen>)? AfiSafi for [<$nlri AddpathNlri>]$(<$gen>)? {
+        fn afi(&self) -> Afi { self.1.afi() }
+        fn afi_safi(&self) -> AfiSafiType { self.1.afi_safi() }
+    }
+
+    impl<'a, Octs, P> AfiSafiParse<'a, Octs, P> for [<$nlri AddpathNlri>]$(<$gen>)?
+    where
+        Octs: Octets,
+        P: 'a + Octets<Range<'a> = Octs>
+    {
+        type Output = Self;
+        fn parse(parser: &mut Parser<'a, P>) -> Result<Self::Output, ParseError> {
+            let path_id = PathId::from_u32(parser.parse_u32_be()?);
+            let inner = [<$nlri Nlri>]::parse(parser)?;
+            Ok(
+                Self(path_id, inner)
+            )
+        }
+    }
+
+    impl$(<$gen: Clone + Debug + Hash>)? AddPath for [<$nlri AddpathNlri>]$(<$gen>)? {
+        fn path_id(&self) -> PathId {
+            self.0
+        }
+    }
+}}
+}
 macro_rules! afisafi {
     (
         $(
@@ -83,6 +123,9 @@ $($(
         }
 
     }
+
+    // Create the Addpath version
+    addpath!([<$afi_name $safi_name>]$(<$gen>)?);
 )+)+
 
 }}
@@ -147,7 +190,7 @@ pub trait AddPath: AfiSafiNlri {
 
 // adding AFI/SAFIs here requires some manual labor:
 // - at the least, add a struct for $Afi$SafiNlri , deriving Clone,Debug,Hash
-// - impl AfiSafiNlri for it to make it useful
+// - impl AfiSafiNlri and AfiSafiParse
 afisafi! {
     1 => Ipv4 [ 1 => Unicast, 2 => Multicast, 4 => MplsUnicast<Octs>],
     2 => Ipv6 [ 1 => Unicast ],
@@ -155,6 +198,25 @@ afisafi! {
 
 #[derive(Clone, Debug, Hash)]
 pub struct Ipv4MulticastNlri(BasicNlri);
+impl AfiSafiNlri for Ipv4MulticastNlri {
+    type Nlri = BasicNlri;
+    fn nlri(&self) -> Self::Nlri {
+        self.0
+    }
+}
+
+impl<'a, O, P> AfiSafiParse<'a, O, P> for Ipv4MulticastNlri
+where
+    O: Octets,
+    P: 'a + Octets<Range<'a> = O>
+{
+    type Output = Self;
+    fn parse(parser: &mut Parser<'a, P>) -> Result<Self::Output, ParseError> {
+        Ok(
+            Self(BasicNlri::new(parse_prefix(parser, Afi::Ipv4)?))
+        )
+    }
+}
 
 impl fmt::Display for Ipv4MulticastNlri {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -195,9 +257,22 @@ impl fmt::Display for Ipv4UnicastNlri {
 #[derive(Clone, Debug, Hash)]
 pub struct Ipv6UnicastNlri(BasicNlri);
 impl AfiSafiNlri for Ipv6UnicastNlri {
-    type Nlri = BasicNlri;
+    type Nlri = Prefix;
     fn nlri(&self) -> Self::Nlri {
-        self.0
+        self.0.prefix()
+    }
+}
+
+impl<'a, O, P> AfiSafiParse<'a, O, P> for Ipv6UnicastNlri
+where
+    O: Octets,
+    P: 'a + Octets<Range<'a> = O>
+{
+    type Output = Self;
+    fn parse(parser: &mut Parser<'a, P>) -> Result<Self::Output, ParseError> {
+        Ok(
+            Self(BasicNlri::new(parse_prefix(parser, Afi::Ipv6)?))
+        )
     }
 }
 
@@ -289,6 +364,7 @@ impl From<BasicAddpathNlri> for BasicNlri {
     }
 }
 
+/*
 #[derive(Clone, Debug, Hash)]
 pub struct Ipv4UnicastAddpathNlri(BasicAddpathNlri);
 impl AfiSafiNlri for Ipv4UnicastAddpathNlri {
@@ -334,6 +410,7 @@ impl<Octs> From<Ipv4UnicastAddpathNlri> for Nlri<Octs> {
         Nlri::Ipv4Unicast(n.into())
     }
 }
+*/
 
 
 // As basically every NLRI can carry a PathId, perhaps we should not put it in
@@ -348,8 +425,11 @@ impl<Octs> From<Ipv4UnicastAddpathNlri> for Nlri<Octs> {
 //    Nlri without losing the PathId. Or, we have to make the Addpath types
 //    also variants of the Nlri enum, but then that must be possible in the
 //    macro.
-//  - 
+//  - the AfiSafiParse impl is not forced in any way by the macro currently.
+//    update: if we call addpath! from the macro, it is, as is AfiSafiNlri
+//  - we still miss the enforcement of From<AddpathNlri> for Nlri though
 
+/* works
 #[derive(Clone, Debug, Hash)]
 pub struct Ipv6UnicastAddpathNlri(PathId, Prefix);
 impl AfiSafiNlri for Ipv6UnicastAddpathNlri {
@@ -358,10 +438,20 @@ impl AfiSafiNlri for Ipv6UnicastAddpathNlri {
         self.1
     }
 }
+*/
+/*
+#[derive(Clone, Debug, Hash)]
+pub struct Ipv6UnicastAddpathNlri(PathId, Ipv6UnicastNlri);
+impl AfiSafiNlri for Ipv6UnicastAddpathNlri {
+    type Nlri = <Ipv6UnicastNlri as AfiSafiNlri>::Nlri;
+    fn nlri(&self) -> Self::Nlri {
+        self.1.nlri()
+    }
+}
 
 impl AfiSafi for Ipv6UnicastAddpathNlri {
-    fn afi(&self) -> Afi { Afi::Ipv6}
-    fn afi_safi(&self) -> AfiSafiType { AfiSafiType::Ipv6Unicast }
+    fn afi(&self) -> Afi { self.1.afi() }
+    fn afi_safi(&self) -> AfiSafiType { self.1.afi_safi() }
 }
 
 impl<'a, O, P> AfiSafiParse<'a, O, P> for Ipv6UnicastAddpathNlri
@@ -372,9 +462,9 @@ where
     type Output = Self;
     fn parse(parser: &mut Parser<'a, P>) -> Result<Self::Output, ParseError> {
         let path_id = PathId::from_u32(parser.parse_u32_be()?);
-        let prefix = parse_prefix(parser, Afi::Ipv6)?;
+        let inner = Ipv6UnicastNlri::parse(parser)?;
         Ok(
-            Self(path_id, prefix)
+            Self(path_id, inner)
         )
     }
 }
@@ -384,7 +474,11 @@ impl AddPath for Ipv6UnicastAddpathNlri {
         self.0
     }
 }
+*/
 
+
+//addpath!(Ipv4MplsUnicast<O>);
+//addpath!(Ipv6Unicast);
 
 //------------ Iteration ------------------------------------------------------
 
@@ -524,16 +618,20 @@ mod tests {
 
     #[test]
     fn addpath() {
-        let n = Ipv4UnicastAddpathNlri(BasicAddpathNlri::new(
-                Prefix::from_str("1.2.3.0/24").unwrap(),
-                PathId::from_u32(13)
+        let n = Ipv4UnicastAddpathNlri(
+            PathId::from_u32(13),
+            Ipv4UnicastNlri(
+                Prefix::from_str("1.2.3.0/24").unwrap().into()
         ));
         dbg!(&n);
+        // XXX From<AddPathNlri> for Nlri is missing
+        /*
         let nlri: Nlri<()> = n.clone().into();
         dbg!(&nlri.afi_safi());
         dbg!(&n.afi());
         dbg!(&n.path_id());
         dbg!(&n.basic_nlri());
+        */
        
         // and this is why we need a distinc BasicNlriWithPathId type:
         //assert_eq!(n.path_id(), b.path_id().unwrap());
