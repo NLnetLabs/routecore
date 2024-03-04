@@ -587,6 +587,16 @@ where
     }
 }
 
+impl<'a, O, P, ASP: AfiSafiParse<'a, O, P>> NlriIter<'a, O, P, ASP>
+where
+    O: Octets,
+    P: Octets<Range<'a> = O>
+{
+    pub fn next_with<T, F: FnOnce(<Self as Iterator>::Item) -> T>(&mut self, fmap: F) -> Option<T> {
+        self.next().map(fmap)
+    }
+}
+
 #[cfg(test)]
 mod tests {
 
@@ -734,6 +744,27 @@ mod tests {
         for n in iter {
             dbg!(&n);
         }
+    }
+
+    #[test]
+    fn iter_with() {
+        let raw = vec![
+            0, 0, 0, 1, 24, 1, 2, 1,
+            0, 0, 0, 2, 24, 1, 2, 2,
+            0, 0, 0, 3, 24, 1, 2, 3,
+            0, 0, 0, 4, 24, 1, 2, 4,
+        ];
+
+        let parser = Parser::from_ref(&raw);
+        let mut iter = NlriIter::ipv6_unicast_addpath(parser);
+        //while let Some(x) = iter.next_with(|e| format!("IPv6!!!: {:?}", e).to_string()) {
+        //    dbg!(x);
+        //}
+
+        for x in  iter.map(|e| format!("IPv6!!!: {:?}", e).to_string()) {
+            dbg!(x);
+        }
+
     }
 
 }
