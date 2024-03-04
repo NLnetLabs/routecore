@@ -1,5 +1,17 @@
 //use crate::typeenum; // from util::macros
 
+// notes:
+//  - Display impl is not forced as it's not included in the Nlri enum
+//    generation in the enum (yet)
+//  - if we remove PathId from BasicNlri/MplsNlri etc, we can't impl From for
+//    Nlri without losing the PathId. Or, we have to make the Addpath types
+//    also variants of the Nlri enum, but then that must be possible in the
+//    macro.
+//  - the AfiSafiParse impl is not forced in any way by the macro currently.
+//    update: if we call addpath! from the macro, it is, as is AfiSafiNlri
+//  - we still miss the enforcement of From<AddpathNlri> for Nlri though
+
+
 use crate::addr::Prefix;
 use crate::bgp::message::nlri::{PathId, parse_prefix};
 use crate::util::parser::ParseError;
@@ -331,142 +343,6 @@ impl<T> fmt::Display for Ipv4MplsUnicastNlri<T> {
         write!(f, "{}", self.0)
     }
 }
-
-// what about a 'custom' Nlri, like an ADD-PATH one?
-//
-// This needs some more conversion magic and manual typy typy, but seems
-// doable so far.
-// The main benefit would be in the (yet to be added) fn parse in the
-// AfiSafiNlri trait.
-// What might be confusing in this particular case though, is that an
-// Ipv4UnicastNlri can hold a BasicNlri with a PathId, and likewise, a
-// *AddpathNlri can hold a BasicNlri _without_ a PathId.
-// So this is really only useful in the FixedNlriIter scenario.
-// Or we should introduce a BasicAddpathNlri type or somesuch.
-// Maybe it is not that bad of an idea to make the PathId more explicit
-// instead of hiding it behind an Option<>: it is crucial to distinguish
-// between two ADD-PATH'd announcements.
-
-// some more thoughts:
-// if we split up BasicNlri into an AddPath and a non-AddPath version, the
-// latter is basically just a addr::Prefix. 
-
-
-/*
-#[derive(Clone, Debug, Hash)]
-pub struct Ipv4UnicastAddpathNlri(BasicAddpathNlri);
-impl AfiSafiNlri for Ipv4UnicastAddpathNlri {
-    type Nlri = BasicAddpathNlri;
-    fn nlri(&self) -> Self::Nlri {
-        self.0
-    }
-}
-
-impl AfiSafi for Ipv4UnicastAddpathNlri {
-    fn afi(&self) -> Afi { Afi::Ipv4}
-    fn afi_safi(&self) -> AfiSafiType { AfiSafiType::Ipv4Unicast }
-}
-
-impl<'a, O, P> AfiSafiParse<'a, O, P> for Ipv4UnicastAddpathNlri
-where
-    O: Octets,
-    P: 'a + Octets<Range<'a> = O>
-{
-    type Output = Self;
-    fn parse(parser: &mut Parser<'a, P>) -> Result<Self::Output, ParseError> {
-        let path_id = PathId::from_u32(parser.parse_u32_be()?);
-        let prefix = parse_prefix(parser, Afi::Ipv4)?;
-        Ok(
-            Self(BasicAddpathNlri::new(prefix, path_id))
-        )
-    }
-}
-
-impl AddPath for Ipv4UnicastAddpathNlri {
-    fn path_id(&self) -> PathId {
-        self.0.path_id
-    }
-}
-
-impl From<Ipv4UnicastAddpathNlri> for Ipv4UnicastNlri {
-    fn from(n: Ipv4UnicastAddpathNlri) -> Self {
-        Self(n.0.prefix.into())
-    }
-}
-impl<Octs> From<Ipv4UnicastAddpathNlri> for Nlri<Octs> {
-    fn from(n: Ipv4UnicastAddpathNlri) -> Nlri<Octs> {
-        Nlri::Ipv4Unicast(n.into())
-    }
-}
-*/
-
-
-// As basically every NLRI can carry a PathId, perhaps we should not put it in
-// the BasicNlri / MplsNlri etc, but in a more generic way. The danger of that
-// is, that one can more easily lose it as it's not tied to the Nlri as much.
-// This is an attempt, using v6 unicast, to try this alternative.
-//
-// notes:
-//  - Display impl is not forced as it's not included in the Nlri enum
-//    generation in the enum (yet)
-//  - if we remove PathId from BasicNlri/MplsNlri etc, we can't impl From for
-//    Nlri without losing the PathId. Or, we have to make the Addpath types
-//    also variants of the Nlri enum, but then that must be possible in the
-//    macro.
-//  - the AfiSafiParse impl is not forced in any way by the macro currently.
-//    update: if we call addpath! from the macro, it is, as is AfiSafiNlri
-//  - we still miss the enforcement of From<AddpathNlri> for Nlri though
-
-/* works
-#[derive(Clone, Debug, Hash)]
-pub struct Ipv6UnicastAddpathNlri(PathId, Prefix);
-impl AfiSafiNlri for Ipv6UnicastAddpathNlri {
-    type Nlri = Prefix;
-    fn nlri(&self) -> Self::Nlri {
-        self.1
-    }
-}
-*/
-/*
-#[derive(Clone, Debug, Hash)]
-pub struct Ipv6UnicastAddpathNlri(PathId, Ipv6UnicastNlri);
-impl AfiSafiNlri for Ipv6UnicastAddpathNlri {
-    type Nlri = <Ipv6UnicastNlri as AfiSafiNlri>::Nlri;
-    fn nlri(&self) -> Self::Nlri {
-        self.1.nlri()
-    }
-}
-
-impl AfiSafi for Ipv6UnicastAddpathNlri {
-    fn afi(&self) -> Afi { self.1.afi() }
-    fn afi_safi(&self) -> AfiSafiType { self.1.afi_safi() }
-}
-
-impl<'a, O, P> AfiSafiParse<'a, O, P> for Ipv6UnicastAddpathNlri
-where
-    O: Octets,
-    P: 'a + Octets<Range<'a> = O>
-{
-    type Output = Self;
-    fn parse(parser: &mut Parser<'a, P>) -> Result<Self::Output, ParseError> {
-        let path_id = PathId::from_u32(parser.parse_u32_be()?);
-        let inner = Ipv6UnicastNlri::parse(parser)?;
-        Ok(
-            Self(path_id, inner)
-        )
-    }
-}
-
-impl AddPath for Ipv6UnicastAddpathNlri {
-    fn path_id(&self) -> PathId {
-        self.0
-    }
-}
-*/
-
-
-//addpath!(Ipv4MplsUnicast<O>);
-//addpath!(Ipv6Unicast);
 
 //------------ Iteration ------------------------------------------------------
 
