@@ -210,8 +210,28 @@ pub trait AddPath: AfiSafiNlri {
 // - at the least, add a struct for $Afi$SafiNlri , deriving Clone,Debug,Hash
 // - impl AfiSafiNlri and AfiSafiParse
 afisafi! {
-    1 => Ipv4 [ 1 => Unicast, 2 => Multicast, 4 => MplsUnicast<Octs>],
-    2 => Ipv6 [ 1 => Unicast ],
+    1 => Ipv4 [
+        1 => Unicast,
+        2 => Multicast,
+        4 => MplsUnicast<Octs>,
+        //128 => MplsVpnUnicast<Octs>,
+        //132 => RouteTarget<Octs>,
+        //133 => FlowSpec<Octs>,
+        //134 => FlowSpecVpn<Octs>,
+
+    ],
+    2 => Ipv6 [
+        1 => Unicast,
+        //2 => Multicast,
+        //4 => MplsUnicast<Octs>,
+        //128 => MplsVpnUnicast<Octs>,
+        //133 => FlowSpec<Octs>,
+        //134 => FlowSpecVpn<Octs>,
+    ],
+    //25 => L2Vpn [
+    //    65 => Vpls,
+    //    70 => Evpn,
+    //]
 }
 
 #[derive(Clone, Debug, Hash)]
