@@ -1,8 +1,11 @@
-//use crate::typeenum; // from util::macros
+use crate::typeenum; // from util::macros
+
+#[cfg(feature = "serde")]
+use serde::{Serialize, Deserialize};
 
 // notes:
-//  - Display impl is not forced as it's not included in the Nlri enum
-//    generation in the enum (yet)
+//  - Display impl is not forced on Addpath structs as it's not included in
+//  the Nlri enum generation in the enum (yet)
 //  - if we remove PathId from BasicNlri/MplsNlri etc, we can't impl From for
 //    Nlri without losing the PathId. Or, we have to make the Addpath types
 //    also variants of the Nlri enum, but then that must be possible in the
@@ -76,14 +79,13 @@ macro_rules! afisafi {
         ),+ $(,)*
     ) =>
 {
-    /*
-     // not generating this so we can use the existing one in types.rs
-     // while this is all WIP
-        #[derive(Debug)]
-        pub enum Afi {
-            $( $afi_name ),+
-        }
-    */
+    typeenum!(
+        /// AFI as used in BGP OPEN and UPDATE messages.
+        #[cfg_attr(feature = "serde", serde(from = "u16"))]
+        AfiTODORenameMe, u16,
+        {
+            $($afi_code => $afi_name),+
+        });
 
 paste! {
     #[derive(Debug)]
