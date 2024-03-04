@@ -1,7 +1,7 @@
 //use crate::typeenum; // from util::macros
 
 use crate::addr::Prefix;
-use crate::bgp::message::nlri::{BasicNlri, PathId, parse_prefix};
+use crate::bgp::message::nlri::{PathId, parse_prefix};
 use crate::util::parser::ParseError;
 use crate::bgp::types::Afi;
 use paste::paste;
@@ -53,6 +53,10 @@ paste! {
     }
 }}
 }
+
+
+// For Nlri generic over anything, use <Octs> literally. Using another name,
+// e.g. <O>, does not work. This is a limitation of the macro.
 macro_rules! afisafi {
     (
         $(
@@ -160,16 +164,16 @@ pub trait AfiSafiParse<'a, O, P>: Sized
 }
 
 
-/// A type containing a BasicNlri.
-pub trait HasBasicNlri {
-    fn basic_nlri(&self) -> BasicNlri;
+/// A type containing nothing more than a (v4 or v6) Prefix.
+pub trait IsPrefix {
+    fn prefix(&self) -> Prefix;
     
     // TODO
     // fn into_routeworkshop() -> RouteWorkshop<_>;
 }
 
-impl <T, B>HasBasicNlri for T where T: AfiSafiNlri<Nlri = B>, B: Into<BasicNlri> {
-    fn basic_nlri(&self) -> BasicNlri {
+impl <T, B>IsPrefix for T where T: AfiSafiNlri<Nlri = B>, B: Into<Prefix> {
+    fn prefix(&self) -> Prefix {
         self.nlri().into()
     }
 }
@@ -197,9 +201,9 @@ afisafi! {
 }
 
 #[derive(Clone, Debug, Hash)]
-pub struct Ipv4MulticastNlri(BasicNlri);
+pub struct Ipv4MulticastNlri(Prefix);
 impl AfiSafiNlri for Ipv4MulticastNlri {
-    type Nlri = BasicNlri;
+    type Nlri = Prefix;
     fn nlri(&self) -> Self::Nlri {
         self.0
     }
@@ -213,21 +217,21 @@ where
     type Output = Self;
     fn parse(parser: &mut Parser<'a, P>) -> Result<Self::Output, ParseError> {
         Ok(
-            Self(BasicNlri::new(parse_prefix(parser, Afi::Ipv4)?))
+            Self(parse_prefix(parser, Afi::Ipv4)?)
         )
     }
 }
 
 impl fmt::Display for Ipv4MulticastNlri {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.0.prefix())
+        write!(f, "{}", self.0)
     }
 }
 
 #[derive(Clone, Debug, Hash)]
-pub struct Ipv4UnicastNlri(BasicNlri);
+pub struct Ipv4UnicastNlri(Prefix);
 impl AfiSafiNlri for Ipv4UnicastNlri {
-    type Nlri = BasicNlri;
+    type Nlri = Prefix;
     fn nlri(&self) -> Self::Nlri {
         self.0
     }
@@ -241,25 +245,25 @@ where
     type Output = Self;
     fn parse(parser: &mut Parser<'a, P>) -> Result<Self::Output, ParseError> {
         Ok(
-            Self(BasicNlri::new(parse_prefix(parser, Afi::Ipv4)?))
+            Self(parse_prefix(parser, Afi::Ipv4)?)
         )
     }
 }
 
 impl fmt::Display for Ipv4UnicastNlri {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.0.prefix())
+        write!(f, "{}", self.0)
     }
 }
 
 
 
 #[derive(Clone, Debug, Hash)]
-pub struct Ipv6UnicastNlri(BasicNlri);
+pub struct Ipv6UnicastNlri(Prefix);
 impl AfiSafiNlri for Ipv6UnicastNlri {
     type Nlri = Prefix;
     fn nlri(&self) -> Self::Nlri {
-        self.0.prefix()
+        self.0
     }
 }
 
@@ -271,14 +275,14 @@ where
     type Output = Self;
     fn parse(parser: &mut Parser<'a, P>) -> Result<Self::Output, ParseError> {
         Ok(
-            Self(BasicNlri::new(parse_prefix(parser, Afi::Ipv6)?))
+            Self(parse_prefix(parser, Afi::Ipv6)?)
         )
     }
 }
 
 impl fmt::Display for Ipv6UnicastNlri {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.0.prefix())
+        write!(f, "{}", self.0)
     }
 }
 
@@ -307,7 +311,7 @@ where
     {
         // XXX not sure how correct this all is, just testing trait bounds etc
         let (prefix, labels) = MplsNlri::parse_labels_and_prefix(parser, crate::bgp::types::AfiSafi::Ipv4Unicast)?;
-        let basic = BasicNlri::new(prefix);
+        let basic = crate::bgp::message::nlri::BasicNlri::new(prefix);
 
         Ok(
             Self(MplsNlri::new(basic,labels,))
@@ -347,22 +351,6 @@ impl<T> fmt::Display for Ipv4MplsUnicastNlri<T> {
 // if we split up BasicNlri into an AddPath and a non-AddPath version, the
 // latter is basically just a addr::Prefix. 
 
-#[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize))]
-pub struct BasicAddpathNlri {
-    pub prefix: Prefix,
-    pub path_id: PathId,
-}
-impl BasicAddpathNlri {
-    pub fn new(prefix: Prefix, path_id: PathId) -> Self {
-        Self{ prefix, path_id }
-    }
-}
-impl From<BasicAddpathNlri> for BasicNlri {
-    fn from(b: BasicAddpathNlri) -> Self {
-        Self::with_path_id(b.prefix, b.path_id)
-    }
-}
 
 /*
 #[derive(Clone, Debug, Hash)]
@@ -601,25 +589,24 @@ where
 mod tests {
 
     use super::*;
-    use crate::bgp::message::nlri::BasicNlri;
     use crate::addr::Prefix;
     use std::str::FromStr;
 
     #[test]
     fn test1() {
-        let b = BasicNlri::new(Prefix::from_str("1.2.3.0/24").unwrap());
-        let n = Ipv4UnicastNlri(b);
+        let p = Prefix::from_str("1.2.3.0/24").unwrap();
+        let n = Ipv4UnicastNlri(p);
         dbg!(&n);
 
         let n2 = n.clone().nlri();
         dbg!(n2);
 
-        let b2 = n.basic_nlri();
+        let b2 = n.prefix();
 
         let nlri_type: Nlri<()> = n.into();
         dbg!(&nlri_type);
 
-        let mc = Ipv4MulticastNlri(b);
+        let mc = Ipv4MulticastNlri(p);
         let nlri_type2: Nlri<()> = mc.clone().into();
         dbg!(&mc);
 
@@ -724,7 +711,7 @@ mod tests {
         assert_eq!(iter.count(), 4);
 
         let iter = NlriIter::ipv4_unicast_addpath(parser);
-        for n in iter.map(|e| e.basic_nlri()) {
+        for n in iter.map(|e| e.prefix()) {
             dbg!(&n);
         }
     }
