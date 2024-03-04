@@ -234,36 +234,15 @@ afisafi! {
     //]
 }
 
-#[derive(Clone, Debug, Hash)]
-pub struct Ipv4MulticastNlri(Prefix);
-impl AfiSafiNlri for Ipv4MulticastNlri {
-    type Nlri = Prefix;
-    fn nlri(&self) -> Self::Nlri {
-        self.0
-    }
-}
 
-impl<'a, O, P> AfiSafiParse<'a, O, P> for Ipv4MulticastNlri
-where
-    O: Octets,
-    P: 'a + Octets<Range<'a> = O>
-{
-    type Output = Self;
-    fn parse(parser: &mut Parser<'a, P>) -> Result<Self::Output, ParseError> {
-        Ok(
-            Self(parse_prefix(parser, Afi::Ipv4)?)
-        )
-    }
-}
+//------------ Ipv4 ----------------------------------------------------------
 
-impl fmt::Display for Ipv4MulticastNlri {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
 
-#[derive(Clone, Debug, Hash)]
+// --- Ipv4Unicast
+
+#[derive(Clone, Debug, Hash, PartialEq)]
 pub struct Ipv4UnicastNlri(Prefix);
+
 impl AfiSafiNlri for Ipv4UnicastNlri {
     type Nlri = Prefix;
     fn nlri(&self) -> Self::Nlri {
@@ -290,9 +269,42 @@ impl fmt::Display for Ipv4UnicastNlri {
     }
 }
 
+//--- Ipv4Multicast
 
+#[derive(Clone, Debug, Hash, PartialEq)]
+pub struct Ipv4MulticastNlri(Prefix);
 
-#[derive(Clone, Debug, Hash)]
+impl AfiSafiNlri for Ipv4MulticastNlri {
+    type Nlri = Prefix;
+    fn nlri(&self) -> Self::Nlri {
+        self.0
+    }
+}
+
+impl<'a, O, P> AfiSafiParse<'a, O, P> for Ipv4MulticastNlri
+where
+    O: Octets,
+    P: 'a + Octets<Range<'a> = O>
+{
+    type Output = Self;
+    fn parse(parser: &mut Parser<'a, P>) -> Result<Self::Output, ParseError> {
+        Ok(
+            Self(parse_prefix(parser, Afi::Ipv4)?)
+        )
+    }
+}
+
+impl fmt::Display for Ipv4MulticastNlri {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+//------------ Ipv6 ----------------------------------------------------------
+
+//--- Ipv6Unicast
+
+#[derive(Clone, Debug, Hash, PartialEq)]
 pub struct Ipv6UnicastNlri(Prefix);
 impl AfiSafiNlri for Ipv6UnicastNlri {
     type Nlri = Prefix;
@@ -320,16 +332,16 @@ impl fmt::Display for Ipv6UnicastNlri {
     }
 }
 
+
+
 use crate::bgp::message::nlri::MplsNlri;
 #[derive(Clone, Debug, Hash)]
 pub struct Ipv4MplsUnicastNlri<Octs>(MplsNlri<Octs>);
 
-impl<Octs, Other> PartialEq<Ipv4MplsUnicastNlri<Other>> for Ipv4MplsUnicastNlri<Octs>
-where Octs: AsRef<[u8]>,
-      Other: AsRef<[u8]>
-{
-    fn eq(&self, other: &Ipv4MplsUnicastNlri<Other>) -> bool {
-        self.0 == other.0
+impl<Octs: Clone + Debug + Hash> AfiSafiNlri for Ipv4MplsUnicastNlri<Octs> {
+    type Nlri = MplsNlri<Octs>;
+    fn nlri(&self) -> Self::Nlri {
+        self.0.clone()
     }
 }
 
@@ -353,10 +365,12 @@ where
     }
 }
 
-impl<Octs: Clone + Debug + Hash> AfiSafiNlri for Ipv4MplsUnicastNlri<Octs> {
-    type Nlri = MplsNlri<Octs>;
-    fn nlri(&self) -> Self::Nlri {
-        self.0.clone()
+impl<Octs, Other> PartialEq<Ipv4MplsUnicastNlri<Other>> for Ipv4MplsUnicastNlri<Octs>
+where Octs: AsRef<[u8]>,
+      Other: AsRef<[u8]>
+{
+    fn eq(&self, other: &Ipv4MplsUnicastNlri<Other>) -> bool {
+        self.0 == other.0
     }
 }
 
@@ -385,6 +399,8 @@ impl<T> fmt::Display for Ipv4MplsUnicastNlri<T> {
 // .. to turn a specific iterator into a generic one, returning the Nlri enum
 // type.
 //
+// Seems that creating the convenience constructors involves a lot of typy
+// typy which could also become part of the afisafi! macro.
 
 
 pub struct NlriIter<'a, O, P, ASP> {
