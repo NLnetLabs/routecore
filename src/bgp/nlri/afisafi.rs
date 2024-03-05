@@ -158,6 +158,27 @@ $($(
         }
     }
 
+
+    impl<'a, Octs, P> NlriIter<'a, Octs, P, [<$afi_name $safi_name Nlri>]$(<$gen>)?>
+    where
+        Octs: Octets,
+        P: Octets<Range<'a> = Octs>
+    {
+        pub fn [<$afi_name:lower _ $safi_name:lower>](parser: Parser<'a, P>) -> Self {
+            NlriIter::<'a, Octs, P, [<$afi_name $safi_name Nlri>]$(<$gen>)?>::new(parser)
+        }
+    }
+
+    impl<'a, Octs, P> NlriIter<'a, Octs, P, [<$afi_name $safi_name AddpathNlri>]$(<$gen>)?>
+    where
+        Octs: Octets,
+        P: Octets<Range<'a> = Octs>
+    {
+        pub fn [<$afi_name:lower _ $safi_name:lower _ addpath>](parser: Parser<'a, P>) -> Self {
+            NlriIter::<'a, Octs, P, [<$afi_name $safi_name AddpathNlri>]$(<$gen>)?>::new(parser)
+        }
+    }
+
     // Create the Addpath version
     addpath!([<$afi_name $safi_name>]$(<$gen>)?);
 )+)+
@@ -334,7 +355,6 @@ where
     fn parse(parser: &mut Parser<'a, P>)
         -> Result<Self::Output, ParseError>
     {
-        // XXX not sure how correct this all is, just testing trait bounds etc
         let (prefix, labels) = MplsNlri::parse_labels_and_prefix(parser, AfiTODORenameMe::Ipv4)?;
 
         Ok(
@@ -433,57 +453,25 @@ where
             output: std::marker::PhantomData
         }
     }
+}
 
-    //pub fn for_afisafi(parser, afisafitype) -> Self { }
+
+pub fn iter_for_afi_safi<'a, O, P, ASP>(
+    parser: Parser<'a, P>,
+) -> NlriIter<'a, O, P, ASP>
+where
+    O: Octets,
+    P: Octets<Range<'a> = O>,
+    ASP: AfiSafiParse<'a, O, P>
+{
+    NlriIter::<'a, O, P, ASP>::new(parser)
+}
 
     // 
     // Validate the entire parser so we can safely return items from this
     // iterator, instead of returning Option<Result<Nlri>, ParseError>
     //
     //pub fn validate(&self) { }
-}
-
-impl<'a, O, P> NlriIter<'a, O, P, Ipv4UnicastNlri>
-where
-    O: Octets,
-    P: Octets<Range<'a> = O>
-{
-    pub fn ipv4_unicast(parser: Parser<'a, P>) -> Self {
-        NlriIter::<'a, O, P, Ipv4UnicastNlri>::new(parser)
-    }
-}
-
-impl<'a, O, P> NlriIter<'a, O, P, Ipv4UnicastAddpathNlri>
-where
-    O: Octets,
-    P: Octets<Range<'a> = O>
-{
-    pub fn ipv4_unicast_addpath(parser: Parser<'a, P>) -> Self {
-        NlriIter::<'a, O, P, Ipv4UnicastAddpathNlri>::new(parser)
-    }
-}
-
-impl<'a, O, P> NlriIter<'a, O, P, Ipv6UnicastAddpathNlri>
-where
-    O: Octets,
-    P: Octets<Range<'a> = O>
-{
-    pub fn ipv6_unicast_addpath(parser: Parser<'a, P>) -> Self {
-        NlriIter::<'a, O, P, Ipv6UnicastAddpathNlri>::new(parser)
-    }
-}
-
-impl<'a, O, P> NlriIter<'a, O, P, Ipv4MplsUnicastNlri<O>>
-where
-    O: Octets,
-    P: Octets<Range<'a> = O>
-{
-    pub fn ipv4_mplsunicast(parser: Parser<'a, P>) -> Self {
-        NlriIter::<'a, O, P, Ipv4MplsUnicastNlri<O>>::new(parser)
-    }
-}
-
-
 
 
 impl<'a, O, P, ASP: AfiSafiParse<'a, O, P>> Iterator for NlriIter<'a, O, P, ASP>
