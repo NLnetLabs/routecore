@@ -61,9 +61,16 @@ paste! {
         }
     }
 
-    impl$(<$gen: Clone + Debug + Hash>)? AddPath for [<$nlri AddpathNlri>]$(<$gen>)? {
+    impl$(<$gen: Clone + Debug + Hash>)? Addpath for [<$nlri AddpathNlri>]$(<$gen>)? {
         fn path_id(&self) -> PathId {
             self.0
+        }
+    }
+
+    impl$(<$gen>)? fmt::Display for [<$nlri AddpathNlri>]$(<$gen>)? {
+        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            write!(f, "[{}] ", self.0)?;
+            fmt::Display::fmt(&self.1, f)
         }
     }
 }}
@@ -97,7 +104,8 @@ paste! {
     #[derive(Clone, Debug, Hash)]
     pub enum Nlri<Octs> {
     $($(
-        [<$afi_name $safi_name>]([<$afi_name $safi_name Nlri>]$(<$gen>)?)
+        [<$afi_name $safi_name>]([<$afi_name $safi_name Nlri>]$(<$gen>)?),
+        [<$afi_name $safi_name Addpath>]([<$afi_name $safi_name AddpathNlri>]$(<$gen>)?)
     ,)+)+
     }
 
@@ -106,6 +114,7 @@ paste! {
             match self {
             $($(
                 Self::[<$afi_name $safi_name>](..) => AfiSafiType::[<$afi_name $safi_name >],
+                Self::[<$afi_name $safi_name Addpath>](..) => AfiSafiType::[<$afi_name $safi_name >],
             )+)+
             }
         }
@@ -116,6 +125,9 @@ paste! {
             match self {
             $($(
                 Self::[<$afi_name $safi_name>](i) => fmt::Display::fmt(i, f),
+                Self::[<$afi_name $safi_name Addpath>](i) => {
+                    fmt::Display::fmt(i, f)
+                }
             )+)+
             }
         }
@@ -171,10 +183,7 @@ pub trait AfiSafiParse<'a, O, P>: Sized
     where P: 'a + Octets<Range<'a> = O>
 {
     type Output; // XXX do we actually still need this?
-    fn parse(
-        parser: &mut Parser<'a, P>
-    )
-    -> Result<Self::Output, ParseError>;
+    fn parse(parser: &mut Parser<'a, P>) -> Result<Self::Output, ParseError>;
 }
 
 
@@ -193,10 +202,9 @@ impl <T, B>IsPrefix for T where T: AfiSafiNlri<Nlri = B>, B: Into<Prefix> {
 }
 
 /// An Nlri containing a Path Id.
-pub trait AddPath: AfiSafiNlri {
+pub trait Addpath: AfiSafiNlri {
     fn path_id(&self) -> PathId;
 }
-
 
 //------------ Implementations -----------------------------------------------
 
@@ -643,7 +651,7 @@ mod tests {
         let iter = NlriIter::ipv6_unicast_addpath(parser);
         //assert_eq!(iter.count(), 4);
         for n in iter {
-            dbg!(&n);
+            eprintln!("{n}");
         }
     }
 
