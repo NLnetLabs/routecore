@@ -198,7 +198,6 @@ impl<Octs: Octets> UpdateMessage<Octs> {
             self.mp_withdrawals().ok().flatten().map(|a| a.afi_safi()),
             self.mp_announcements().ok().flatten().map(|a| a.afi_safi()),
         )
-
     }
 
     /// Returns the conventional withdrawals.

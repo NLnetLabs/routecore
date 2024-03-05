@@ -26,7 +26,7 @@ use core::fmt::Debug;
 use super::mpls::*;
 use super::mpls_vpn::*;
 use super::routetarget::*;
-
+use super::flowspec::*;
 
 macro_rules! addpath { ($nlri:ident $(<$gen:ident>)? ) =>
 {
@@ -284,7 +284,7 @@ afisafi! {
         4 => MplsUnicast<Octs>,
         128 => MplsVpnUnicast<Octs>,
         132 => RouteTarget<Octs>,
-        //133 => FlowSpec<Octs>,
+        133 => FlowSpec<Octs>,
         //134 => FlowSpecVpn<Octs>,
 
     ],
@@ -477,6 +477,39 @@ where
 }
 
 impl<T> fmt::Display for Ipv4RouteTargetNlri<T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+//--- Ipv4FlowSpec
+
+#[derive(Clone, Debug, Hash)]
+pub struct Ipv4FlowSpecNlri<Octs>(FlowSpecNlri<Octs>);
+
+impl<Octs: Clone + Debug + Hash> AfiSafiNlri for Ipv4FlowSpecNlri<Octs> {
+    type Nlri = FlowSpecNlri<Octs>;
+    fn nlri(&self) -> Self::Nlri {
+        self.0.clone()
+    }
+}
+
+impl<'a, O, P> AfiSafiParse<'a, O, P> for Ipv4FlowSpecNlri<O>
+where
+    O: Octets,
+    P: 'a + Octets<Range<'a> = O>
+{
+    type Output = Self;
+
+    fn parse(parser: &mut Parser<'a, P>)
+        -> Result<Self::Output, ParseError>
+    {
+
+        Ok(Self(FlowSpecNlri::parse(parser, Afi::Ipv4)?))
+    }
+}
+
+impl<T> fmt::Display for Ipv4FlowSpecNlri<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.0)
     }
