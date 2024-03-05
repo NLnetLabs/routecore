@@ -2,9 +2,10 @@
 use octseq::{Octets, Parser};
 use crate::util::parser::ParseError;
 use crate::addr::Prefix;
-use super::afisafi::AfiTODORenameMe as Afi;
+use super::afisafi::Afi;
 
 use std::net::IpAddr;
+use std::fmt;
 
 //------------ Types ---------------------------------------------------------
 /// Path Identifier for BGP Multiple Paths (RFC7911).
@@ -12,7 +13,13 @@ use std::net::IpAddr;
 /// Used in all AddpathNlri variants.
 #[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
-pub struct PathId(u32);
+pub struct PathId(pub u32);
+
+impl fmt::Display for PathId {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
 
 
 //------------ Helper functions ----------------------------------------------
@@ -74,7 +81,7 @@ pub(super) fn parse_prefix_for_len<R: Octets>(
     Ok(prefix)
 }
 
-fn prefix_bits_to_bytes(bits: u8) -> usize {
+pub(super) fn prefix_bits_to_bytes(bits: u8) -> usize {
     if bits != 0 {
         (bits as usize - 1) / 8 + 1
     } else {

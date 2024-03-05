@@ -4,7 +4,7 @@ use std::fmt;
 use octseq::{Octets, Parser};
 use crate::util::parser::ParseError;
 use super::common::parse_prefix_for_len;
-use super::afisafi::AfiTODORenameMe as Afi;
+use super::afisafi::Afi;
 
 /// NLRI comprised of a [`Prefix`] and MPLS `Labels`.
 #[derive(Copy, Clone, Debug, Hash)]

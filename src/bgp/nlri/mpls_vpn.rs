@@ -7,7 +7,7 @@ use serde::{Serialize, Deserialize};
 use octseq::{Octets, Parser};
 use crate::util::parser::ParseError;
 use super::common::parse_prefix_for_len;
-use super::afisafi::AfiTODORenameMe as Afi;
+use super::afisafi::Afi;
 use super::mpls::Labels;
 
 /// NLRI comprised of a [`BasicNlri`], MPLS `Labels` and a VPN
@@ -41,6 +41,7 @@ impl<T> MplsVpnNlri<T> {
         self.rd
     }
 }
+
 pub(super) fn parse_labels_rd_prefix<'a, R, Octs: Octets>(
     parser: &mut Parser<'a, R>,
     afi: Afi,

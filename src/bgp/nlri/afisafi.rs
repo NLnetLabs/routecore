@@ -12,9 +12,8 @@ use serde::{Serialize, Deserialize};
 // - clean up / remove bgp/workshop/afisafi_nlri.rs 
 
 use crate::addr::Prefix;
-use crate::bgp::message::nlri::{PathId, parse_prefix};
+use super::common::{PathId, parse_prefix};
 use crate::util::parser::ParseError;
-use crate::bgp::types::Afi;
 use paste::paste;
 
 use std::fmt;
@@ -26,6 +25,7 @@ use core::fmt::Debug;
 
 use super::mpls::*;
 use super::mpls_vpn::*;
+use super::routetarget::*;
 
 
 macro_rules! addpath { ($nlri:ident $(<$gen:ident>)? ) =>
@@ -53,7 +53,7 @@ paste! {
     {
         type Output = Self;
         fn parse(parser: &mut Parser<'a, P>) -> Result<Self::Output, ParseError> {
-            let path_id = PathId::from_u32(parser.parse_u32_be()?);
+            let path_id = PathId(parser.parse_u32_be()?);
             let inner = [<$nlri Nlri>]::parse(parser)?;
             Ok(
                 Self(path_id, inner)
@@ -89,7 +89,7 @@ macro_rules! afisafi {
     typeenum!(
         /// AFI as used in BGP OPEN and UPDATE messages.
         #[cfg_attr(feature = "serde", serde(from = "u16"))]
-        AfiTODORenameMe, u16,
+        Afi, u16,
         {
             $($afi_code => $afi_name),+
         });
@@ -283,7 +283,7 @@ afisafi! {
         2 => Multicast,
         4 => MplsUnicast<Octs>,
         128 => MplsVpnUnicast<Octs>,
-        //132 => RouteTarget<Octs>,
+        132 => RouteTarget<Octs>,
         //133 => FlowSpec<Octs>,
         //134 => FlowSpecVpn<Octs>,
 
@@ -390,7 +390,7 @@ where
     fn parse(parser: &mut Parser<'a, P>)
         -> Result<Self::Output, ParseError>
     {
-        let (prefix, labels) = MplsNlri::parse_labels_and_prefix(parser, AfiTODORenameMe::Ipv4)?;
+        let (prefix, labels) = MplsNlri::parse_labels_and_prefix(parser, Afi::Ipv4)?;
 
         Ok(
             Self(MplsNlri::new(prefix,labels,))
@@ -436,13 +436,47 @@ where
         -> Result<Self::Output, ParseError>
     {
         let (labels, rd, prefix) =
-            parse_labels_rd_prefix(parser, AfiTODORenameMe::Ipv4)?;
+            parse_labels_rd_prefix(parser, Afi::Ipv4)?;
 
         Ok(Self(MplsVpnNlri::new(prefix, labels, rd)))
     }
 }
 
 impl<T> fmt::Display for Ipv4MplsVpnUnicastNlri<T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+//--- Ipv4RouteTarget
+
+
+#[derive(Clone, Debug, Hash)]
+pub struct Ipv4RouteTargetNlri<Octs>(RouteTargetNlri<Octs>);
+
+impl<Octs: Clone + Debug + Hash> AfiSafiNlri for Ipv4RouteTargetNlri<Octs> {
+    type Nlri = RouteTargetNlri<Octs>;
+    fn nlri(&self) -> Self::Nlri {
+        self.0.clone()
+    }
+}
+
+impl<'a, O, P> AfiSafiParse<'a, O, P> for Ipv4RouteTargetNlri<O>
+where
+    O: Octets,
+    P: 'a + Octets<Range<'a> = O>
+{
+    type Output = Self;
+
+    fn parse(parser: &mut Parser<'a, P>)
+        -> Result<Self::Output, ParseError>
+    {
+
+        Ok(Self(RouteTargetNlri::parse(parser)?))
+    }
+}
+
+impl<T> fmt::Display for Ipv4RouteTargetNlri<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.0)
     }
@@ -599,7 +633,7 @@ mod tests {
     #[test]
     fn addpath() {
         let n = Ipv4UnicastAddpathNlri(
-            PathId::from_u32(13),
+            PathId(13),
             Ipv4UnicastNlri(
                 Prefix::from_str("1.2.3.0/24").unwrap().into()
         ));
