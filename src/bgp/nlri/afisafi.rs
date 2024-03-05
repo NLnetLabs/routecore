@@ -158,6 +158,7 @@ $($(
         }
     }
 
+    //--- NlriIter
 
     impl<'a, Octs, P> NlriIter<'a, Octs, P, [<$afi_name $safi_name Nlri>]$(<$gen>)?>
     where
@@ -178,6 +179,39 @@ $($(
             NlriIter::<'a, Octs, P, [<$afi_name $safi_name AddpathNlri>]$(<$gen>)?>::new(parser)
         }
     }
+
+    // Some attempts to add fn iter() to the Nlri structs below.
+    // Problem is that we can only act on _presence_ of $gen , but not on its
+    // absence. So when we have the <Octs> on the struct, the fn iter can not
+    // define it again, though we need it there for the non <Octs> structs.
+    
+    /*
+    impl [<$afi_name $safi_name Nlri>]  {
+        pub fn iter1<'a, Octs, P>(parser: Parser<'a, P>) -> NlriIter<'a, Octs, P, Self>
+        where
+            Octs: Octets,
+            P: 'a + Octets<Range<'a> = Octs>
+        {
+            NlriIter::[<$afi_name:lower _ $safi_name:lower>](parser)
+        }
+    }
+    */
+
+    /*
+    // <Octs> structs only
+    $(
+    impl<$gen> [<$afi_name $safi_name Nlri>]<$gen>  {
+        pub fn iter2<'a, P>(parser: Parser<'a, P>) -> NlriIter<'a, Octs, P, Self>
+        where
+            Octs: Octets,
+            P: 'a + Octets<Range<'a> = Octs>
+        {
+            NlriIter::[<$afi_name:lower _ $safi_name:lower>](parser)
+        }
+    }
+    )?
+    */
+
 
     // Create the Addpath version
     addpath!([<$afi_name $safi_name>]$(<$gen>)?);
