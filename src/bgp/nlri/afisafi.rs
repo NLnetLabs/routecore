@@ -4,16 +4,12 @@ use crate::typeenum; // from util::macros
 use serde::{Serialize, Deserialize};
 
 // notes:
-//  - Display impl is not forced on Addpath structs as it's not included in
-//  the Nlri enum generation in the enum (yet)
-//  - if we remove PathId from BasicNlri/MplsNlri etc, we can't impl From for
-//    Nlri without losing the PathId. Or, we have to make the Addpath types
-//    also variants of the Nlri enum, but then that must be possible in the
-//    macro.
-//  - the AfiSafiParse impl is not forced in any way by the macro currently.
-//    update: if we call addpath! from the macro, it is, as is AfiSafiNlri
-//  - we still miss the enforcement of From<AddpathNlri> for Nlri though
-
+// - move in and adapt all remaining stuff from bgp/message/nlri.rs
+// - can we do PartialEq impls in macro?
+// - eventually rename this to bgp/nlri.rs ?
+// - remove bgp/message/nlri.rs  
+// - pub use Afi/Nlri/etc from bgp::types 
+// - clean up / remove bgp/workshop/afisafi_nlri.rs 
 
 use crate::addr::Prefix;
 use crate::bgp::message::nlri::{PathId, parse_prefix};
@@ -27,6 +23,9 @@ use octseq::{Octets, Parser};
 
 use core::hash::Hash;
 use core::fmt::Debug;
+
+use super::mpls::*;
+
 
 macro_rules! addpath { ($nlri:ident $(<$gen:ident>)? ) =>
 {
@@ -313,6 +312,52 @@ impl fmt::Display for Ipv4MulticastNlri {
     }
 }
 
+//--- Ipv4MplsUnicast
+
+#[derive(Clone, Debug, Hash)]
+pub struct Ipv4MplsUnicastNlri<Octs>(MplsNlri<Octs>);
+
+impl<Octs: Clone + Debug + Hash> AfiSafiNlri for Ipv4MplsUnicastNlri<Octs> {
+    type Nlri = MplsNlri<Octs>;
+    fn nlri(&self) -> Self::Nlri {
+        self.0.clone()
+    }
+}
+
+impl<'a, O, P> AfiSafiParse<'a, O, P> for Ipv4MplsUnicastNlri<O>
+where
+    O: Octets,
+    P: 'a + Octets<Range<'a> = O>
+{
+    type Output = Self;
+
+    fn parse(parser: &mut Parser<'a, P>)
+        -> Result<Self::Output, ParseError>
+    {
+        // XXX not sure how correct this all is, just testing trait bounds etc
+        let (prefix, labels) = MplsNlri::parse_labels_and_prefix(parser, AfiTODORenameMe::Ipv4)?;
+
+        Ok(
+            Self(MplsNlri::new(prefix,labels,))
+        )
+    }
+}
+
+impl<Octs, Other> PartialEq<Ipv4MplsUnicastNlri<Other>> for Ipv4MplsUnicastNlri<Octs>
+where Octs: AsRef<[u8]>,
+      Other: AsRef<[u8]>
+{
+    fn eq(&self, other: &Ipv4MplsUnicastNlri<Other>) -> bool {
+        self.0 == other.0
+    }
+}
+
+impl<T> fmt::Display for Ipv4MplsUnicastNlri<T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
 //------------ Ipv6 ----------------------------------------------------------
 
 //--- Ipv6Unicast
@@ -345,53 +390,6 @@ impl fmt::Display for Ipv6UnicastNlri {
     }
 }
 
-
-
-use crate::bgp::message::nlri::MplsNlri;
-#[derive(Clone, Debug, Hash)]
-pub struct Ipv4MplsUnicastNlri<Octs>(MplsNlri<Octs>);
-
-impl<Octs: Clone + Debug + Hash> AfiSafiNlri for Ipv4MplsUnicastNlri<Octs> {
-    type Nlri = MplsNlri<Octs>;
-    fn nlri(&self) -> Self::Nlri {
-        self.0.clone()
-    }
-}
-
-impl<'a, O, P> AfiSafiParse<'a, O, P> for Ipv4MplsUnicastNlri<O>
-where
-    O: Octets,
-    P: 'a + Octets<Range<'a> = O>
-{
-    type Output = Self;
-
-    fn parse(parser: &mut Parser<'a, P>)
-        -> Result<Self::Output, ParseError>
-    {
-        // XXX not sure how correct this all is, just testing trait bounds etc
-        let (prefix, labels) = MplsNlri::parse_labels_and_prefix(parser, crate::bgp::types::AfiSafi::Ipv4Unicast)?;
-        let basic = crate::bgp::message::nlri::BasicNlri::new(prefix);
-
-        Ok(
-            Self(MplsNlri::new(basic,labels,))
-        )
-    }
-}
-
-impl<Octs, Other> PartialEq<Ipv4MplsUnicastNlri<Other>> for Ipv4MplsUnicastNlri<Octs>
-where Octs: AsRef<[u8]>,
-      Other: AsRef<[u8]>
-{
-    fn eq(&self, other: &Ipv4MplsUnicastNlri<Other>) -> bool {
-        self.0 == other.0
-    }
-}
-
-impl<T> fmt::Display for Ipv4MplsUnicastNlri<T> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
 
 //------------ Iteration ------------------------------------------------------
 

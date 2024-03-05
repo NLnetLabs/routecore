@@ -1,6 +1,6 @@
 //! Types and parsing for BGP messages.
 
-pub mod afisafi;
+pub mod nlri; // new nlri module
 pub mod aspath;
 pub mod communities;
 pub mod path_attributes;
