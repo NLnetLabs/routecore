@@ -12,7 +12,7 @@ use serde::{Serialize, Deserialize};
 // - clean up / remove bgp/workshop/afisafi_nlri.rs 
 
 use crate::addr::Prefix;
-use super::common::{PathId, parse_prefix};
+use super::common::{PathId, parse_prefix, prefix_bits_to_bytes};
 use crate::util::parser::ParseError;
 use paste::paste;
 
@@ -159,6 +159,12 @@ $($(
         }
     }
 
+    impl$(<$gen>)? From<[<$afi_name $safi_name AddpathNlri>]$(<$gen>)?> for [<$afi_name $safi_name Nlri>]$(<$gen>)? {
+        fn from(n: [<$afi_name $safi_name AddpathNlri>]$(<$gen>)?) -> Self {
+            n.1
+        }
+    }
+
     //--- NlriIter
 
     impl<'a, Octs, P> NlriIter<'a, Octs, P, [<$afi_name $safi_name Nlri>]$(<$gen>)?>
@@ -213,6 +219,11 @@ $($(
     )?
     */
 
+    impl$(<$gen>)?  [<$afi_name $safi_name Nlri>]$(<$gen>)?  {
+        pub fn into_addpath(self, path_id: PathId) -> [<$afi_name $safi_name AddpathNlri>]$(<$gen>)? {
+            [<$afi_name $safi_name AddpathNlri>](path_id, self)
+        }
+    }
 
     // Create the Addpath version
     addpath!([<$afi_name $safi_name>]$(<$gen>)?);
@@ -329,6 +340,29 @@ where
             Self(parse_prefix(parser, Afi::Ipv4)?)
         )
     }
+}
+
+use octseq::OctetsBuilder;
+impl Ipv4UnicastNlri {
+    pub(crate) fn compose_len(&self) -> usize {
+        // 1 byte for the length itself
+        1 + prefix_bits_to_bytes(self.prefix().len())
+    }
+
+    pub(crate) fn compose<Target: OctetsBuilder>(&self, target: &mut Target)
+        -> Result<(), Target::AppendError> {
+        let len = self.prefix().len();
+        target.append_slice(&[len])?;
+        let prefix_bytes = prefix_bits_to_bytes(len);
+        match self.prefix().addr() {
+            std::net::IpAddr::V4(a) => {
+                target.append_slice(&a.octets()[..prefix_bytes])?
+            }
+            _ => unreachable!()
+        }
+        Ok(())
+    }
+
 }
 
 impl fmt::Display for Ipv4UnicastNlri {
@@ -793,7 +827,7 @@ mod tests {
         ];
 
         let parser = Parser::from_ref(&raw);
-        let mut iter = NlriIter::ipv6_unicast_addpath(parser);
+        let iter = NlriIter::ipv6_unicast_addpath(parser);
         //while let Some(x) = iter.next_with(|e| format!("IPv6!!!: {:?}", e).to_string()) {
         //    dbg!(x);
         //}
@@ -802,6 +836,26 @@ mod tests {
             dbg!(x);
         }
 
+    }
+
+    #[test]
+    fn roundtrip_into_from_addpath() {
+        let raw = vec![
+            24, 1, 2, 1,
+            24, 1, 2, 2,
+            24, 1, 2, 3,
+            24, 1, 2, 4,
+        ];
+
+        let parser = Parser::from_ref(&raw);
+        let iter = NlriIter::ipv6_unicast(parser);
+        for (idx, n) in iter.enumerate() {
+            dbg!(
+                Ipv6UnicastNlri::from(
+                    dbg!(n.into_addpath(PathId(idx.try_into().unwrap())))
+                )
+            );
+        }
     }
 
 }
