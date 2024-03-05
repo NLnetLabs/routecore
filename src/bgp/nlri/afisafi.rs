@@ -25,6 +25,7 @@ use core::hash::Hash;
 use core::fmt::Debug;
 
 use super::mpls::*;
+use super::mpls_vpn::*;
 
 
 macro_rules! addpath { ($nlri:ident $(<$gen:ident>)? ) =>
@@ -281,7 +282,7 @@ afisafi! {
         1 => Unicast,
         2 => Multicast,
         4 => MplsUnicast<Octs>,
-        //128 => MplsVpnUnicast<Octs>,
+        128 => MplsVpnUnicast<Octs>,
         //132 => RouteTarget<Octs>,
         //133 => FlowSpec<Octs>,
         //134 => FlowSpecVpn<Octs>,
@@ -407,6 +408,41 @@ where Octs: AsRef<[u8]>,
 }
 
 impl<T> fmt::Display for Ipv4MplsUnicastNlri<T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+//--- Ipv4MplsVpnUnicastNlri
+
+#[derive(Clone, Debug, Hash)]
+pub struct Ipv4MplsVpnUnicastNlri<Octs>(MplsVpnNlri<Octs>);
+
+impl<Octs: Clone + Debug + Hash> AfiSafiNlri for Ipv4MplsVpnUnicastNlri<Octs> {
+    type Nlri = MplsVpnNlri<Octs>;
+    fn nlri(&self) -> Self::Nlri {
+        self.0.clone()
+    }
+}
+
+impl<'a, O, P> AfiSafiParse<'a, O, P> for Ipv4MplsVpnUnicastNlri<O>
+where
+    O: Octets,
+    P: 'a + Octets<Range<'a> = O>
+{
+    type Output = Self;
+
+    fn parse(parser: &mut Parser<'a, P>)
+        -> Result<Self::Output, ParseError>
+    {
+        let (labels, rd, prefix) =
+            parse_labels_rd_prefix(parser, AfiTODORenameMe::Ipv4)?;
+
+        Ok(Self(MplsVpnNlri::new(prefix, labels, rd)))
+    }
+}
+
+impl<T> fmt::Display for Ipv4MplsVpnUnicastNlri<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.0)
     }
