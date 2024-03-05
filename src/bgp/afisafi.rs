@@ -151,7 +151,12 @@ $($(
         fn from(n: [<$afi_name $safi_name Nlri>]$(<$gen>)?) -> Self {
             Nlri::[<$afi_name $safi_name>](n)
         }
+    }
 
+    impl<Octs> From<[<$afi_name $safi_name AddpathNlri>]$(<$gen>)?> for Nlri<Octs> {
+        fn from(n: [<$afi_name $safi_name AddpathNlri>]$(<$gen>)?) -> Self {
+            Nlri::[<$afi_name $safi_name Addpath>](n)
+        }
     }
 
     // Create the Addpath version
