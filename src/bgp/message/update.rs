@@ -175,6 +175,32 @@ impl<Octs: Octets> UpdateMessage<Octs> {
 
 impl<Octs: Octets> UpdateMessage<Octs> {
 
+    /// Indicates which address families are present in this message.
+    ///
+    /// The tuple consists of four optional [`AfiSafi`] types, describing the
+    /// presence of, respectively:
+    ///     conventional withdrawals, conventional announcements,
+    ///     multi-protocol withdrawals, multi-protocol announcements.
+    ///
+    /// While the conventional announcements/withdrawals will always be IPv4
+    /// unicast NLRI, they might include ADD-PATH Path IDs or not.
+    /// Once we switch over to the new AfiSafiType enum, we can signal PathId
+    /// presence/absence.
+    pub fn afi_safis(&self) -> (
+        Option<AfiSafi>,
+        Option<AfiSafi>,
+        Option<AfiSafi>,
+        Option<AfiSafi>,
+    ) {
+        (
+            (!self.withdrawals.is_empty()).then_some(AfiSafi::Ipv4Unicast),
+            (!self.announcements.is_empty()).then_some(AfiSafi::Ipv4Unicast),
+            self.mp_withdrawals().ok().flatten().map(|a| a.afi_safi()),
+            self.mp_announcements().ok().flatten().map(|a| a.afi_safi()),
+        )
+
+    }
+
     /// Returns the conventional withdrawals.
     pub fn conventional_withdrawals(&self) -> Result<Nlris<Octs>, ParseError>
     {
