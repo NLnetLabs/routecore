@@ -301,10 +301,10 @@ afisafi! {
     ],
     2 => Ipv6 [
         1 => Unicast,
-        //2 => Multicast,
-        //4 => MplsUnicast<Octs>,
-        //128 => MplsVpnUnicast<Octs>,
-        //133 => FlowSpec<Octs>,
+        2 => Multicast,
+        4 => MplsUnicast<Octs>,
+        128 => MplsVpnUnicast<Octs>,
+        133 => FlowSpec<Octs>,
         //134 => FlowSpecVpn<Octs>,
     ],
     //25 => L2Vpn [
@@ -581,6 +581,172 @@ impl fmt::Display for Ipv6UnicastNlri {
     }
 }
 
+//--- Ipv6Multicast
+
+#[derive(Clone, Debug, Hash, PartialEq)]
+pub struct Ipv6MulticastNlri(Prefix);
+
+impl AfiSafiNlri for Ipv6MulticastNlri {
+    type Nlri = Prefix;
+    fn nlri(&self) -> Self::Nlri {
+        self.0
+    }
+}
+
+impl<'a, O, P> AfiSafiParse<'a, O, P> for Ipv6MulticastNlri
+where
+    O: Octets,
+    P: 'a + Octets<Range<'a> = O>
+{
+    type Output = Self;
+    fn parse(parser: &mut Parser<'a, P>) -> Result<Self::Output, ParseError> {
+        Ok(
+            Self(parse_prefix(parser, Afi::Ipv6)?)
+        )
+    }
+}
+
+impl fmt::Display for Ipv6MulticastNlri {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+
+//--- Ipv6MplsUnicast
+
+#[derive(Clone, Debug, Hash)]
+pub struct Ipv6MplsUnicastNlri<Octs>(MplsNlri<Octs>);
+
+impl<Octs: Clone + Debug + Hash> AfiSafiNlri for Ipv6MplsUnicastNlri<Octs> {
+    type Nlri = MplsNlri<Octs>;
+    fn nlri(&self) -> Self::Nlri {
+        self.0.clone()
+    }
+}
+
+impl<'a, O, P> AfiSafiParse<'a, O, P> for Ipv6MplsUnicastNlri<O>
+where
+    O: Octets,
+    P: 'a + Octets<Range<'a> = O>
+{
+    type Output = Self;
+
+    fn parse(parser: &mut Parser<'a, P>)
+        -> Result<Self::Output, ParseError>
+    {
+        let (prefix, labels) = MplsNlri::parse_labels_and_prefix(parser, Afi::Ipv6)?;
+
+        Ok(
+            Self(MplsNlri::new(prefix,labels,))
+        )
+    }
+}
+
+impl<Octs, Other> PartialEq<Ipv6MplsUnicastNlri<Other>> for Ipv6MplsUnicastNlri<Octs>
+where Octs: AsRef<[u8]>,
+      Other: AsRef<[u8]>
+{
+    fn eq(&self, other: &Ipv6MplsUnicastNlri<Other>) -> bool {
+        self.0 == other.0
+    }
+}
+
+impl<T> fmt::Display for Ipv6MplsUnicastNlri<T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+//--- Ipv6MplsVpnUnicastNlri
+
+#[derive(Clone, Debug, Hash)]
+pub struct Ipv6MplsVpnUnicastNlri<Octs>(MplsVpnNlri<Octs>);
+
+impl<Octs: Clone + Debug + Hash> AfiSafiNlri for Ipv6MplsVpnUnicastNlri<Octs> {
+    type Nlri = MplsVpnNlri<Octs>;
+    fn nlri(&self) -> Self::Nlri {
+        self.0.clone()
+    }
+}
+
+impl<'a, O, P> AfiSafiParse<'a, O, P> for Ipv6MplsVpnUnicastNlri<O>
+where
+    O: Octets,
+    P: 'a + Octets<Range<'a> = O>
+{
+    type Output = Self;
+
+    fn parse(parser: &mut Parser<'a, P>)
+        -> Result<Self::Output, ParseError>
+    {
+        let (labels, rd, prefix) =
+            parse_labels_rd_prefix(parser, Afi::Ipv6)?;
+
+        Ok(Self(MplsVpnNlri::new(prefix, labels, rd)))
+    }
+}
+
+impl<T> fmt::Display for Ipv6MplsVpnUnicastNlri<T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+
+//--- Ipv6FlowSpec
+
+#[derive(Clone, Debug, Hash)]
+pub struct Ipv6FlowSpecNlri<Octs>(FlowSpecNlri<Octs>);
+
+impl<Octs: Clone + Debug + Hash> AfiSafiNlri for Ipv6FlowSpecNlri<Octs> {
+    type Nlri = FlowSpecNlri<Octs>;
+    fn nlri(&self) -> Self::Nlri {
+        self.0.clone()
+    }
+}
+
+impl<'a, O, P> AfiSafiParse<'a, O, P> for Ipv6FlowSpecNlri<O>
+where
+    O: Octets,
+    P: 'a + Octets<Range<'a> = O>
+{
+    type Output = Self;
+
+    fn parse(parser: &mut Parser<'a, P>)
+        -> Result<Self::Output, ParseError>
+    {
+
+        Ok(Self(FlowSpecNlri::parse(parser, Afi::Ipv6)?))
+    }
+}
+
+impl<T> fmt::Display for Ipv6FlowSpecNlri<T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+
+impl Ipv6UnicastAddpathNlri {
+    pub fn iter<'a, O, P>(parser: Parser<'a, P>) -> NlriIter<'a, O, P, Self>
+    where
+        O: Octets,
+        P: 'a + Octets<Range<'a> = O>
+    {
+        NlriIter::ipv6_unicast_addpath(parser)
+    }
+}
+
+impl<Octs> Ipv4MplsUnicastNlri<Octs> {
+    pub fn iter<'a, P>(parser: Parser<'a, P>) -> NlriIter<'a, Octs, P, Self>
+    where
+        Octs: Octets,
+        P: 'a + Octets<Range<'a> = Octs>
+    {
+        NlriIter::ipv4_mplsunicast(parser)
+    }
+}
 
 //------------ Iteration ------------------------------------------------------
 
