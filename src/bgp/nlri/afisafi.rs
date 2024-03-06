@@ -23,10 +23,11 @@ use octseq::{Octets, Parser};
 use core::hash::Hash;
 use core::fmt::Debug;
 
+use super::evpn::*;
+use super::flowspec::*;
 use super::mpls::*;
 use super::mpls_vpn::*;
 use super::routetarget::*;
-use super::flowspec::*;
 use super::vpls::*;
 
 macro_rules! addpath { ($nlri:ident $(<$gen:ident>)? ) =>
@@ -280,15 +281,10 @@ pub trait Addpath: AfiSafiNlri {
 
 //------------ Implementations -----------------------------------------------
 
-//afisafi! {
-//    1 => Ipv4 [ 1 => Unicast, 2 => Multicast, 4 => MplsUnicast ],
-//    2 => Ipv6 [ 1 => Unicast, 2 => Multicast, 4 => MplsUnicast ],
-//    25 => L2Vpn [ 65 => Vpls, 70 => Evpn ],
-//}
-
 // adding AFI/SAFIs here requires some manual labor:
 // - at the least, add a struct for $Afi$SafiNlri , deriving Clone,Debug,Hash
-// - impl AfiSafiNlri and AfiSafiParse
+// - impl AfiSafiNlri, AfiSafiParse and Display
+
 afisafi! {
     1 => Ipv4 [
         1 => Unicast,
@@ -310,7 +306,7 @@ afisafi! {
     ],
     25 => L2Vpn [
         65 => Vpls,
-    //    70 => Evpn,
+        70 => Evpn<Octs>,
     ]
 }
 
@@ -783,6 +779,40 @@ impl fmt::Display for L2VpnVplsNlri {
         write!(f, "{}", self.0)
     }
 }
+
+//--- Evpn
+
+#[derive(Clone, Debug, Hash)]
+pub struct L2VpnEvpnNlri<Octs>(EvpnNlri<Octs>);
+
+impl<Octs: Clone + Debug + Hash> AfiSafiNlri for L2VpnEvpnNlri<Octs> {
+    type Nlri = EvpnNlri<Octs>;
+    fn nlri(&self) -> Self::Nlri {
+        self.0.clone()
+    }
+}
+
+impl<'a, O, P> AfiSafiParse<'a, O, P> for L2VpnEvpnNlri<O>
+where
+    O: Octets,
+    P: 'a + Octets<Range<'a> = O>
+{
+    type Output = Self;
+
+    fn parse(parser: &mut Parser<'a, P>)
+        -> Result<Self::Output, ParseError>
+    {
+
+        Ok(Self(EvpnNlri::parse(parser)?))
+    }
+}
+
+impl<T> fmt::Display for L2VpnEvpnNlri<T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
 
 //------------ Iteration ------------------------------------------------------
 
