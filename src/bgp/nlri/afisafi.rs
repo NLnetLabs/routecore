@@ -849,12 +849,22 @@ where
     P: Octets<Range<'a> = O>,
     ASP: AfiSafiParse<'a, O, P>
 {
-    fn new(parser: Parser<'a, P>) -> Self {
+    pub fn new(parser: Parser<'a, P>) -> Self {
         NlriIter {
             parser,
             asp: std::marker::PhantomData,
             output: std::marker::PhantomData
         }
+    }
+
+    pub fn map_into_vec<T, F: Fn(<ASP as AfiSafiParse<'_, O, P>>::Output) -> T>(parser: Parser<'a, P>, fmap: F) -> Vec<T> {
+        NlriIter {
+            parser,
+            asp: std::marker::PhantomData::<ASP>,
+            output: std::marker::PhantomData::<O>
+        }
+        .map(fmap)
+        .collect::<Vec<_>>()
     }
 }
 

@@ -12,6 +12,7 @@ pub mod flowspec;
 
 #[cfg(feature = "bmp")]
 pub use octseq::Octets;
+pub use octseq::Parser;
 
 //--- Private modules
 

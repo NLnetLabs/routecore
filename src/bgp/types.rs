@@ -8,6 +8,8 @@ use crate::bgp::message::nlri::RouteDistinguisher;
 #[cfg(feature = "serde")]
 use serde::{Serialize, Deserialize};
 
+use super::nlri::afisafi::{Ipv4UnicastNlri, Ipv6UnicastNlri, Ipv4UnicastAddpathNlri, Ipv6UnicastAddpathNlri};
+use super::nlri::afisafi::{AfiSafiParse, NlriIter};
 use super::aspath::HopPath;
 use super::path_attributes::AggregatorInfo;
 
