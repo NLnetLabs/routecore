@@ -27,6 +27,7 @@ use super::mpls::*;
 use super::mpls_vpn::*;
 use super::routetarget::*;
 use super::flowspec::*;
+use super::vpls::*;
 
 macro_rules! addpath { ($nlri:ident $(<$gen:ident>)? ) =>
 {
@@ -307,10 +308,10 @@ afisafi! {
         133 => FlowSpec<Octs>,
         //134 => FlowSpecVpn<Octs>,
     ],
-    //25 => L2Vpn [
-    //    65 => Vpls,
+    25 => L2Vpn [
+        65 => Vpls,
     //    70 => Evpn,
-    //]
+    ]
 }
 
 
@@ -745,6 +746,41 @@ impl<Octs> Ipv4MplsUnicastNlri<Octs> {
         P: 'a + Octets<Range<'a> = Octs>
     {
         NlriIter::ipv4_mplsunicast(parser)
+    }
+}
+
+//------------ L2Vpn ----------------------------------------------------------
+
+//--- L2VpnVpls
+
+#[derive(Clone, Debug, Hash)]
+pub struct L2VpnVplsNlri(VplsNlri);
+
+impl AfiSafiNlri for L2VpnVplsNlri {
+    type Nlri = VplsNlri;
+    fn nlri(&self) -> Self::Nlri {
+        self.0
+    }
+}
+
+impl<'a, O, P> AfiSafiParse<'a, O, P> for L2VpnVplsNlri
+where
+    O: Octets,
+    P: 'a + Octets<Range<'a> = O>
+{
+    type Output = Self;
+
+    fn parse(parser: &mut Parser<'a, P>)
+        -> Result<Self::Output, ParseError>
+    {
+
+        Ok(Self(VplsNlri::parse(parser)?))
+    }
+}
+
+impl fmt::Display for L2VpnVplsNlri {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.0)
     }
 }
 
