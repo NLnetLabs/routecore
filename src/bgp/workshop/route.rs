@@ -306,6 +306,8 @@ impl<N: Clone + Hash> WorkshopAttribute<N> for crate::bgp::types::NextHop {
 
 //------------ The Explosion -------------------------------------------------
 
+/// Create a Vec with all of the single `NLRIs` for one type of `NLRI`, as
+/// specified with the `AF` type argument.
 pub fn into_wrapped_rws_vec<
     'a,
     O: Octets,
@@ -324,6 +326,9 @@ pub fn into_wrapped_rws_vec<
     .collect::<Vec<_>>()
 }
 
+
+/// Create an iterator over all of the single NLRIs from a parser, and wrap
+/// them with a type `T`, that can contain Workshops, e.g. a Roto TypeValue.
 fn into_wrapped_rws_iter<
     'a,
     O: Octets + 'a,
