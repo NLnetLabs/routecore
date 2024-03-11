@@ -26,7 +26,7 @@ pub trait AfiSafiNlri<Octs>: Clone + Hash + Debug {
 pub trait HasBasicNlri {
     fn basic_nlri(&self) -> BasicNlri;
     fn make_route_with_nlri<O: Octets, M>(nlri: M, pa: &PaMap) 
-    -> RouteWorkshop<O, M> where M: AfiSafiNlri<O, Nlri = BasicNlri>;
+    -> RouteWorkshop<M> where M: AfiSafiNlri<O, Nlri = BasicNlri>;
 }
 
 
@@ -53,8 +53,8 @@ impl HasBasicNlri for Ipv4UnicastNlri {
     }
 
     fn make_route_with_nlri<O: Octets, M>(nlri: M, pa: &PaMap) 
-    -> RouteWorkshop<O, M> where M: AfiSafiNlri<O, Nlri = BasicNlri> {
-        RouteWorkshop::<O, M>::from_pa_map(nlri, pa.clone())
+    -> RouteWorkshop<M> where M: AfiSafiNlri<O, Nlri = BasicNlri> {
+        RouteWorkshop::<M>::from_pa_map(nlri, pa.clone())
     }
 }
 
@@ -108,8 +108,8 @@ impl HasBasicNlri for Ipv6UnicastNlri {
     }
 
     fn make_route_with_nlri<O: Octets, M>(nlri: M, pa: &PaMap)
-    -> RouteWorkshop<O, M> where M: AfiSafiNlri<O, Nlri = BasicNlri> {
-        RouteWorkshop::<O, M>::from_pa_map(nlri, pa.clone())
+    -> RouteWorkshop<M> where M: AfiSafiNlri<O, Nlri = BasicNlri> {
+        RouteWorkshop::<M>::from_pa_map(nlri, pa.clone())
     }
 }
 
@@ -155,8 +155,8 @@ impl HasBasicNlri for Ipv4MulticastNlri {
     }
 
     fn make_route_with_nlri<O: Octets, M>(nlri: M, pa: &PaMap)
-    -> RouteWorkshop<O, M> where M: AfiSafiNlri<O, Nlri = BasicNlri> {
-        RouteWorkshop::<O, M>::from_pa_map(nlri, pa.clone())
+    -> RouteWorkshop<M> where M: AfiSafiNlri<O, Nlri = BasicNlri> {
+        RouteWorkshop::<M>::from_pa_map(nlri, pa.clone())
     }
 }
 

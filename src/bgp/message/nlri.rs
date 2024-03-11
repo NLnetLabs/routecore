@@ -1,3 +1,4 @@
+use crate::bgp::nlri::afisafi::{AfiSafiNlri, Ipv6UnicastNlri};
 use crate::bgp::types::{Afi, AfiSafi, NextHop};
 
 use crate::addr::Prefix;
@@ -6,7 +7,7 @@ use crate::util::parser::{parse_ipv4addr, parse_ipv6addr, ParseError};
 use crate::bgp::message::update::SessionConfig;
 use crate::flowspec::Component;
 use crate::typeenum;
-use octseq::{Octets, OctetsBuilder, OctetsFrom, Parser};
+use octseq::{Octets, OctetsBuilder, OctetsFrom, OctetsInto, Parser};
 use log::debug;
 
 use std::fmt;
@@ -16,6 +17,8 @@ use std::str::FromStr;
 #[cfg(feature = "serde")]
 use serde::{Serialize, Deserialize};
 
+use crate::bgp::nlri::afisafi::AfiSafi as AfiSafiTrait;
+use crate::bgp::nlri::afisafi::IsPrefix;
 
 //------------ FixedNlriIter -------------------------------------------------
 //

@@ -186,18 +186,13 @@ impl<Octs: Octets> UpdateMessage<Octs> {
     /// unicast NLRI, they might include ADD-PATH Path IDs or not.
     /// Once we switch over to the new AfiSafiType enum, we can signal PathId
     /// presence/absence.
-    pub fn afi_safis(&self) -> (
-        Option<AfiSafi>,
-        Option<AfiSafi>,
-        Option<AfiSafi>,
-        Option<AfiSafi>,
-    ) {
-        (
+    pub fn afi_safis(&self) -> [Option<AfiSafi>; 4] {
+        [
             (!self.withdrawals.is_empty()).then_some(AfiSafi::Ipv4Unicast),
             (!self.announcements.is_empty()).then_some(AfiSafi::Ipv4Unicast),
             self.mp_withdrawals().ok().flatten().map(|a| a.afi_safi()),
             self.mp_announcements().ok().flatten().map(|a| a.afi_safi()),
-        )
+        ]
     }
 
     /// Returns the conventional withdrawals.

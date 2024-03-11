@@ -1,3 +1,4 @@
+use crate::bgp::message::nlri::BasicNlri;
 use crate::typeenum; // from util::macros
 
 #[cfg(feature = "serde")]
@@ -368,6 +369,15 @@ impl fmt::Display for Ipv4UnicastNlri {
     }
 }
 
+impl From<Ipv4UnicastNlri> for BasicNlri {
+    fn from(value: Ipv4UnicastNlri) -> Self {
+        BasicNlri {
+            prefix: value.prefix(),
+            path_id: None
+        }
+    }
+}
+
 //--- Ipv4Multicast
 
 #[derive(Clone, Debug, Hash, PartialEq)]
@@ -396,6 +406,15 @@ where
 impl fmt::Display for Ipv4MulticastNlri {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.0)
+    }
+}
+
+impl From<Ipv4MulticastNlri> for BasicNlri {
+    fn from(value: Ipv4MulticastNlri) -> Self {
+        BasicNlri {
+            prefix: value.prefix(),
+            path_id: None
+        }
     }
 }
 
@@ -443,6 +462,7 @@ impl<T> fmt::Display for Ipv4MplsUnicastNlri<T> {
         write!(f, "{}", self.0)
     }
 }
+
 
 //--- Ipv4MplsVpnUnicastNlri
 
@@ -578,6 +598,17 @@ impl fmt::Display for Ipv6UnicastNlri {
     }
 }
 
+
+impl From<Ipv6UnicastNlri> for BasicNlri {
+    fn from(value: Ipv6UnicastNlri) -> Self {
+        BasicNlri {
+            prefix: value.prefix(),
+            path_id: None
+        }
+    }
+}
+
+
 //--- Ipv6Multicast
 
 #[derive(Clone, Debug, Hash, PartialEq)]
@@ -606,6 +637,16 @@ where
 impl fmt::Display for Ipv6MulticastNlri {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.0)
+    }
+}
+
+
+impl From<Ipv6MulticastNlri> for BasicNlri {
+    fn from(value: Ipv6MulticastNlri) -> Self {
+        BasicNlri {
+            prefix: value.prefix(),
+            path_id: None
+        }
     }
 }
 
@@ -724,6 +765,13 @@ impl<T> fmt::Display for Ipv6FlowSpecNlri<T> {
     }
 }
 
+impl<Octs> From<Ipv6FlowSpecNlri<Octs>> for FlowSpecNlri<Octs> {
+    fn from(value: Ipv6FlowSpecNlri<Octs>) -> Self {
+        value.0
+    }
+}
+
+//--- Addpath stuff
 
 impl Ipv6UnicastAddpathNlri {
     pub fn iter<'a, O, P>(parser: Parser<'a, P>) -> NlriIter<'a, O, P, Self>
@@ -735,6 +783,61 @@ impl Ipv6UnicastAddpathNlri {
     }
 }
 
+
+impl From<Ipv6UnicastAddpathNlri> for BasicNlri {
+    fn from(value: Ipv6UnicastAddpathNlri) -> Self {
+        BasicNlri {
+            prefix: value.prefix(),
+            // This can't be right.
+            path_id: Some(crate::bgp::message::nlri::PathId::from_u32(value.path_id().0))
+        }
+    }
+}
+
+impl From<Ipv6MulticastAddpathNlri> for BasicNlri {
+    fn from(value: Ipv6MulticastAddpathNlri) -> Self {
+        BasicNlri {
+            prefix: value.prefix(),
+            // This can't be right.
+            path_id: Some(crate::bgp::message::nlri::PathId::from_u32(value.path_id().0))
+        }
+    }
+}
+
+impl From<Ipv4UnicastAddpathNlri> for BasicNlri {
+    fn from(value: Ipv4UnicastAddpathNlri) -> Self {
+        BasicNlri {
+            prefix: value.prefix(),
+            path_id: Some(crate::bgp::message::nlri::PathId::from_u32(value.path_id().0))
+        }
+    }
+}
+
+impl From<Ipv4MulticastAddpathNlri> for BasicNlri {
+    fn from(value: Ipv4MulticastAddpathNlri) -> Self {
+        BasicNlri {
+            prefix: value.prefix(),
+            path_id: Some(crate::bgp::message::nlri::PathId::from_u32(value.path_id().0))
+        }
+    }
+}
+
+// TODO: What do we do with the actual PathId, unlike BasicNlri we don't have
+// a slot for it. O well, throwing it away for now.
+impl<Octs> From<Ipv4FlowSpecAddpathNlri<Octs>> for FlowSpecNlri<Octs> {
+    fn from(value: Ipv4FlowSpecAddpathNlri<Octs>) -> Self {
+        value.1.into()
+    }
+}
+
+impl<Octs> From<Ipv6FlowSpecAddpathNlri<Octs>> for FlowSpecNlri<Octs> {
+    fn from(value: Ipv6FlowSpecAddpathNlri<Octs>) -> Self {
+        value.1.into()
+    }
+}
+
+//------------ Other Nlri types ----------------------------------------------
+
 impl<Octs> Ipv4MplsUnicastNlri<Octs> {
     pub fn iter<'a, P>(parser: Parser<'a, P>) -> NlriIter<'a, Octs, P, Self>
     where
@@ -744,6 +847,13 @@ impl<Octs> Ipv4MplsUnicastNlri<Octs> {
         NlriIter::ipv4_mplsunicast(parser)
     }
 }
+
+impl<Octs> From<Ipv4FlowSpecNlri<Octs>> for FlowSpecNlri<Octs> {
+    fn from(value: Ipv4FlowSpecNlri<Octs>) -> Self {
+        value.0
+    }
+}
+
 
 //------------ L2Vpn ----------------------------------------------------------
 
@@ -855,16 +965,6 @@ where
             asp: std::marker::PhantomData,
             output: std::marker::PhantomData
         }
-    }
-
-    pub fn map_into_vec<T, F: Fn(<ASP as AfiSafiParse<'_, O, P>>::Output) -> T>(parser: Parser<'a, P>, fmap: F) -> Vec<T> {
-        NlriIter {
-            parser,
-            asp: std::marker::PhantomData::<ASP>,
-            output: std::marker::PhantomData::<O>
-        }
-        .map(fmap)
-        .collect::<Vec<_>>()
     }
 }
 

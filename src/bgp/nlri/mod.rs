@@ -2,7 +2,7 @@ pub mod afisafi;
 mod common;
 
 mod evpn;
-mod flowspec;
+pub mod flowspec;
 mod mpls;
 mod mpls_vpn;
 mod routetarget;
