@@ -146,6 +146,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dd8b5dd2ae5ed71462c540258bedcb51965123ad7e7ccf4b9a8cafaa4a63576d"
 
 [[package]]
+name = "paste"
+version = "1.0.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "de3145af08024dea9fa9914f381a17b8fc6034dfb00f3a84013f7ff43f29ed4c"
+
+[[package]]
 name = "proc-macro2"
 version = "1.0.66"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -165,7 +171,7 @@ dependencies = [
 
 [[package]]
 name = "routecore"
-version = "0.4.0-rc1-dev"
+version = "0.4.1-dev"
 dependencies = [
  "arbitrary",
  "bytes",
@@ -173,6 +179,7 @@ dependencies = [
  "const-str",
  "log",
  "octseq",
+ "paste",
 ]
 
 [[package]]

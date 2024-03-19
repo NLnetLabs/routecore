@@ -21,6 +21,10 @@ impl<O> MplsNlri<O> {
     pub fn prefix(&self) -> Prefix {
         self.prefix
     }
+
+    pub fn labels(&self) -> &Labels<O> {
+        &self.labels
+    }
 }
 
 impl<Octs: Octets> MplsNlri<Octs> {
@@ -64,6 +68,7 @@ where Octs: AsRef<[u8]>,
         self.prefix == other.prefix && self.labels == other.labels
     }
 }
+
 
 impl<T> fmt::Display for MplsNlri<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

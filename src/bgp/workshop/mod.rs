@@ -1,2 +1,2 @@
 pub mod route;
-pub mod afisafi_nlri;
+//pub mod afisafi_nlri;

@@ -1,6 +1,6 @@
 use crate::bgp::message::{Header, MsgType};
 use crate::asn::Asn;
-use crate::bgp::types::{Afi, Safi, AfiSafi, AddpathFamDir, AddpathDirection};
+use crate::bgp::types::{AfiSafi, AddpathFamDir, AddpathDirection};
 use crate::typeenum; // from util::macros
 use crate::util::parser::ParseError;
 use log::warn;
@@ -173,13 +173,6 @@ impl<Octs: Octets> OpenMessage<Octs> {
         )
     }
 
-    // FIXME this should return a AFI/SAFI combination, not a bool
-    pub fn add_path_capable(&self) -> bool {
-        self.capabilities().any(|c|
-            c.typ() == CapabilityType::AddPath
-        )
-    }
-
     /*
     pub fn addpath_families(&self) -> impl Iterator<Item = (AfiSafi, AddpathDirection)> + '_ {
         self.capabilities().filter(|c|
@@ -208,15 +201,11 @@ impl<Octs: Octets> OpenMessage<Octs> {
             for c in c.value().chunks(4) {
                 let mut parser = Parser::from_ref(c);
 
-                let afi = parser.parse_u16_be()?.into();
-                let safi = parser.parse_u8()?.into();
+                let afi = parser.parse_u16_be()?;
+                let safi = parser.parse_u8()?;
                 let dir = AddpathDirection::try_from(parser.parse_u8()?)
                     .map_err(|_| ParseError::Unsupported)?;
-                res.push((
-                    AfiSafi::try_from((afi, safi))
-                        .map_err(|_| ParseError::Unsupported)?,
-                    dir
-                ));
+                res.push((AfiSafi::from((afi, safi)), dir));
             }
         }
         Ok(res)
@@ -249,9 +238,9 @@ impl<Octs: Octets> OpenMessage<Octs> {
         }).collect::<Vec<_>>()
     }
 
-    /// Returns an iterator over `(Afi, Safi)` tuples listed as
-    /// MultiProtocol Capabilities in the Optional Parameters of this message.
-    pub fn multiprotocol_ids(&self) -> impl Iterator<Item = (Afi,Safi)> + '_ {
+    /// Returns an iterator over `AfiSafi`s listed as MultiProtocol
+    /// Capabilities in the Optional Parameters of this message.
+    pub fn multiprotocol_ids(&self) -> impl Iterator<Item = AfiSafi> + '_ {
         self.capabilities().filter(|c|
             c.typ() == CapabilityType::MultiProtocol
         ).map(|mp_cap| {
@@ -260,7 +249,7 @@ impl<Octs: Octets> OpenMessage<Octs> {
                 mp_cap.value()[1]
             ]);
             let safi = mp_cap.value()[3];
-            (afi.into(), safi.into())
+            (afi, safi).into()
         })
     }
 
@@ -830,15 +819,17 @@ impl<Target: OctetsBuilder + AsMut<[u8]>> OpenBuilder<Target> {
         self.add_capability(Capability::for_slice(s.to_vec()));
     }
 
-    pub fn add_mp(&mut self, afi: Afi, safi: Safi) {
+    pub fn add_mp(&mut self, afisafi: AfiSafi) {
         // code 1
         // length n
         // 2 bytes AFI, rsrvd byte, 1 byte SAFI
-        let mut s = [0x01, 0x04, 0x00, 0x00, 0x00, safi.into()];
-        let a = <Afi as Into<u16>>::into(afi).to_be_bytes();
-        s[2] = a[0];
-        s[3] = a[1];
-        self.add_capability(Capability::<Vec<u8>>::for_slice(s.to_vec()))
+
+        let (afi, safi) = afisafi.into();
+        let mut s = vec![0x01, 0x04];
+        s.extend_from_slice(&afi.to_be_bytes()[..]);
+        s.extend_from_slice(&[0x00, safi]);
+
+        self.add_capability(Capability::<Vec<u8>>::for_slice(s));
     }
 
     pub fn add_addpath(&mut self, afisafi: AfiSafi, dir: AddpathDirection) {
@@ -863,10 +854,9 @@ where Infallible: From<<Target as OctetsBuilder>::AppendError>
                 ]
             );
 
-            for (fam, dir) in self.addpath_families.iter() {
-                let (afi, safi) = fam.split();
-                addpath_cap.extend_from_slice(&u16::from(afi).to_be_bytes());
-                addpath_cap.extend_from_slice(&[safi.into(), *dir as u8]);
+            for (afisafi, dir) in self.addpath_families.iter() {
+                addpath_cap.extend_from_slice(&afisafi.as_bytes());
+                addpath_cap.extend_from_slice(&[u8::from(*dir)]);
             }
             self.add_capability(Capability::new(addpath_cap));
         }
@@ -915,8 +905,10 @@ impl OpenBuilder<Vec<u8>> {
 mod tests {
 
     use super::*;
-    use crate::bgp::message::Message;
+
     use bytes::Bytes;
+
+    use crate::bgp::message::Message;
 
     #[test]
     fn no_optional_parameters() {
@@ -1053,21 +1045,23 @@ mod tests {
 
         assert_eq!(open.multiprotocol_ids().count(), 15);
         let protocols = [
-            (Afi::Ipv4, Safi::Unicast),
-            (Afi::Ipv4, Safi::Multicast),
-            (Afi::Ipv4, Safi::MplsUnicast),
-            (Afi::Ipv4, Safi::MplsVpnUnicast),
-            (Afi::Ipv4, Safi::RouteTarget),
-            (Afi::Ipv4, Safi::FlowSpec),
-            (Afi::Ipv4, Safi::FlowSpecVpn),
-            (Afi::Ipv6, Safi::Unicast),
-            (Afi::Ipv6, Safi::Multicast),
-            (Afi::Ipv6, Safi::MplsUnicast),
-            (Afi::Ipv6, Safi::MplsVpnUnicast),
-            (Afi::Ipv6, Safi::FlowSpec),
-            (Afi::Ipv6, Safi::FlowSpecVpn),
-            (Afi::L2Vpn, Safi::Vpls),
-            (Afi::L2Vpn, Safi::Evpn),
+            AfiSafi::Ipv4Unicast,
+            AfiSafi::Ipv4Multicast,
+            AfiSafi::Ipv4MplsUnicast,
+            AfiSafi::Ipv4MplsVpnUnicast,
+            AfiSafi::Ipv4RouteTarget,
+            AfiSafi::Ipv4FlowSpec,
+            //AfiSafi::Ipv4FlowSpecVpn,
+            AfiSafi::Unsupported(1, 134),
+            AfiSafi::Ipv6Unicast,
+            AfiSafi::Ipv6Multicast,
+            AfiSafi::Ipv6MplsUnicast,
+            AfiSafi::Ipv6MplsVpnUnicast,
+            AfiSafi::Ipv6FlowSpec,
+            //AfiSafi::Ipv6FlowSpecVpn,
+            AfiSafi::Unsupported(2, 134),
+            AfiSafi::L2VpnVpls,
+            AfiSafi::L2VpnEvpn,
         ];
 
         for (id, protocol) in open.multiprotocol_ids().zip(
@@ -1137,8 +1131,8 @@ mod builder {
         open.set_holdtime(180);
         open.set_bgp_id([1, 2, 3, 4]);
 
-        open.add_mp(Afi::Ipv4, Safi::Unicast);
-        open.add_mp(Afi::Ipv6, Safi::Unicast);
+        open.add_mp(AfiSafi::Ipv4Unicast);
+        open.add_mp(AfiSafi::Ipv6Unicast);
 
         let res = open.into_message();
 
@@ -1152,8 +1146,8 @@ mod builder {
         open.set_holdtime(180);
         open.set_bgp_id([1, 2, 3, 4]);
 
-        open.add_mp(Afi::Ipv4, Safi::Unicast);
-        open.add_mp(Afi::Ipv6, Safi::Unicast);
+        open.add_mp(AfiSafi::Ipv4Unicast);
+        open.add_mp(AfiSafi::Ipv6Unicast);
 
         let res = open.into_message();
 
@@ -1167,8 +1161,8 @@ mod builder {
         open.set_holdtime(180);
         open.set_bgp_id([1, 2, 3, 4]);
 
-        open.add_mp(Afi::Ipv4, Safi::Unicast);
-        open.add_mp(Afi::Ipv6, Safi::Unicast);
+        open.add_mp(AfiSafi::Ipv4Unicast);
+        open.add_mp(AfiSafi::Ipv6Unicast);
         open.add_addpath(AfiSafi::Ipv4Unicast, AddpathDirection::SendReceive);
         open.add_addpath(AfiSafi::Ipv6Unicast, AddpathDirection::SendReceive);
 

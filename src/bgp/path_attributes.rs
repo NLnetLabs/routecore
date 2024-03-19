@@ -7,9 +7,8 @@ use octseq::{Octets, OctetsBuilder, OctetsFrom, Parser};
 
 use crate::asn::Asn;
 use crate::bgp::message::{
-    SessionConfig,
+    PduParseInfo,
     UpdateMessage,
-    nlri::FixedNlriIter,
     update_builder::ComposeError,
 };
 use crate::bgp::message::update_builder::{
@@ -18,7 +17,7 @@ use crate::bgp::message::update_builder::{
     StandardCommunitiesList
 };
 use crate::bgp::communities::StandardCommunity;
-use crate::bgp::types::{Afi, Safi, AfiSafi};
+use crate::bgp::nlri::afisafi::NlriCompose;
 use crate::util::parser::{ParseError, parse_ipv4addr};
 
 
@@ -126,8 +125,8 @@ impl PaMap {
         let mut pa_map = Self::empty();
         for pa in pdu.path_attributes()? {
             if let Ok(pa) = pa {
-                if pa.type_code() != MpReachNlriBuilder::TYPE_CODE
-                    && pa.type_code() != MpUnreachNlriBuilder::TYPE_CODE
+                if pa.type_code() != MpReachNlriBuilder::<()>::TYPE_CODE
+                    && pa.type_code() != MpUnreachNlriBuilder::<()>::TYPE_CODE
                 {
                     if let PathAttributeType::Invalid(n) = pa.type_code().into() {
                         warn!("invalid PA {}:\n{}", n, pdu.fmt_pcap_string());
@@ -452,25 +451,29 @@ macro_rules! path_attributes {
         #[derive(Debug)]
         pub struct EncodedPathAttribute<'a, Octs: Octets> {
             parser: Parser<'a, Octs>,
-            session_config: SessionConfig,
+            pdu_parse_info: PduParseInfo,
         }
         impl<'a, Octs: Octets> EncodedPathAttribute<'a, Octs> {
             fn new(
                 parser: Parser<'a, Octs>,
-                session_config: SessionConfig
+                ppi: PduParseInfo,
             ) -> Self {
-                Self { parser, session_config }
+                Self { parser, pdu_parse_info: ppi }
             }
 
-            pub fn session_config(&self) -> SessionConfig {
-                self.session_config
+            pub fn pdu_parse_info(&self) -> PduParseInfo {
+                self.pdu_parse_info
             }
 
-            fn flags(&self) -> Flags {
+            pub fn flags(&self) -> Flags {
                 self.parser.peek_all()[0].into()
             }
 
-            fn length(&self) -> usize {
+            pub fn type_code(&self) -> u8 {
+                self.parser.peek_all()[1]
+            }
+
+            pub fn length(&self) -> usize {
                 if self.flags().is_extended_length() {
                     let raw = self.parser.peek(4).unwrap();
                     u16::from_be_bytes([raw[2], raw[3]]).into()
@@ -511,7 +514,7 @@ macro_rules! path_attributes {
 
 
         impl<'a, Octs: Octets> WireformatPathAttribute<'a, Octs> {
-            fn parse(parser: &mut Parser<'a, Octs>, sc: SessionConfig) 
+            fn parse(parser: &mut Parser<'a, Octs>, ppi: PduParseInfo) 
                 -> Result<WireformatPathAttribute<'a, Octs>, ParseError>
             {
                 let start_pos = parser.pos();
@@ -528,7 +531,7 @@ macro_rules! path_attributes {
                     $(
                     $type_code => {
                         if let Err(e) = <$data>::validate(
-                            flags.into(), &mut pp, sc
+                            flags.into(), &mut pp, ppi
                         ) {
                             debug!("failed to parse path attribute: {e}");
                             if $type_code == 14 {
@@ -548,7 +551,7 @@ macro_rules! path_attributes {
                         } else {
                             pp.seek(start_pos)?;
                             WireformatPathAttribute::$name(
-                                EncodedPathAttribute::new(pp, sc)
+                                EncodedPathAttribute::new(pp, ppi)
                             )
                         }
                     }
@@ -576,13 +579,11 @@ macro_rules! path_attributes {
             {
                 match self {
                     $(
-                    //WireformatPathAttribute::$name(p, sc) => {
                     WireformatPathAttribute::$name(epa) => {
                         Ok(PathAttribute::$name(
-                            //$name::parse(&mut p.clone(), *sc)?
                             <$data>::parse(
                                 &mut epa.value_into_parser(),
-                                epa.session_config()
+                                epa.pdu_parse_info()
                             )?
                         ))
                     }
@@ -751,8 +752,8 @@ path_attributes!(
     8   => StandardCommunities(crate::bgp::message::update_builder::StandardCommunitiesList), Flags::OPT_TRANS,
     9   => OriginatorId(crate::bgp::types::OriginatorId), Flags::OPT_NON_TRANS,
     10  => ClusterList(crate::bgp::path_attributes::ClusterIds), Flags::OPT_NON_TRANS,
-    14  => MpReachNlri(crate::bgp::message::update_builder::MpReachNlriBuilder), Flags::OPT_NON_TRANS,
-    15  => MpUnreachNlri(crate::bgp::message::update_builder::MpUnreachNlriBuilder), Flags::OPT_NON_TRANS,
+    //14  => MpReachNlri(crate::bgp::message::update_builder::MpReachNlriBuilder), Flags::OPT_NON_TRANS,
+    //15  => MpUnreachNlri(crate::bgp::message::update_builder::MpUnreachNlriBuilder), Flags::OPT_NON_TRANS,
     16  => ExtendedCommunities(crate::bgp::path_attributes::ExtendedCommunitiesList), Flags::OPT_TRANS,
     17  => As4Path(crate::bgp::types::As4Path), Flags::OPT_TRANS,
     18  => As4Aggregator(crate::bgp::types::As4Aggregator), Flags::OPT_TRANS,
@@ -918,11 +919,11 @@ pub trait Attribute: AttributeHeader + Clone {
     fn validate<Octs: Octets>(
         flags: Flags,
         parser: &mut Parser<'_, Octs>,
-        sc: SessionConfig
+        ppi: PduParseInfo
     )
         -> Result<(), ParseError>;
 
-    fn parse<'a, Octs: 'a + Octets>(parser: &mut Parser<'a, Octs>, sc: SessionConfig) 
+    fn parse<'a, Octs: 'a + Octets>(parser: &mut Parser<'a, Octs>, ppi: PduParseInfo) 
         -> Result<Self, ParseError>
     where 
         Self: Sized,
@@ -936,7 +937,7 @@ pub trait Attribute: AttributeHeader + Clone {
 #[derive(Debug)]
 pub struct PathAttributes<'a, Octs> {
     pub parser: Parser<'a, Octs>,
-    pub session_config: SessionConfig,
+    pub pdu_parse_info: PduParseInfo,
 }
 
 impl<'a, Octs> Clone for PathAttributes<'a, Octs> {
@@ -948,10 +949,10 @@ impl<'a, Octs> Clone for PathAttributes<'a, Octs> {
 impl<'a, Octs> Copy for PathAttributes<'a, Octs> { }
 
 impl<'a, Octs: Octets> PathAttributes<'a, Octs> {
-    pub fn new(parser: Parser<'_, Octs>, session_config: SessionConfig)
+    pub fn new(parser: Parser<'_, Octs>, pdu_parse_info: PduParseInfo)
         -> PathAttributes<'_, Octs>
     {
-        PathAttributes { parser, session_config }
+        PathAttributes { parser, pdu_parse_info }
     }
     
     pub fn get(&self, pat: PathAttributeType)
@@ -979,7 +980,7 @@ impl<'a, Octs: Octets> Iterator for PathAttributes<'a, Octs> {
 
         let res = WireformatPathAttribute::parse(
             &mut self.parser,
-            self.session_config
+            self.pdu_parse_info
         );
         Some(res)
     }
@@ -997,6 +998,37 @@ macro_rules! check_len_exact {
     }
 }
 
+pub struct UncheckedPathAttributes<'a, Octs> {
+    parser: Parser<'a, Octs>,
+}
+
+impl<'a, Octs> UncheckedPathAttributes<'a, Octs> {
+    pub fn from_parser(parser: Parser<'a, Octs>) -> Self {
+        Self { parser }
+    }
+}
+
+impl<'a, Octs: Octets> Iterator for UncheckedPathAttributes<'a, Octs> {
+    type Item = EncodedPathAttribute<'a, Octs>;
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.parser.remaining() == 0 {
+            return None
+        }
+        let pos = self.parser.pos();
+        let flags = self.parser.parse_u8().ok()?;
+        let _type_code = self.parser.parse_u8().ok()?;
+        let (header_len, len) = match flags & 0x10 == 0x10 {
+            true => (4, self.parser.parse_u16_be().ok()? as usize),
+            false => (3, self.parser.parse_u8().ok()? as usize),
+        };
+
+        let _ = self.parser.seek(pos);
+        let pp = self.parser.parse_parser(header_len + len).ok()?;
+        Some(EncodedPathAttribute::new(pp, PduParseInfo::default()))
+    }
+}
+
+
 //--- Origin
 
 impl Attribute for crate::bgp::types::Origin {
@@ -1008,7 +1040,7 @@ impl Attribute for crate::bgp::types::Origin {
         target.append_slice(&[self.0.into()]) 
     }
 
-    fn parse<'a, Octs: 'a + Octets>(parser: &mut Parser<'_, Octs>, _sc: SessionConfig) 
+    fn parse<'a, Octs: 'a + Octets>(parser: &mut Parser<'_, Octs>, _ppi: PduParseInfo) 
         -> Result<Self, ParseError>
     {
         Ok(Self(parser.parse_u8()?.into()))
@@ -1017,7 +1049,7 @@ impl Attribute for crate::bgp::types::Origin {
     fn validate<Octs: Octets>(
         _flags: Flags,
         parser: &mut Parser<'_, Octs>,
-        _session_config: SessionConfig
+        _pdu_parse_info: PduParseInfo
     ) -> Result<(), ParseError> {
         check_len_exact!(parser, 1, "ORIGIN")
     }
@@ -1038,13 +1070,13 @@ impl Attribute for crate::bgp::aspath::HopPath {
         )
     }
 
-    fn parse<'a, Octs: 'a + Octets>(parser: &mut Parser<'a, Octs>, sc: SessionConfig) 
+    fn parse<'a, Octs: 'a + Octets>(parser: &mut Parser<'a, Octs>, ppi: PduParseInfo) 
         -> Result<Self, ParseError>
     {
         // XXX reusing the old/existing AsPath here for the time being
         let asp = crate::bgp::aspath::AsPath::new(
             parser.peek_all().to_vec(),
-            sc.has_four_octet_asn()
+            ppi.has_four_octet_asn()
         ).map_err(|_| ParseError::form_error("invalid AS_PATH"))?;
 
         Ok(asp.to_hop_path())
@@ -1053,9 +1085,9 @@ impl Attribute for crate::bgp::aspath::HopPath {
     fn validate<Octs: Octets>(
         _flags: Flags,
         parser: &mut Parser<'_, Octs>,
-        session_config: SessionConfig
+        pdu_parse_info: PduParseInfo
     ) -> Result<(), ParseError> {
-        let asn_size = if session_config.has_four_octet_asn() {
+        let asn_size = if pdu_parse_info.has_four_octet_asn() {
             4
         } else {
             2
@@ -1085,7 +1117,7 @@ impl Attribute for crate::bgp::types::ConventionalNextHop {
         target.append_slice(&self.0.octets())
     }
 
-    fn parse<'a, Octs: 'a + Octets>(parser: &mut Parser<'a, Octs>, _sc: SessionConfig) 
+    fn parse<'a, Octs: 'a + Octets>(parser: &mut Parser<'a, Octs>, _ppi: PduParseInfo) 
         -> Result<Self, ParseError>
     {
         Ok(Self(parse_ipv4addr(parser)?))
@@ -1094,7 +1126,7 @@ impl Attribute for crate::bgp::types::ConventionalNextHop {
     fn validate<Octs: Octets>(
         _flags: Flags,
         parser: &mut Parser<'_, Octs>,
-        _session_config: SessionConfig
+        _pdu_parse_info: PduParseInfo
     ) -> Result<(), ParseError> {
         check_len_exact!(parser, 4, "NEXT_HOP")
     }
@@ -1111,7 +1143,7 @@ impl Attribute for crate::bgp::types::MultiExitDisc {
         target.append_slice(&self.0.to_be_bytes()) 
     }
 
-    fn parse<'a, Octs: 'a + Octets>(parser: &mut Parser<'a, Octs>, _sc: SessionConfig) 
+    fn parse<'a, Octs: 'a + Octets>(parser: &mut Parser<'a, Octs>, _ppi: PduParseInfo) 
         -> Result<Self, ParseError>
     {
         Ok(Self(parser.parse_u32_be()?))
@@ -1120,7 +1152,7 @@ impl Attribute for crate::bgp::types::MultiExitDisc {
     fn validate<Octs: Octets>(
         _flags: Flags,
         parser: &mut Parser<'_, Octs>,
-        _session_config: SessionConfig
+        _pdu_parse_info: PduParseInfo
     ) -> Result<(), ParseError> {
         check_len_exact!(parser, 4, "MULTI_EXIT_DISC")
     }
@@ -1137,7 +1169,7 @@ impl Attribute for crate::bgp::types::LocalPref {
         target.append_slice(&self.0.to_be_bytes()) 
     }
 
-    fn parse<'a, Octs: 'a + Octets>(parser: &mut Parser<'a, Octs>, _sc: SessionConfig) 
+    fn parse<'a, Octs: 'a + Octets>(parser: &mut Parser<'a, Octs>, _ppi: PduParseInfo) 
         -> Result<Self, ParseError>
     {
         Ok(Self(parser.parse_u32_be()?))
@@ -1146,7 +1178,7 @@ impl Attribute for crate::bgp::types::LocalPref {
     fn validate<Octs: Octets>(
         _flags: Flags,
         parser: &mut Parser<'_, Octs>,
-        _session_config: SessionConfig
+        _pdu_parse_info: PduParseInfo
     ) -> Result<(), ParseError> {
         check_len_exact!(parser, 4, "LOCAL_PREF")
     }
@@ -1163,7 +1195,7 @@ impl Attribute for crate::bgp::types::AtomicAggregate {
         Ok(())
     }
 
-    fn parse<'a, Octs: 'a + Octets>(_parser: &mut Parser<'a, Octs>, _sc: SessionConfig) 
+    fn parse<'a, Octs: 'a + Octets>(_parser: &mut Parser<'a, Octs>, _ppi: PduParseInfo) 
         -> Result<Self, ParseError>
     {
         Ok(Self)
@@ -1172,7 +1204,7 @@ impl Attribute for crate::bgp::types::AtomicAggregate {
     fn validate<Octs: Octets>(
         _flags: Flags,
         parser: &mut Parser<'_, Octs>,
-        _session_config: SessionConfig
+        _pdu_parse_info: PduParseInfo
     ) -> Result<(), ParseError> {
         check_len_exact!(parser, 0, "ATOMIC_AGGREGATE")
     }
@@ -1222,10 +1254,10 @@ impl Attribute for AggregatorInfo {
         target.append_slice(&self.address().octets())
     }
 
-    fn parse<'a, Octs: 'a + Octets>(parser: &mut Parser<'a, Octs>, sc: SessionConfig) 
+    fn parse<'a, Octs: 'a + Octets>(parser: &mut Parser<'a, Octs>, ppi: PduParseInfo) 
         -> Result<Self, ParseError>
     {
-        let asn = if sc.has_four_octet_asn() {
+        let asn = if ppi.has_four_octet_asn() {
             Asn::from_u32(parser.parse_u32_be()?)
         } else {
             Asn::from_u32(parser.parse_u16_be()?.into())
@@ -1238,12 +1270,12 @@ impl Attribute for AggregatorInfo {
     fn validate<Octs: Octets>(
         _flags: Flags,
         parser: &mut Parser<'_, Octs>,
-        session_config: SessionConfig
+        pdu_parse_info: PduParseInfo
     ) -> Result<(), ParseError> {
         //if flags != Self::FLAGS.into() {
         //        return Err(ParseError::form_error("invalid flags"));
         //}
-        if session_config.has_four_octet_asn() {
+        if pdu_parse_info.has_four_octet_asn() {
             check_len_exact!(parser, 8, "AGGREGATOR")?;
         } else {
             check_len_exact!(parser, 6, "AGGREGATOR")?;
@@ -1274,7 +1306,7 @@ impl Attribute for crate::bgp::message::update_builder::StandardCommunitiesList 
         Ok(())
     }
 
-    fn parse<'a, Octs: 'a + Octets>(parser: &mut Parser<'a, Octs>, _sc: SessionConfig) 
+    fn parse<'a, Octs: 'a + Octets>(parser: &mut Parser<'a, Octs>, _ppi: PduParseInfo) 
         -> Result<Self, ParseError>
     {
         let mut builder = StandardCommunitiesList::with_capacity(
@@ -1290,7 +1322,7 @@ impl Attribute for crate::bgp::message::update_builder::StandardCommunitiesList 
     fn validate<Octs: Octets>(
         _flags: Flags,
         parser: &mut Parser<'_, Octs>,
-        _session_config: SessionConfig
+        _pdu_parse_info: PduParseInfo
     ) -> Result<(), ParseError> {
         if parser.remaining() % 4 != 0 {
             return Err(ParseError::form_error(
@@ -1319,7 +1351,7 @@ impl Attribute for crate::bgp::types::OriginatorId {
         target.append_slice(&self.0.octets())
     }
 
-    fn parse<'a, Octs: 'a + Octets>(parser: &mut Parser<'a, Octs>, _sc: SessionConfig) 
+    fn parse<'a, Octs: 'a + Octets>(parser: &mut Parser<'a, Octs>, _ppi: PduParseInfo) 
         -> Result<Self, ParseError>
     {
         Ok(Self(parse_ipv4addr(parser)?))
@@ -1328,7 +1360,7 @@ impl Attribute for crate::bgp::types::OriginatorId {
     fn validate<Octs: Octets>(
         _flags: Flags,
         parser: &mut Parser<'_, Octs>,
-        _session_config: SessionConfig
+        _pdu_parse_info: PduParseInfo
     ) -> Result<(), ParseError> {
         check_len_exact!(parser, 4, "ORIGINATOR_ID")
     }
@@ -1376,7 +1408,7 @@ impl Attribute for ClusterIds {
         Ok(())
     }
 
-    fn parse<'a, Octs: 'a + Octets>(parser: &mut Parser<'a, Octs>, _sc: SessionConfig) 
+    fn parse<'a, Octs: 'a + Octets>(parser: &mut Parser<'a, Octs>, _ppi: PduParseInfo) 
         -> Result<Self, ParseError>
     {
         let mut cluster_ids = Vec::with_capacity(parser.remaining() / 4);
@@ -1389,7 +1421,7 @@ impl Attribute for ClusterIds {
     fn validate<Octs: Octets>(
         _flags: Flags,
         parser: &mut Parser<'_, Octs>,
-        _session_config: SessionConfig
+        _pdu_parse_info: PduParseInfo
     ) -> Result<(), ParseError> {
         if parser.remaining() % 4 != 0 {
             return Err(ParseError::form_error(
@@ -1401,7 +1433,23 @@ impl Attribute for ClusterIds {
 }
 
 //--- MpReachNlri
-impl Attribute for crate::bgp::message::update_builder::MpReachNlriBuilder {
+impl<A> AttributeHeader for MpReachNlriBuilder<A> {
+    const FLAGS: u8 = Flags::OPT_NON_TRANS;
+    const TYPE_CODE: u8 = 14;
+}
+impl<A> FromAttribute for MpReachNlriBuilder<A> {
+    fn from_attribute(_value: PathAttribute) -> Option<MpReachNlriBuilder<A>> {
+        None
+    }
+
+    fn attribute_type() -> Option<PathAttributeType> {
+        None
+        //Some(PathAttributeType::MpReachNlriBuilder
+    }
+}
+
+
+impl<A: Clone + NlriCompose> Attribute for MpReachNlriBuilder<A> {
     fn value_len(&self) -> usize { 
         self.value_len()
     }
@@ -1412,13 +1460,18 @@ impl Attribute for crate::bgp::message::update_builder::MpReachNlriBuilder {
         self.compose_value(target)
     }
 
-    fn parse<'a, Octs: 'a + Octets>(parser: &mut Parser<'a, Octs>, sc: SessionConfig) 
-        -> Result<Self, ParseError>
+    fn parse<'a, Octs: 'a + Octets>(
+        _parser: &mut Parser<'a, Octs>,
+        //sc: SessionConfig,
+        _ppi: PduParseInfo,
+    ) -> Result<Self, ParseError>
         where
             Vec<u8>: OctetsFrom<Octs::Range<'a>>
     {
-        let afi: Afi = parser.parse_u16_be()?.into();
-        let safi: Safi = parser.parse_u8()?.into();
+        todo!()
+            /*
+        let afi = parser.parse_u16_be()?;
+        let safi= parser.parse_u8()?;
         let afisafi = AfiSafi::try_from((afi, safi))
             .map_err(|_| ParseError::Unsupported)?;
         let nexthop = crate::bgp::types::NextHop::parse(parser, afisafi)?;
@@ -1431,16 +1484,22 @@ impl Attribute for crate::bgp::message::update_builder::MpReachNlriBuilder {
         let afisafi = AfiSafi::try_from((afi, safi))
             .map_err(|_| ParseError::Unsupported)?;
 
-        let mut builder = MpReachNlriBuilder::new(
-            afi,
-            safi,
+        let mut builder = MpReachNlriBuilder::<afisafi>::new(
+            afisafi,
             nexthop,
-            sc.rx_addpath(afisafi)
+            //sc.rx_addpath(afisafi),
+            ppi.mp_reach_addpath(),
         );
 
+        todo!()
+            */
+        // TODO figure out how much sense it actually makes to create an
+        // MpReachNlriBuilder here. 
+
+            /*
         let nlri_iter = crate::bgp::message::update::Nlris::new(
             *parser,
-            sc,
+            ppi,
             afisafi
         ).iter();
 
@@ -1449,12 +1508,13 @@ impl Attribute for crate::bgp::message::update_builder::MpReachNlriBuilder {
         }
 
         Ok(builder)
+            */
     }
 
     fn validate<Octs: Octets>(
         _flags: Flags,
         parser: &mut Parser<'_, Octs>,
-        session_config: SessionConfig
+        _ppi: PduParseInfo
     ) -> Result<(), ParseError> {
         // We only check for the bare minimum here, as most checks are
         // better done upon (creation of the) Nlri iterator based on the
@@ -1464,10 +1524,12 @@ impl Attribute for crate::bgp::message::update_builder::MpReachNlriBuilder {
                 "length for MP_REACH_NLRI less than minimum"
             ))
         }
+        Ok(())
         
          
-        let afi: Afi = parser.parse_u16_be()?.into();
-        let safi: Safi = parser.parse_u8()?.into();
+        /*
+        let afi = parser.parse_u16_be()?;
+        let safi = parser.parse_u8()?;
         let afisafi = AfiSafi::try_from((afi, safi))
             .map_err(|_| ParseError::Unsupported)?;
         let _nexthop = crate::bgp::types::NextHop::parse(parser, afisafi)?;
@@ -1477,7 +1539,7 @@ impl Attribute for crate::bgp::message::update_builder::MpReachNlriBuilder {
         //}
         parser.advance(1)?; // reserved byte
 
-        let expect_path_id = session_config.rx_addpath(afisafi);
+        let expect_path_id = session_config.mp_reach_addpath();
 
         use AfiSafi::*;
         match (afisafi, expect_path_id) {
@@ -1528,11 +1590,18 @@ impl Attribute for crate::bgp::message::update_builder::MpReachNlriBuilder {
                 Ok(())
             }
         }
+        */
     }
 }
 
+
 //--- MpUnreachNlri
-impl Attribute for crate::bgp::message::update_builder::MpUnreachNlriBuilder {
+impl<A> AttributeHeader for MpUnreachNlriBuilder<A> {
+    const FLAGS: u8 = Flags::OPT_NON_TRANS;
+    const TYPE_CODE: u8 = 15;
+}
+
+impl<A: Clone + NlriCompose> Attribute for MpUnreachNlriBuilder<A> {
     fn value_len(&self) -> usize { 
         self.value_len()
     }
@@ -1543,25 +1612,33 @@ impl Attribute for crate::bgp::message::update_builder::MpUnreachNlriBuilder {
         self.compose_value(target)
     }
 
-    fn parse<'a, Octs: 'a + Octets>(parser: &mut Parser<'a, Octs>, sc: SessionConfig) 
+    fn parse<'a, Octs: 'a + Octets>(_parser: &mut Parser<'a, Octs>, _ppi: PduParseInfo) 
         -> Result<Self, ParseError>
     where
         Vec<u8>: OctetsFrom<Octs::Range<'a>>
     {
-        let afi: Afi = parser.parse_u16_be()?.into();
-        let safi: Safi = parser.parse_u8()?.into();
+        todo!()
+            /*
+        let afi = parser.parse_u16_be()?;
+        let safi = parser.parse_u8()?;
 
         let afisafi = AfiSafi::try_from((afi, safi))
             .map_err(|_| ParseError::Unsupported)?;
 
         let mut builder = MpUnreachNlriBuilder::new(
-            afi,
-            safi,
-            sc.rx_addpath(afisafi)
+            afisafi,
+            //sc.rx_addpath(afisafi),
+            ppi.mp_unreach_addpath(),
         );
+        todo!()
+            */
+        // TODO figure out how much sense it makes to actually make an
+        // MpUnreachBuilder here.
+
+        /*
         let nlri_iter = crate::bgp::message::update::Nlris::new(
             *parser,
-            sc,
+            ppi,
             afisafi,
         ).iter();
 
@@ -1569,12 +1646,13 @@ impl Attribute for crate::bgp::message::update_builder::MpUnreachNlriBuilder {
             builder.add_withdrawal(&nlri?);
         }
         Ok(builder)
+        */
     }
 
     fn validate<Octs: Octets>(
         _flags: Flags,
         parser: &mut Parser<'_, Octs>,
-        session_config: SessionConfig
+        _pdu_parse_info: PduParseInfo
     ) -> Result<(), ParseError> {
         // We only check for the bare minimum here, as most checks are
         // better done upon (creation of the) Nlri iterator based on the
@@ -1584,14 +1662,16 @@ impl Attribute for crate::bgp::message::update_builder::MpUnreachNlriBuilder {
                 "length for MP_UNREACH_NLRI less than minimum"
             ))
         }
+        Ok(())
+        /*
 
 
-        let afi: Afi = parser.parse_u16_be()?.into();
-        let safi: Safi = parser.parse_u8()?.into();
+        let afi = parser.parse_u16_be()?;
+        let safi = parser.parse_u8()?;
 
         let afisafi = AfiSafi::try_from((afi, safi))
             .map_err(|_| ParseError::Unsupported)?;
-        let expect_path_id = session_config.rx_addpath(afisafi);
+        let expect_path_id = session_config.mp_unreach_addpath();
 
         use AfiSafi::*;
         match (afisafi, expect_path_id) {
@@ -1642,6 +1722,7 @@ impl Attribute for crate::bgp::message::update_builder::MpUnreachNlriBuilder {
                 Ok(())
             }
         }
+    */
     }
 }
 
@@ -1689,7 +1770,7 @@ impl Attribute for crate::bgp::path_attributes::ExtendedCommunitiesList {
         Ok(())
     }
 
-    fn parse<'a, Octs: 'a + Octets>(parser: &mut Parser<'a, Octs>, _sc: SessionConfig) 
+    fn parse<'a, Octs: 'a + Octets>(parser: &mut Parser<'a, Octs>, _ppi: PduParseInfo) 
         -> Result<Self, ParseError>
     {
         let mut communities = Vec::with_capacity(parser.remaining() / 8);
@@ -1704,7 +1785,7 @@ impl Attribute for crate::bgp::path_attributes::ExtendedCommunitiesList {
     fn validate<Octs: Octets>(
         _flags: Flags,
         parser: &mut Parser<'_, Octs>,
-        _session_config: SessionConfig
+        _pdu_parse_info: PduParseInfo
     ) -> Result<(), ParseError> {
         if parser.remaining() % 8 != 0 {
             return Err(ParseError::form_error(
@@ -1730,13 +1811,13 @@ impl Attribute for crate::bgp::types::As4Path {
         )
     }
 
-    fn parse<'a, Octs: 'a + Octets>(parser: &mut Parser<'a, Octs>, sc: SessionConfig) 
+    fn parse<'a, Octs: 'a + Octets>(parser: &mut Parser<'a, Octs>, ppi: PduParseInfo) 
         -> Result<Self, ParseError>
     {
         // XXX Same as with AsPath, reusing the old/existing As4Path here
         let asp = crate::bgp::aspath::AsPath::new(
             parser.peek_all().to_vec(),
-            sc.has_four_octet_asn()
+            ppi.has_four_octet_asn()
         ).map_err(|_| ParseError::form_error("invalid AS4_PATH"))?;
         Ok(Self(asp.to_hop_path()))
     }
@@ -1744,7 +1825,7 @@ impl Attribute for crate::bgp::types::As4Path {
     fn validate<Octs: Octets>(
         _flags: Flags,
         parser: &mut Parser<'_, Octs>,
-        _session_config: SessionConfig
+        _pdu_parse_info: PduParseInfo
     ) -> Result<(), ParseError> {
         while parser.remaining() > 0 {
             let segment_type = parser.parse_u8()?;
@@ -1773,7 +1854,7 @@ impl Attribute for crate::bgp::types::As4Aggregator {
         target.append_slice(&self.0.address().octets())
     }
 
-    fn parse<'a, Octs: 'a + Octets>(parser: &mut Parser<'a, Octs>, _sc: SessionConfig) 
+    fn parse<'a, Octs: 'a + Octets>(parser: &mut Parser<'a, Octs>, _ppi: PduParseInfo) 
         -> Result<Self, ParseError>
     {
         let asn = Asn::from_u32(parser.parse_u32_be()?);
@@ -1784,7 +1865,7 @@ impl Attribute for crate::bgp::types::As4Aggregator {
     fn validate<Octs: Octets>(
         _flags: Flags,
         parser: &mut Parser<'_, Octs>,
-        _session_config: SessionConfig
+        _pdu_parse_info: PduParseInfo
     ) -> Result<(), ParseError> {
         check_len_exact!(parser, 8, "AS4_AGGREGATOR")
     }
@@ -1802,7 +1883,7 @@ impl Attribute for crate::bgp::types::Connector {
         target.append_slice(&self.0.octets())
     }
 
-    fn parse<'a, Octs: 'a + Octets>(parser: &mut Parser<'a, Octs>, _sc: SessionConfig) 
+    fn parse<'a, Octs: 'a + Octets>(parser: &mut Parser<'a, Octs>, _ppi: PduParseInfo) 
         -> Result<Self, ParseError>
     {
         Ok(Self(parse_ipv4addr(parser)?))
@@ -1811,7 +1892,7 @@ impl Attribute for crate::bgp::types::Connector {
     fn validate<Octs: Octets>(
         _flags: Flags,
         parser: &mut Parser<'_, Octs>,
-        _sc: SessionConfig
+        _ppi: PduParseInfo
     )
         -> Result<(), ParseError>
     {
@@ -1844,7 +1925,7 @@ impl Attribute for AsPathLimitInfo {
         target.append_slice(&self.attacher.to_raw())
     }
 
-    fn parse<'a, Octs: 'a + Octets>(parser: &mut Parser<'a, Octs>, _sc: SessionConfig) 
+    fn parse<'a, Octs: 'a + Octets>(parser: &mut Parser<'a, Octs>, _ppi: PduParseInfo) 
         -> Result<Self, ParseError>
     {
         let info = AsPathLimitInfo {
@@ -1858,7 +1939,7 @@ impl Attribute for AsPathLimitInfo {
     fn validate<Octs: Octets>(
         _flags: Flags,
         parser: &mut Parser<'_, Octs>,
-        _sc: SessionConfig
+        _ppi: PduParseInfo
     )
     -> Result<(), ParseError>
     {
@@ -1909,7 +1990,7 @@ impl Attribute for Ipv6ExtendedCommunitiesList {
         Ok(())
     }
 
-    fn parse<'a, Octs: 'a + Octets>(parser: &mut Parser<'a, Octs>, _sc: SessionConfig) 
+    fn parse<'a, Octs: 'a + Octets>(parser: &mut Parser<'a, Octs>, _ppi: PduParseInfo) 
         -> Result<Self, ParseError>
     {
         let mut communities = Vec::with_capacity(parser.remaining() / 20);
@@ -1924,7 +2005,7 @@ impl Attribute for Ipv6ExtendedCommunitiesList {
     fn validate<Octs: Octets>(
         _flags: Flags,
         parser: &mut Parser<'_, Octs>,
-        _session_config: SessionConfig
+        _pdu_parse_info: PduParseInfo
     ) -> Result<(), ParseError> {
         if parser.remaining() % 20 != 0 {
             return Err(ParseError::form_error(
@@ -1980,7 +2061,7 @@ impl Attribute for LargeCommunitiesList {
         Ok(())
     }
 
-    fn parse<'a, Octs: 'a + Octets>(parser: &mut Parser<'a, Octs>, _sc: SessionConfig) 
+    fn parse<'a, Octs: 'a + Octets>(parser: &mut Parser<'a, Octs>, _ppi: PduParseInfo) 
         -> Result<Self, ParseError>
     {
         let mut communities = Vec::with_capacity(parser.remaining() / 12);
@@ -1995,7 +2076,7 @@ impl Attribute for LargeCommunitiesList {
     fn validate<Octs: Octets>(
         _flags: Flags,
         parser: &mut Parser<'_, Octs>,
-        _session_config: SessionConfig
+        _pdu_parse_info: PduParseInfo
     ) -> Result<(), ParseError> {
         if parser.remaining() % 12 != 0 {
             return Err(ParseError::form_error(
@@ -2017,7 +2098,7 @@ impl Attribute for crate::bgp::types::Otc {
         target.append_slice(&self.0.to_raw())
     }
 
-    fn parse<'a, Octs: 'a + Octets>(parser: &mut Parser<'a, Octs>, _sc: SessionConfig) 
+    fn parse<'a, Octs: 'a + Octets>(parser: &mut Parser<'a, Octs>, _ppi: PduParseInfo) 
         -> Result<Self, ParseError>
     {
         Ok(Self(Asn::from_u32(parser.parse_u32_be()?)))
@@ -2026,7 +2107,7 @@ impl Attribute for crate::bgp::types::Otc {
     fn validate<Octs: Octets>(
         _flags: Flags,
         parser: &mut Parser<'_, Octs>,
-        _sc: SessionConfig
+        _ppi: PduParseInfo
     )
     -> Result<(), ParseError>
     {
@@ -2061,7 +2142,7 @@ impl Attribute for AttributeSet {
         target.append_slice(&self.attributes)
     }
 
-    fn parse<'a, Octs: 'a + Octets>(parser: &mut Parser<'a, Octs>, _sc: SessionConfig) 
+    fn parse<'a, Octs: 'a + Octets>(parser: &mut Parser<'a, Octs>, _ppi: PduParseInfo) 
         -> Result<Self, ParseError>
     {
         let origin = Asn::from_u32(parser.parse_u32_be()?);
@@ -2072,7 +2153,7 @@ impl Attribute for AttributeSet {
     fn validate<Octs: Octets>(
         _flags: Flags,
         parser: &mut Parser<'_, Octs>,
-        _sc: SessionConfig
+        _ppi: PduParseInfo
     )
     -> Result<(), ParseError>
     {
@@ -2113,7 +2194,7 @@ impl Attribute for ReservedRaw {
         target.append_slice(&self.raw)
     }
 
-    fn parse<'a, Octs: 'a + Octets>(parser: &mut Parser<'a, Octs>, _sc: SessionConfig) 
+    fn parse<'a, Octs: 'a + Octets>(parser: &mut Parser<'a, Octs>, _ppi: PduParseInfo) 
         -> Result<Self, ParseError>
     {
         let raw = parser.peek_all().to_vec();
@@ -2123,7 +2204,7 @@ impl Attribute for ReservedRaw {
     fn validate<Octs: Octets>(
         _flags: Flags,
         _parser: &mut Parser<'_, Octs>,
-        _sc: SessionConfig
+        _ppi: PduParseInfo
     )
     -> Result<(), ParseError>
     {
@@ -2171,11 +2252,11 @@ impl UnimplementedPathAttribute {
 
 #[cfg(test)]
 mod tests {
+
     use super::*;
+
     use crate::asn::Asn;
     use crate::bgp::communities::Wellknown;
-    use crate::bgp::message::nlri::Nlri;
-    use crate::bgp::message::update::NextHop;
     use crate::bgp::aspath::HopPath;
     use crate::bgp::types::OriginType;
 
@@ -2184,7 +2265,7 @@ mod tests {
         use super::PathAttribute as PA;
         fn check(raw: Vec<u8>, owned: PathAttribute) {
             let mut parser = Parser::from_ref(&raw);
-            let sc = SessionConfig::modern();
+            let sc = PduParseInfo::modern();
             let pa = WireformatPathAttribute::parse(&mut parser, sc)
                 .unwrap();
             assert_eq!(owned, pa.to_owned().unwrap());
@@ -2264,6 +2345,8 @@ mod tests {
             ClusterIds::new(vec![[10, 0, 0, 3].into()]).into()
         );
         
+        /*
+        // MpBuilders are not variants of PathAttribute anymore...
         check(
             vec![
                 0x80, 0x0e, 0x1c,
@@ -2275,14 +2358,13 @@ mod tests {
                 0x30, 0x20, 0x01, 0x0d, 0xb8, 0xaa, 0xbb
             ],
             {
-            let mut builder = MpReachNlriBuilder::new(
-                Afi::Ipv6,
-                Safi::Unicast,
+            let mut builder = MpReachNlriBuilder::<Ipv6UnicastNlri>::for_nexthop(
                 NextHop::Unicast("2001:db8::1234".parse().unwrap()),
-                false // no addpath
             );
             builder.add_announcement(
-                &Nlri::unicast_from_str("2001:db8:aabb::/48").unwrap()
+                Ipv6UnicastNlri::try_from(
+                    Prefix::from_str("2001:db8:aabb::/48").unwrap()
+                ).unwrap()
             );
 
             builder.into()
@@ -2299,8 +2381,6 @@ mod tests {
                 0x00, 0x03
             ],
             {
-                use crate::addr::Prefix;
-                use std::str::FromStr;
             let mut builder = MpUnreachNlriBuilder::new(
                 Afi::Ipv6,
                 Safi::Multicast,
@@ -2322,6 +2402,7 @@ mod tests {
             builder.into()
             }
         );
+        */
 
         check(
             vec![
@@ -2422,7 +2503,7 @@ mod tests {
             0x80, 0x04, 0x04, 0x00, 0x00, 0x00, 0xff // MED 
         ];
         let pas = PathAttributes::new(
-            Parser::from_ref(&raw), SessionConfig::modern()
+            Parser::from_ref(&raw), PduParseInfo::modern()
         );
         //for _ in 0..4 {
         //    let pa = pas.next();
@@ -2441,7 +2522,7 @@ mod tests {
             0xc0, 254, 0x04, 0x01, 0x02, 0x03, 0x04
         ];
         let mut parser = Parser::from_ref(&raw);
-        let sc = SessionConfig::modern();
+        let sc = PduParseInfo::modern();
         let pa = WireformatPathAttribute::parse(&mut parser, sc);
 
         if let Ok(WireformatPathAttribute::Unimplemented(u)) = pa {
@@ -2463,7 +2544,7 @@ mod tests {
         ];
         let mut parser = Parser::from_ref(&raw);
         let pa = WireformatPathAttribute::parse(
-                &mut parser, SessionConfig::modern()
+                &mut parser, PduParseInfo::modern()
         ).unwrap();
         assert!(matches!(pa, WireformatPathAttribute::Invalid(_,_,_)));
     }
@@ -2505,7 +2586,7 @@ mod tests {
         ];
 
         let pa = WireformatPathAttribute::parse(
-            &mut Parser::from_ref(&raw), SessionConfig::modern()
+            &mut Parser::from_ref(&raw), PduParseInfo::modern()
         ).unwrap();
         let mut owned = pa.to_owned().unwrap();
         if let PathAttribute::AsPath(ref mut asp) = owned  {
@@ -2520,4 +2601,27 @@ mod tests {
         assert!(composed != raw);
     }
 
+    #[test]
+    fn pamap() {
+        use crate::bgp::types::LocalPref as LP;
+        use crate::bgp::types::MultiExitDisc as MED;
+
+        let mut pamap = PaMap::empty();
+        pamap.set(LP(100));
+        pamap.set::<MED>(MED(12));
+
+        let _lp1 = pamap.remove::<LP>();
+        //let _lp2 = pamap.take::<LP>();
+        dbg!(&pamap);
+
+        //pamap.set(NH::new(AfiSafi::Ipv4Unicast));
+        //let nh = pamap.get::<NH>();
+        //dbg!(nh);
+
+        dbg!(&pamap);
+
+        let asp = HopPath::new();
+        pamap.set(asp);
+        dbg!(&pamap);
+    }
 }

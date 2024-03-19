@@ -29,6 +29,12 @@ pub struct EvpnNlri<Octs> {
     raw: Octs,
 }
 
+impl<T> EvpnNlri<T> {
+    pub fn route_type(&self) -> EvpnRouteType {
+        self.route_type
+    }
+}
+
 impl<Octs: Octets> EvpnNlri<Octs> {
     pub fn parse<'a, R>(parser: &mut Parser<'a, R>)
         -> Result<Self, ParseError>

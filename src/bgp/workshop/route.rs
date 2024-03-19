@@ -1,21 +1,25 @@
 use std::fmt::Debug;
 use std::hash::Hash;
-use std::marker::PhantomData;
+//use std::marker::PhantomData;
 
 use octseq::{Octets, OctetsFrom};
-use serde::Serialize;
 
 use crate::bgp::communities::Community;
-use crate::bgp::message::update_builder::{ComposeError, MpReachNlriBuilder};
+use crate::bgp::message::update_builder::{ComposeError, /*MpReachNlriBuilder*/};
 use crate::bgp::message::UpdateMessage;
 use crate::bgp::path_attributes::{FromAttribute, PaMap};
 use crate::bgp::{
-    message::{nlri::Nlri, update_builder::StandardCommunitiesList},
+    message::{
+        //nlri::Nlri,
+        update_builder::StandardCommunitiesList
+    },
     path_attributes::{
         ExtendedCommunitiesList, Ipv6ExtendedCommunitiesList,
         LargeCommunitiesList, PathAttribute, 
     },
 };
+
+use crate::bgp::nlri::afisafi::Nlri;
 
 
 //------------ TypedRoute ----------------------------------------------------
@@ -29,7 +33,8 @@ pub enum TypedRoute<N: Clone + Debug + Hash> {
 
 //------------ Route ---------------------------------------------------------
 
-#[derive(Debug, Eq, PartialEq, Clone, Hash, Serialize)]
+#[derive(Debug, Eq, PartialEq, Clone, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct Route<N: Clone + Debug + Hash>(N, PaMap);
 
 impl<N: Clone + Debug + Hash> Route<N> {
@@ -76,19 +81,20 @@ impl From<crate::bgp::aspath::AsPath<Vec<u8>>> for PathAttribute {
 
 //------------ The Workshop --------------------------------------------------
 
-#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize)]
-pub struct RouteWorkshop<O, N>(N, PaMap, PhantomData<O>);
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+pub struct RouteWorkshop<N>(N, PaMap);
 
-impl<Octs: Octets, N: Clone + Debug + Hash> RouteWorkshop<Octs, N> {
+impl<N: Clone + Debug + Hash> RouteWorkshop<N> {
     pub fn new(nlri: N) -> Self {
-        Self(nlri, PaMap::empty(), PhantomData)
+        Self(nlri, PaMap::empty())
     }
 
     pub fn from_pa_map(nlri: N, pa_map: PaMap) -> Self {
-        Self(nlri, pa_map, PhantomData)
+        Self(nlri, pa_map)
     }
         
-    pub fn from_update_pdu(
+    pub fn from_update_pdu<Octs: Octets>(
         nlri: N,
         pdu: &UpdateMessage<Octs>,
     ) -> Result<Self, ComposeError>
@@ -96,7 +102,7 @@ impl<Octs: Octets, N: Clone + Debug + Hash> RouteWorkshop<Octs, N> {
         for<'a> Vec<u8>: OctetsFrom<Octs::Range<'a>>,
     {
         PaMap::from_update_pdu(pdu)
-            .map(|r| Self(nlri, r, PhantomData))
+            .map(|r| Self(nlri, r))
     }
 
     pub fn nlri(&self) -> &N {
@@ -110,7 +116,7 @@ impl<Octs: Octets, N: Clone + Debug + Hash> RouteWorkshop<Octs, N> {
         WA::store(value, &mut self.1)
     }
 
-    pub fn get_attr<A: FromAttribute + WorkshopAttribute<N>>(
+    pub fn get_attr<A: WorkshopAttribute<N>>(
         &self,
     ) -> Option<A> {
         self.1.get::<A>().or_else(|| A::retrieve(&self.1))
@@ -162,8 +168,19 @@ impl_workshop!(
     crate::bgp::path_attributes::ClusterIds
     crate::bgp::message::update_builder::StandardCommunitiesList
     crate::bgp::types::Otc
-    crate::bgp::message::update_builder::MpReachNlriBuilder
+    //crate::bgp::message::update_builder::MpReachNlriBuilder
 );
+
+/*
+impl<A, N: Clone + Hash + Debug> WorkshopAttribute<N> for crate::bgp::message::update_builder::MpReachNlriBuilder<A> {
+    fn store(local_attrs: Self, attrs: &mut PaMap) ->
+        Result<(), ComposeError> { attrs.set(local_attrs); Ok(()) }
+    fn retrieve(_attrs: &PaMap) ->
+        Option<Self> { None }
+}
+*/
+
+
 
 //------------ WorkshopAttribute ---------------------------------------------
 
@@ -246,9 +263,10 @@ impl FromAttribute for Vec<Community> { }
 
 //------------ NlriWorkshop --------------------------------------------------
 
-impl FromAttribute for crate::bgp::message::nlri::Nlri<Vec<u8>> { }
+impl FromAttribute for Nlri<Vec<u8>> { }
 
-impl<N: Clone + Hash> WorkshopAttribute<N> for crate::bgp::message::nlri::Nlri<Vec<u8>> {
+/*
+impl<N: Clone + Hash> WorkshopAttribute<N> for Nlri<Vec<u8>> {
     fn retrieve(attrs: &PaMap) -> Option<Self>
     where
         Self: Sized {
@@ -266,11 +284,13 @@ impl<N: Clone + Hash> WorkshopAttribute<N> for crate::bgp::message::nlri::Nlri<V
         }
     }
 }
+*/
 
 //------------ NextHopWorkshop -----------------------------------------------
 
 impl FromAttribute for crate::bgp::types::NextHop { }
 
+/*
 impl<N: Clone + Hash> WorkshopAttribute<N> for crate::bgp::types::NextHop {
     fn retrieve(attrs: &PaMap) -> Option<Self> {
         if let Some(next_hop) =
@@ -297,3 +317,4 @@ impl<N: Clone + Hash> WorkshopAttribute<N> for crate::bgp::types::NextHop {
         }
     }
 }
+*/

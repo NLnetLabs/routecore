@@ -3,7 +3,7 @@ use crate::bgp::types::{Afi, AfiSafi, NextHop};
 use crate::addr::Prefix;
 
 use crate::util::parser::{parse_ipv4addr, parse_ipv6addr, ParseError};
-use crate::bgp::message::update::SessionConfig;
+use crate::bgp::message::update::PduParseInfo;
 use crate::flowspec::Component;
 use crate::typeenum;
 use octseq::{Octets, OctetsBuilder, OctetsFrom, Parser};
@@ -1618,6 +1618,7 @@ pub(crate) fn parse_prefix<R: Octets>(parser: &mut Parser<'_, R>, afi: Afi)
     parse_prefix_for_len(parser, prefix_bits, afi)
 }
 
+/*
 impl BasicNlri {
     pub fn check<Octs: Octets>(
         parser: &mut Parser<Octs>,
@@ -1736,12 +1737,13 @@ impl From<(Prefix, Option<PathId>)> for BasicNlri {
         BasicNlri { prefix: tuple.0, path_id: tuple.1 }
     }
 }
+*/
 
 
 impl<Octs: Octets> MplsVpnNlri<Octs> {
     pub fn check(
         parser: &mut Parser<Octs>,
-        config: SessionConfig,
+        config: PduParseInfo,
         afisafi: AfiSafi,
         ) -> Result<(), ParseError>
     {
@@ -1774,7 +1776,7 @@ impl<Octs: Octets> MplsVpnNlri<Octs> {
 impl<Octs: Octets> MplsVpnNlri<Octs> {
     pub fn parse<'a, R>(
         parser: &mut Parser<'a, R>,
-        config: SessionConfig,
+        config: PduParseInfo,
         afisafi: AfiSafi,
     ) -> Result<Self, ParseError>
     where
@@ -1916,7 +1918,7 @@ impl<T: AsRef<[u8]>> MplsVpnNlri<T> {
 impl<Octs: Octets> MplsNlri<Octs> {
     pub fn check(
         parser: &mut Parser<Octs>,
-        config: SessionConfig,
+        config: PduParseInfo,
         afisafi: AfiSafi,
     ) -> Result<(), ParseError> {
         if config.rx_addpath(afisafi) {
@@ -1960,7 +1962,7 @@ impl<T> fmt::Display for MplsNlri<T> {
 impl<Octs: Octets> MplsNlri<Octs> {
     pub fn parse<'a, R>(
         parser: &mut Parser<'a, R>,
-        config: SessionConfig,
+        config: PduParseInfo,
         afisafi: AfiSafi,
     ) -> Result<Self, ParseError>
     where

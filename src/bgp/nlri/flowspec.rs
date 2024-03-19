@@ -19,6 +19,12 @@ pub struct FlowSpecNlri<Octs> {
     raw: Octs,
 }
 
+impl<Octs> FlowSpecNlri<Octs> {
+    pub(crate) fn raw(&self) -> &Octs {
+        &self.raw
+    }
+}
+
 impl<Octs: Octets> FlowSpecNlri<Octs> {
     pub fn parse<'a, R>(parser: &mut Parser<'a, R>, afi: Afi)
         -> Result<Self, ParseError>
