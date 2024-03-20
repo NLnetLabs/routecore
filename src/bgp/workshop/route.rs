@@ -2,12 +2,17 @@ use std::fmt::Debug;
 use std::hash::Hash;
 //use std::marker::PhantomData;
 
-use octseq::{Octets, OctetsFrom};
+use octseq::{Octets, OctetsFrom, Parser};
+use serde::Serialize;
 
+use crate::addr::Prefix;
 use crate::bgp::communities::Community;
 use crate::bgp::message::update_builder::{ComposeError, /*MpReachNlriBuilder*/};
 use crate::bgp::message::UpdateMessage;
+use crate::bgp::nlri::common::PathId;
+use crate::bgp::nlri::flowspec::FlowSpecNlri;
 use crate::bgp::path_attributes::{FromAttribute, PaMap};
+use crate::bgp::ParseError;
 use crate::bgp::{
     message::{
         //nlri::Nlri,
@@ -18,8 +23,11 @@ use crate::bgp::{
         LargeCommunitiesList, PathAttribute, 
     },
 };
-
-use crate::bgp::nlri::afisafi::Nlri;
+use crate::bgp::nlri::afisafi::{Addpath, Ipv4MulticastNlri, Ipv6MulticastNlri, IsPrefix};
+use crate::bgp::nlri::afisafi::{AfiSafiType, Ipv4UnicastNlri, Ipv6UnicastNlri};
+use crate::bgp::nlri::afisafi::{Ipv4UnicastAddpathNlri, Ipv6UnicastAddpathNlri};
+use crate::bgp::nlri::afisafi::{Ipv4MulticastAddpathNlri, Ipv6MulticastAddpathNlri};
+use crate::bgp::nlri::afisafi::{iter_for_afi_safi, AfiSafiNlri, AfiSafiParse, Nlri};
 
 
 //------------ TypedRoute ----------------------------------------------------
@@ -122,13 +130,13 @@ impl<N: Clone + Debug + Hash> RouteWorkshop<N> {
         self.1.get::<A>().or_else(|| A::retrieve(&self.1))
     }
 
-    pub fn clone_into_route(&self) -> Route<N> {
-        Route::<N>(self.0.clone(), self.1.clone())
-    }
+    // pub fn clone_into_route(&self) -> Route<N> {
+    //     Route::<N>(self.0.clone(), self.1.clone())
+    // }
 
-    pub fn into_route(self) -> Route<N> {
-        Route::<N>(self.0, self.1)
-    }
+    // pub fn into_route(self) -> Route<N> {
+    //     Route::<N>(self.0, self.1)
+    // }
 
     pub fn attributes(&self) -> &PaMap {
         &self.1
@@ -318,3 +326,282 @@ impl<N: Clone + Hash> WorkshopAttribute<N> for crate::bgp::types::NextHop {
     }
 }
 */
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Serialize)]
+pub struct BasicNlri {
+    pub ty: AfiSafiType,
+    pub prefix: Prefix,
+    pub path_id: Option<PathId>
+}
+
+impl BasicNlri {
+    pub fn prefix(&self) -> Prefix {
+        self.prefix
+    }
+
+    pub fn path_id(&self) -> Option<PathId> {
+        self.path_id
+    }
+
+    pub fn get_type(&self) -> AfiSafiType {
+        self.ty
+    }
+}
+
+
+//------------ Ipv4 conversions ----------------------------------------------
+
+impl From<Ipv4UnicastNlri> for BasicNlri {
+    fn from(value: Ipv4UnicastNlri) -> Self {
+        Self {
+            ty: AfiSafiType::Ipv4Unicast,
+            prefix: value.prefix(),
+            path_id: None
+        }
+    }
+}
+
+impl From<Ipv4UnicastAddpathNlri> for BasicNlri {
+    fn from(value: Ipv4UnicastAddpathNlri) -> Self {
+        Self {
+            ty: AfiSafiType::Ipv4Unicast,
+            prefix: value.prefix(),
+            path_id: Some(value.path_id())
+        }
+    }
+}
+
+impl From<Ipv4MulticastNlri> for BasicNlri {
+    fn from(value: Ipv4MulticastNlri) -> Self {
+        Self {
+            ty: AfiSafiType::Ipv4Unicast,
+            prefix: value.prefix(),
+            path_id: None
+        }
+    }
+}
+
+impl From<Ipv4MulticastAddpathNlri> for BasicNlri {
+    fn from(value: Ipv4MulticastAddpathNlri) -> Self {
+        Self {
+            ty: AfiSafiType::Ipv4Unicast,
+            prefix: value.prefix(),
+            path_id: Some(value.path_id())
+        }
+    }
+}
+
+//------------ Ipv6 conversions ----------------------------------------------
+
+impl From<Ipv6UnicastNlri> for BasicNlri {
+    fn from(value: Ipv6UnicastNlri) -> Self {
+        Self {
+            ty: AfiSafiType::Ipv6Unicast,
+            prefix: value.prefix(),
+            path_id: None
+        }
+    }
+}
+
+impl From<Ipv6UnicastAddpathNlri> for BasicNlri {
+    fn from(value: Ipv6UnicastAddpathNlri) -> Self {
+        Self {
+            ty: AfiSafiType::Ipv6Unicast,
+            prefix: value.prefix(),
+            path_id: Some(value.path_id())
+        }
+    }
+}
+
+impl From<Ipv6MulticastNlri> for BasicNlri {
+    fn from(value: Ipv6MulticastNlri) -> Self {
+        Self {
+            ty: AfiSafiType::Ipv6Unicast,
+            prefix: value.prefix(),
+            path_id: None
+        }
+    }
+}
+
+impl From<Ipv6MulticastAddpathNlri> for BasicNlri {
+    fn from(value: Ipv6MulticastAddpathNlri) -> Self {
+        Self {
+            ty: AfiSafiType::Ipv6Unicast,
+            prefix: value.prefix(),
+            path_id: Some(value.path_id())
+        }
+    }
+}
+
+/// Creates a Vec with all of the single `NLRIs` for one type of `NLRI` and
+/// converts all the resulting values to `T`.
+/// 
+/// The type of `NLRI` is specified with the `AF` type argument. If the
+/// specified `NLRI` type is not present, it will return an empty `Vec`. The
+/// type `T` should be able to convert all the different `NLRI` types in the
+/// Vec to `T`.
+pub fn into_wrapped_rws_vec<
+    'a,
+    O: Octets + Clone + Debug + Hash + 'a,
+    P: 'a + Octets<Range<'a> = O>,
+    AF: AfiSafiNlri + AfiSafiParse<'a, O, P, Output = AF>,
+    AFT: Clone + Debug + Hash + From<AF>,
+    T: From<RouteWorkshop<AFT>>,
+>(
+    update: &'a UpdateMessage<P>
+) -> Vec<T> where Vec<u8>: OctetsFrom<P::Range<'a>> {
+    
+    let mut pa_map = PaMap::from_update_pdu(update).unwrap();
+    let parser = update.nlri_parser().unwrap().unwrap();
+
+    iter_for_afi_safi::<'_, _, _, AF>(parser)
+        .filter_map(|n: Result<AF::Output, ParseError>| {
+            if let Ok(nlri) = n {
+                Some(RouteWorkshop::from_pa_map(
+                    AFT::from(nlri), std::mem::take(&mut pa_map)).into()
+                )
+            } else {
+                None
+            }
+        })
+    .collect::<Vec<_>>()
+}
+
+// Internal version that takes a parser and a pa_map, instead of the
+// `UpdateMessage`. Should not be public because it will try to parse for any
+// AfiSafiNlri type, which could result in malformed resulting `NLRI`, if
+// specifying non-present NRLI.
+pub(crate) fn _into_wrapped_rws_vec<
+    'a,
+    O: Octets + Clone + Debug + Hash + 'a,
+    P: 'a + Octets<Range<'a> = O>,
+    AF: AfiSafiNlri + AfiSafiParse<'a, O, P, Output = AF>,
+    AFT: Clone + Debug + Hash + From<AF>,
+    T: From<RouteWorkshop<AFT>>,
+>(
+    parser: Parser<'a, P>,
+    mut pa_map: PaMap,
+) -> Vec<T> where Vec<u8>: OctetsFrom<O::Range<'a>> {
+    iter_for_afi_safi::<'_, _, _, AF>(parser)
+        .filter_map(|n: Result<AF::Output, ParseError>| {
+            if let Ok(nlri) = n {
+                Some(RouteWorkshop::from_pa_map(
+                    AFT::from(nlri), std::mem::take(&mut pa_map)).into()
+                )
+            } else {
+                None
+            }
+        })
+    .collect::<Vec<_>>()
+}
+
+/// Creates a Vec with all of the single `NLRIs` for all `NLRI` and converts
+/// all the values in `T`.
+/// 
+/// The type of `NLRI` is specified with the `AF` type argument. If the
+/// specified `NLRI` type is not present, it will return an empty `Vec`. The
+/// type `T` should be able to convert all the different `NLRI` types in the
+/// Vec to `T`.
+pub fn explode_into_wrapped_rws_vec<
+    'a,
+    O: Octets + Octets<Range<'a> = O> + Clone + Debug + Hash + 'a,
+    P: 'a + Octets<Range<'a> = O>,
+    T: From<RouteWorkshop<BasicNlri>> +
+        From<RouteWorkshop<FlowSpecNlri<O>>>,
+>(
+    afi_safis: impl Iterator<Item = AfiSafiType>,
+    add_path_cap: bool,
+    update: &'a UpdateMessage<O>,
+) -> Result<Vec<T>, ParseError> where Vec<u8>: OctetsFrom<O::Range<'a>> {
+
+    let pa_map = PaMap::from_update_pdu(update).unwrap();
+    let parser: Parser<'a, O> = update.nlri_parser()?.unwrap();
+    let mut res = vec![];
+
+    for afi_safi in afi_safis {
+        match (afi_safi, add_path_cap) {
+            (AfiSafiType::Ipv4Unicast, false) => { 
+                res.extend(
+                    _into_wrapped_rws_vec::<'_, _, _, Ipv4UnicastNlri, BasicNlri, T>(parser, pa_map.clone())
+                );
+            }
+            (AfiSafiType::Ipv4Unicast, true) => {
+                res.extend(
+                    _into_wrapped_rws_vec::<'_, _, _, Ipv4UnicastAddpathNlri, BasicNlri, T>(parser, pa_map.clone())
+                );
+            }
+            (AfiSafiType::Ipv6Unicast, false) => { 
+                res.extend(
+                    _into_wrapped_rws_vec::<'_, _, _, Ipv6UnicastNlri, BasicNlri, T>(parser, pa_map.clone())
+                );
+            },
+            (AfiSafiType::Ipv6Unicast, true) => { 
+                res.extend(
+                    _into_wrapped_rws_vec::<'_, _, _, Ipv6UnicastAddpathNlri, BasicNlri, T>(parser, pa_map.clone())
+                );
+            },
+            (AfiSafiType::Ipv4Multicast, false) => { 
+                res.extend(
+                    _into_wrapped_rws_vec::<'_, _, _, Ipv4MulticastNlri, BasicNlri, T>(parser, pa_map.clone())
+                );
+            },
+            (AfiSafiType::Ipv4Multicast, true) => { 
+                res.extend(
+                    _into_wrapped_rws_vec::<'_, _, _, Ipv4UnicastAddpathNlri, BasicNlri, T>(parser, pa_map.clone())
+                )
+            },
+            (AfiSafiType::Ipv6Multicast, false) => { 
+                res.extend(
+                    _into_wrapped_rws_vec::<'a, _, _,
+                        Ipv6MulticastNlri, BasicNlri, T>(
+                            parser, pa_map.clone()
+                        )
+                );
+            },
+            (AfiSafiType::Ipv6Multicast, true) => { 
+                res.extend(
+                    _into_wrapped_rws_vec::<'_, _, _,
+                        Ipv6MulticastAddpathNlri, BasicNlri, T>(
+                            parser, pa_map.clone()
+                        )
+                );
+            },
+            (AfiSafiType::Ipv4MplsUnicast, true) => todo!(),
+            (AfiSafiType::Ipv4MplsUnicast, false) => todo!(),
+            (AfiSafiType::Ipv6MplsUnicast, true) => todo!(),
+            (AfiSafiType::Ipv6MplsUnicast, false) => todo!(),
+            (AfiSafiType::Ipv4MplsVpnUnicast, true) => todo!(),
+            (AfiSafiType::Ipv4MplsVpnUnicast, false) => todo!(),
+            (AfiSafiType::Ipv6MplsVpnUnicast, true) => todo!(),
+            (AfiSafiType::Ipv6MplsVpnUnicast, false) => todo!(),
+            (AfiSafiType::Ipv4RouteTarget, true) => todo!(),
+            (AfiSafiType::Ipv4RouteTarget, false) => todo!(),
+            (AfiSafiType::Ipv4FlowSpec, true) => {
+                res.extend(
+                    _into_wrapped_rws_vec::<'_, _, _,
+                        crate::bgp::nlri::afisafi::Ipv4FlowSpecNlri<O>,
+                        crate::bgp::nlri::flowspec::FlowSpecNlri<O>, T>(
+                            parser, pa_map.clone()
+                    )
+                );
+            },
+            (AfiSafiType::Ipv4FlowSpec, false) => todo!(),
+            (AfiSafiType::Ipv6FlowSpec, true) => {
+                res.extend(
+                    _into_wrapped_rws_vec::<'_, _, _,
+                        crate::bgp::nlri::afisafi::Ipv6FlowSpecNlri<O>,
+                        crate::bgp::nlri::flowspec::FlowSpecNlri<O>, T>(
+                            parser, pa_map.clone()
+                    )
+                );
+            },
+            (AfiSafiType::Ipv6FlowSpec, false) => todo!(),
+            (AfiSafiType::L2VpnVpls, true) => todo!(),
+            (AfiSafiType::L2VpnVpls, false) => todo!(),
+            (AfiSafiType::L2VpnEvpn, true) => todo!(),
+            (AfiSafiType::L2VpnEvpn, false) => todo!(),
+            (AfiSafiType::Unsupported(_, _), _) => todo!()
+        };
+    }
+    Ok(res)
+}
