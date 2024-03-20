@@ -36,7 +36,7 @@ macro_rules! addpath { ($nlri:ident $(<$gen:ident>)? ) =>
 
 paste! {
     #[allow(clippy::derived_hash_with_manual_eq)]
-    #[derive(Clone, Debug, Hash)]
+    #[derive(Clone, Debug, Hash, Serialize)]
     pub struct [<$nlri AddpathNlri>]$(<$gen>)?(PathId, [<$nlri Nlri>]$(<$gen>)?);
     impl$(<$gen: Clone + Debug + Hash>)? AfiSafiNlri for [<$nlri AddpathNlri>]$(<$gen>)? {
         type Nlri = <[<$nlri Nlri>]$(<$gen>)? as AfiSafiNlri>::Nlri;
@@ -213,7 +213,7 @@ paste! {
     }
 
     // this enforces these derives on all *Nlri structs.
-    #[derive(Clone, Debug, Hash)]
+    #[derive(Clone, Debug, Hash, Serialize)]
     pub enum Nlri<Octs> {
     $($(
         [<$afi_name $safi_name>]([<$afi_name $safi_name Nlri>]$(<$gen>)?),
@@ -346,6 +346,8 @@ $($(
 
 //--- Trait implementations for macro generated types
 
+impl<Octs: AsRef<[u8]>> Eq for Nlri<Octs> {}
+
 impl<Octs, Other> PartialEq<Nlri<Other>> for Nlri<Octs>
 where Octs: AsRef<[u8]>,
       Other: AsRef<[u8]>
@@ -431,7 +433,6 @@ pub trait AfiSafi {
 pub trait AfiSafiNlri: AfiSafi + Clone + Hash + Debug {
     type Nlri; //: AfiSafi;
     fn nlri(&self) -> Self::Nlri;
-
     // TODO
     // can/should we merge in AfiSafiParse here?
 
@@ -508,7 +509,7 @@ afisafi! {
 
 // --- Ipv4Unicast
 
-#[derive(Clone, Debug, Hash, PartialEq)]
+#[derive(Clone, Debug, Hash, PartialEq, Serialize)]
 pub struct Ipv4UnicastNlri(Prefix);
 
 impl AfiSafiNlri for Ipv4UnicastNlri {
@@ -599,7 +600,7 @@ impl fmt::Display for Ipv4UnicastNlri {
 
 //--- Ipv4Multicast
 
-#[derive(Clone, Debug, Hash, PartialEq)]
+#[derive(Clone, Debug, Hash, PartialEq, Serialize)]
 pub struct Ipv4MulticastNlri(Prefix);
 
 impl AfiSafiNlri for Ipv4MulticastNlri {
@@ -670,7 +671,7 @@ impl fmt::Display for Ipv4MulticastNlri {
 
 //--- Ipv4MplsUnicast
 
-#[derive(Clone, Debug, Hash)]
+#[derive(Clone, Debug, Hash, Serialize)]
 pub struct Ipv4MplsUnicastNlri<Octs>(MplsNlri<Octs>);
 
 impl<Octs: Clone + Debug + Hash> AfiSafiNlri for Ipv4MplsUnicastNlri<Octs> {
@@ -724,7 +725,7 @@ impl<T> fmt::Display for Ipv4MplsUnicastNlri<T> {
 
 //--- Ipv4MplsVpnUnicastNlri
 
-#[derive(Clone, Debug, Hash)]
+#[derive(Clone, Debug, Hash, Serialize)]
 pub struct Ipv4MplsVpnUnicastNlri<Octs>(MplsVpnNlri<Octs>);
 
 impl<Octs: Clone + Debug + Hash> AfiSafiNlri for Ipv4MplsVpnUnicastNlri<Octs> {
@@ -760,7 +761,7 @@ impl<T> fmt::Display for Ipv4MplsVpnUnicastNlri<T> {
 //--- Ipv4RouteTarget
 
 
-#[derive(Clone, Debug, Hash)]
+#[derive(Clone, Debug, Hash, Serialize)]
 pub struct Ipv4RouteTargetNlri<Octs>(RouteTargetNlri<Octs>);
 
 impl<Octs: Clone + Debug + Hash> AfiSafiNlri for Ipv4RouteTargetNlri<Octs> {
@@ -793,8 +794,8 @@ impl<T> fmt::Display for Ipv4RouteTargetNlri<T> {
 
 //--- Ipv4FlowSpec
 
-#[derive(Clone, Debug, Hash)]
-pub struct Ipv4FlowSpecNlri<Octs>(FlowSpecNlri<Octs>);
+#[derive(Clone, Debug, Hash, Serialize)]
+pub struct Ipv4FlowSpecNlri<Octs>(pub(crate) FlowSpecNlri<Octs>);
 
 impl<Octs: Clone + Debug + Hash> AfiSafiNlri for Ipv4FlowSpecNlri<Octs> {
     type Nlri = FlowSpecNlri<Octs>;
@@ -850,11 +851,18 @@ impl<T> fmt::Display for Ipv4FlowSpecNlri<T> {
     }
 }
 
+impl<T> From<Ipv4FlowSpecNlri<T>> for FlowSpecNlri<T> {
+    fn from(value: Ipv4FlowSpecNlri<T>) -> Self {
+        value.0
+    }
+}
+
+
 //------------ Ipv6 ----------------------------------------------------------
 
 //--- Ipv6Unicast
 
-#[derive(Clone, Debug, Hash, PartialEq)]
+#[derive(Clone, Debug, Hash, PartialEq, Serialize)]
 pub struct Ipv6UnicastNlri(Prefix);
 impl AfiSafiNlri for Ipv6UnicastNlri {
     type Nlri = Prefix;
@@ -923,7 +931,7 @@ impl fmt::Display for Ipv6UnicastNlri {
 
 //--- Ipv6Multicast
 
-#[derive(Clone, Debug, Hash, PartialEq)]
+#[derive(Clone, Debug, Hash, PartialEq, Serialize)]
 pub struct Ipv6MulticastNlri(Prefix);
 
 impl AfiSafiNlri for Ipv6MulticastNlri {
@@ -955,7 +963,7 @@ impl fmt::Display for Ipv6MulticastNlri {
 
 //--- Ipv6MplsUnicast
 
-#[derive(Clone, Debug, Hash)]
+#[derive(Clone, Debug, Hash, Serialize)]
 pub struct Ipv6MplsUnicastNlri<Octs>(MplsNlri<Octs>);
 
 impl<Octs: Clone + Debug + Hash> AfiSafiNlri for Ipv6MplsUnicastNlri<Octs> {
@@ -1000,7 +1008,7 @@ impl<T> fmt::Display for Ipv6MplsUnicastNlri<T> {
 
 //--- Ipv6MplsVpnUnicastNlri
 
-#[derive(Clone, Debug, Hash)]
+#[derive(Clone, Debug, Hash, Serialize)]
 pub struct Ipv6MplsVpnUnicastNlri<Octs>(MplsVpnNlri<Octs>);
 
 impl<Octs: Clone + Debug + Hash> AfiSafiNlri for Ipv6MplsVpnUnicastNlri<Octs> {
@@ -1036,8 +1044,8 @@ impl<T> fmt::Display for Ipv6MplsVpnUnicastNlri<T> {
 
 //--- Ipv6FlowSpec
 
-#[derive(Clone, Debug, Hash)]
-pub struct Ipv6FlowSpecNlri<Octs>(FlowSpecNlri<Octs>);
+#[derive(Clone, Debug, Hash, Serialize)]
+pub struct Ipv6FlowSpecNlri<Octs>(pub(crate) FlowSpecNlri<Octs>);
 
 impl<Octs: Clone + Debug + Hash> AfiSafiNlri for Ipv6FlowSpecNlri<Octs> {
     type Nlri = FlowSpecNlri<Octs>;
@@ -1067,6 +1075,11 @@ impl<T> fmt::Display for Ipv6FlowSpecNlri<T> {
     }
 }
 
+impl<T> From<Ipv6FlowSpecNlri<T>> for FlowSpecNlri<T> {
+    fn from(value: Ipv6FlowSpecNlri<T>) -> Self {
+        value.0
+    }
+}
 
 impl Ipv6UnicastAddpathNlri {
     pub fn iter<'a, O, P>(parser: Parser<'a, P>) -> NlriIter<'a, O, P, Self>
@@ -1092,7 +1105,7 @@ impl<Octs> Ipv4MplsUnicastNlri<Octs> {
 
 //--- L2VpnVpls
 
-#[derive(Clone, Debug, Hash)]
+#[derive(Clone, Debug, Hash, Serialize)]
 pub struct L2VpnVplsNlri(VplsNlri);
 
 impl AfiSafiNlri for L2VpnVplsNlri {
@@ -1125,7 +1138,7 @@ impl fmt::Display for L2VpnVplsNlri {
 
 //--- Evpn
 
-#[derive(Clone, Debug, Hash)]
+#[derive(Clone, Debug, Hash, Serialize)]
 pub struct L2VpnEvpnNlri<Octs>(EvpnNlri<Octs>);
 
 impl<Octs: Clone + Debug + Hash> AfiSafiNlri for L2VpnEvpnNlri<Octs> {
@@ -1223,8 +1236,8 @@ pub fn iter_for_afi_safi<'a, O, P, ASP>(
     parser: Parser<'a, P>,
 ) -> NlriIter<'a, O, P, ASP>
 where
-    O: Octets,
-    P: Octets<Range<'a> = O>,
+    O: Octets + Clone + Debug + Hash + 'a,
+    P: 'a + Octets<Range<'a> = O>,
     ASP: AfiSafiParse<'a, O, P>
 {
     NlriIter::<'a, O, P, ASP>::new(parser)

@@ -5,7 +5,7 @@ use octseq::{Octets, Parser};
 
 use crate::util::parser::ParseError;
 use crate::flowspec::Component;
-use super::afisafi::Afi;
+use super::afisafi::{Afi, Ipv4FlowSpecNlri, Ipv6FlowSpecNlri};
 
 
 /// NLRI containing a FlowSpec v1 specification.
@@ -77,5 +77,17 @@ impl<Octs: Octets> FlowSpecNlri<Octs> {
 impl<T> fmt::Display for FlowSpecNlri<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "FLOWSPEC-NLRI")
+    }
+}
+
+impl<T> From<FlowSpecNlri<T>> for Ipv4FlowSpecNlri<T> {
+    fn from(value: FlowSpecNlri<T>) -> Self {
+        Ipv4FlowSpecNlri(value)
+    }
+}
+
+impl<T> From<FlowSpecNlri<T>> for Ipv6FlowSpecNlri<T> {
+    fn from(value: FlowSpecNlri<T>) -> Self {
+        Ipv6FlowSpecNlri(value)
     }
 }

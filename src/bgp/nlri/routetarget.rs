@@ -1,6 +1,7 @@
 use std::fmt;
 
 use octseq::{Octets, Parser};
+use serde::Serialize;
 use crate::util::parser::ParseError;
 
 use super::common::prefix_bits_to_bytes;
@@ -8,7 +9,7 @@ use super::common::prefix_bits_to_bytes;
 /// NLRI containing a Route Target membership as defined in RFC4684.
 ///
 /// **TODO**: implement accessor methods for the contents of this NLRI.
-#[derive(Clone, Debug, Hash)]
+#[derive(Clone, Debug, Hash, Serialize)]
 pub struct RouteTargetNlri<Octs> {
     raw: Octs
 }
