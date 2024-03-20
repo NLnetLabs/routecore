@@ -25,7 +25,7 @@ use crate::bgp::types::{
 };
 
 use crate::bgp::nlri::afisafi::{
-    AfiSafiNlri, AfiSafiParse, NlriIter, NlriEnumIter, Nlri as NlriEnum
+    AfiSafiType, AfiSafiNlri, AfiSafiParse, NlriIter, NlriEnumIter, Nlri as NlriEnum
 };
 
 use crate::util::parser::ParseError;
@@ -317,7 +317,7 @@ impl<Octs: Octets> UpdateMessage<Octs> {
         Ok(PathAttributes::new(pp, self.pdu_parse_info))
     }
 
-    fn unchecked_path_attributes(&self) -> UncheckedPathAttributes<Octs> {
+    pub(crate) fn unchecked_path_attributes(&self) -> UncheckedPathAttributes<Octs> {
         let pp = Parser::with_range(self.octets(), self.attributes.clone());
         UncheckedPathAttributes::from_parser(pp)
     }
@@ -411,7 +411,7 @@ impl<Octs: Octets> UpdateMessage<Octs> {
     {
         // If the requested announcements are of type Ipv4Unicast, and the
         // conventional announcements range is non-zero, return that.
-        if ASP::afi_safi() == AfiSafi::Ipv4Unicast &&
+        if ASP::afi_safi() == AfiSafiType::Ipv4Unicast &&
             !self.announcements.is_empty()
         {
             return Ok(Some(NlriIter::<_, _, ASP>::new(
@@ -430,6 +430,29 @@ impl<Octs: Octets> UpdateMessage<Octs> {
             parser.advance(1)?; // 1 reserved byte
 
             Ok(Some(NlriIter::<_, _, ASP>::new(parser)))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub(crate) fn nlri_parser(&self) -> Result<Option<Parser<'_, Octs>>, ParseError> { //where Octs: 'a + Octets<Range<'a> = Octs> {
+        // If the requested announcements are of type Ipv4Unicast, and the
+        // conventional announcements range is non-zero, return that.
+        if !self.announcements.is_empty() {
+            return Ok(Some(Parser::with_range(self.octets(), self.announcements.clone())));
+        }
+
+        // Otherwise, look in the attributes for an MP_REACH_NLRI.
+        if let Some(pa) = self.unchecked_path_attributes().find(|pa|
+            pa.type_code() == 14
+        ) {
+            let mut parser = pa.value_into_parser();
+            let _afi = parser.parse_u16_be()?;
+            let _safi = parser.parse_u8()?;
+            NextHop::skip(&mut parser)?;
+            parser.advance(1)?; // 1 reserved byte
+
+            Ok(Some(parser))
         } else {
             Ok(None)
         }
