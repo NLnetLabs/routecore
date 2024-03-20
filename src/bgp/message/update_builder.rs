@@ -2119,13 +2119,13 @@ mod tests {
 
             let target = BytesMut::new();
             let (_unreach_afisafi, reach_afisafi) = match original.afi_safis() {
-                (_, _, Some(mp_u), Some(mp_r)) => (mp_u, mp_r),
-                (_, _, None, Some(mp_r)) => (mp_r, mp_r),
-                (_, _, Some(mp_u), None) => (mp_u, mp_u),
-                (Some(c_w), Some(c_a), _, _) => (c_w, c_a),
-                (Some(c_w), None, _, _) => (c_w, c_w),
-                (None, Some(c_a), _, _) => (c_a, c_a),
-                (None, None, None, None) => 
+                [_, _, Some(mp_u), Some(mp_r)] => (mp_u, mp_r),
+                [_, _, None, Some(mp_r)] => (mp_r, mp_r),
+                [_, _, Some(mp_u), None] => (mp_u, mp_u),
+                [Some(c_w), Some(c_a), _, _] => (c_w, c_a),
+                [Some(c_w), None, _, _] => (c_w, c_w),
+                [None, Some(c_a), _, _] => (c_a, c_a),
+                [None, None, None, None] => 
                 {
                     // conventional IPv4 End-of-RIB
                     (AfiSafi::Ipv4Unicast, AfiSafi::Ipv4Unicast)
