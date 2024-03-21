@@ -216,10 +216,10 @@ impl<Octs: Octets> UpdateMessage<Octs> {
         };
 
         Ok(normal_iter.into_iter().flatten()
-            .map(|n| n.map(NlriEnum::<_>::from))
+            .map(|n| n.map(NlriEnum::from))
             .chain(
                 addpath_iter.into_iter().flatten()
-                .map(|n| n.map(NlriEnum::<_>::from))
+                .map(|n| n.map(NlriEnum::from))
             )
         )
     }
@@ -343,10 +343,10 @@ impl<Octs: Octets> UpdateMessage<Octs> {
         ;
 
         Ok(normal_iter.into_iter().flatten()
-            .map(|n| n.map(NlriEnum::<_>::from))
+            .map(|n| n.map(NlriEnum::from))
             .chain(
                 addpath_iter.into_iter().flatten()
-                .map(|n| n.map(NlriEnum::<_>::from))
+                .map(|n| n.map(NlriEnum::from))
         ))
     }
 
