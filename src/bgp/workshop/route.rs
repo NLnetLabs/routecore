@@ -325,7 +325,7 @@ impl<N: Clone + Hash> WorkshopAttribute<N> for crate::bgp::types::NextHop {
 
 use crate::bgp::nlri::afisafi::{AfiSafiNlri, AfiSafiParse};
 
-fn pdu_into_rws<'a, Octs, T, R>(pdu: &'a UpdateMessage<Octs>) -> Vec<T>
+pub fn pdu_into_rws<'a, Octs, T, R>(pdu: &'a UpdateMessage<Octs>) -> Vec<T>
 where
     Octs: 'a + Octets<Range<'a> = R>,
     R: Hash + Clone + Debug,
@@ -348,7 +348,7 @@ where
     res
 }
 
-fn pdu_into_typed_rws<'a, Octs, T, R, AFN>(pdu: &'a UpdateMessage<Octs>) -> Vec<T>
+pub fn pdu_into_typed_rws<'a, Octs, T, R, AFN>(pdu: &'a UpdateMessage<Octs>) -> Vec<T>
 where
     Octs: 'a + Octets<Range<'a> = R>,
 
@@ -380,7 +380,7 @@ where
 
 
 
-fn pdu_into_rws_iter<'a, Octs, T, R>(pdu: &'a UpdateMessage<Octs>)
+pub fn pdu_into_rws_iter<'a, Octs, T, R>(pdu: &'a UpdateMessage<Octs>)
 -> impl Iterator<Item = T> + '_
 where
     Octs: 'a + Octets<Range<'a> = R>,
@@ -400,7 +400,7 @@ where
 }
 
 
-fn pdu_into_rws_basic_iter<'a, Octs, R>(pdu: &'a UpdateMessage<Octs>)
+pub fn pdu_into_rws_basic_iter<'a, Octs, R>(pdu: &'a UpdateMessage<Octs>)
 -> impl Iterator<Item = RouteWorkshop<BasicNlri>> + '_
 where
     Octs: 'a + Octets<Range<'a> = R>,
@@ -426,7 +426,7 @@ where
 
 use inetnum::addr::Prefix;
 use std::fmt;
-use crate::bgp::nlri::afisafi::{AfiSafiType, Addpath, IsPrefix};
+use crate::bgp::nlri::afisafi::{AfiSafiType, IsPrefix};
 use crate::bgp::types::PathId;
 
 
