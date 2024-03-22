@@ -93,7 +93,7 @@ use std::fmt::{self, Display, Error, Formatter};
 use std::net::{Ipv4Addr, Ipv6Addr};
 use std::str::FromStr;
 
-use crate::asn::{Asn, Asn16, ParseAsnError};
+use inetnum::asn::{Asn, Asn16, ParseAsnError};
 
 #[cfg(feature = "serde")]
 use serde::{Serialize, Serializer};

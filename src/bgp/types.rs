@@ -5,7 +5,7 @@ use std::net::Ipv4Addr;
 #[cfg(feature = "serde")]
 use serde::{Serialize, Deserialize};
 
-use crate::asn::Asn;
+use inetnum::asn::Asn;
 pub use crate::bgp::nlri::afisafi::Afi;
 pub use crate::bgp::nlri::common::PathId;
 pub use crate::bgp::nlri::mpls_vpn::RouteDistinguisher;

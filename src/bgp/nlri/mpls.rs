@@ -1,4 +1,4 @@
-use crate::addr::Prefix;
+use inetnum::addr::Prefix;
 use std::fmt;
 
 use octseq::{Octets, Parser};

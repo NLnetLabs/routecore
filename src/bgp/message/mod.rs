@@ -10,7 +10,7 @@ use crate::util::parser::ParseError;
 use std::error::Error;
 use std::fmt::{Debug, Display, Formatter, Result as FmtResult};
 use std::io::Read;
-use crate::addr::PrefixError;
+use inetnum::addr::PrefixError;
 use crate::typeenum; // from util::macros
 
 use log::debug;

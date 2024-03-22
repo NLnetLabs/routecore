@@ -5,7 +5,7 @@ use std::net::Ipv4Addr;
 use log::{debug, warn};
 use octseq::{Octets, OctetsBuilder, OctetsFrom, Parser};
 
-use crate::asn::Asn;
+use inetnum::asn::Asn;
 use crate::bgp::message::{
     PduParseInfo,
     UpdateMessage,
@@ -2255,7 +2255,7 @@ mod tests {
 
     use super::*;
 
-    use crate::asn::Asn;
+    use inetnum::asn::Asn;
     use crate::bgp::communities::Wellknown;
     use crate::bgp::aspath::HopPath;
     use crate::bgp::types::OriginType;

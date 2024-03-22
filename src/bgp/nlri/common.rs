@@ -1,7 +1,7 @@
 
 use octseq::{Octets, Parser};
 use crate::util::parser::ParseError;
-use crate::addr::Prefix;
+use inetnum::addr::Prefix;
 use super::afisafi::Afi;
 
 use std::net::IpAddr;

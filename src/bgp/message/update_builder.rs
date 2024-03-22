@@ -1343,8 +1343,8 @@ mod tests {
 
 
     //use crate::bgp::path_attributes::AttributeHeader;
-    use crate::addr::Prefix;
-    use crate::asn::Asn;
+    use inetnum::addr::Prefix;
+    use inetnum::asn::Asn;
     use crate::bgp::aspath::HopPath;
     use crate::bgp::communities::{StandardCommunity, Tag};
     use crate::bgp::nlri::afisafi::{

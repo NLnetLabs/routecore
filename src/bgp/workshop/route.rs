@@ -424,7 +424,7 @@ where
 
 //------------ BasicNlri again ------------------------------------------------
 
-use crate::addr::Prefix;
+use inetnum::addr::Prefix;
 use std::fmt;
 use crate::bgp::nlri::afisafi::{AfiSafiType, Addpath, IsPrefix};
 use crate::bgp::types::PathId;

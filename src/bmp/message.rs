@@ -4,7 +4,7 @@
 //! providing access to its contents based on the underlying `bytes` buffer
 //! without allocating.
 
-use crate::asn::Asn;
+use inetnum::asn::Asn;
 use crate::bgp::message::{Message as BgpMsg, OpenMessage as BgpOpen, UpdateMessage as BgpUpdate, NotificationMessage as BgpNotification};
 use crate::bgp::types::{Afi, AfiSafi};
 use crate::bgp::message::update::{SessionConfig, FourOctetAsn};
@@ -1674,7 +1674,7 @@ mod tests {
     use super::*;
     use bytes::Bytes;
     use std::str::FromStr;
-    use crate::addr::Prefix;
+    use inetnum::addr::Prefix;
     use crate::bgp::types::Afi;
     use crate::bgp::path_attributes::AttributeHeader;
     use crate::bgp::types::{ConventionalNextHop, MultiExitDisc};

@@ -9,7 +9,7 @@ use octseq::{Octets, Parser};
 
 use crate::bgp::message::Header;
 
-use crate::asn::Asn;
+use inetnum::asn::Asn;
 use crate::bgp::aspath::AsPath;
 use crate::bgp::communities::{
     ExtendedCommunity, Ipv6ExtendedCommunity, LargeCommunity,
@@ -469,7 +469,7 @@ impl<Octs: Octets> UpdateMessage<Octs> {
     /// fuses itself, i.e. any following call to `next()` will return None.
     pub fn unicast_announcements(&self)
         -> Result<
-            impl Iterator<Item = Result<crate::addr::Prefix, ParseError>> + '_,
+            impl Iterator<Item = Result<inetnum::addr::Prefix, ParseError>> + '_,
             ParseError
         >
     {
@@ -1526,7 +1526,7 @@ mod tests {
     use crate::bgp::nlri::afisafi::{AfiSafiNlri, Nlri, Ipv4UnicastNlri, Ipv4MulticastNlri};
     use crate::bgp::types::{PathId, RouteDistinguisher};
     use crate::bgp::message::Message;
-    use crate::addr::Prefix;
+    use inetnum::addr::Prefix;
 
 
 
@@ -2090,7 +2090,7 @@ mod tests {
              ExtendedCommunitySubType::OtherSubType(0x06))
             );
 
-        use crate::asn::Asn16;
+        use inetnum::asn::Asn16;
         assert_eq!(ext_comm1.as2(), Some(Asn16::from_u16(0)));
 
         let ext_comm2 = ext_comms.next().unwrap();

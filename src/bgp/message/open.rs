@@ -1,5 +1,5 @@
 use crate::bgp::message::{Header, MsgType};
-use crate::asn::Asn;
+use inetnum::asn::Asn;
 use crate::bgp::types::{AfiSafi, AddpathFamDir, AddpathDirection};
 use crate::typeenum; // from util::macros
 use crate::util::parser::ParseError;

@@ -12,6 +12,7 @@ keywords = ["routing", "bgp"]
 license = "BSD-3-Clause"
 
 [dependencies]
+inetnum     = { version = "0.1.0", features = ["arbitrary", "serde"] }
 arbitrary   = { version = "1", optional = true, features = ["derive"] }
 bytes       = { version = "1.2", optional = true }
 chrono      = { version = "0.4.20", optional = true, default-features = false }

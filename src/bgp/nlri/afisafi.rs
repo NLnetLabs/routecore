@@ -16,7 +16,7 @@ use serde::{Serialize, Deserialize};
 // - pub use Afi/Nlri/etc from bgp::types 
 // - clean up / remove bgp/workshop/afisafi_nlri.rs 
 
-use crate::addr::Prefix;
+use inetnum::addr::Prefix;
 use super::common::{PathId, parse_prefix, prefix_bits_to_bytes};
 use crate::util::parser::ParseError;
 use paste::paste;
@@ -1361,7 +1361,7 @@ where
 mod tests {
 
     use super::*;
-    use crate::addr::Prefix;
+    use inetnum::addr::Prefix;
     use std::str::FromStr;
 
     #[test]

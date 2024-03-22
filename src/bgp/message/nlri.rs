@@ -1,6 +1,6 @@
 use crate::bgp::types::{Afi, AfiSafi, NextHop};
 
-use crate::addr::Prefix;
+use inetnum::addr::Prefix;
 
 use crate::util::parser::{parse_ipv4addr, parse_ipv6addr, ParseError};
 use crate::bgp::message::update::PduParseInfo;
