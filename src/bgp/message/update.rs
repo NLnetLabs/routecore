@@ -198,6 +198,16 @@ impl<Octs: Octets> UpdateMessage<Octs> {
         )
     }
 
+    pub fn announcement_fams(&self) -> impl Iterator<Item = AfiSafi> {
+        let afi_safis = self.afi_safis();
+        [afi_safis.1, afi_safis.3].into_iter().flatten()
+    }
+
+    pub fn withdrawal_fams(&self) -> impl Iterator<Item = AfiSafi> {
+        let afi_safis = self.afi_safis();
+        [afi_safis.0, afi_safis.2].into_iter().flatten()
+    }
+
     /// Returns an iterator over the conventional withdrawals.
     ///
     /// The withdrawals are always IPv4 Unicast, but can contain Path IDs.
