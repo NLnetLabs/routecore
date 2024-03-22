@@ -1,6 +1,6 @@
 //! FlowSpec v1 parsing.
 
-use crate::addr::Prefix;
+use inetnum::addr::Prefix;
 use crate::bgp::types::Afi;
 use crate::util::parser::ParseError;
 use log::debug;

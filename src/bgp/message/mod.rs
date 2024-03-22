@@ -1,18 +1,16 @@
 pub mod open;
 pub mod update;
 pub mod update_builder;
-pub mod nlri;
 pub mod notification;
 pub mod keepalive;
 pub mod routerefresh;
-//pub mod attr_change_set;
 
 use octseq::{Octets, Parser};
 use crate::util::parser::ParseError;
 use std::error::Error;
 use std::fmt::{Debug, Display, Formatter, Result as FmtResult};
 use std::io::Read;
-use crate::addr::PrefixError;
+use inetnum::addr::PrefixError;
 use crate::typeenum; // from util::macros
 
 use log::debug;
@@ -21,7 +19,7 @@ use log::debug;
 use serde::{Serialize, Deserialize};
 
 pub use open::OpenMessage;
-pub use update::{UpdateMessage, SessionConfig};
+pub use update::{PduParseInfo, SessionConfig, UpdateMessage};
 pub use notification::NotificationMessage;
 pub use keepalive::KeepaliveMessage;
 pub use routerefresh::RouteRefreshMessage;
@@ -130,7 +128,7 @@ impl<Octs: Octets> Message<Octs> {
                     return Err(ParseError::StateRequired)
                 };
                 Ok(Message::Update(
-                        UpdateMessage::from_octets(octets, config)?
+                    UpdateMessage::from_octets(octets, &config)?
                 ))
             },
             MsgType::Notification =>

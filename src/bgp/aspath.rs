@@ -13,7 +13,7 @@ use core::hash::Hash;
 use std::slice::SliceIndex;
 use std::{error, fmt};
 
-use crate::asn::{Asn, LargeAsnError};
+use inetnum::asn::{Asn, LargeAsnError};
 
 #[cfg(feature = "serde")]
 use serde::ser::SerializeSeq;
@@ -81,6 +81,10 @@ impl HopPath {
     /// Returns true if this HopPath contains `hop`. 
     pub fn contains(&self, hop: &OwnedHop) -> bool {
         self.hops.iter().any(|h| h == hop)
+    }
+
+    pub fn get_hop(&self, index: usize) -> Option<&OwnedHop> {
+        self.hops.get(index)
     }
 
     /// Returns the number of [`Hop`]s in this HopPath.
@@ -240,7 +244,9 @@ impl HopPath {
                     )?;
                     head.iter().try_for_each(|h| {
                         match h {
-                            Hop::Asn(asn) => asn.compose(target),
+                            Hop::Asn(asn) => {
+                                target.append_slice(&asn.to_raw())
+                            }
                             _ => unreachable!()
                         }
                     })?;
@@ -255,7 +261,9 @@ impl HopPath {
                     )?;
                     c.iter().try_for_each(|h| {
                         match h {
-                            Hop::Asn(asn) => asn.compose(target),
+                            Hop::Asn(asn) => {
+                                target.append_slice(&asn.to_raw())
+                            }
                             _ => unreachable!()
                         }
                     })?;
@@ -841,7 +849,9 @@ impl<Octs: AsRef<[u8]>> Segment<Octs> {
             target.append_slice(self.octets.as_ref())?;
         }
         else {
-            self.asns().try_for_each(|asn| asn.compose(target))?;
+            self.asns().try_for_each(|asn|
+                target.append_slice(&asn.to_raw())
+            )?;
         }
         Ok(())
     }

@@ -4,9 +4,9 @@
 //! providing access to its contents based on the underlying `bytes` buffer
 //! without allocating.
 
-use crate::asn::Asn;
+use inetnum::asn::Asn;
 use crate::bgp::message::{Message as BgpMsg, OpenMessage as BgpOpen, UpdateMessage as BgpUpdate, NotificationMessage as BgpNotification};
-use crate::bgp::types::{Afi, Safi};
+use crate::bgp::types::{Afi, AfiSafi};
 use crate::bgp::message::update::{SessionConfig, FourOctetAsn};
 use crate::bgp::message::open::CapabilityType;
 use crate::util::parser::ParseError;
@@ -590,7 +590,7 @@ impl<Octs: Octets> RouteMonitoring<Octs> {
 
     /// Return the encapsulated
     /// [BGP UPDATE message](`crate::bgp::MessageUpdate`).
-    pub fn bgp_update(&self, config: SessionConfig)
+    pub fn bgp_update(&self, config: &SessionConfig)
         -> Result<BgpUpdate<Octs::Range<'_>>, ParseError>
     {
         let mut parser = Parser::from_ref(
@@ -943,28 +943,27 @@ impl<Octs: Octets> PeerUpNotification<Octs> {
         conf
     }
 
-
-    pub fn supported_protocols(&self) -> Vec<(Afi, Safi)> {
+    pub fn supported_protocols(&self) -> Vec<AfiSafi> {
         let mut v = Vec::new();
         let mut res = Vec::new();
         let (sent, rcvd) = self.bgp_open_sent_rcvd();
         sent.capabilities()
             .filter(|c| c.typ() == CapabilityType::MultiProtocol)
             .for_each(|c| {
-                      let afi: Afi = u16::from_be_bytes([c.value()[0], c.value()[1]]).into();
-                      let safi: Safi = c.value()[3].into();
-                      v.push((afi, safi));
-                  //println!("sent cap: {:?} == {}/{}", c.value(), afi, safi)
+                let afi = u16::from_be_bytes([c.value()[0], c.value()[1]]);
+                let safi = c.value()[3];
+                let afisafi = (afi, safi).into();
+                v.push(afisafi);
             });
         rcvd.capabilities()
             .filter(|c| c.typ() == CapabilityType::MultiProtocol)
             .for_each(|c| {
-                      let afi: Afi = u16::from_be_bytes([c.value()[0], c.value()[1]]).into();
-                      let safi: Safi = c.value()[3].into();
-                      if v.contains(&(afi, safi)) {
-                          res.push((afi, safi));
-                      }
-                  //println!("rcvd cap: {:?} == {}/{}", c.value(), afi, safi)
+                let afi = u16::from_be_bytes([c.value()[0], c.value()[1]]);
+                let safi = c.value()[3];
+                let afisafi = (afi, safi).into();
+                if v.contains(&afisafi) {
+                    res.push(afisafi);
+                }
             });
         res
     }
@@ -1254,16 +1253,16 @@ pub enum Stat {
     Type6(u32),
     Type7(u64),
     Type8(u64),
-    Type9(Afi,Safi,u64),
-    Type10(Afi,Safi,u64),
+    Type9(Afi,u8,u64),
+    Type10(Afi,u8,u64),
     Type11(u32),
     Type12(u32),
     Type13(u32),
     // RFC 8671, Adj-RIB-Out
     Type14(u64),
     Type15(u64),
-    Type16(Afi,Safi,u64),
-    Type17(Afi,Safi,u64),
+    Type16(Afi,u8,u64),
+    Type17(Afi,u8,u64),
 
     Unimplemented(u16,u16) // type,len
 }
@@ -1332,12 +1331,12 @@ impl <'a>StatIter<'a> {
         res
     }
 
-    fn _take_afi_safi_u64(&mut self) -> (Afi, Safi, u64) {
+    fn _take_afi_safi_u64(&mut self) -> (Afi, u8, u64) {
 
         let afi: Afi = u16::from_be_bytes(
             self.octets[self.pos + 4 .. self.pos + 4 + 2].try_into().unwrap()
         ).into();
-        let safi: Safi = self.octets[self.pos + 4 + 2].into();
+        let safi = self.octets[self.pos + 4 + 2];
 
         let v = u64::from_be_bytes(
             self.octets[self.pos + 4 + 3 .. self.pos + 4 + 3 + 8]
@@ -1675,10 +1674,11 @@ mod tests {
     use super::*;
     use bytes::Bytes;
     use std::str::FromStr;
-    use crate::addr::Prefix;
-    use crate::bgp::types::{Afi, Safi};
-    use crate::bgp::path_attributes::PathAttributeType;
-    use crate::bgp::message::nlri::Nlri;
+    use inetnum::addr::Prefix;
+    use crate::bgp::types::Afi;
+    use crate::bgp::path_attributes::AttributeHeader;
+    use crate::bgp::types::{ConventionalNextHop, MultiExitDisc};
+    use crate::bgp::nlri::afisafi::{AfiSafiNlri, Nlri};
     use crate::bgp::message::update::{FourOctetAsn, SessionConfig};
 
     // Helper for generating a .pcap, pass output to `text2pcap`.
@@ -1784,7 +1784,7 @@ mod tests {
         assert_eq!(bmp.common_header().length(), 103);
 
         let config = SessionConfig::modern();
-        let bgp_update = bmp.bgp_update(config).unwrap();
+        let bgp_update = bmp.bgp_update(&config).unwrap();
 
         //-- from here on, this actually tests the bgp parsing functionality
         // rather than the bmp one, but let's leave it for now ---------------
@@ -1794,25 +1794,23 @@ mod tests {
         
         let mut pas = bgp_update.path_attributes().unwrap().into_iter();
         let pa1 = pas.next().unwrap().unwrap();
-        assert_eq!(pa1.type_code(), PathAttributeType::Origin);
+        assert_eq!(pa1.type_code(), crate::bgp::types::Origin::TYPE_CODE);
         assert_eq!(pa1.flags(), 0x40.into());
         assert!( pa1.flags().is_transitive());
         assert!(!pa1.flags().is_optional());
-        //TODO implement enum for Origins
-        //assert_eq!(pa1.as_ref(), [0x00]); 
         
         let pa2 = pas.next().unwrap().unwrap();
-        assert_eq!(pa2.type_code(), PathAttributeType::AsPath);
+        assert_eq!(pa2.type_code(), crate::bgp::aspath::HopPath::TYPE_CODE);
         assert_eq!(pa2.flags(), 0x40.into());
         // TODO check actual AS_PATH contents
 
         let pa3 = pas.next().unwrap().unwrap();
-        assert_eq!(pa3.type_code(), PathAttributeType::NextHop);
+        assert_eq!(pa3.type_code(), ConventionalNextHop::TYPE_CODE);
         assert_eq!(pa3.flags(), 0x40.into());
         //assert_eq!(pa3.as_ref(), [10, 255, 0, 101]); 
 
         let pa4 = pas.next().unwrap().unwrap();
-        assert_eq!(pa4.type_code(), PathAttributeType::MultiExitDisc);
+        assert_eq!(pa4.type_code(), MultiExitDisc::TYPE_CODE);
         assert_eq!(pa4.flags(), 0x80.into());
         assert!(pa4.flags().is_optional());
         //assert_eq!(pa4.as_ref(), [0, 0, 0, 1]); 
@@ -1822,9 +1820,9 @@ mod tests {
 
         // NLRI
         let mut nlris = bgp_update.announcements().unwrap();
-        if let Some(Ok(Nlri::Unicast(n1))) = nlris.next() {
+        if let Some(Ok(Nlri::Ipv4Unicast(n1))) = nlris.next() {
             assert_eq!(
-                n1.prefix(),
+                n1.nlri(),
                 Prefix::from_str("10.10.10.2/32").unwrap()
             );
         } else {
@@ -1878,8 +1876,8 @@ mod tests {
             Type8(28),
             Type14(139540),
             Type15(139540),
-            Type16(Afi::Ipv6, Safi::Unicast, 139540),
-            Type17(Afi::Ipv6, Safi::Unicast, 139540),
+            Type16(Afi::Ipv6, 1, 139540),
+            Type17(Afi::Ipv6, 1, 139540),
         ];
 
         for (s1, s2) in bmp.stats().zip(stats.iter()) {
@@ -2036,7 +2034,7 @@ mod tests {
 
         assert_eq!(
             bmp.supported_protocols(),
-            vec![(Afi::Ipv4, Safi::Unicast)]
+            vec![(AfiSafi::Ipv4Unicast)]
         );
     }
 
