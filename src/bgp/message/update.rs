@@ -429,8 +429,12 @@ impl<Octs: Octets> UpdateMessage<Octs> {
             pa.type_code() == 14
         ) {
             let mut parser = pa.value_into_parser();
-            let _afi = parser.parse_u16_be()?;
-            let _safi = parser.parse_u8()?;
+            let afi = parser.parse_u16_be()?;
+            let safi = parser.parse_u8()?;
+            if AfiSafi::from((afi, safi)) != ASP::afi_safi() {
+                return Ok(None);
+                //return Err(ParseError::form_error("different AFI+SAFI than requested"));
+            }
             NextHop::skip(&mut parser)?;
             parser.advance(1)?; // 1 reserved byte
 

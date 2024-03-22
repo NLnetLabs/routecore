@@ -232,7 +232,7 @@ paste! {
         }
     }
 
-    impl fmt::Display for Nlri<()> {
+    impl<T> fmt::Display for Nlri<T> {
         fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
             match self {
             $($(
@@ -429,7 +429,7 @@ pub trait AfiSafi {
 
 /// A type representing an NLRI for a certain AFI+SAFI.
 pub trait AfiSafiNlri: AfiSafi + Clone + Hash + Debug {
-    type Nlri; //: AfiSafi;
+    type Nlri;
     fn nlri(&self) -> Self::Nlri;
 
     // TODO
@@ -453,23 +453,57 @@ pub trait NlriCompose: AfiSafiNlri {
 
 
 /// A type containing nothing more than a (v4 or v6) Prefix.
-pub trait IsPrefix {
+pub trait IsPrefix: AfiSafiNlri {
     fn prefix(&self) -> Prefix;
     
+    fn path_id(&self) -> Option<PathId> {
+        None
+    }
     // TODO
     // fn into_routeworkshop() -> RouteWorkshop<_>;
 }
 
+// with this blanket impl we can't distinguish addpath from non-addpath
+/*
 impl <T, B>IsPrefix for T where T: AfiSafiNlri<Nlri = B>, B: Into<Prefix> {
     fn prefix(&self) -> Prefix {
         self.nlri().into()
     }
 }
+*/
+
+macro_rules! is_prefix {
+    ($nlri:ident) => { paste! {
+        impl IsPrefix for [<$nlri Nlri>] {
+            fn prefix(&self) -> Prefix {
+                self.nlri().into()
+            }
+        }
+        impl IsPrefix for [<$nlri AddpathNlri>] {
+            fn prefix(&self) -> Prefix {
+                self.nlri().into()
+            }
+            fn path_id(&self) -> Option<PathId> {
+                Some(<Self as Addpath>::path_id(&self))
+            }
+        }
+    }}
+}
+is_prefix!(Ipv4Unicast);
+is_prefix!(Ipv4Multicast);
+is_prefix!(Ipv6Unicast);
+is_prefix!(Ipv6Multicast);
 
 /// An Nlri containing a Path Id.
 pub trait Addpath: AfiSafiNlri {
     fn path_id(&self) -> PathId;
 }
+
+pub trait IsAddpathPrefix {
+    fn prefix(&self) -> Prefix;
+    fn path_id(&self) -> PathId;
+}
+
 
 //------------ Implementations -----------------------------------------------
 
@@ -1313,6 +1347,16 @@ where
     }
 }
 
+impl<'a, O, P> NlriEnumIter<'a, P>
+where 
+    O: Octets,
+    P: Octets<Range<'a> = O>,
+{
+    pub fn next_with<T, F: FnOnce(<Self as Iterator>::Item) -> T>(&mut self, fmap: F) -> Option<T> {
+        self.next().map(fmap)
+    }
+}
+
 #[cfg(test)]
 mod tests {
 
@@ -1386,7 +1430,7 @@ mod tests {
 
     #[test]
     fn display() {
-        let n: Nlri<_> = Ipv4UnicastNlri(Prefix::from_str("1.2.3.0/24").unwrap().into()).into();
+        let n: Nlri<()> = Ipv4UnicastNlri(Prefix::from_str("1.2.3.0/24").unwrap().into()).into();
         eprintln!("{}", n);
     }
 

@@ -318,3 +318,362 @@ impl<N: Clone + Hash> WorkshopAttribute<N> for crate::bgp::types::NextHop {
     }
 }
 */
+
+
+
+//-----------------------------------------------------------------------------
+
+use crate::bgp::nlri::afisafi::{AfiSafiNlri, AfiSafiParse};
+
+fn pdu_into_rws<'a, Octs, T, R>(pdu: &'a UpdateMessage<Octs>) -> Vec<T>
+where
+    Octs: 'a + Octets<Range<'a> = R>,
+    R: Hash + Clone + Debug,
+    Vec<u8>: From<Octs::Range<'a>>,
+    T: From<RouteWorkshop<Nlri<R>>>,
+    //Nlri<R>//: AfiSafiNlri // + Hash + Debug
+{
+
+    let pa_map = PaMap::from_update_pdu(pdu).unwrap();
+
+    let mut res = Vec::new();
+    for a in pdu.announcements().unwrap() {
+        res.push(
+            T::from(
+                RouteWorkshop::from_pa_map(a.unwrap(), pa_map.clone())
+            )
+        );
+    }
+
+    res
+}
+
+fn pdu_into_typed_rws<'a, Octs, T, R, AFN>(pdu: &'a UpdateMessage<Octs>) -> Vec<T>
+where
+    Octs: 'a + Octets<Range<'a> = R>,
+
+    //R: Hash + Clone + Debug + Octets,
+    T: From<RouteWorkshop<AFN>>,
+    AFN: AfiSafiNlri + AfiSafiParse<'a, R, Octs, Output = AFN>,
+
+    R: Octets,
+    Vec<u8>: OctetsFrom<R>,
+{
+
+    let pa_map = PaMap::from_update_pdu(pdu).unwrap();
+
+    let mut res = Vec::new();
+    if let Ok(Some(iter)) = pdu.typed_announcements::<_, AFN>() {
+        for a in iter {
+            res.push(
+                T::from(
+                    RouteWorkshop::from_pa_map(a.unwrap(), pa_map.clone())
+                )
+            );
+        }
+    } else {
+        eprintln!("empty or invalid NLRI iter");
+    }
+
+    res
+}
+
+
+
+fn pdu_into_rws_iter<'a, Octs, T, R>(pdu: &'a UpdateMessage<Octs>)
+-> impl Iterator<Item = T> + '_
+where
+    Octs: 'a + Octets<Range<'a> = R>,
+    R: Hash + Clone + Debug,
+    Vec<u8>: From<Octs::Range<'a>>,
+    T: From<RouteWorkshop<Nlri<R>>>,
+    //Nlri<R>//: AfiSafiNlri // + Hash + Debug
+{
+
+    let pa_map = PaMap::from_update_pdu(pdu).unwrap();
+
+    pdu.announcements().unwrap().map(move |a|
+        T::from(
+            RouteWorkshop::from_pa_map(a.unwrap(), pa_map.clone())
+        )
+    )
+}
+
+
+fn pdu_into_rws_basic_iter<'a, Octs, R>(pdu: &'a UpdateMessage<Octs>)
+-> impl Iterator<Item = RouteWorkshop<BasicNlri>> + '_
+where
+    Octs: 'a + Octets<Range<'a> = R>,
+    R: Hash + Clone + Debug,
+    Vec<u8>: From<Octs::Range<'a>>,
+{
+
+    let pa_map = PaMap::from_update_pdu(pdu).unwrap();
+
+    pdu.announcements().unwrap().filter_map(move |a|
+        a.ok().map(|n| BasicNlri::try_from(n).ok()).map(|a|
+        RouteWorkshop::from_pa_map(a.unwrap(), pa_map.clone())
+    ))
+}
+
+
+
+
+// TODO vec/iter for withdrawals, append to existing functions? or return
+// tuple of (announcements, withdrawals) ?
+
+//------------ BasicNlri again ------------------------------------------------
+
+use crate::addr::Prefix;
+use std::fmt;
+use crate::bgp::nlri::afisafi::{AfiSafiType, Addpath, IsPrefix};
+use crate::bgp::types::PathId;
+
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+pub struct BasicNlri {
+    ty: AfiSafiType,
+    prefix: Prefix,
+    path_id: Option<PathId>
+}
+
+impl BasicNlri {
+    pub fn prefix(&self) -> Prefix {
+        self.prefix
+    }
+
+    pub fn path_id(&self) -> Option<PathId> {
+        self.path_id
+    }
+
+    pub fn get_type(&self) -> AfiSafiType {
+        self.ty
+    }
+}
+
+impl fmt::Display for BasicNlri {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.prefix)
+    }
+}
+
+impl<N: IsPrefix> From<N> for BasicNlri {
+    fn from(n: N) -> BasicNlri {
+        BasicNlri {
+            ty: N::afi_safi(),
+            prefix: n.prefix(),
+            path_id: n.path_id(),
+        }
+    }
+}
+
+
+impl<N> From<RouteWorkshop<N>> for RouteWorkshop<BasicNlri>
+where N: IsPrefix
+{
+    fn from(value: RouteWorkshop<N>) -> Self {
+        RouteWorkshop(value.0.into(), value.1)
+    }
+}
+
+
+impl<O> TryFrom<Nlri<O>> for BasicNlri {
+    type Error = &'static str;
+
+    fn try_from(n: Nlri<O>) -> Result<Self, Self::Error> {
+        match n {
+            Nlri::Ipv4Unicast(_) => todo!(),
+            Nlri::Ipv4UnicastAddpath(_) => todo!(),
+            Nlri::Ipv4Multicast(_) => todo!(),
+            Nlri::Ipv4MulticastAddpath(_) => todo!(),
+            Nlri::Ipv6Unicast(_) => todo!(),
+            Nlri::Ipv6UnicastAddpath(_) => todo!(),
+            Nlri::Ipv6Multicast(_) => todo!(),
+            Nlri::Ipv6MulticastAddpath(_) => todo!(),
+            _ => Err("NLRI not basic"),
+        }
+    }
+}
+
+
+#[allow(unused_imports)]
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::bgp::message::update::SessionConfig;
+
+    use crate::bgp::nlri::afisafi::{
+        Ipv4UnicastNlri,
+        Ipv6UnicastNlri,
+        Ipv6UnicastAddpathNlri,
+        Ipv4FlowSpecNlri,
+    };
+
+
+    #[test]
+    fn pdu_into_rws_vec() {
+
+        // UPDATE with 5 ipv6 nlri
+        let raw = vec![
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            //0x00, 0x88,
+            0x00, 0x88 + 6,
+            0x02, 0x00, 0x00, 0x00, 0x71, 0x80,
+            0x0e, 0x5a, 0x00, 0x02, 0x01, 0x20, 0xfc, 0x00,
+            0x00, 0x10, 0x00, 0x01, 0x00, 0x10, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0xfe, 0x80,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x80,
+            0xfc, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10,
+            0x40, 0x20, 0x01, 0x0d, 0xb8, 0xff, 0xff, 0x00,
+            0x00, 0x40, 0x20, 0x01, 0x0d, 0xb8, 0xff, 0xff,
+            0x00, 0x01, 0x40, 0x20, 0x01, 0x0d, 0xb8, 0xff,
+            0xff, 0x00, 0x02, 0x40, 0x20, 0x01, 0x0d, 0xb8,
+            0xff, 0xff, 0x00, 0x03, 0x40, 0x01, 0x01, 0x00,
+            0x40, 0x02, 0x06, 0x02, 0x01, 0x00, 0x00, 0x00,
+            0xc8, 0x80, 0x04, 0x04, 0x00, 0x00, 0x00, 0x00,
+            16, 1, 2,
+            16, 10, 20
+
+        ];
+        let pdu = UpdateMessage::from_octets(&raw, &SessionConfig::modern())
+            .unwrap();
+
+        //let res: Vec<RouteWorkshop<_>> = pdu_into_rws(&pdu);
+        let res: Vec<RouteWorkshop<_>> = pdu_into_rws(&pdu);
+        assert_eq!(res.len(), 7);
+        for rws in res {
+            println!("{}", rws.nlri());
+        }
+    }
+
+    #[test]
+    fn pdu_into_rws_iter_test() {
+
+        // UPDATE with 5 ipv6 nlri + 2 conventional
+        let raw = vec![
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            //0x00, 0x88,
+            0x00, 0x88 + 6,
+            0x02, 0x00, 0x00, 0x00, 0x71, 0x80,
+            0x0e, 0x5a, 0x00, 0x02, 0x01, 0x20, 0xfc, 0x00,
+            0x00, 0x10, 0x00, 0x01, 0x00, 0x10, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0xfe, 0x80,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x80,
+            0xfc, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10,
+            0x40, 0x20, 0x01, 0x0d, 0xb8, 0xff, 0xff, 0x00,
+            0x00, 0x40, 0x20, 0x01, 0x0d, 0xb8, 0xff, 0xff,
+            0x00, 0x01, 0x40, 0x20, 0x01, 0x0d, 0xb8, 0xff,
+            0xff, 0x00, 0x02, 0x40, 0x20, 0x01, 0x0d, 0xb8,
+            0xff, 0xff, 0x00, 0x03, 0x40, 0x01, 0x01, 0x00,
+            0x40, 0x02, 0x06, 0x02, 0x01, 0x00, 0x00, 0x00,
+            0xc8, 0x80, 0x04, 0x04, 0x00, 0x00, 0x00, 0x00,
+            16, 1, 2,
+            16, 10, 20
+
+        ];
+        let pdu = UpdateMessage::from_octets(&raw, &SessionConfig::modern())
+            .unwrap();
+
+        assert_eq!(pdu_into_rws_iter::<_, RouteWorkshop<_>, _>(&pdu).count(), 7);
+    }
+
+    #[test]
+    fn pdu_into_rws_typed() {
+
+        // UPDATE with 5 ipv6 nlri + 2 conventional
+        let raw = vec![
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            //0x00, 0x88,
+            0x00, 0x88 + 6,
+            0x02, 0x00, 0x00, 0x00, 0x71, 0x80,
+            0x0e, 0x5a, 0x00, 0x02, 0x01, 0x20, 0xfc, 0x00,
+            0x00, 0x10, 0x00, 0x01, 0x00, 0x10, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0xfe, 0x80,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x80,
+            0xfc, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10,
+            0x40, 0x20, 0x01, 0x0d, 0xb8, 0xff, 0xff, 0x00,
+            0x00, 0x40, 0x20, 0x01, 0x0d, 0xb8, 0xff, 0xff,
+            0x00, 0x01, 0x40, 0x20, 0x01, 0x0d, 0xb8, 0xff,
+            0xff, 0x00, 0x02, 0x40, 0x20, 0x01, 0x0d, 0xb8,
+            0xff, 0xff, 0x00, 0x03, 0x40, 0x01, 0x01, 0x00,
+            0x40, 0x02, 0x06, 0x02, 0x01, 0x00, 0x00, 0x00,
+            0xc8, 0x80, 0x04, 0x04, 0x00, 0x00, 0x00, 0x00,
+            16, 1, 2,
+            16, 10, 20
+
+        ];
+        let pdu = UpdateMessage::from_octets(&raw, &SessionConfig::modern())
+            .unwrap();
+
+        let res = pdu_into_typed_rws::<_, RouteWorkshop<BasicNlri>, _, Ipv6UnicastNlri>(&pdu);
+        for rws in &res {
+            println!("{}", rws.nlri());
+        }
+        assert_eq!(res.len(), 5);
+
+        let res = pdu_into_typed_rws::<_, RouteWorkshop<BasicNlri>, _, Ipv4UnicastNlri>(&pdu);
+        for rws in &res {
+            println!("{}", rws.nlri());
+        }
+        assert_eq!(res.len(), 2);
+
+        let res = pdu_into_typed_rws::<_, RouteWorkshop<_>, _, Ipv4FlowSpecNlri<_>>(&pdu);
+        for rws in &res {
+            println!("{}", rws.nlri());
+        }
+        assert_eq!(res.len(), 0);
+    }
+
+    #[test]
+    fn pdu_into_basic() {
+
+        // UPDATE with 5 ipv6 nlri + 2 conventional
+        let raw = vec![
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            //0x00, 0x88,
+            0x00, 0x88 + 6,
+            0x02, 0x00, 0x00, 0x00, 0x71, 0x80,
+            0x0e, 0x5a, 0x00, 0x02, 0x01, 0x20, 0xfc, 0x00,
+            0x00, 0x10, 0x00, 0x01, 0x00, 0x10, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0xfe, 0x80,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x80,
+            0xfc, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10,
+            0x40, 0x20, 0x01, 0x0d, 0xb8, 0xff, 0xff, 0x00,
+            0x00, 0x40, 0x20, 0x01, 0x0d, 0xb8, 0xff, 0xff,
+            0x00, 0x01, 0x40, 0x20, 0x01, 0x0d, 0xb8, 0xff,
+            0xff, 0x00, 0x02, 0x40, 0x20, 0x01, 0x0d, 0xb8,
+            0xff, 0xff, 0x00, 0x03, 0x40, 0x01, 0x01, 0x00,
+            0x40, 0x02, 0x06, 0x02, 0x01, 0x00, 0x00, 0x00,
+            0xc8, 0x80, 0x04, 0x04, 0x00, 0x00, 0x00, 0x00,
+            16, 1, 2,
+            16, 10, 20
+
+        ];
+        let pdu = UpdateMessage::from_octets(&raw, &SessionConfig::modern())
+            .unwrap();
+
+        let res = pdu_into_rws_basic_iter(&pdu);
+        for rws in res {
+            println!("{}", rws.nlri());
+        }
+        let res = pdu_into_rws_basic_iter(&pdu);
+        assert_eq!(res.count(), 7);
+
+    }
+
+
+
+}
