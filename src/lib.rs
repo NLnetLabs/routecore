@@ -1,7 +1,5 @@
 //! A library for IP routing primitives.
 
-//pub mod addr;
-//pub mod asn;
 #[cfg(feature = "bgp")]
 pub mod bgp;
 pub mod bgpsec;
