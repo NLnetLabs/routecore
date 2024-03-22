@@ -9,6 +9,7 @@ use super::common::prefix_bits_to_bytes;
 ///
 /// **TODO**: implement accessor methods for the contents of this NLRI.
 #[derive(Clone, Debug, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct RouteTargetNlri<Octs> {
     raw: Octs
 }

@@ -13,7 +13,7 @@ use super::mpls::Labels;
 /// NLRI comprised of a [`BasicNlri`], MPLS `Labels` and a VPN
 /// `RouteDistinguisher`.
 #[derive(Copy, Clone, Debug, Hash)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct MplsVpnNlri<Octs> {
     prefix: Prefix,
     labels: Labels<Octs>,

@@ -12,7 +12,7 @@ use std::fmt;
 ///
 /// Used in all AddpathNlri variants.
 #[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PathId(pub u32);
 
 impl fmt::Display for PathId {

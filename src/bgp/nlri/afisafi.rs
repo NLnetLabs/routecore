@@ -36,6 +36,7 @@ macro_rules! addpath { ($nlri:ident $(<$gen:ident>)? ) =>
 
 paste! {
     #[allow(clippy::derived_hash_with_manual_eq)]
+    #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
     #[derive(Clone, Debug, Hash)]
     pub struct [<$nlri AddpathNlri>]$(<$gen>)?(PathId, [<$nlri Nlri>]$(<$gen>)?);
     impl$(<$gen: Clone + Debug + Hash>)? AfiSafiNlri for [<$nlri AddpathNlri>]$(<$gen>)? {
@@ -214,6 +215,7 @@ paste! {
 
     // this enforces these derives on all *Nlri structs.
     #[derive(Clone, Debug, Hash)]
+    #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
     pub enum Nlri<Octs> {
     $($(
         [<$afi_name $safi_name>]([<$afi_name $safi_name Nlri>]$(<$gen>)?),
@@ -543,6 +545,7 @@ afisafi! {
 // --- Ipv4Unicast
 
 #[derive(Clone, Debug, Hash, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Ipv4UnicastNlri(Prefix);
 
 impl AfiSafiNlri for Ipv4UnicastNlri {
@@ -634,6 +637,7 @@ impl fmt::Display for Ipv4UnicastNlri {
 //--- Ipv4Multicast
 
 #[derive(Clone, Debug, Hash, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Ipv4MulticastNlri(Prefix);
 
 impl AfiSafiNlri for Ipv4MulticastNlri {
@@ -705,6 +709,7 @@ impl fmt::Display for Ipv4MulticastNlri {
 //--- Ipv4MplsUnicast
 
 #[derive(Clone, Debug, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Ipv4MplsUnicastNlri<Octs>(MplsNlri<Octs>);
 
 impl<Octs: Clone + Debug + Hash> AfiSafiNlri for Ipv4MplsUnicastNlri<Octs> {
@@ -759,6 +764,7 @@ impl<T> fmt::Display for Ipv4MplsUnicastNlri<T> {
 //--- Ipv4MplsVpnUnicastNlri
 
 #[derive(Clone, Debug, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Ipv4MplsVpnUnicastNlri<Octs>(MplsVpnNlri<Octs>);
 
 impl<Octs: Clone + Debug + Hash> AfiSafiNlri for Ipv4MplsVpnUnicastNlri<Octs> {
@@ -795,6 +801,7 @@ impl<T> fmt::Display for Ipv4MplsVpnUnicastNlri<T> {
 
 
 #[derive(Clone, Debug, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Ipv4RouteTargetNlri<Octs>(RouteTargetNlri<Octs>);
 
 impl<Octs: Clone + Debug + Hash> AfiSafiNlri for Ipv4RouteTargetNlri<Octs> {
@@ -828,6 +835,7 @@ impl<T> fmt::Display for Ipv4RouteTargetNlri<T> {
 //--- Ipv4FlowSpec
 
 #[derive(Clone, Debug, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Ipv4FlowSpecNlri<Octs>(FlowSpecNlri<Octs>);
 
 impl<Octs: Clone + Debug + Hash> AfiSafiNlri for Ipv4FlowSpecNlri<Octs> {
@@ -889,6 +897,7 @@ impl<T> fmt::Display for Ipv4FlowSpecNlri<T> {
 //--- Ipv6Unicast
 
 #[derive(Clone, Debug, Hash, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Ipv6UnicastNlri(Prefix);
 impl AfiSafiNlri for Ipv6UnicastNlri {
     type Nlri = Prefix;
@@ -958,6 +967,7 @@ impl fmt::Display for Ipv6UnicastNlri {
 //--- Ipv6Multicast
 
 #[derive(Clone, Debug, Hash, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Ipv6MulticastNlri(Prefix);
 
 impl AfiSafiNlri for Ipv6MulticastNlri {
@@ -990,6 +1000,7 @@ impl fmt::Display for Ipv6MulticastNlri {
 //--- Ipv6MplsUnicast
 
 #[derive(Clone, Debug, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Ipv6MplsUnicastNlri<Octs>(MplsNlri<Octs>);
 
 impl<Octs: Clone + Debug + Hash> AfiSafiNlri for Ipv6MplsUnicastNlri<Octs> {
@@ -1035,6 +1046,7 @@ impl<T> fmt::Display for Ipv6MplsUnicastNlri<T> {
 //--- Ipv6MplsVpnUnicastNlri
 
 #[derive(Clone, Debug, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Ipv6MplsVpnUnicastNlri<Octs>(MplsVpnNlri<Octs>);
 
 impl<Octs: Clone + Debug + Hash> AfiSafiNlri for Ipv6MplsVpnUnicastNlri<Octs> {
@@ -1071,6 +1083,7 @@ impl<T> fmt::Display for Ipv6MplsVpnUnicastNlri<T> {
 //--- Ipv6FlowSpec
 
 #[derive(Clone, Debug, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Ipv6FlowSpecNlri<Octs>(FlowSpecNlri<Octs>);
 
 impl<Octs: Clone + Debug + Hash> AfiSafiNlri for Ipv6FlowSpecNlri<Octs> {
@@ -1127,6 +1140,7 @@ impl<Octs> Ipv4MplsUnicastNlri<Octs> {
 //--- L2VpnVpls
 
 #[derive(Clone, Debug, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct L2VpnVplsNlri(VplsNlri);
 
 impl AfiSafiNlri for L2VpnVplsNlri {
@@ -1160,6 +1174,7 @@ impl fmt::Display for L2VpnVplsNlri {
 //--- Evpn
 
 #[derive(Clone, Debug, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct L2VpnEvpnNlri<Octs>(EvpnNlri<Octs>);
 
 impl<Octs: Clone + Debug + Hash> AfiSafiNlri for L2VpnEvpnNlri<Octs> {

@@ -8,7 +8,7 @@ use super::afisafi::Afi;
 
 /// NLRI comprised of a [`Prefix`] and MPLS `Labels`.
 #[derive(Copy, Clone, Debug, Hash)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct MplsNlri<Octs> {
     prefix: Prefix,
     labels: Labels<Octs>,
@@ -81,7 +81,7 @@ impl<T> fmt::Display for MplsNlri<T> {
 
 /// MPLS labels, part of [`MplsNlri`] and [`MplsVpnNlri`].
 #[derive(Copy, Clone, Debug, Hash)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Labels<Octs> {
     octets: Octs
 }

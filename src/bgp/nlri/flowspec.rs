@@ -12,7 +12,7 @@ use super::afisafi::Afi;
 ///
 /// Also see [`crate::flowspec`].
 #[derive(Copy, Clone, Debug, Hash)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct FlowSpecNlri<Octs> {
     #[allow(dead_code)]
     afi: Afi,
