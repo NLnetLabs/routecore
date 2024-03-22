@@ -483,14 +483,14 @@ impl<O> TryFrom<Nlri<O>> for BasicNlri {
 
     fn try_from(n: Nlri<O>) -> Result<Self, Self::Error> {
         match n {
-            Nlri::Ipv4Unicast(_) => todo!(),
-            Nlri::Ipv4UnicastAddpath(_) => todo!(),
-            Nlri::Ipv4Multicast(_) => todo!(),
-            Nlri::Ipv4MulticastAddpath(_) => todo!(),
-            Nlri::Ipv6Unicast(_) => todo!(),
-            Nlri::Ipv6UnicastAddpath(_) => todo!(),
-            Nlri::Ipv6Multicast(_) => todo!(),
-            Nlri::Ipv6MulticastAddpath(_) => todo!(),
+            Nlri::Ipv4Unicast(n) => Ok(n.into()),
+            Nlri::Ipv4UnicastAddpath(n) => Ok(n.into()),
+            Nlri::Ipv4Multicast(n) => Ok(n.into()),
+            Nlri::Ipv4MulticastAddpath(n) => Ok(n.into()),
+            Nlri::Ipv6Unicast(n) => Ok(n.into()),
+            Nlri::Ipv6UnicastAddpath(n) => Ok(n.into()),
+            Nlri::Ipv6Multicast(n) => Ok(n.into()),
+            Nlri::Ipv6MulticastAddpath(n) => Ok(n.into()),
             _ => Err("NLRI not basic"),
         }
     }

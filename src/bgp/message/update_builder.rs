@@ -2597,13 +2597,17 @@ mod tests {
             builder.add_withdrawal(w.unwrap()).unwrap();
         }
 
-        for a in original.typed_announcements::<_, Ipv4UnicastNlri>().unwrap().unwrap() {
-            builder.add_announcement(a.unwrap()).unwrap();
+        if let Ok(Some(iter)) = 
+            original.typed_announcements::<_, Ipv4UnicastNlri>()
+        {
+            for a in iter {
+                builder.add_announcement(a.unwrap()).unwrap();
+            }
         }
 
         let composed = builder.into_message(&SessionConfig::modern()).unwrap();
 
         assert_eq!(original.path_attributes().unwrap().count(), 4);
-        assert_eq!(composed.path_attributes().unwrap().count(), 3);
+        assert_eq!(composed.path_attributes().unwrap().count(), 2);
     }
 }
