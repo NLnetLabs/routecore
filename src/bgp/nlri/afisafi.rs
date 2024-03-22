@@ -886,6 +886,13 @@ impl<Octs: Clone + Debug + Hash + Octets> NlriCompose for Ipv4FlowSpecNlri<Octs>
     }
 }
 
+impl<T> From<Ipv4FlowSpecNlri<T>> for FlowSpecNlri<T> {
+    fn from(value: Ipv4FlowSpecNlri<T>) -> Self {
+        value.0
+    }
+}
+
+
 impl<T> fmt::Display for Ipv4FlowSpecNlri<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.0)
@@ -1105,6 +1112,12 @@ where
     {
 
         Ok(Self(FlowSpecNlri::parse(parser, Afi::Ipv6)?))
+    }
+}
+
+impl<T> From<Ipv6FlowSpecNlri<T>> for FlowSpecNlri<T> {
+    fn from(value: Ipv6FlowSpecNlri<T>) -> Self {
+        value.0
     }
 }
 
