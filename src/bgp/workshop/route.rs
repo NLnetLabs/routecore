@@ -171,16 +171,6 @@ impl_workshop!(
     //crate::bgp::message::update_builder::MpReachNlriBuilder
 );
 
-/*
-impl<A, N: Clone + Hash + Debug> WorkshopAttribute<N> for crate::bgp::message::update_builder::MpReachNlriBuilder<A> {
-    fn store(local_attrs: Self, attrs: &mut PaMap) ->
-        Result<(), ComposeError> { attrs.set(local_attrs); Ok(()) }
-    fn retrieve(_attrs: &PaMap) ->
-        Option<Self> { None }
-}
-*/
-
-
 
 //------------ WorkshopAttribute ---------------------------------------------
 
@@ -400,6 +390,8 @@ where
 }
 
 
+// XXX to be moved to roto
+/*
 pub fn pdu_into_rws_basic_iter<'a, Octs, R>(pdu: &'a UpdateMessage<Octs>)
 -> impl Iterator<Item = RouteWorkshop<BasicNlri>> + '_
 where
@@ -415,13 +407,12 @@ where
         RouteWorkshop::from_pa_map(a.unwrap(), pa_map.clone())
     ))
 }
+*/
 
 
 
-
-// TODO vec/iter for withdrawals, append to existing functions? or return
-// tuple of (announcements, withdrawals) ?
-
+// XXX to be moved to roto
+/*
 //------------ BasicNlri again ------------------------------------------------
 
 use inetnum::addr::Prefix;
@@ -495,6 +486,8 @@ impl<O> TryFrom<Nlri<O>> for BasicNlri {
         }
     }
 }
+
+*/
 
 
 #[allow(unused_imports)]
@@ -584,6 +577,8 @@ mod tests {
         assert_eq!(pdu_into_rws_iter::<_, RouteWorkshop<_>, _>(&pdu).count(), 7);
     }
 
+    //XXX to be moved to roto
+    /*
     #[test]
     fn pdu_into_rws_typed() {
 
@@ -674,6 +669,7 @@ mod tests {
 
     }
 
+*/
 
 
 }
