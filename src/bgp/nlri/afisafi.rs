@@ -1283,17 +1283,6 @@ where
 }
 
 
-pub fn iter_for_afi_safi<'a, O, P, ASP>(
-    parser: Parser<'a, P>,
-) -> NlriIter<'a, O, P, ASP>
-where
-    O: Octets,
-    P: Octets<Range<'a> = O>,
-    ASP: AfiSafiParse<'a, O, P>
-{
-    NlriIter::<'a, O, P, ASP>::new(parser)
-}
-
 impl<'a, O, P, ASP: AfiSafiParse<'a, O, P>> Iterator for NlriIter<'a, O, P, ASP>
 where 
     P: Octets<Range<'a> = O>
