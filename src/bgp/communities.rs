@@ -26,7 +26,7 @@
 //! and [`to_wellknown()`](`Community::to_wellknown()`).
 //!
 //! ```
-//! use routecore::asn::Asn;
+//! use inetnum::asn::Asn;
 //! use routecore::bgp::communities::Community;
 //! use std::str::FromStr;
 //!

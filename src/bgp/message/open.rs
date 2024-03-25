@@ -30,7 +30,7 @@ pub struct OpenMessage<Octets> {
 ///
 /// * [`my_asn()`][`OpenMessage::my_asn`]: returns the 32bit ASN if present,
 /// otherwise falls back to the conventional 16bit ASN (though represented as
-/// the 32bit [`routecore::asn::Asn`][`Asn`]);
+/// the 32bit [`inetnum::asn::Asn`][`Asn`]);
 /// * [`multiprotocol_ids()`][`OpenMessage::multiprotocol_ids`]: returns an
 /// iterator over all the AFI/SAFI combinations listed as Capability in the
 /// Optional Parameters. If this yields an empty iterator, one can assume the
