@@ -20,7 +20,7 @@ pub struct FlowSpecNlri<Octs> {
 }
 
 impl<Octs> FlowSpecNlri<Octs> {
-    pub(crate) fn raw(&self) -> &Octs {
+    pub fn raw(&self) -> &Octs {
         &self.raw
     }
 }
