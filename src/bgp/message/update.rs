@@ -248,7 +248,10 @@ impl<Octs: Octets> UpdateMessage<Octs> {
             let afi = parser.parse_u16_be()?;
             let safi = parser.parse_u8()?;
             let afi_safi = AfiSafi::from((afi, safi));
-            Ok(Some(NlriEnumIter::new(parser, afi_safi)))
+            Ok(Some(NlriEnumIter::new(
+                parser,
+                (afi_safi, self.pdu_parse_info.mp_unreach_addpath()).into()
+            )))
         } else {
             Ok(None)
         }
@@ -374,7 +377,10 @@ impl<Octs: Octets> UpdateMessage<Octs> {
 
             NextHop::skip(&mut parser)?;
             parser.advance(1)?; // 1 reserved byte
-            Ok(Some(NlriEnumIter::new(parser, afi_safi)))
+            Ok(Some(NlriEnumIter::new(
+                parser,
+                (afi_safi, self.pdu_parse_info.mp_reach_addpath()).into()
+            )))
         } else {
             Ok(None)
         }
