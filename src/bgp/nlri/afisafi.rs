@@ -68,7 +68,7 @@ paste! {
 
     impl$(<$gen>)? IsNlri for [<$nlri AddpathNlri>]$(<$gen>)? { 
         fn nlri_type() -> NlriType {
-            NlriType::[<$nlri AddpathNlri>]
+            NlriType::[<$nlri Addpath>]
         }
     }
 
@@ -258,8 +258,8 @@ paste! {
     #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
     pub enum NlriType {
     $($(
-        [<$afi_name $safi_name Nlri>],
-        [<$afi_name $safi_name AddpathNlri>],
+        [<$afi_name $safi_name>],
+        [<$afi_name $safi_name Addpath>],
     )+)+
         Unsupported(u16, u8),
     }
@@ -268,8 +268,8 @@ paste! {
         pub fn afi_safi(&self) -> AfiSafiType {
             match self {
             $($(
-                Self::[<$afi_name $safi_name Nlri>] => AfiSafiType::[<$afi_name $safi_name >],
-                Self::[<$afi_name $safi_name AddpathNlri>] => AfiSafiType::[<$afi_name $safi_name >],
+                Self::[<$afi_name $safi_name>] => AfiSafiType::[<$afi_name $safi_name >],
+                Self::[<$afi_name $safi_name Addpath>] => AfiSafiType::[<$afi_name $safi_name >],
             )+)+
                 Self::Unsupported(a, s) => AfiSafiType::Unsupported(*a, *s)
             }
@@ -280,11 +280,17 @@ paste! {
         fn from(t: (AfiSafiType, bool)) -> Self {
             match (t.0, t.1) {
                 $($(
-                    (AfiSafiType::[<$afi_name $safi_name>], false)  => NlriType::[<$afi_name $safi_name Nlri>],
-                    (AfiSafiType::[<$afi_name $safi_name>], true)  => NlriType::[<$afi_name $safi_name AddpathNlri>],
+                    (AfiSafiType::[<$afi_name $safi_name>], false)  => NlriType::[<$afi_name $safi_name >],
+                    (AfiSafiType::[<$afi_name $safi_name>], true)  => NlriType::[<$afi_name $safi_name Addpath>],
                 )+)+
                     (AfiSafiType::Unsupported(a, s), _)  => NlriType::Unsupported(a, s),
             }
+        }
+    }
+
+    impl From<NlriType> for AfiSafiType {
+        fn from(n: NlriType) -> Self {
+            n.afi_safi()
         }
     }
 
@@ -305,7 +311,7 @@ $($(
 
     impl$(<$gen>)? IsNlri for [<$afi_name $safi_name Nlri>]$(<$gen>)? { 
         fn nlri_type() -> NlriType {
-            NlriType::[<$afi_name $safi_name Nlri>]
+            NlriType::[<$afi_name $safi_name>]
         }
     }
 
@@ -1377,32 +1383,32 @@ where
         }
         
         let res = match self.ty {
-            NlriType::Ipv4UnicastNlri => Ipv4UnicastNlri::parse(&mut self.parser).map(Nlri::Ipv4Unicast),
-            NlriType::Ipv4UnicastAddpathNlri => Ipv4UnicastAddpathNlri::parse(&mut self.parser).map(Nlri::Ipv4UnicastAddpath),
-            NlriType::Ipv4MulticastNlri => Ipv4MulticastNlri::parse(&mut self.parser).map(Nlri::Ipv4Multicast),
-            NlriType::Ipv4MulticastAddpathNlri => Ipv4MulticastAddpathNlri::parse(&mut self.parser).map(Nlri::Ipv4MulticastAddpath),
-            NlriType::Ipv4MplsUnicastNlri => Ipv4MplsUnicastNlri::parse(&mut self.parser).map(Nlri::Ipv4MplsUnicast),
-            NlriType::Ipv4MplsUnicastAddpathNlri => Ipv4MplsUnicastAddpathNlri::parse(&mut self.parser).map(Nlri::Ipv4MplsUnicastAddpath),
-            NlriType::Ipv4MplsVpnUnicastNlri => Ipv4MplsVpnUnicastNlri::parse(&mut self.parser).map(Nlri::Ipv4MplsVpnUnicast),
-            NlriType::Ipv4MplsVpnUnicastAddpathNlri => Ipv4MplsVpnUnicastAddpathNlri::parse(&mut self.parser).map(Nlri::Ipv4MplsVpnUnicastAddpath),
-            NlriType::Ipv4RouteTargetNlri => Ipv4RouteTargetNlri::parse(&mut self.parser).map(Nlri::Ipv4RouteTarget),
-            NlriType::Ipv4RouteTargetAddpathNlri => Ipv4RouteTargetAddpathNlri::parse(&mut self.parser).map(Nlri::Ipv4RouteTargetAddpath),
-            NlriType::Ipv4FlowSpecNlri => Ipv4FlowSpecNlri::parse(&mut self.parser).map(Nlri::Ipv4FlowSpec),
-            NlriType::Ipv4FlowSpecAddpathNlri => Ipv4FlowSpecAddpathNlri::parse(&mut self.parser).map(Nlri::Ipv4FlowSpecAddpath),
-            NlriType::Ipv6UnicastNlri => Ipv6UnicastNlri::parse(&mut self.parser).map(Nlri::Ipv6Unicast),
-            NlriType::Ipv6UnicastAddpathNlri => Ipv6UnicastAddpathNlri::parse(&mut self.parser).map(Nlri::Ipv6UnicastAddpath),
-            NlriType::Ipv6MulticastNlri => Ipv6MulticastNlri::parse(&mut self.parser).map(Nlri::Ipv6Multicast),
-            NlriType::Ipv6MulticastAddpathNlri => Ipv6MulticastAddpathNlri::parse(&mut self.parser).map(Nlri::Ipv6MulticastAddpath),
-            NlriType::Ipv6MplsUnicastNlri => Ipv6MplsUnicastNlri::parse(&mut self.parser).map(Nlri::Ipv6MplsUnicast),
-            NlriType::Ipv6MplsUnicastAddpathNlri => Ipv6MplsUnicastAddpathNlri::parse(&mut self.parser).map(Nlri::Ipv6MplsUnicastAddpath),
-            NlriType::Ipv6MplsVpnUnicastNlri => Ipv6MplsVpnUnicastNlri::parse(&mut self.parser).map(Nlri::Ipv6MplsVpnUnicast),
-            NlriType::Ipv6MplsVpnUnicastAddpathNlri => Ipv6MplsVpnUnicastAddpathNlri::parse(&mut self.parser).map(Nlri::Ipv6MplsVpnUnicastAddpath),
-            NlriType::Ipv6FlowSpecNlri => Ipv6FlowSpecNlri::parse(&mut self.parser).map(Nlri::Ipv6FlowSpec),
-            NlriType::Ipv6FlowSpecAddpathNlri => Ipv6FlowSpecAddpathNlri::parse(&mut self.parser).map(Nlri::Ipv6FlowSpecAddpath),
-            NlriType::L2VpnVplsNlri => L2VpnVplsNlri::parse(&mut self.parser).map(Nlri::L2VpnVpls),
-            NlriType::L2VpnVplsAddpathNlri => L2VpnVplsAddpathNlri::parse(&mut self.parser).map(Nlri::L2VpnVplsAddpath),
-            NlriType::L2VpnEvpnNlri => L2VpnEvpnNlri::parse(&mut self.parser).map(Nlri::L2VpnEvpn),
-            NlriType::L2VpnEvpnAddpathNlri => L2VpnEvpnAddpathNlri::parse(&mut self.parser).map(Nlri::L2VpnEvpnAddpath),
+            NlriType::Ipv4Unicast => Ipv4UnicastNlri::parse(&mut self.parser).map(Nlri::Ipv4Unicast),
+            NlriType::Ipv4UnicastAddpath => Ipv4UnicastAddpathNlri::parse(&mut self.parser).map(Nlri::Ipv4UnicastAddpath),
+            NlriType::Ipv4Multicast => Ipv4MulticastNlri::parse(&mut self.parser).map(Nlri::Ipv4Multicast),
+            NlriType::Ipv4MulticastAddpath => Ipv4MulticastAddpathNlri::parse(&mut self.parser).map(Nlri::Ipv4MulticastAddpath),
+            NlriType::Ipv4MplsUnicast => Ipv4MplsUnicastNlri::parse(&mut self.parser).map(Nlri::Ipv4MplsUnicast),
+            NlriType::Ipv4MplsUnicastAddpath => Ipv4MplsUnicastAddpathNlri::parse(&mut self.parser).map(Nlri::Ipv4MplsUnicastAddpath),
+            NlriType::Ipv4MplsVpnUnicast => Ipv4MplsVpnUnicastNlri::parse(&mut self.parser).map(Nlri::Ipv4MplsVpnUnicast),
+            NlriType::Ipv4MplsVpnUnicastAddpath => Ipv4MplsVpnUnicastAddpathNlri::parse(&mut self.parser).map(Nlri::Ipv4MplsVpnUnicastAddpath),
+            NlriType::Ipv4RouteTarget => Ipv4RouteTargetNlri::parse(&mut self.parser).map(Nlri::Ipv4RouteTarget),
+            NlriType::Ipv4RouteTargetAddpath => Ipv4RouteTargetAddpathNlri::parse(&mut self.parser).map(Nlri::Ipv4RouteTargetAddpath),
+            NlriType::Ipv4FlowSpec => Ipv4FlowSpecNlri::parse(&mut self.parser).map(Nlri::Ipv4FlowSpec),
+            NlriType::Ipv4FlowSpecAddpath => Ipv4FlowSpecAddpathNlri::parse(&mut self.parser).map(Nlri::Ipv4FlowSpecAddpath),
+            NlriType::Ipv6Unicast => Ipv6UnicastNlri::parse(&mut self.parser).map(Nlri::Ipv6Unicast),
+            NlriType::Ipv6UnicastAddpath => Ipv6UnicastAddpathNlri::parse(&mut self.parser).map(Nlri::Ipv6UnicastAddpath),
+            NlriType::Ipv6Multicast => Ipv6MulticastNlri::parse(&mut self.parser).map(Nlri::Ipv6Multicast),
+            NlriType::Ipv6MulticastAddpath => Ipv6MulticastAddpathNlri::parse(&mut self.parser).map(Nlri::Ipv6MulticastAddpath),
+            NlriType::Ipv6MplsUnicast => Ipv6MplsUnicastNlri::parse(&mut self.parser).map(Nlri::Ipv6MplsUnicast),
+            NlriType::Ipv6MplsUnicastAddpath => Ipv6MplsUnicastAddpathNlri::parse(&mut self.parser).map(Nlri::Ipv6MplsUnicastAddpath),
+            NlriType::Ipv6MplsVpnUnicast => Ipv6MplsVpnUnicastNlri::parse(&mut self.parser).map(Nlri::Ipv6MplsVpnUnicast),
+            NlriType::Ipv6MplsVpnUnicastAddpath => Ipv6MplsVpnUnicastAddpathNlri::parse(&mut self.parser).map(Nlri::Ipv6MplsVpnUnicastAddpath),
+            NlriType::Ipv6FlowSpec => Ipv6FlowSpecNlri::parse(&mut self.parser).map(Nlri::Ipv6FlowSpec),
+            NlriType::Ipv6FlowSpecAddpath => Ipv6FlowSpecAddpathNlri::parse(&mut self.parser).map(Nlri::Ipv6FlowSpecAddpath),
+            NlriType::L2VpnVpls => L2VpnVplsNlri::parse(&mut self.parser).map(Nlri::L2VpnVpls),
+            NlriType::L2VpnVplsAddpath => L2VpnVplsAddpathNlri::parse(&mut self.parser).map(Nlri::L2VpnVplsAddpath),
+            NlriType::L2VpnEvpn => L2VpnEvpnNlri::parse(&mut self.parser).map(Nlri::L2VpnEvpn),
+            NlriType::L2VpnEvpnAddpath => L2VpnEvpnAddpathNlri::parse(&mut self.parser).map(Nlri::L2VpnEvpnAddpath),
             NlriType::Unsupported(..) => { return None; }
         };
 

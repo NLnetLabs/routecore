@@ -25,7 +25,7 @@ use crate::bgp::types::{
 };
 
 use crate::bgp::nlri::afisafi::{
-    AfiSafiNlri, AfiSafiParse, NlriIter, NlriEnumIter, Nlri as NlriEnum
+    AfiSafiNlri, AfiSafiParse, NlriIter, NlriEnumIter, Nlri, NlriType
 };
 
 use crate::util::parser::ParseError;
@@ -185,25 +185,31 @@ impl<Octs: Octets> UpdateMessage<Octs> {
     /// Once we switch over to the new AfiSafiType enum, we can signal PathId
     /// presence/absence.
     pub fn afi_safis(&self) -> (
-        Option<AfiSafi>,
-        Option<AfiSafi>,
-        Option<AfiSafi>,
-        Option<AfiSafi>,
+        Option<NlriType>,
+        Option<NlriType>,
+        Option<NlriType>,
+        Option<NlriType>,
     ) {
         (
-            (!self.withdrawals.is_empty()).then_some(AfiSafi::Ipv4Unicast),
-            (!self.announcements.is_empty()).then_some(AfiSafi::Ipv4Unicast),
-            self.mp_withdrawals().ok().flatten().map(|a| a.afi_safi()),
-            self.mp_announcements().ok().flatten().map(|a| a.afi_safi()),
+            (!self.withdrawals.is_empty()).then_some((
+                 AfiSafi::Ipv4Unicast,
+                 self.pdu_parse_info.conventional_addpath()).into()
+            ),
+            (!self.announcements.is_empty()).then_some((
+                    AfiSafi::Ipv4Unicast,
+                    self.pdu_parse_info.conventional_addpath()).into()
+            ),
+            self.mp_withdrawals().ok().flatten().map(|w| w.nlri_type()),
+            self.mp_announcements().ok().flatten().map(|a| a.nlri_type()),
         )
     }
 
-    pub fn announcement_fams(&self) -> impl Iterator<Item = AfiSafi> {
+    pub fn announcement_fams(&self) -> impl Iterator<Item = NlriType> {
         let afi_safis = self.afi_safis();
         [afi_safis.1, afi_safis.3].into_iter().flatten()
     }
 
-    pub fn withdrawal_fams(&self) -> impl Iterator<Item = AfiSafi> {
+    pub fn withdrawal_fams(&self) -> impl Iterator<Item = NlriType> {
         let afi_safis = self.afi_safis();
         [afi_safis.0, afi_safis.2].into_iter().flatten()
     }
@@ -211,10 +217,10 @@ impl<Octs: Octets> UpdateMessage<Octs> {
     /// Returns an iterator over the conventional withdrawals.
     ///
     /// The withdrawals are always IPv4 Unicast, but can contain Path IDs.
-    /// Therefore, iterator yields variants of `NlriEnum`.
+    /// Therefore, iterator yields variants of `Nlri`.
     pub fn conventional_withdrawals(&self)
         -> Result<
-            impl Iterator<Item = Result<NlriEnum<Octs::Range<'_>>, ParseError>> + '_,
+            impl Iterator<Item = Result<Nlri<Octs::Range<'_>>, ParseError>> + '_,
             ParseError
             >
     {
@@ -226,10 +232,10 @@ impl<Octs: Octets> UpdateMessage<Octs> {
         };
 
         Ok(normal_iter.into_iter().flatten()
-            .map(|n| n.map(NlriEnum::from))
+            .map(|n| n.map(Nlri::from))
             .chain(
                 addpath_iter.into_iter().flatten()
-                .map(|n| n.map(NlriEnum::from))
+                .map(|n| n.map(Nlri::from))
             )
         )
     }
@@ -260,10 +266,10 @@ impl<Octs: Octets> UpdateMessage<Octs> {
     /// Returns a combined iterator of conventional and MP_UNREACH_NLRI.
     ///
     /// Note that this iterator might contain NLRI of different AFI/SAFI
-    /// types and yields variants of `NlriEnum`.
+    /// types and yields variants of `Nlri`.
     pub fn withdrawals(&self)
         -> Result<
-            impl Iterator<Item = Result<NlriEnum<Octs::Range<'_>>, ParseError>>,
+            impl Iterator<Item = Result<Nlri<Octs::Range<'_>>, ParseError>>,
             ParseError
             >
     {
@@ -312,7 +318,7 @@ impl<Octs: Octets> UpdateMessage<Octs> {
     /// For more fine-grained control, consider using the
     /// `unicast_withdrawals` method.
     pub fn withdrawals_vec(&self) 
-        -> Result<Vec<NlriEnum<Octs::Range<'_>>>, ParseError>
+        -> Result<Vec<Nlri<Octs::Range<'_>>>, ParseError>
     {
         let conv = self.conventional_withdrawals()?;
         let mp = self.mp_withdrawals()?;
@@ -343,7 +349,7 @@ impl<Octs: Octets> UpdateMessage<Octs> {
     /// Returns the conventional announcements.
     pub fn conventional_announcements(&self)
         -> Result<
-            impl Iterator<Item = Result<NlriEnum<Octs::Range<'_>>, ParseError>>,
+            impl Iterator<Item = Result<Nlri<Octs::Range<'_>>, ParseError>>,
             ParseError>
     {
         let pp = Parser::with_range(self.octets(), self.announcements.clone());
@@ -356,10 +362,10 @@ impl<Octs: Octets> UpdateMessage<Octs> {
         ;
 
         Ok(normal_iter.into_iter().flatten()
-            .map(|n| n.map(NlriEnum::from))
+            .map(|n| n.map(Nlri::from))
             .chain(
                 addpath_iter.into_iter().flatten()
-                .map(|n| n.map(NlriEnum::from))
+                .map(|n| n.map(Nlri::from))
         ))
     }
 
@@ -411,7 +417,7 @@ impl<Octs: Octets> UpdateMessage<Octs> {
     /// types.
     pub fn announcements(&self)
         -> Result<
-            impl Iterator<Item = Result<NlriEnum<Octs::Range<'_>>, ParseError>>,
+            impl Iterator<Item = Result<Nlri<Octs::Range<'_>>, ParseError>>,
             ParseError
             >
     {
@@ -470,7 +476,7 @@ impl<Octs: Octets> UpdateMessage<Octs> {
     /// For more fine-grained control, consider using the
     /// `unicast_announcements` method.
     pub fn announcements_vec(&self) 
-        -> Result<Vec<NlriEnum<Octs::Range<'_>>>, ParseError>
+        -> Result<Vec<Nlri<Octs::Range<'_>>>, ParseError>
     {
         let conv = self.conventional_announcements()?;
         let mp = self.mp_announcements()?;

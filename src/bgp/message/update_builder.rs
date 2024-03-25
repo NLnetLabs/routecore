@@ -1352,6 +1352,7 @@ mod tests {
         Ipv4MulticastNlri,
         Ipv6UnicastNlri,
         Ipv4FlowSpecNlri,
+        NlriType,
     };
     use crate::bgp::types::{AfiSafi, OriginType, PathId};
 
@@ -2118,56 +2119,47 @@ mod tests {
             };
 
             let target = BytesMut::new();
-            let (_unreach_afisafi, reach_afisafi) = match original.afi_safis() {
-                (_, _, Some(mp_u), Some(mp_r)) => (mp_u, mp_r),
-                (_, _, None, Some(mp_r)) => (mp_r, mp_r),
-                (_, _, Some(mp_u), None) => (mp_u, mp_u),
-                (Some(c_w), Some(c_a), _, _) => (c_w, c_a),
-                (Some(c_w), None, _, _) => (c_w, c_w),
-                (None, Some(c_a), _, _) => (c_a, c_a),
-                (None, None, None, None) => 
-                {
-                    // conventional IPv4 End-of-RIB
-                    (AfiSafi::Ipv4Unicast, AfiSafi::Ipv4Unicast)
-                }
-            };
+            let reach_afisafi = original.announcement_fams().last()
+                .unwrap_or(NlriType::Ipv4Unicast);
+
 
             let composed = match reach_afisafi {
-                AfiSafi::Ipv4Unicast => {
+                NlriType::Ipv4Unicast => {
                     let mut builder = UpdateBuilder::<_, Ipv4UnicastNlri>::from_update_message(&original, &sc, target).unwrap();
                     builder.add_announcements_from_pdu(&original, &sc);
                     builder.add_withdrawals_from_pdu(&original, &sc);
                     builder.into_message(&sc)
                 }
-                AfiSafi::Ipv4Multicast => {
+                NlriType::Ipv4Multicast => {
                     let mut builder = UpdateBuilder::<_, Ipv4MulticastNlri>::from_update_message(&original, &sc, target).unwrap();
                     builder.add_announcements_from_pdu(&original, &sc);
                     builder.add_withdrawals_from_pdu(&original, &sc);
                     builder.into_message(&sc)
                 }
-                AfiSafi::Ipv4MplsUnicast => todo!(),
-                AfiSafi::Ipv4MplsVpnUnicast => todo!(),
-                AfiSafi::Ipv4RouteTarget => todo!(),
-                AfiSafi::Ipv4FlowSpec => {
+                NlriType::Ipv4MplsUnicast => todo!(),
+                NlriType::Ipv4MplsVpnUnicast => todo!(),
+                NlriType::Ipv4RouteTarget => todo!(),
+                NlriType::Ipv4FlowSpec => {
                     let mut builder = UpdateBuilder::<_, Ipv4FlowSpecNlri<_>>::from_update_message(&original, &sc, target).unwrap();
                     builder.add_announcements_from_pdu(&original, &sc);
                     builder.add_withdrawals_from_pdu(&original, &sc);
                     builder.into_message(&sc)
                 }
-                AfiSafi::Ipv6Unicast => {
+                NlriType::Ipv6Unicast => {
                     let mut builder = UpdateBuilder::<_, Ipv6UnicastNlri>::from_update_message(&original, &sc, target).unwrap();
                     builder.add_announcements_from_pdu(&original, &sc);
                     builder.add_withdrawals_from_pdu(&original, &sc);
                     builder.into_message(&sc)
                 }
 
-                AfiSafi::Ipv6Multicast => todo!(),
-                AfiSafi::Ipv6MplsUnicast => todo!(),
-                AfiSafi::Ipv6MplsVpnUnicast => todo!(),
-                AfiSafi::Ipv6FlowSpec => todo!(),
-                AfiSafi::L2VpnVpls => todo!(),
-                AfiSafi::L2VpnEvpn => todo!(),
-                AfiSafi::Unsupported(_, _) => todo!(),
+                NlriType::Ipv6Multicast => todo!(),
+                NlriType::Ipv6MplsUnicast => todo!(),
+                NlriType::Ipv6MplsVpnUnicast => todo!(),
+                NlriType::Ipv6FlowSpec => todo!(),
+                NlriType::L2VpnVpls => todo!(),
+                NlriType::L2VpnEvpn => todo!(),
+                NlriType::Unsupported(_, _) => todo!(),
+                _ => todo!(), // ADD-PATH catch-all
             };
             //let mut builder = UpdateBuilder::<_, reach_afisafi>::from_update_message(
             //    &original, &sc, target
