@@ -348,6 +348,8 @@ $($(
 
 //--- Trait implementations for macro generated types
 
+impl<Octs: AsRef<[u8]>> Eq for Nlri<Octs> {}
+
 impl<Octs, Other> PartialEq<Nlri<Other>> for Nlri<Octs>
 where Octs: AsRef<[u8]>,
       Other: AsRef<[u8]>
