@@ -2120,6 +2120,9 @@ mod tests {
 
             let target = BytesMut::new();
             let reach_afisafi = original.announcement_fams().last()
+                .or(
+                    original.withdrawal_fams().last()
+                )
                 .unwrap_or(NlriType::Ipv4Unicast);
 
 
