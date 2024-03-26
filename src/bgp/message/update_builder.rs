@@ -8,9 +8,10 @@ use log::warn;
 use crate::bgp::aspath::HopPath;
 use crate::bgp::communities::StandardCommunity;
 use crate::bgp::message::{Header, MsgType, UpdateMessage, SessionConfig};
-use crate::bgp::nlri::afisafi::{AfiSafiNlri, AfiSafiParse, NlriCompose};
+use crate::bgp::nlri::afisafi::{AfiSafi, AfiSafiNlri, AfiSafiParse, NlriCompose};
 use crate::bgp::path_attributes::{Attribute, PaMap, PathAttributeType};
-use crate::bgp::types::{AfiSafi, NextHop};
+use crate::bgp::types::{AfiSafi as AfiSafiTrait, NextHop};
+use crate::bgp::nlri::afisafi::IsNlri;
 use crate::util::parser::ParseError;
 
 //------------ UpdateBuilder -------------------------------------------------
@@ -30,7 +31,7 @@ impl<T, A> UpdateBuilder<T, A> {
 
 impl<Target, A> UpdateBuilder<Target, A>
 where
-    A: AfiSafiNlri + NlriCompose,
+    A: AfiSafiNlri + AfiSafi + NlriCompose,
     Target: OctetsBuilder + octseq::Truncate,
 {
 
@@ -59,7 +60,7 @@ where
 
     pub fn from_workshop(
         ws: crate::bgp::workshop::route::RouteWorkshop<A>
-    ) -> UpdateBuilder<Vec<u8>, A> {
+    ) -> UpdateBuilder<Vec<u8>, A> where A: AfiSafi + IsNlri {
 
         let mut res = Self::from_attributes_builder(ws.attributes().clone());
         let nlri = ws.nlri();
@@ -270,7 +271,7 @@ where
 
 impl<Target, A> UpdateBuilder<Target, A>
 where
-    A: Clone + AfiSafiNlri + NlriCompose
+    A: Clone + AfiSafiNlri + AfiSafi + NlriCompose
 {
     pub fn into_message(self, session_config: &SessionConfig) ->
         Result<UpdateMessage<<Target as FreezeBuilder>::Octets>, ComposeError>
@@ -679,7 +680,7 @@ pub struct PduIterator<'a, Target, A> {
 
 impl<'a, Target, A> Iterator for PduIterator<'a, Target, A>
 where
-    A: AfiSafiNlri + NlriCompose,
+    A: AfiSafiNlri + AfiSafi + NlriCompose,
     Target: Clone + OctetsBuilder + FreezeBuilder + AsMut<[u8]> + octseq::Truncate,
     <Target as FreezeBuilder>::Octets: Octets
 {
@@ -722,13 +723,13 @@ impl<Target, A: AfiSafiNlri + NlriCompose> IntoIterator for UpdateBuilder<Target
 }
 */
 
-impl<A: AfiSafiNlri + NlriCompose> UpdateBuilder<Vec<u8>, A> {
+impl<A: AfiSafiNlri + AfiSafi + NlriCompose> UpdateBuilder<Vec<u8>, A> {
     pub fn new_vec() -> Self {
         UpdateBuilder::from_target(Vec::with_capacity(23)).unwrap()
     }
 }
 
-impl<A: AfiSafiNlri + NlriCompose> UpdateBuilder<BytesMut, A> {
+impl<A: AfiSafiNlri + AfiSafi + NlriCompose> UpdateBuilder<BytesMut, A> {
     pub fn new_bytes() -> Self {
         Self::from_target(BytesMut::new()).unwrap()
     }
@@ -764,7 +765,7 @@ impl<A> MpReachNlriBuilder<A> {
         _session_config: &SessionConfig
     )
     where
-        A: AfiSafiNlri + NlriCompose + AfiSafiParse<'a, O, Octs, Output = A>,
+        A: AfiSafiNlri + AfiSafi + NlriCompose + AfiSafiParse<'a, O, Octs, Output = A>,
         Octs: Octets<Range<'a> = O>,
         O: Octets,
     {
@@ -776,7 +777,7 @@ impl<A> MpReachNlriBuilder<A> {
     }
 }
 
-impl<A: AfiSafiNlri + NlriCompose> MpReachNlriBuilder<A> {
+impl<A: AfiSafiNlri + AfiSafi + NlriCompose> MpReachNlriBuilder<A> {
     pub fn new() -> Self {
         Self {
             announcements: Vec::new(),
@@ -810,7 +811,7 @@ impl<A: AfiSafiNlri + NlriCompose> MpReachNlriBuilder<A> {
     }
 
 
-    pub fn afi_safi(&self) -> AfiSafi {
+    pub fn afi_safi(&self) -> AfiSafiTrait {
         A::afi_safi()
     }
 
@@ -883,7 +884,7 @@ impl<A: AfiSafiNlri + NlriCompose> MpReachNlriBuilder<A> {
     }
 }
 
-impl<A: AfiSafiNlri + NlriCompose> Default for MpReachNlriBuilder<A> {
+impl<A: AfiSafiNlri + AfiSafi + NlriCompose> Default for MpReachNlriBuilder<A> {
     fn default() -> Self {
         Self::new()
     }
@@ -1130,7 +1131,7 @@ where
         _session_config: &SessionConfig
     )
     where
-        A: AfiSafiNlri + NlriCompose + AfiSafiParse<'a, O, Octs, Output = A>,
+        A: AfiSafiNlri + AfiSafi + NlriCompose + AfiSafiParse<'a, O, Octs, Output = A>,
         Octs: Octets<Range<'a> = O>,
         O: Octets,
     {
@@ -1142,7 +1143,7 @@ where
     }
 }
 
-impl<A: NlriCompose> MpUnreachNlriBuilder<A> {
+impl<A: NlriCompose + AfiSafi> MpUnreachNlriBuilder<A> {
     pub fn new() -> Self {
         Self {
             withdrawals: Vec::new(),

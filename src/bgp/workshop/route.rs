@@ -19,7 +19,7 @@ use crate::bgp::{
     },
 };
 
-use crate::bgp::nlri::afisafi::{AfiSafiNlri, AfiSafiType, Nlri};
+use crate::bgp::nlri::afisafi::{AfiSafi, AfiSafiNlri, AfiSafiType, Nlri};
 use crate::bgp::nlri::nexthop::NextHop;
 use crate::bgp::types::ConventionalNextHop;
 
@@ -126,9 +126,10 @@ impl<N: AfiSafiNlri + Clone + Debug + Hash> RouteWorkshop<N> {
     where
         for<'a> Vec<u8>: OctetsFrom<Octs::Range<'a>>,
     {
+        let afi_safi_type = nlri.afi_safi_type();
         let mut res = Self::new(nlri);
 
-        if N::afi_safi() == AfiSafiType::Ipv4Unicast &&
+        if afi_safi_type == AfiSafiType::Ipv4Unicast &&
             pdu.has_conventional_nlri()
         {
             if let Ok(Some(nh)) = pdu.conventional_next_hop() {

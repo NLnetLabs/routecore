@@ -44,6 +44,10 @@ paste! {
         fn nlri(&self) -> Self::Nlri {
             self.1.nlri()
         }
+
+        fn afi_safi_type(&self) -> AfiSafiType {
+            <[<$nlri Nlri>]$(<$gen>)? as AfiSafi>::afi_safi()
+        }
     }
 
     impl$(<$gen>)? AfiSafi for [<$nlri AddpathNlri>]$(<$gen>)? {
@@ -475,9 +479,10 @@ pub trait IsNlri {
 }
 
 /// A type representing an NLRI for a certain AFI+SAFI.
-pub trait AfiSafiNlri: AfiSafi + IsNlri + Clone + Hash + Debug {
+pub trait AfiSafiNlri: Clone + Hash + Debug {
     type Nlri;
     fn nlri(&self) -> Self::Nlri;
+    fn afi_safi_type(&self) -> AfiSafiType;
 
     // TODO
     //fn nexthop_compatible(&self, nh: &super::nexthop::NextHop) -> bool;
@@ -590,6 +595,9 @@ impl AfiSafiNlri for Ipv4UnicastNlri {
     fn nlri(&self) -> Self::Nlri {
         self.0
     }
+    fn afi_safi_type(&self) -> AfiSafiType {
+        <Self as AfiSafi>::afi_safi()
+    }
 }
 
 impl FromStr for Ipv4UnicastNlri {
@@ -682,6 +690,9 @@ impl AfiSafiNlri for Ipv4MulticastNlri {
     fn nlri(&self) -> Self::Nlri {
         self.0
     }
+    fn afi_safi_type(&self) -> AfiSafiType {
+        <Self as AfiSafi>::afi_safi()
+    }
 }
 
 impl FromStr for Ipv4MulticastNlri {
@@ -760,6 +771,9 @@ impl<Octs: Clone + Debug + Hash> AfiSafiNlri for Ipv4MplsUnicastNlri<Octs> {
     fn nlri(&self) -> Self::Nlri {
         self.0.clone()
     }
+    fn afi_safi_type(&self) -> AfiSafiType {
+        <Self as AfiSafi>::afi_safi()
+    }
 }
 
 impl<'a, O, P> AfiSafiParse<'a, O, P> for Ipv4MplsUnicastNlri<O>
@@ -814,6 +828,9 @@ impl<Octs: Clone + Debug + Hash> AfiSafiNlri for Ipv4MplsVpnUnicastNlri<Octs> {
     type Nlri = MplsVpnNlri<Octs>;
     fn nlri(&self) -> Self::Nlri {
         self.0.clone()
+    }
+    fn afi_safi_type(&self) -> AfiSafiType {
+        <Self as AfiSafi>::afi_safi()
     }
 }
 
@@ -870,6 +887,9 @@ impl<Octs: Clone + Debug + Hash> AfiSafiNlri for Ipv4RouteTargetNlri<Octs> {
     fn nlri(&self) -> Self::Nlri {
         self.0.clone()
     }
+    fn afi_safi_type(&self) -> AfiSafiType {
+        <Self as AfiSafi>::afi_safi()
+    }
 }
 
 impl<'a, O, P> AfiSafiParse<'a, O, P> for Ipv4RouteTargetNlri<O>
@@ -921,6 +941,9 @@ impl<Octs: Clone + Debug + Hash> AfiSafiNlri for Ipv4FlowSpecNlri<Octs> {
     type Nlri = FlowSpecNlri<Octs>;
     fn nlri(&self) -> Self::Nlri {
         self.0.clone()
+    }
+    fn afi_safi_type(&self) -> AfiSafiType {
+        <Self as AfiSafi>::afi_safi()
     }
 }
 
@@ -1008,6 +1031,9 @@ impl AfiSafiNlri for Ipv6UnicastNlri {
     fn nlri(&self) -> Self::Nlri {
         self.0
     }
+    fn afi_safi_type(&self) -> AfiSafiType {
+        <Self as AfiSafi>::afi_safi()
+    }
 }
 impl FromStr for Ipv6UnicastNlri {
     type Err = &'static str;
@@ -1086,6 +1112,9 @@ impl AfiSafiNlri for Ipv6MulticastNlri {
     fn nlri(&self) -> Self::Nlri {
         self.0
     }
+    fn afi_safi_type(&self) -> AfiSafiType {
+        <Self as AfiSafi>::afi_safi()
+    }
 }
 
 impl<'a, O, P> AfiSafiParse<'a, O, P> for Ipv6MulticastNlri
@@ -1124,6 +1153,9 @@ impl<Octs: Clone + Debug + Hash> AfiSafiNlri for Ipv6MplsUnicastNlri<Octs> {
     type Nlri = MplsNlri<Octs>;
     fn nlri(&self) -> Self::Nlri {
         self.0.clone()
+    }
+    fn afi_safi_type(&self) -> AfiSafiType {
+        <Self as AfiSafi>::afi_safi()
     }
 }
 
@@ -1180,6 +1212,9 @@ impl<Octs: Clone + Debug + Hash> AfiSafiNlri for Ipv6MplsVpnUnicastNlri<Octs> {
     fn nlri(&self) -> Self::Nlri {
         self.0.clone()
     }
+    fn afi_safi_type(&self) -> AfiSafiType {
+        <Self as AfiSafi>::afi_safi()
+    }
 }
 
 impl<'a, O, P> AfiSafiParse<'a, O, P> for Ipv6MplsVpnUnicastNlri<O>
@@ -1234,6 +1269,9 @@ impl<Octs: Clone + Debug + Hash> AfiSafiNlri for Ipv6FlowSpecNlri<Octs> {
     type Nlri = FlowSpecNlri<Octs>;
     fn nlri(&self) -> Self::Nlri {
         self.0.clone()
+    }
+    fn afi_safi_type(&self) -> AfiSafiType {
+        <Self as AfiSafi>::afi_safi()
     }
 }
 
@@ -1318,6 +1356,9 @@ impl AfiSafiNlri for L2VpnVplsNlri {
     fn nlri(&self) -> Self::Nlri {
         self.0
     }
+    fn afi_safi_type(&self) -> AfiSafiType {
+        <Self as AfiSafi>::afi_safi()
+    }
 }
 
 impl<'a, O, P> AfiSafiParse<'a, O, P> for L2VpnVplsNlri
@@ -1357,6 +1398,9 @@ impl<Octs: Clone + Debug + Hash> AfiSafiNlri for L2VpnEvpnNlri<Octs> {
     type Nlri = EvpnNlri<Octs>;
     fn nlri(&self) -> Self::Nlri {
         self.0.clone()
+    }
+    fn afi_safi_type(&self) -> AfiSafiType {
+        <Self as AfiSafi>::afi_safi()
     }
 }
 
