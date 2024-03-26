@@ -140,6 +140,10 @@ impl PaMap {
         Ok(pa_map)
     }
 
+    pub fn remove_non_transitives(&mut self) {
+        self.attributes.retain(|_tc, pa| pa.default_flags().is_transitive());
+    }
+
     pub fn set<A: FromAttribute + Into<PathAttribute>>(
         &mut self, attr: A
     ) -> Option<A> {
@@ -330,6 +334,21 @@ macro_rules! path_attributes {
                     }
                     PathAttribute::Invalid(_, tc, _) => {
                         *tc
+                    }
+                }
+            }
+
+            pub fn default_flags(&self) -> Flags {
+                match self {
+                    $(
+                    PathAttribute::$name(_pa) =>
+                        <$data>::FLAGS.into()
+                    ),+,
+                    PathAttribute::Unimplemented(u) => {
+                        u.flags()
+                    }
+                    PathAttribute::Invalid(f, _, _) => {
+                        *f
                     }
                 }
             }
@@ -2494,11 +2513,10 @@ mod tests {
         assert!(composed != raw);
     }
 
+    use crate::bgp::types::LocalPref as LP;
+    use crate::bgp::types::MultiExitDisc as MED;
     #[test]
     fn pamap() {
-        use crate::bgp::types::LocalPref as LP;
-        use crate::bgp::types::MultiExitDisc as MED;
-
         let mut pamap = PaMap::empty();
         pamap.set(LP(100));
         pamap.set::<MED>(MED(12));
@@ -2516,5 +2534,20 @@ mod tests {
         let asp = HopPath::new();
         pamap.set(asp);
         dbg!(&pamap);
+    }
+
+    #[test]
+    fn remove_non_transitives() {
+        let mut pamap = PaMap::empty();
+        // LOCAL_PREF is well-known (and thus, transitive)
+        pamap.set(LP(100));
+        // MED is non-transitive
+        pamap.set::<MED>(MED(12));
+
+        assert_eq!(pamap.attributes.len(), 2);
+        pamap.remove_non_transitives();
+        assert_eq!(pamap.attributes.len(), 1);
+        assert!(pamap.get::<LP>().is_some());
+        assert!(pamap.get::<MED>().is_none());
     }
 }
