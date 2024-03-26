@@ -493,6 +493,9 @@ pub trait IsNlri {
 pub trait AfiSafiNlri: AfiSafi + IsNlri + Clone + Hash + Debug {
     type Nlri;
     fn nlri(&self) -> Self::Nlri;
+    fn allowed_next_hops(&self) -> impl Iterator<Item = AfiSafiType> {
+        [Self::afi_safi()].into_iter()
+    }
 }
 
 pub trait AfiSafiParse<'a, O, P>: Sized + IsNlri

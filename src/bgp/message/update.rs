@@ -49,6 +49,10 @@ impl<Octs: Octets> UpdateMessage<Octs> {
         &self.octets
     }
 
+    pub fn pdu_parse_info(&self) -> PduParseInfo {
+        self.pdu_parse_info
+    }
+
     ///// Returns the [`Header`] for this message.
     //pub fn header(&self) -> Header<&Octs> {
     //    Header::for_slice(&self.octets)

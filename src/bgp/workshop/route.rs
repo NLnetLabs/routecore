@@ -19,8 +19,9 @@ use crate::bgp::{
     },
 };
 
-use crate::bgp::nlri::afisafi::Nlri;
-
+use crate::bgp::nlri::afisafi::{AfiSafiType, Nlri};
+use crate::bgp::nlri::nexthop::NextHop;
+use crate::bgp::types::ConventionalNextHop;
 
 //------------ TypedRoute ----------------------------------------------------
 
@@ -83,17 +84,40 @@ impl From<crate::bgp::aspath::AsPath<Vec<u8>>> for PathAttribute {
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
-pub struct RouteWorkshop<N>(N, PaMap);
+pub struct RouteWorkshop<N>(N, Option<NextHop>, PaMap);
 
-impl<N: Clone + Debug + Hash> RouteWorkshop<N> {
+impl<N: AfiSafiNlri + Clone + Debug + Hash> RouteWorkshop<N> {
+
+    /// Creates an empty RouteWorkshop.
+    ///
+    /// The resulting RouteWorkshop has its NextHop set to `None` and an empty
+    /// [`PaMap`].
     pub fn new(nlri: N) -> Self {
-        Self(nlri, PaMap::empty())
+        Self(nlri, None, PaMap::empty())
     }
 
+    /// Creates a RouteWorkshop from one NLRI and a [`PaMap`].
+    ///
+    /// No logic is applied to the contents of the attributes in the PaMap.
+    /// When creating a RouteWorkshop via this constructor, the caller needs
+    /// to ensure the contents of the PaMap are sensible for the provided
+    /// NLRI.
+    ///
+    /// Consider using [`RouteWorkshop::from_update_pdu`] when the original
+    /// PDU is available.
+    // XXX do we actually need and want this?
     pub fn from_pa_map(nlri: N, pa_map: PaMap) -> Self {
-        Self(nlri, pa_map)
+        Self(nlri, None, pa_map)
     }
+
         
+    /// Creates a RouteWorkshop from one NLRI and its BGP [`UpdateMessage`].
+    ///
+    /// Based on the type of NLRI, i.e. conventional or Multi Protocol, the
+    /// Next Hop from the NEXT_HOP path attribute or the field in the
+    /// MP_REACH_NLRI attribute is set in the resulting RouteWorkshop.
+    /// In both cases, the NEXT_HOP path attribute is omitted from the
+    /// attached [`PaMap`].
     pub fn from_update_pdu<Octs: Octets>(
         nlri: N,
         pdu: &UpdateMessage<Octs>,
@@ -101,41 +125,99 @@ impl<N: Clone + Debug + Hash> RouteWorkshop<N> {
     where
         for<'a> Vec<u8>: OctetsFrom<Octs::Range<'a>>,
     {
-        PaMap::from_update_pdu(pdu)
-            .map(|r| Self(nlri, r))
+        let mut res = Self::new(nlri);
+
+        if N::afi_safi() == AfiSafiType::Ipv4Unicast &&
+            pdu.has_conventional_nlri()
+        {
+            if let Ok(Some(nh)) = pdu.conventional_next_hop() {
+                res.set_nexthop(nh);
+                let mut pamap = PaMap::from_update_pdu(pdu)?;
+                let _ = pamap.remove::<ConventionalNextHop>();
+                res.set_attributes(pamap);
+                return Ok(res);
+            } else {
+                return Err(ComposeError::InvalidAttribute);
+            }
+        }
+
+        if let Ok(Some(nh)) = pdu.mp_next_hop() {
+            res.set_nexthop(nh);
+            let mut pamap = PaMap::from_update_pdu(pdu)?;
+            let _ = pamap.remove::<ConventionalNextHop>();
+            res.set_attributes(pamap);
+            Ok(res)
+        } else {
+            Err(ComposeError::InvalidAttribute)
+        }
+    }
+
+
+    /// Validates the contents of this RouteWorkshop.
+    ///
+    /// If the combination of the various pieces of content in this
+    /// RouteWorkshop could produce a valid BGP UPDATE PDU, this method
+    /// returns `Ok(())`. The following checks are performed:
+    ///
+    ///  * The NextHop is set, and is compatible with the NLRI type.
+    pub fn validate(&self) -> Result<(), ComposeError> {
+        match self.1 {
+            None     => { return Err(ComposeError::InvalidAttribute); }
+            Some(nh) => {
+                // TODO
+                /*
+                if !self.0.allowed_next_hops().any(|a| a == nh.afi_safi()) {
+                    return Err(ComposeError::IllegalCombination);
+                }
+                */
+            }
+        }
+        Ok(())
     }
 
     pub fn nlri(&self) -> &N {
         &self.0
     }
 
+    pub fn nexthop(&self) -> &Option<NextHop> {
+        &self.1
+    }
+
+    pub fn set_nexthop(&mut self, nh: NextHop) -> Option<NextHop> {
+        self.1.replace(nh)
+    }
+
     pub fn set_attr<WA: WorkshopAttribute<N>>(
         &mut self,
         value: WA,
     ) -> Result<(), ComposeError> {
-        WA::store(value, &mut self.1)
+        WA::store(value, &mut self.2)
     }
 
     pub fn get_attr<A: WorkshopAttribute<N>>(
         &self,
     ) -> Option<A> {
-        self.1.get::<A>().or_else(|| A::retrieve(&self.1))
+        self.2.get::<A>().or_else(|| A::retrieve(&self.2))
     }
 
     pub fn clone_into_route(&self) -> Route<N> {
-        Route::<N>(self.0.clone(), self.1.clone())
+        Route::<N>(self.0.clone(), self.2.clone())
     }
 
     pub fn into_route(self) -> Route<N> {
-        Route::<N>(self.0, self.1)
+        Route::<N>(self.0, self.2)
     }
 
     pub fn attributes(&self) -> &PaMap {
-        &self.1
+        &self.2
+    }
+
+    pub fn set_attributes(&mut self, pa_map: PaMap) {
+        self.2 = pa_map;
     }
 
     pub fn attributes_mut(&mut self) -> &mut PaMap {
-        &mut self.1
+        &mut self.2
     }
 }
 
