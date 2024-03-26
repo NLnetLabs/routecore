@@ -19,7 +19,7 @@ use crate::bgp::{
     },
 };
 
-use crate::bgp::nlri::afisafi::{AfiSafi, AfiSafiNlri, AfiSafiType, Nlri};
+use crate::bgp::nlri::afisafi::{AfiSafiNlri, AfiSafiType, Nlri};
 use crate::bgp::nlri::nexthop::NextHop;
 use crate::bgp::types::ConventionalNextHop;
 
