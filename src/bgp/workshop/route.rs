@@ -395,81 +395,81 @@ impl<N: Clone + Hash> WorkshopAttribute<N> for crate::bgp::types::NextHop {
 
 //-----------------------------------------------------------------------------
 
-use crate::bgp::nlri::afisafi::{AfiSafiNlri, AfiSafiParse};
+// use crate::bgp::nlri::afisafi::{AfiSafiNlri, AfiSafiParse};
 
-pub fn pdu_into_rws<'a, Octs, T, R>(pdu: &'a UpdateMessage<Octs>) -> Vec<T>
-where
-    Octs: 'a + Octets<Range<'a> = R>,
-    R: Hash + Clone + Debug,
-    Vec<u8>: From<Octs::Range<'a>>,
-    T: From<RouteWorkshop<Nlri<R>>>,
-    //Nlri<R>//: AfiSafiNlri // + Hash + Debug
-{
+// fn pdu_into_rws<'a, Octs, T, R>(pdu: &'a UpdateMessage<Octs>) -> Vec<T>
+// where
+//     Octs: 'a + Octets<Range<'a> = R>,
+//     R: Hash + Clone + Debug,
+//     Vec<u8>: From<Octs::Range<'a>>,
+//     T: From<RouteWorkshop<Nlri<R>>>,
+//     //Nlri<R>//: AfiSafiNlri // + Hash + Debug
+// {
 
-    let pa_map = PaMap::from_update_pdu(pdu).unwrap();
+//     let pa_map = PaMap::from_update_pdu(pdu).unwrap();
 
-    let mut res = Vec::new();
-    for a in pdu.announcements().unwrap() {
-        res.push(
-            T::from(
-                RouteWorkshop::from_pa_map(a.unwrap(), pa_map.clone())
-            )
-        );
-    }
+//     let mut res = Vec::new();
+//     for a in pdu.announcements().unwrap() {
+//         res.push(
+//             T::from(
+//                 RouteWorkshop::from_pa_map(a.unwrap(), pa_map.clone())
+//             )
+//         );
+//     }
 
-    res
-}
+//     res
+// }
 
-pub fn pdu_into_typed_rws<'a, Octs, T, R, AFN>(pdu: &'a UpdateMessage<Octs>) -> Vec<T>
-where
-    Octs: 'a + Octets<Range<'a> = R>,
+// fn pdu_into_typed_rws<'a, Octs, T, R, AFN>(pdu: &'a UpdateMessage<Octs>) -> Vec<T>
+// where
+//     Octs: 'a + Octets<Range<'a> = R>,
 
-    //R: Hash + Clone + Debug + Octets,
-    T: From<RouteWorkshop<AFN>>,
-    AFN: AfiSafiNlri + AfiSafiParse<'a, R, Octs, Output = AFN>,
+//     //R: Hash + Clone + Debug + Octets,
+//     T: From<RouteWorkshop<AFN>>,
+//     AFN: AfiSafiNlri + AfiSafiParse<'a, R, Octs, Output = AFN>,
 
-    R: Octets,
-    Vec<u8>: OctetsFrom<R>,
-{
+//     R: Octets,
+//     Vec<u8>: OctetsFrom<R>,
+// {
 
-    let pa_map = PaMap::from_update_pdu(pdu).unwrap();
+//     let pa_map = PaMap::from_update_pdu(pdu).unwrap();
 
-    let mut res = Vec::new();
-    if let Ok(Some(iter)) = pdu.typed_announcements::<_, AFN>() {
-        for a in iter {
-            res.push(
-                T::from(
-                    RouteWorkshop::from_pa_map(a.unwrap(), pa_map.clone())
-                )
-            );
-        }
-    } else {
-        eprintln!("empty or invalid NLRI iter");
-    }
+//     let mut res = Vec::new();
+//     if let Ok(Some(iter)) = pdu.typed_announcements::<_, AFN>() {
+//         for a in iter {
+//             res.push(
+//                 T::from(
+//                     RouteWorkshop::from_pa_map(a.unwrap(), pa_map.clone())
+//                 )
+//             );
+//         }
+//     } else {
+//         eprintln!("empty or invalid NLRI iter");
+//     }
 
-    res
-}
+//     res
+// }
 
 
 
-pub fn pdu_into_rws_iter<'a, Octs, T, R>(pdu: &'a UpdateMessage<Octs>)
--> impl Iterator<Item = T> + '_
-where
-    Octs: 'a + Octets<Range<'a> = R>,
-    R: Hash + Clone + Debug,
-    Vec<u8>: From<Octs::Range<'a>>,
-    T: From<RouteWorkshop<Nlri<R>>>,
-    //Nlri<R>//: AfiSafiNlri // + Hash + Debug
-{
+// fn pdu_into_rws_iter<'a, Octs, T, R>(pdu: &'a UpdateMessage<Octs>)
+// -> impl Iterator<Item = T> + '_
+// where
+//     Octs: 'a + Octets<Range<'a> = R>,
+//     R: Hash + Clone + Debug,
+//     Vec<u8>: From<Octs::Range<'a>>,
+//     T: From<RouteWorkshop<Nlri<R>>>,
+//     //Nlri<R>//: AfiSafiNlri // + Hash + Debug
+// {
 
-    let pa_map = PaMap::from_update_pdu(pdu).unwrap();
+//     let pa_map = PaMap::from_update_pdu(pdu).unwrap();
 
-    pdu.announcements().unwrap().map(move |a|
-        T::from(
-            RouteWorkshop::from_pa_map(a.unwrap(), pa_map.clone())
-        )
-    )
-}
+//     pdu.announcements().unwrap().map(move |a|
+//         T::from(
+//             RouteWorkshop::from_pa_map(a.unwrap(), pa_map.clone())
+//         )
+//     )
+// }
 
 
 // XXX to be moved to roto
@@ -572,92 +572,92 @@ impl<O> TryFrom<Nlri<O>> for BasicNlri {
 */
 
 
-#[allow(unused_imports)]
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::bgp::message::update::SessionConfig;
+// #[allow(unused_imports)]
+// #[cfg(test)]
+// mod tests {
+//     use super::*;
+//     use crate::bgp::message::update::SessionConfig;
 
-    use crate::bgp::nlri::afisafi::{
-        Ipv4UnicastNlri,
-        Ipv6UnicastNlri,
-        Ipv6UnicastAddpathNlri,
-        Ipv4FlowSpecNlri,
-    };
+//     use crate::bgp::nlri::afisafi::{
+//         Ipv4UnicastNlri,
+//         Ipv6UnicastNlri,
+//         Ipv6UnicastAddpathNlri,
+//         Ipv4FlowSpecNlri,
+//     };
 
 
-    #[test]
-    fn pdu_into_rws_vec() {
+//     #[test]
+//     fn pdu_into_rws_vec() {
 
-        // UPDATE with 5 ipv6 nlri
-        let raw = vec![
-            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-            //0x00, 0x88,
-            0x00, 0x88 + 6,
-            0x02, 0x00, 0x00, 0x00, 0x71, 0x80,
-            0x0e, 0x5a, 0x00, 0x02, 0x01, 0x20, 0xfc, 0x00,
-            0x00, 0x10, 0x00, 0x01, 0x00, 0x10, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0xfe, 0x80,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x80,
-            0xfc, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10,
-            0x40, 0x20, 0x01, 0x0d, 0xb8, 0xff, 0xff, 0x00,
-            0x00, 0x40, 0x20, 0x01, 0x0d, 0xb8, 0xff, 0xff,
-            0x00, 0x01, 0x40, 0x20, 0x01, 0x0d, 0xb8, 0xff,
-            0xff, 0x00, 0x02, 0x40, 0x20, 0x01, 0x0d, 0xb8,
-            0xff, 0xff, 0x00, 0x03, 0x40, 0x01, 0x01, 0x00,
-            0x40, 0x02, 0x06, 0x02, 0x01, 0x00, 0x00, 0x00,
-            0xc8, 0x80, 0x04, 0x04, 0x00, 0x00, 0x00, 0x00,
-            16, 1, 2,
-            16, 10, 20
+//         // UPDATE with 5 ipv6 nlri
+//         let raw = vec![
+//             0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+//             0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+//             //0x00, 0x88,
+//             0x00, 0x88 + 6,
+//             0x02, 0x00, 0x00, 0x00, 0x71, 0x80,
+//             0x0e, 0x5a, 0x00, 0x02, 0x01, 0x20, 0xfc, 0x00,
+//             0x00, 0x10, 0x00, 0x01, 0x00, 0x10, 0x00, 0x00,
+//             0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0xfe, 0x80,
+//             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+//             0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x80,
+//             0xfc, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+//             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10,
+//             0x40, 0x20, 0x01, 0x0d, 0xb8, 0xff, 0xff, 0x00,
+//             0x00, 0x40, 0x20, 0x01, 0x0d, 0xb8, 0xff, 0xff,
+//             0x00, 0x01, 0x40, 0x20, 0x01, 0x0d, 0xb8, 0xff,
+//             0xff, 0x00, 0x02, 0x40, 0x20, 0x01, 0x0d, 0xb8,
+//             0xff, 0xff, 0x00, 0x03, 0x40, 0x01, 0x01, 0x00,
+//             0x40, 0x02, 0x06, 0x02, 0x01, 0x00, 0x00, 0x00,
+//             0xc8, 0x80, 0x04, 0x04, 0x00, 0x00, 0x00, 0x00,
+//             16, 1, 2,
+//             16, 10, 20
 
-        ];
-        let pdu = UpdateMessage::from_octets(&raw, &SessionConfig::modern())
-            .unwrap();
+//         ];
+//         let pdu = UpdateMessage::from_octets(&raw, &SessionConfig::modern())
+//             .unwrap();
 
-        //let res: Vec<RouteWorkshop<_>> = pdu_into_rws(&pdu);
-        let res: Vec<RouteWorkshop<_>> = pdu_into_rws(&pdu);
-        assert_eq!(res.len(), 7);
-        for rws in res {
-            println!("{}", rws.nlri());
-        }
-    }
+//         //let res: Vec<RouteWorkshop<_>> = pdu_into_rws(&pdu);
+//         let res: Vec<RouteWorkshop<_>> = pdu_into_rws(&pdu);
+//         assert_eq!(res.len(), 7);
+//         for rws in res {
+//             println!("{}", rws.nlri());
+//         }
+//     }
 
-    #[test]
-    fn pdu_into_rws_iter_test() {
+//     #[test]
+//     fn pdu_into_rws_iter_test() {
 
-        // UPDATE with 5 ipv6 nlri + 2 conventional
-        let raw = vec![
-            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-            //0x00, 0x88,
-            0x00, 0x88 + 6,
-            0x02, 0x00, 0x00, 0x00, 0x71, 0x80,
-            0x0e, 0x5a, 0x00, 0x02, 0x01, 0x20, 0xfc, 0x00,
-            0x00, 0x10, 0x00, 0x01, 0x00, 0x10, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0xfe, 0x80,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x80,
-            0xfc, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10,
-            0x40, 0x20, 0x01, 0x0d, 0xb8, 0xff, 0xff, 0x00,
-            0x00, 0x40, 0x20, 0x01, 0x0d, 0xb8, 0xff, 0xff,
-            0x00, 0x01, 0x40, 0x20, 0x01, 0x0d, 0xb8, 0xff,
-            0xff, 0x00, 0x02, 0x40, 0x20, 0x01, 0x0d, 0xb8,
-            0xff, 0xff, 0x00, 0x03, 0x40, 0x01, 0x01, 0x00,
-            0x40, 0x02, 0x06, 0x02, 0x01, 0x00, 0x00, 0x00,
-            0xc8, 0x80, 0x04, 0x04, 0x00, 0x00, 0x00, 0x00,
-            16, 1, 2,
-            16, 10, 20
+//         // UPDATE with 5 ipv6 nlri + 2 conventional
+//         let raw = vec![
+//             0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+//             0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+//             //0x00, 0x88,
+//             0x00, 0x88 + 6,
+//             0x02, 0x00, 0x00, 0x00, 0x71, 0x80,
+//             0x0e, 0x5a, 0x00, 0x02, 0x01, 0x20, 0xfc, 0x00,
+//             0x00, 0x10, 0x00, 0x01, 0x00, 0x10, 0x00, 0x00,
+//             0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0xfe, 0x80,
+//             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+//             0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x80,
+//             0xfc, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+//             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10,
+//             0x40, 0x20, 0x01, 0x0d, 0xb8, 0xff, 0xff, 0x00,
+//             0x00, 0x40, 0x20, 0x01, 0x0d, 0xb8, 0xff, 0xff,
+//             0x00, 0x01, 0x40, 0x20, 0x01, 0x0d, 0xb8, 0xff,
+//             0xff, 0x00, 0x02, 0x40, 0x20, 0x01, 0x0d, 0xb8,
+//             0xff, 0xff, 0x00, 0x03, 0x40, 0x01, 0x01, 0x00,
+//             0x40, 0x02, 0x06, 0x02, 0x01, 0x00, 0x00, 0x00,
+//             0xc8, 0x80, 0x04, 0x04, 0x00, 0x00, 0x00, 0x00,
+//             16, 1, 2,
+//             16, 10, 20
 
-        ];
-        let pdu = UpdateMessage::from_octets(&raw, &SessionConfig::modern())
-            .unwrap();
+//         ];
+//         let pdu = UpdateMessage::from_octets(&raw, &SessionConfig::modern())
+//             .unwrap();
 
-        assert_eq!(pdu_into_rws_iter::<_, RouteWorkshop<_>, _>(&pdu).count(), 7);
-    }
+//         assert_eq!(pdu_into_rws_iter::<_, RouteWorkshop<_>, _>(&pdu).count(), 7);
+//     }
 
     //XXX to be moved to roto
     /*
@@ -754,4 +754,4 @@ mod tests {
 */
 
 
-}
+// }
