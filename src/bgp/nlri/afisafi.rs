@@ -495,7 +495,7 @@ pub trait AfiSafiParse<'a, O, P>: Sized + IsNlri
     fn parse(parser: &mut Parser<'a, P>) -> Result<Self::Output, ParseError>;
 }
 
-pub trait NlriCompose: AfiSafiNlri {
+pub trait NlriCompose: AfiSafiNlri + AfiSafi + IsNlri {
     fn compose<Target: OctetsBuilder>(&self, target: &mut Target)
         -> Result<(), Target::AppendError>;
 
