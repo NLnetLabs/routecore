@@ -74,6 +74,17 @@ impl<Octs: Octets> FlowSpecNlri<Octs> {
     }
 }
 
+impl<Octs, Other> PartialEq<FlowSpecNlri<Other>> for FlowSpecNlri<Octs>
+where Octs: AsRef<[u8]>,
+      Other: AsRef<[u8]>
+{
+    fn eq(&self, other: &FlowSpecNlri<Other>) -> bool {
+        self.afi == other.afi &&
+            self.raw.as_ref() == other.raw.as_ref()
+    }
+}
+
+
 impl<T> fmt::Display for FlowSpecNlri<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "FLOWSPEC-NLRI")

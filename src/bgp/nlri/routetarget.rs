@@ -28,6 +28,15 @@ impl<Octs> RouteTargetNlri<Octs> {
     }
 }
 
+impl<Octs, Other> PartialEq<RouteTargetNlri<Other>> for RouteTargetNlri<Octs>
+where Octs: AsRef<[u8]>,
+      Other: AsRef<[u8]>
+{
+    fn eq(&self, other: &RouteTargetNlri<Other>) -> bool {
+        self.raw.as_ref() == other.raw.as_ref()
+    }
+}
+
 impl<T> fmt::Display for RouteTargetNlri<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "ROUTE-TARGET-NLRI")

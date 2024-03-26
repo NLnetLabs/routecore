@@ -414,50 +414,35 @@ where Octs: AsRef<[u8]>,
             (Ipv4Unicast(p1), Ipv4Unicast(p2)) => p1 == p2,
             (Ipv4UnicastAddpath(p1), Ipv4UnicastAddpath(p2)) => p1 == p2,
             (Ipv4Multicast(p1), Ipv4Multicast(p2)) => p1 == p2,
-            (Ipv4MulticastAddpath(_), Ipv4MulticastAddpath(_)) => todo!(),
-            (Ipv4MplsUnicast(_), Ipv4MplsUnicast(_)) => todo!(),
-            (Ipv4MplsUnicastAddpath(_), Ipv4MplsUnicastAddpath(_)) => todo!(),
-            (Ipv4MplsVpnUnicast(_), Ipv4MplsVpnUnicast(_)) => todo!(),
-            (Ipv4MplsVpnUnicastAddpath(_), Ipv4MplsVpnUnicastAddpath(_)) => todo!(),
-            (Ipv4RouteTarget(_), Ipv4RouteTarget(_)) => todo!(),
-            (Ipv4RouteTargetAddpath(_), Ipv4RouteTargetAddpath(_)) => todo!(),
-            (Ipv4FlowSpec(_), Ipv4FlowSpec(_)) => todo!(),
-            (Ipv4FlowSpecAddpath(_), Ipv4FlowSpecAddpath(_)) => todo!(),
+            (Ipv4MulticastAddpath(p1), Ipv4MulticastAddpath(p2)) => p1 == p2,
+            (Ipv4MplsUnicast(p1), Ipv4MplsUnicast(p2)) => p1 == p2,
+            (Ipv4MplsUnicastAddpath(p1), Ipv4MplsUnicastAddpath(p2)) => p1 == p2,
+            (Ipv4MplsVpnUnicast(p1), Ipv4MplsVpnUnicast(p2)) => p1 == p2,
+            (Ipv4MplsVpnUnicastAddpath(p1), Ipv4MplsVpnUnicastAddpath(p2)) => p1 == p2,
+            (Ipv4RouteTarget(p1), Ipv4RouteTarget(p2)) => p1 == p2,
+            (Ipv4RouteTargetAddpath(p1), Ipv4RouteTargetAddpath(p2)) => p1 == p2,
+            (Ipv4FlowSpec(p1), Ipv4FlowSpec(p2)) => p1 == p2,
+            (Ipv4FlowSpecAddpath(p1), Ipv4FlowSpecAddpath(p2)) => p1 == p2,
             (Ipv6Unicast(p1), Ipv6Unicast(p2)) => p1 == p2,
-            (Ipv6UnicastAddpath(_), Ipv6UnicastAddpath(_)) => todo!(),
-            (Ipv6Multicast(_), Ipv6Multicast(_)) => todo!(),
-            (Ipv6MulticastAddpath(_), Ipv6MulticastAddpath(_)) => todo!(),
-            (Ipv6MplsUnicast(_), Ipv6MplsUnicast(_)) => todo!(),
-            (Ipv6MplsUnicastAddpath(_), Ipv6MplsUnicastAddpath(_)) => todo!(),
-            (Ipv6MplsVpnUnicast(_), Ipv6MplsVpnUnicast(_)) => todo!(),
-            (Ipv6MplsVpnUnicastAddpath(_), Ipv6MplsVpnUnicastAddpath(_)) => todo!(),
-            (Ipv6FlowSpec(_), Ipv6FlowSpec(_)) => todo!(),
-            (Ipv6FlowSpecAddpath(_), Ipv6FlowSpecAddpath(_)) => todo!(),
-            (L2VpnVpls(_), L2VpnVpls(_)) => todo!(),
-            (L2VpnVplsAddpath(_), L2VpnVplsAddpath(_)) => todo!(),
-            (L2VpnEvpn(_), L2VpnEvpn(_)) => todo!(),
-            (L2VpnEvpnAddpath(_), L2VpnEvpnAddpath(_)) => todo!(),
+            (Ipv6UnicastAddpath(p1), Ipv6UnicastAddpath(p2)) => p1 == p2,
+            (Ipv6Multicast(p1), Ipv6Multicast(p2)) => p1 == p2,
+            (Ipv6MulticastAddpath(p1), Ipv6MulticastAddpath(p2)) => p1 == p2,
+            (Ipv6MplsUnicast(p1), Ipv6MplsUnicast(p2)) => p1 == p2,
+            (Ipv6MplsUnicastAddpath(p1), Ipv6MplsUnicastAddpath(p2)) => p1 == p2,
+            (Ipv6MplsVpnUnicast(p1), Ipv6MplsVpnUnicast(p2)) => p1 == p2,
+            (Ipv6MplsVpnUnicastAddpath(p1), Ipv6MplsVpnUnicastAddpath(p2)) => p1 == p2,
+            (Ipv6FlowSpec(p1), Ipv6FlowSpec(p2)) => p1 == p2,
+            (Ipv6FlowSpecAddpath(p1), Ipv6FlowSpecAddpath(p2)) => p1 == p2,
+            (L2VpnVpls(p1), L2VpnVpls(p2)) => p1 == p2,
+            (L2VpnVplsAddpath(p1), L2VpnVplsAddpath(p2)) => p1 == p2,
+            (L2VpnEvpn(p1), L2VpnEvpn(p2)) => p1 == p2,
+            (L2VpnEvpnAddpath(p1), L2VpnEvpnAddpath(p2)) => p1 == p2,
             _ => false
         }
-
-        /*
-        match (self, other) {
-            (Ipv4Unicast(s), Ipv4Unicast(o)) |
-            //(Multicast(s), Nlri::Multicast(o)) => s == o,
-            //(Mpls(s), Nlri::Mpls(o)) => s == o,
-            //(MplsVpn(s), Nlri::MplsVpn(o)) => s == o,
-            //(Vpls(s), Nlri::Vpls(o)) => s == o,
-            //(FlowSpec(s), Nlri::FlowSpec(o)) => s == o,
-            //(RouteTarget(s), Nlri::RouteTarget(o)) => s == o,
- 
-            _ => todo!(), // TMP while refactoring
-            //_ => false
-        }
-        */
     }
 }
 
-// XXX While Nlri<()> might make more sense, it clashes with trait bounds
+// While Nlri<()> might make more sense, it clashes with trait bounds
 // like Vec<u8>: OctetsFrom<T> elsewhere, as, From<()> is not implemented for
 // Vec<u8>. Similarly, () is not AsRef<[u8]>.
 impl Nlri<&[u8]> {
@@ -501,7 +486,7 @@ pub trait AfiSafiNlri: AfiSafi + IsNlri + Clone + Hash + Debug {
 pub trait AfiSafiParse<'a, O, P>: Sized + IsNlri
     where P: 'a + Octets<Range<'a> = O>
 {
-    type Output: AfiSafi; // XXX do we actually still need this?
+    type Output: AfiSafi;
     fn parse(parser: &mut Parser<'a, P>) -> Result<Self::Output, ParseError>;
 }
 
@@ -520,8 +505,6 @@ pub trait IsPrefix: AfiSafiNlri {
     fn path_id(&self) -> Option<PathId> {
         None
     }
-    // TODO
-    // fn into_routeworkshop() -> RouteWorkshop<_>;
 }
 
 // with this blanket impl we can't distinguish addpath from non-addpath
@@ -754,6 +737,12 @@ impl NlriCompose for Ipv4MulticastNlri {
     }
 }
 
+impl PartialEq<Ipv4MulticastAddpathNlri> for Ipv4MulticastAddpathNlri {
+    fn eq(&self, other: &Ipv4MulticastAddpathNlri) -> bool {
+        self.0 == other.0
+    }
+}
+
 impl fmt::Display for Ipv4MulticastNlri {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.0)
@@ -845,6 +834,24 @@ where
     }
 }
 
+impl<Octs, Other> PartialEq<Ipv4MplsVpnUnicastNlri<Other>> for Ipv4MplsVpnUnicastNlri<Octs>
+where Octs: AsRef<[u8]>,
+      Other: AsRef<[u8]>
+{
+    fn eq(&self, other: &Ipv4MplsVpnUnicastNlri<Other>) -> bool {
+        self.0 == other.0
+    }
+}
+
+impl<Octs, Other> PartialEq<Ipv4MplsVpnUnicastAddpathNlri<Other>> for Ipv4MplsVpnUnicastAddpathNlri<Octs>
+where Octs: AsRef<[u8]>,
+      Other: AsRef<[u8]>
+{
+    fn eq(&self, other: &Ipv4MplsVpnUnicastAddpathNlri<Other>) -> bool {
+        self.0 == other.0
+    }
+}
+
 impl<T> fmt::Display for Ipv4MplsVpnUnicastNlri<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.0)
@@ -877,6 +884,24 @@ where
     {
 
         Ok(Self(RouteTargetNlri::parse(parser)?))
+    }
+}
+
+impl<Octs, Other> PartialEq<Ipv4RouteTargetNlri<Other>> for Ipv4RouteTargetNlri<Octs>
+where Octs: AsRef<[u8]>,
+      Other: AsRef<[u8]>
+{
+    fn eq(&self, other: &Ipv4RouteTargetNlri<Other>) -> bool {
+        self.0 == other.0
+    }
+}
+
+impl<Octs, Other> PartialEq<Ipv4RouteTargetAddpathNlri<Other>> for Ipv4RouteTargetAddpathNlri<Octs>
+where Octs: AsRef<[u8]>,
+      Other: AsRef<[u8]>
+{
+    fn eq(&self, other: &Ipv4RouteTargetAddpathNlri<Other>) -> bool {
+        self.0 == other.0
     }
 }
 
@@ -943,6 +968,24 @@ impl<Octs: Clone + Debug + Hash + Octets> NlriCompose for Ipv4FlowSpecNlri<Octs>
 impl<T> From<Ipv4FlowSpecNlri<T>> for FlowSpecNlri<T> {
     fn from(value: Ipv4FlowSpecNlri<T>) -> Self {
         value.0
+    }
+}
+
+impl<Octs, Other> PartialEq<Ipv4FlowSpecNlri<Other>> for Ipv4FlowSpecNlri<Octs>
+where Octs: AsRef<[u8]>,
+      Other: AsRef<[u8]>
+{
+    fn eq(&self, other: &Ipv4FlowSpecNlri<Other>) -> bool {
+        self.0 == other.0
+    }
+}
+
+impl<Octs, Other> PartialEq<Ipv4FlowSpecAddpathNlri<Other>> for Ipv4FlowSpecAddpathNlri<Octs>
+where Octs: AsRef<[u8]>,
+      Other: AsRef<[u8]>
+{
+    fn eq(&self, other: &Ipv4FlowSpecAddpathNlri<Other>) -> bool {
+        self.0 == other.0
     }
 }
 
@@ -1019,6 +1062,13 @@ impl NlriCompose for Ipv6UnicastNlri {
     }
 }
 
+
+impl PartialEq<Ipv6UnicastAddpathNlri> for Ipv6UnicastAddpathNlri {
+    fn eq(&self, other: &Ipv6UnicastAddpathNlri) -> bool {
+        self.0 == other.0
+    }
+}
+
 impl fmt::Display for Ipv6UnicastNlri {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.0)
@@ -1048,6 +1098,12 @@ where
         Ok(
             Self(parse_prefix(parser, Afi::Ipv6)?)
         )
+    }
+}
+
+impl PartialEq<Ipv6MulticastAddpathNlri> for Ipv6MulticastAddpathNlri {
+    fn eq(&self, other: &Ipv6MulticastAddpathNlri) -> bool {
+        self.0 == other.0
     }
 }
 
@@ -1098,6 +1154,15 @@ where Octs: AsRef<[u8]>,
     }
 }
 
+impl<Octs, Other> PartialEq<Ipv6MplsUnicastAddpathNlri<Other>> for Ipv6MplsUnicastAddpathNlri<Octs>
+where Octs: AsRef<[u8]>,
+      Other: AsRef<[u8]>
+{
+    fn eq(&self, other: &Ipv6MplsUnicastAddpathNlri<Other>) -> bool {
+        self.0 == other.0
+    }
+}
+
 impl<T> fmt::Display for Ipv6MplsUnicastNlri<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.0)
@@ -1131,6 +1196,24 @@ where
             parse_labels_rd_prefix(parser, Afi::Ipv6)?;
 
         Ok(Self(MplsVpnNlri::new(prefix, labels, rd)))
+    }
+}
+
+impl<Octs, Other> PartialEq<Ipv6MplsVpnUnicastNlri<Other>> for Ipv6MplsVpnUnicastNlri<Octs>
+where Octs: AsRef<[u8]>,
+      Other: AsRef<[u8]>
+{
+    fn eq(&self, other: &Ipv6MplsVpnUnicastNlri<Other>) -> bool {
+        self.0 == other.0
+    }
+}
+
+impl<Octs, Other> PartialEq<Ipv6MplsVpnUnicastAddpathNlri<Other>> for Ipv6MplsVpnUnicastAddpathNlri<Octs>
+where Octs: AsRef<[u8]>,
+      Other: AsRef<[u8]>
+{
+    fn eq(&self, other: &Ipv6MplsVpnUnicastAddpathNlri<Other>) -> bool {
+        self.0 == other.0
     }
 }
 
@@ -1175,6 +1258,24 @@ impl<T> From<Ipv6FlowSpecNlri<T>> for FlowSpecNlri<T> {
     }
 }
 
+impl<Octs, Other> PartialEq<Ipv6FlowSpecNlri<Other>> for Ipv6FlowSpecNlri<Octs>
+where Octs: AsRef<[u8]>,
+      Other: AsRef<[u8]>
+{
+    fn eq(&self, other: &Ipv6FlowSpecNlri<Other>) -> bool {
+        self.0 == other.0
+    }
+}
+
+impl<Octs, Other> PartialEq<Ipv6FlowSpecAddpathNlri<Other>> for Ipv6FlowSpecAddpathNlri<Octs>
+where Octs: AsRef<[u8]>,
+      Other: AsRef<[u8]>
+{
+    fn eq(&self, other: &Ipv6FlowSpecAddpathNlri<Other>) -> bool {
+        self.0 == other.0
+    }
+}
+
 impl<T> fmt::Display for Ipv6FlowSpecNlri<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.0)
@@ -1182,6 +1283,7 @@ impl<T> fmt::Display for Ipv6FlowSpecNlri<T> {
 }
 
 
+/*
 impl Ipv6UnicastAddpathNlri {
     pub fn iter<'a, O, P>(parser: Parser<'a, P>) -> NlriIter<'a, O, P, Self>
     where
@@ -1201,12 +1303,13 @@ impl<Octs> Ipv4MplsUnicastNlri<Octs> {
         NlriIter::ipv4_mplsunicast(parser)
     }
 }
+*/
 
 //------------ L2Vpn ----------------------------------------------------------
 
 //--- L2VpnVpls
 
-#[derive(Clone, Debug, Hash)]
+#[derive(Clone, Debug, Hash, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct L2VpnVplsNlri(VplsNlri);
 
@@ -1229,6 +1332,12 @@ where
     {
 
         Ok(Self(VplsNlri::parse(parser)?))
+    }
+}
+
+impl PartialEq<L2VpnVplsAddpathNlri> for L2VpnVplsAddpathNlri {
+    fn eq(&self, other: &L2VpnVplsAddpathNlri) -> bool {
+        self.0 == other.0
     }
 }
 
@@ -1263,6 +1372,24 @@ where
     {
 
         Ok(Self(EvpnNlri::parse(parser)?))
+    }
+}
+
+impl<Octs, Other> PartialEq<L2VpnEvpnNlri<Other>> for L2VpnEvpnNlri<Octs>
+where Octs: AsRef<[u8]>,
+      Other: AsRef<[u8]>
+{
+    fn eq(&self, other: &L2VpnEvpnNlri<Other>) -> bool {
+        self.0 == other.0
+    }
+}
+
+impl<Octs, Other> PartialEq<L2VpnEvpnAddpathNlri<Other>> for L2VpnEvpnAddpathNlri<Octs>
+where Octs: AsRef<[u8]>,
+      Other: AsRef<[u8]>
+{
+    fn eq(&self, other: &L2VpnEvpnAddpathNlri<Other>) -> bool {
+        self.0 == other.0
     }
 }
 

@@ -54,6 +54,16 @@ impl<Octs: Octets> EvpnNlri<Octs> {
     }
 }
 
+impl<Octs, Other> PartialEq<EvpnNlri<Other>> for EvpnNlri<Octs>
+where Octs: AsRef<[u8]>,
+      Other: AsRef<[u8]>
+{
+    fn eq(&self, other: &EvpnNlri<Other>) -> bool {
+        self.route_type == other.route_type &&
+            self.raw.as_ref() == other.raw.as_ref()
+    }
+}
+
 impl<T> fmt::Display for EvpnNlri<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "EVPN-{}", self.route_type)
