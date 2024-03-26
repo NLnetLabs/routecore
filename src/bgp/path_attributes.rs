@@ -237,109 +237,7 @@ impl PaMap {
     }
 
     
-    // pub fn append(&mut self, other: &mut AttributesMap) {
-    //     self.attributes.append(other)
-    // }
-
-    // pub fn merge(&mut self, other: &Self) -> Result<(), ComposeError> {
-    //     for val in other.attributes.values().cloned() {
-    //         self.add_attribute(val)?;
-    //     }
-    //     Ok(())
-    // }
-
-    // pub fn into_inner(self) -> AttributesMap {
-    //     self.attributes
-    // }
-
-    // pub fn into_update_builder(self) -> UpdateBuilder<Vec<u8>>  {
-    //     UpdateBuilder::<Vec<u8>>::from_attributes_builder(self)
-    // }
-
-    // pub fn from_update_builder<T>(builder: UpdateBuilder<T>) -> Self {
-    //     Self {
-    //         attributes: builder.into_attributes()
-    //     }
-    // }
-
-    // fn add_attribute(&mut self, pa: PathAttribute)
-    //     -> Result<(), ComposeError>
-    // {
-    //     if let PathAttribute::Invalid(..) = pa {
-    //         warn!(
-    //             "adding Invalid attribute to UpdateBuilder: {}",
-    //               &pa.type_code()
-    //         );
-    //     }
-    //     if let Some(existing_pa) = self.attributes.get_mut(&pa.type_code()) {
-    //         *existing_pa = pa;
-    //     } else {
-    //         self.attributes.insert(pa.type_code(), pa);
-    //     }
-        
-    //     Ok(())
-    // }
 }
-
-    //-------- Specific path attribute methods -------------------------------
-    //
-//     pub fn set_origin(&mut self, origin: OriginType)
-//         -> Result<(), ComposeError>
-//     {
-//         self.add_attribute(Origin::new(origin).into())
-//     }
-
-//     pub fn set_aspath(&mut self , aspath: HopPath)
-//         -> Result<(), ComposeError>
-//     {
-//         // XXX there should be a HopPath::compose_len really, instead of
-//         // relying on .to_as_path() first.
-//         if let Ok(wireformat) = aspath.to_as_path::<Vec<u8>>() {
-//             if wireformat.compose_len() > u16::MAX.into() {
-//                 return Err(ComposeError::AttributeTooLarge(
-//                      PathAttributeType::AsPath,
-//                      wireformat.compose_len()
-//                 ));
-//             }
-//         } else {
-//             return Err(ComposeError::InvalidAttribute)
-//         }
-
-//         self.add_attribute(AsPath::new(aspath).into())
-//     }
-
-//     pub fn prepend_to_aspath(&mut self, asn: Asn) -> Result<(), ComposeError> {
-//         if let Some(PathAttribute::AsPath(as_path)) = self.attributes.get_mut(&PathAttributeType::AsPath) {
-//             as_path.0.prepend(
-//                 asn,
-//             )
-//         };
-
-//         Ok(())
-//     }
-
-//     pub fn aspath(&self) -> Option<HopPath> {
-//         self.attributes.get(&PathAttributeType::AsPath).and_then(|pa| 
-//             if let PathAttribute::AsPath(as_path) = pa { 
-//                 Some(as_path.clone().inner())
-//             } else { 
-//                 None 
-//             })
-//     }
-
-//     pub fn set_multi_exit_disc(&mut self, med: MultiExitDisc)
-//     -> Result<(), ComposeError>
-//     {
-//         self.add_attribute(med.into())
-//     }
-
-//     pub fn set_local_pref(&mut self, local_pref: LocalPref)
-//     -> Result<(), ComposeError>
-//     {
-//         self.add_attribute(local_pref.into())
-//     }
-// }
-
 
 pub trait FromAttribute {
     fn from_attribute(_value: PathAttribute) -> Option<Self>
@@ -481,11 +379,6 @@ macro_rules! path_attributes {
                     self.parser.peek_all()[2].into()
                 }
             }
-
-            //pub fn value(&self) -> Octs::Range<'_> {
-            //    let mut p = self.value_into_parser();
-            //    p.parse_octets(p.remaining()).unwrap()
-            //}
 
             pub fn value_into_parser(&self) -> Parser<'a, Octs> {
                 let mut res = self.parser;
@@ -636,7 +529,7 @@ macro_rules! path_attributes {
                         Self::$name(epa) => epa.length()
                     ),+,
                     Self::Unimplemented(u) => u.value.len(),
-                    Self::Invalid(_, _, v) => v.remaining() //FIXME incorrect
+                    Self::Invalid(_, _, v) => v.remaining()
                 }
             }
         }
