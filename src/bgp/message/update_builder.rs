@@ -2588,8 +2588,12 @@ mod tests {
             Vec::new()
         ).unwrap();
 
-        for w in original.typed_withdrawals::<_, Ipv4UnicastNlri>().unwrap().unwrap() {
-            builder.add_withdrawal(w.unwrap()).unwrap();
+        if let Ok(Some(iter)) = 
+            original.typed_withdrawals::<_, Ipv4UnicastNlri>()
+        {
+            for a in iter {
+                builder.add_withdrawal(a.unwrap()).unwrap();
+            }
         }
 
         if let Ok(Some(iter)) = 
