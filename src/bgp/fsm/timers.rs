@@ -203,11 +203,11 @@ mod tests {
 
         sleep(Duration::from_millis(500)).await;
         println!("{t}");
-        t.reset().await;
+        t.reset();
         println!("{t}");
         sleep(Duration::from_millis(500)).await;
         println!("{t}");
-        t.reset().await;
+        t.reset();
         println!("{t}");
         let t4 = t.tick().await;
         assert!(t3.elapsed() >= 2*d);
