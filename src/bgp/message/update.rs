@@ -1491,7 +1491,7 @@ mod tests {
         let bytes = Bytes::from(buf);
         let update: UpdateMessage<_> = Message::from_octets(
             bytes,
-            Some(SessionConfig::modern())
+            Some(&SessionConfig::modern())
             ).unwrap().try_into().unwrap();
 
         assert_eq!(update.length(), 55);
@@ -1645,7 +1645,7 @@ mod tests {
         //let update: UpdateMessage<_> = parse_msg(&buf);
         let update: UpdateMessage<_> = Message::from_octets(
             &buf,
-            Some(SessionConfig::modern())
+            Some(&SessionConfig::modern())
         ).unwrap().try_into().unwrap();
 
         assert_eq!(update.total_path_attribute_len(), 27);
@@ -1733,7 +1733,7 @@ mod tests {
         //let update: UpdateMessage<_> = parse_msg(&buf);
         let update: UpdateMessage<_> = Message::from_octets(
             &buf,
-            Some(SessionConfig::modern())
+            Some(&SessionConfig::modern())
             ).unwrap().try_into().unwrap();
 
         assert_eq!(update.withdrawals().unwrap().count(), 12);
@@ -1773,7 +1773,7 @@ mod tests {
         //let update: UpdateMessage<_> = parse_msg(&buf);
         let update: UpdateMessage<_> = Message::from_octets(
             &buf,
-            Some(SessionConfig::modern())
+            Some(&SessionConfig::modern())
             ).unwrap().try_into().unwrap();
 
         assert_eq!(update.withdrawals().unwrap().count(), 4);
@@ -1810,7 +1810,7 @@ mod tests {
         //let update: UpdateMessage<_> = parse_msg(&buf);
         let update: UpdateMessage<_> = Message::from_octets(
             &buf,
-            Some(SessionConfig::modern())
+            Some(&SessionConfig::modern())
             ).unwrap().try_into().unwrap();
         assert_eq!(update.multi_exit_disc().unwrap(), Some(MultiExitDisc(0)));
         assert_eq!(update.local_pref().unwrap(), Some(LocalPref(100)));
@@ -1833,7 +1833,7 @@ mod tests {
         //let update: UpdateMessage<_> = parse_msg(&buf);
         let update: UpdateMessage<_> = Message::from_octets(
             &buf,
-            Some(SessionConfig::modern())
+            Some(&SessionConfig::modern())
             ).unwrap().try_into().unwrap();
         let aggr = update.aggregator().unwrap();
 
@@ -1868,7 +1868,7 @@ mod tests {
         ];
 
         let sc = SessionConfig::legacy();
-        let update: UpdateMessage<_> = Message::from_octets(&buf, Some(sc))
+        let update: UpdateMessage<_> = Message::from_octets(&buf, Some(&sc))
             .unwrap().try_into().unwrap();
 
         update.path_attributes().iter();//.count();
@@ -1937,7 +1937,7 @@ mod tests {
         ];
         let mut sc = SessionConfig::modern();
         sc.add_addpath(AfiSafi::Ipv4Unicast, AddpathDirection::Receive);
-        let upd: UpdateMessage<_> = Message::from_octets(&buf, Some(sc))
+        let upd: UpdateMessage<_> = Message::from_octets(&buf, Some(&sc))
             .unwrap().try_into().unwrap();
 
         let nlri1 = upd.announcements().unwrap().next().unwrap();
@@ -2007,7 +2007,7 @@ mod tests {
         ];
         let update: UpdateMessage<_> = Message::from_octets(
             &buf,
-            Some(SessionConfig::modern())
+            Some(&SessionConfig::modern())
             ).unwrap().try_into().unwrap();
 
         let mut lcs = update.large_communities().unwrap().unwrap();
@@ -2055,7 +2055,7 @@ mod tests {
         ];
         let mut sc = SessionConfig::modern();
         sc.add_addpath(AfiSafi::Ipv4Unicast, AddpathDirection::Receive);
-        let upd: UpdateMessage<_> = Message::from_octets(&buf, Some(sc))
+        let upd: UpdateMessage<_> = Message::from_octets(&buf, Some(&sc))
             .unwrap().try_into().unwrap();
 
         for c in upd.all_communities().unwrap().unwrap() {
@@ -2100,7 +2100,7 @@ mod tests {
 
         let mut sc = SessionConfig::modern();
         sc.add_addpath(AfiSafi::Ipv4Unicast, AddpathDirection::Receive);
-        let _upd: UpdateMessage<_> = Message::from_octets(&buf, Some(sc))
+        let _upd: UpdateMessage<_> = Message::from_octets(&buf, Some(&sc))
             .unwrap().try_into().unwrap();
         //for pa in upd.path_attributes() {
         //    println!("{}", pa.type_code());
@@ -2124,7 +2124,7 @@ mod tests {
             0x00, 0x00
         ];
         let sc = SessionConfig::modern();
-        let upd: UpdateMessage<_> = Message::from_octets(&buf, Some(sc))
+        let upd: UpdateMessage<_> = Message::from_octets(&buf, Some(&sc))
             .unwrap().try_into().unwrap();
         assert_eq!(
             upd.mp_announcements().unwrap().unwrap().afi_safi(),
@@ -2152,7 +2152,7 @@ mod tests {
             0x1a, 0xc6, 0x33, 0x64, 0x00
         ]; 
         let sc = SessionConfig::modern();
-        let upd: UpdateMessage<_> = Message::from_octets(&buf, Some(sc))
+        let upd: UpdateMessage<_> = Message::from_octets(&buf, Some(&sc))
             .unwrap().try_into().unwrap();
         assert_eq!(
             upd.mp_withdrawals().unwrap().unwrap().afi_safi(),

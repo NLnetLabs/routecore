@@ -108,7 +108,7 @@ typeenum!(
 
 impl<Octs: Octets> Message<Octs> {
     /// Create a Message from an octets sequence.
-    pub fn from_octets(octets: Octs, config: Option<SessionConfig>)
+    pub fn from_octets(octets: Octs, config: Option<&SessionConfig>)
         -> Result<Message<Octs>, ParseError>
     {
         let mut parser = Parser::from_ref(&octets);
@@ -128,7 +128,7 @@ impl<Octs: Octets> Message<Octs> {
                     return Err(ParseError::StateRequired)
                 };
                 Ok(Message::Update(
-                    UpdateMessage::from_octets(octets, &config)?
+                    UpdateMessage::from_octets(octets, config)?
                 ))
             },
             MsgType::Notification =>
