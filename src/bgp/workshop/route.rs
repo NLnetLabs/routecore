@@ -180,6 +180,10 @@ impl<N: AfiSafiNlri + Clone + Debug + Hash> RouteWorkshop<N> {
         &self.0
     }
 
+    pub fn nlri_owned(self) -> N {
+        self.0
+    }
+
     pub fn nexthop(&self) -> &Option<NextHop> {
         &self.1
     }
