@@ -581,9 +581,12 @@ afisafi! {
 
 // --- Ipv4Unicast
 
-#[derive(Clone, Debug, Hash, PartialEq)]
+#[derive(Copy, Clone, Debug, Hash, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Ipv4UnicastNlri(Prefix);
+
+impl Eq for Ipv4UnicastNlri {}
+impl Eq for Ipv4UnicastAddpathNlri {}
 
 impl AfiSafiNlri for Ipv4UnicastNlri {
     type Nlri = Prefix;
@@ -671,11 +674,25 @@ impl fmt::Display for Ipv4UnicastNlri {
     }
 }
 
+impl TryFrom<(Prefix, PathId)> for Ipv4UnicastAddpathNlri {
+    type Error = &'static str;
+    fn try_from((p, p_id): (Prefix, PathId)) -> Result<Self, Self::Error> {
+        if p.is_v4() {
+            Ok( Self(p_id, Ipv4UnicastNlri(p)) )
+        } else {
+            Err("prefix is not IPv4")
+        }
+    }
+}
+
 //--- Ipv4Multicast
 
-#[derive(Clone, Debug, Hash, PartialEq)]
+#[derive(Copy, Clone, Debug, Hash, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Ipv4MulticastNlri(Prefix);
+
+impl Eq for Ipv4MulticastNlri {}
+impl Eq for Ipv4MulticastAddpathNlri {}
 
 impl AfiSafiNlri for Ipv4MulticastNlri {
     type Nlri = Prefix;
@@ -737,6 +754,20 @@ impl NlriCompose for Ipv4MulticastNlri {
     }
 }
 
+impl NlriCompose for Ipv4MulticastAddpathNlri {
+    fn compose_len(&self) -> usize {
+        4 + self.1.compose_len()
+    }
+
+    fn compose<Target: OctetsBuilder>(&self, target: &mut Target)
+        -> Result<(), Target::AppendError>
+    {
+            target.append_slice(&self.0.0.to_be_bytes())?;
+            self.1.compose(target)
+    }
+
+}
+
 impl PartialEq<Ipv4MulticastAddpathNlri> for Ipv4MulticastAddpathNlri {
     fn eq(&self, other: &Ipv4MulticastAddpathNlri) -> bool {
         self.0 == other.0
@@ -746,6 +777,18 @@ impl PartialEq<Ipv4MulticastAddpathNlri> for Ipv4MulticastAddpathNlri {
 impl fmt::Display for Ipv4MulticastNlri {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.0)
+    }
+}
+
+
+impl TryFrom<(Prefix, PathId)> for Ipv4MulticastAddpathNlri {
+    type Error = &'static str;
+    fn try_from((p, p_id): (Prefix, PathId)) -> Result<Self, Self::Error> {
+        if p.is_v4() {
+            Ok( Self(p_id, Ipv4MulticastNlri(p)) )
+        } else {
+            Err("prefix is not IPv6")
+        }
     }
 }
 
@@ -917,6 +960,8 @@ impl<T> fmt::Display for Ipv4RouteTargetNlri<T> {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Ipv4FlowSpecNlri<Octs>(FlowSpecNlri<Octs>);
 
+impl<Octs: AsRef<[u8]>> Eq for Ipv4FlowSpecNlri<Octs> {}
+
 impl<Octs: Clone + Debug + Hash> AfiSafiNlri for Ipv4FlowSpecNlri<Octs> {
     type Nlri = FlowSpecNlri<Octs>;
     fn nlri(&self) -> Self::Nlri {
@@ -1000,15 +1045,19 @@ impl<T> fmt::Display for Ipv4FlowSpecNlri<T> {
 
 //--- Ipv6Unicast
 
-#[derive(Clone, Debug, Hash, PartialEq)]
+#[derive(Copy, Clone, Debug, Hash, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct Ipv6UnicastNlri(Prefix);
+pub struct Ipv6UnicastNlri(pub Prefix);
 impl AfiSafiNlri for Ipv6UnicastNlri {
     type Nlri = Prefix;
     fn nlri(&self) -> Self::Nlri {
         self.0
     }
 }
+
+impl Eq for Ipv6UnicastNlri {}
+impl Eq for Ipv6UnicastAddpathNlri {}
+
 impl FromStr for Ipv6UnicastNlri {
     type Err = &'static str;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -1062,6 +1111,19 @@ impl NlriCompose for Ipv6UnicastNlri {
     }
 }
 
+impl NlriCompose for Ipv6UnicastAddpathNlri {
+    fn compose_len(&self) -> usize {
+        4 + self.1.compose_len()
+    }
+
+    fn compose<Target: OctetsBuilder>(&self, target: &mut Target)
+        -> Result<(), Target::AppendError>
+    {
+            target.append_slice(&self.0.0.to_be_bytes())?;
+            self.1.compose(target)
+    }
+
+}
 
 impl PartialEq<Ipv6UnicastAddpathNlri> for Ipv6UnicastAddpathNlri {
     fn eq(&self, other: &Ipv6UnicastAddpathNlri) -> bool {
@@ -1075,11 +1137,26 @@ impl fmt::Display for Ipv6UnicastNlri {
     }
 }
 
+impl TryFrom<(Prefix, PathId)> for Ipv6UnicastAddpathNlri {
+    type Error = &'static str;
+    fn try_from((p, p_id): (Prefix, PathId)) -> Result<Self, Self::Error> {
+        if p.is_v6() {
+            Ok( Self(p_id, Ipv6UnicastNlri(p)) )
+        } else {
+            Err("prefix is not IPv6")
+        }
+    }
+}
+
+
 //--- Ipv6Multicast
 
-#[derive(Clone, Debug, Hash, PartialEq)]
+#[derive(Copy, Clone, Debug, Hash, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Ipv6MulticastNlri(Prefix);
+
+impl Eq for Ipv6MulticastNlri {}
+impl Eq for Ipv6MulticastAddpathNlri {}
 
 impl AfiSafiNlri for Ipv6MulticastNlri {
     type Nlri = Prefix;
@@ -1101,6 +1178,51 @@ where
     }
 }
 
+impl NlriCompose for Ipv6MulticastNlri {
+    fn compose_len(&self) -> usize {
+        // 1 byte for the length itself
+        1 + prefix_bits_to_bytes(self.prefix().len())
+    }
+
+    fn compose<Target: OctetsBuilder>(&self, target: &mut Target)
+        -> Result<(), Target::AppendError> {
+        let len = self.prefix().len();
+        target.append_slice(&[len])?;
+        let prefix_bytes = prefix_bits_to_bytes(len);
+        match self.prefix().addr() {
+            std::net::IpAddr::V6(a) => {
+                target.append_slice(&a.octets()[..prefix_bytes])?
+            }
+            _ => unreachable!()
+        }
+        Ok(())
+    }
+}
+
+impl TryFrom<Prefix> for Ipv6MulticastNlri {
+    type Error = &'static str;
+    fn try_from(p: Prefix) -> Result<Self, Self::Error> {
+        if p.is_v6() {
+            Ok( Self(p) )
+        } else {
+            Err("prefix is not IPv6")
+        }
+    }
+}
+
+impl NlriCompose for Ipv6MulticastAddpathNlri {
+    fn compose_len(&self) -> usize {
+        4 + self.1.compose_len()
+    }
+
+    fn compose<Target: OctetsBuilder>(&self, target: &mut Target)
+        -> Result<(), Target::AppendError>
+    {
+            target.append_slice(&self.0.0.to_be_bytes())?;
+            self.1.compose(target)
+    }
+}
+
 impl PartialEq<Ipv6MulticastAddpathNlri> for Ipv6MulticastAddpathNlri {
     fn eq(&self, other: &Ipv6MulticastAddpathNlri) -> bool {
         self.0 == other.0
@@ -1113,10 +1235,20 @@ impl fmt::Display for Ipv6MulticastNlri {
     }
 }
 
+impl TryFrom<(Prefix, PathId)> for Ipv6MulticastAddpathNlri {
+    type Error = &'static str;
+    fn try_from((p, p_id): (Prefix, PathId)) -> Result<Self, Self::Error> {
+        if p.is_v6() {
+            Ok( Self(p_id, Ipv6MulticastNlri(p)) )
+        } else {
+            Err("prefix is not IPv6")
+        }
+    }
+}
 
 //--- Ipv6MplsUnicast
 
-#[derive(Clone, Debug, Hash)]
+#[derive(Copy, Clone, Debug, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Ipv6MplsUnicastNlri<Octs>(MplsNlri<Octs>);
 
@@ -1236,6 +1368,8 @@ impl<Octs: Clone + Debug + Hash> AfiSafiNlri for Ipv6FlowSpecNlri<Octs> {
         self.0.clone()
     }
 }
+
+impl<Octs: AsRef<[u8]>> Eq for Ipv6FlowSpecNlri<Octs> {}
 
 impl<'a, O, P> AfiSafiParse<'a, O, P> for Ipv6FlowSpecNlri<O>
 where
