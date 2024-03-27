@@ -10,4 +10,7 @@ pub mod message;
 
 pub mod workshop;
 
+#[cfg(feature = "fsm")]
+pub mod fsm;
+
 pub use crate::util::parser::ParseError;
