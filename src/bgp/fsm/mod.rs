@@ -1,6 +1,6 @@
- //! State machine for BGP.
+//! State machine for BGP.
 
-pub mod state_machine;
 pub mod session;
-pub mod util;
+pub mod state_machine;
 mod timers;
+mod util;

@@ -1,7 +1,7 @@
-use tokio::time::{interval, Instant};
-use std::time::Duration;
-use std::fmt;
 use std::cmp;
+use std::fmt;
+use std::time::Duration;
+use tokio::time::{interval, Instant};
 
 use tokio::sync::{mpsc, oneshot};
 
@@ -9,7 +9,7 @@ use log::{debug, warn};
 
 // TODO
 //  - write out what all these do
-//  - their relations 
+//  - their relations
 //  - their recommended default values
 //
 // the fsm needs
@@ -80,7 +80,10 @@ impl Timer {
     }
 
     pub async fn tick(&mut self) -> Instant {
-        self.last_tick = self.tick_recv.recv().await
+        self.last_tick = self
+            .tick_recv
+            .recv()
+            .await
             .expect("channel should never close");
         self.last_tick
     }
@@ -115,7 +118,7 @@ impl Timer {
         let tick_send = tick_send.clone();
         interval.tick().await;
         loop {
-            tokio::select!{
+            tokio::select! {
                 instant = interval.tick() => {
                     let _ = tick_send.send(instant).await;
                 }
@@ -153,18 +156,20 @@ impl Timer {
 impl fmt::Display for Timer {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let since = cmp::max(self.last_tick, self.last_reset);
-        let togo = self.interval.checked_sub(
-            Instant::now().duration_since(since)
-        ).unwrap_or_default(); // Default is Duration::ZERO
+        let togo = self
+            .interval
+            .checked_sub(Instant::now().duration_since(since))
+            .unwrap_or_default(); // Default is Duration::ZERO
 
-        write!(f, "{:.2}/{} {}",
-               togo.as_secs_f64(),
-               self.interval.as_secs(),
-               if self.started { "" } else { "(stopped)" }
+        write!(
+            f,
+            "{:.2}/{} {}",
+            togo.as_secs_f64(),
+            self.interval.as_secs(),
+            if self.started { "" } else { "(stopped)" }
         )
     }
 }
-
 
 //------------ Tests ---------------------------------------------------------
 
@@ -210,13 +215,13 @@ mod tests {
         t.reset();
         println!("{t}");
         let t4 = t.tick().await;
-        assert!(t3.elapsed() >= 2*d);
+        assert!(t3.elapsed() >= 2 * d);
 
         t.stop_and_reset();
 
-        if let Err(_) = timeout(d*2, t.tick()).await {
+        if let Err(_) = timeout(d * 2, t.tick()).await {
             //println!("did not receive value within two intervals, Ok");
-            assert!(t4.elapsed() >= d*2);
+            assert!(t4.elapsed() >= d * 2);
         } else {
             panic!("wrong");
         }
@@ -227,6 +232,5 @@ mod tests {
         t.start();
         let _ = t.tick().await;
         assert!(t5.elapsed() >= d);
-
     }
 }

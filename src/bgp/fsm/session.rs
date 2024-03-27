@@ -1,33 +1,28 @@
-use std::net::{IpAddr, SocketAddr};
 use std::io::Cursor;
+use std::net::{IpAddr, SocketAddr};
 
 use bytes::{Buf, Bytes, BytesMut};
-use tokio::net::tcp::OwnedReadHalf;
 use tokio::io::AsyncReadExt;
+use tokio::net::tcp::OwnedReadHalf;
 use tokio::sync::{mpsc, oneshot};
 
-use log::{debug, error, info, warn};
-use inetnum::asn::Asn;
-use crate::bgp::message::{
-    NotificationMessage,
-    Message as BgpMsg,
-    SessionConfig,
-    UpdateMessage,
-};
-use crate::bgp::ParseError;
 use crate::bgp::message::keepalive::KeepaliveBuilder;
 use crate::bgp::message::notification::{
-    NotificationBuilder, CeaseSubcode, Details, OpenMessageSubcode,
-    FiniteStateMachineSubcode
+    CeaseSubcode, Details, FiniteStateMachineSubcode, NotificationBuilder,
+    OpenMessageSubcode,
 };
-use crate::bgp::message::open::{
-    Capability,
-    OpenBuilder
+use crate::bgp::message::open::{Capability, OpenBuilder};
+use crate::bgp::message::{
+    Message as BgpMsg, NotificationMessage, SessionConfig, UpdateMessage,
 };
-use crate::bgp::types::{AfiSafi, AddpathDirection, AddpathFamDir};
+use crate::bgp::types::{AddpathDirection, AddpathFamDir, AfiSafi};
+use crate::bgp::ParseError;
+use inetnum::asn::Asn;
+use log::{debug, error, info, warn};
 
-use super::timers::Timer;
 use super::state_machine::{Event, SessionAttributes, State};
+use super::timers::Timer;
+
 #[allow(unused_imports)]
 use super::util::to_pcap;
 
@@ -64,7 +59,6 @@ pub struct Session<C> {
     pdu_out_tx: mpsc::Sender<BgpMsg<Bytes>>,
 
     //--- Timers
-
     /// Connect Retry Timer
     connect_retry_timer: Timer,
 
@@ -112,9 +106,7 @@ impl<C: BgpConfig + Send> Session<C> {
         channel: mpsc::Sender<Message>,
         commands: mpsc::Receiver<Command>,
         pdu_out_tx: mpsc::Sender<BgpMsg<Bytes>>,
-        )
-        -> Self
-    {
+    ) -> Self {
         let mut attributes = SessionAttributes::default();
         if let Some(hold_time) = config.hold_time() {
             attributes.set_hold_time(hold_time);
@@ -128,10 +120,16 @@ impl<C: BgpConfig + Send> Session<C> {
             channel,
             commands,
             pdu_out_tx,
-            connect_retry_timer: Timer::new(attributes.connect_retry_time().into()),
+            connect_retry_timer: Timer::new(
+                attributes.connect_retry_time().into(),
+            ),
             hold_timer: Timer::new(attributes.hold_time().into()),
-            keepalive_timer: Timer::new(u64::from(attributes.hold_time() / 3)),
-            delay_open_timer: Timer::new(u64::from(attributes.delay_open_time())),
+            keepalive_timer: Timer::new(u64::from(
+                attributes.hold_time() / 3,
+            )),
+            delay_open_timer: Timer::new(u64::from(
+                attributes.delay_open_time(),
+            )),
         }
     }
 
@@ -144,7 +142,7 @@ impl<C: BgpConfig + Send> Session<C> {
 
     /// Returns the remote address, if there is a connection.
     pub fn connected_addr(&self) -> Option<SocketAddr> {
-        self.connection.as_ref().map(|c| c.remote_addr )
+        self.connection.as_ref().map(|c| c.remote_addr)
     }
 
     /// Returns a reference to the configuration.
@@ -183,27 +181,21 @@ impl<C: BgpConfig + Send> Session<C> {
     fn disconnect(&mut self, reason: DisconnectReason) {
         match reason {
             DisconnectReason::ConnectionRejected => {
-                self.send_notification(
-                    CeaseSubcode::ConnectionRejected
-                );
+                self.send_notification(CeaseSubcode::ConnectionRejected);
             }
             DisconnectReason::Reconfiguration => {
                 self.send_notification(
-                    CeaseSubcode::OtherConfigurationChange
+                    CeaseSubcode::OtherConfigurationChange,
                 );
             }
             DisconnectReason::Deconfigured => {
-                self.send_notification(
-                    CeaseSubcode::PeerDeconfigured
-                );
+                self.send_notification(CeaseSubcode::PeerDeconfigured);
             }
             DisconnectReason::HoldTimerExpired => {
                 self.send_notification(Details::HoldTimerExpired);
             }
             DisconnectReason::Shutdown => {
-                self.send_notification(
-                    CeaseSubcode::AdministrativeShutdown
-                );
+                self.send_notification(CeaseSubcode::AdministrativeShutdown);
             }
             DisconnectReason::FsmViolation(maybe_notification) => {
                 if let Some(details) = maybe_notification {
@@ -249,11 +241,10 @@ impl<C: BgpConfig + Send> Session<C> {
         // fast-forward our FSM
         session.manual_start().await;
         session.connection_established().await;
-    
+
         Ok((session, tx_commands))
     }
     */
-
 
     /// Process the next event.
     ///
@@ -336,7 +327,7 @@ impl<C: BgpConfig + Send> Session<C> {
         Ok(())
     }
 
-    /// Process all future events. 
+    /// Process all future events.
     ///
     /// This takes ownership of the Session. So, while the caller only needs
     /// to call this once, e.g. like
@@ -348,7 +339,7 @@ impl<C: BgpConfig + Send> Session<C> {
     /// ```
     /// other possibilities to interact with the Session is lost.
     /// If fine grained control is required, use [`Session::tick`].
-    pub async fn process(mut self) -> Result<(), Error>{
+    pub async fn process(mut self) -> Result<(), Error> {
         loop {
             self.tick().await?;
         }
@@ -377,7 +368,8 @@ impl<C: BgpConfig + Send> Session<C> {
     }
 
     pub fn send_open(&self) {
-        let mut openbuilder = OpenBuilder::from_target(BytesMut::new()).unwrap();
+        let mut openbuilder =
+            OpenBuilder::from_target(BytesMut::new()).unwrap();
         openbuilder.set_asn(self.config.local_asn());
         openbuilder.set_holdtime(self.attributes.hold_time());
         openbuilder.set_bgp_id(self.config.bgp_id());
@@ -400,15 +392,22 @@ impl<C: BgpConfig + Send> Session<C> {
     }
 
     fn send_notification<S>(&self, subcode: S)
-        where S: Into<Details>
+    where
+        S: Into<Details>,
     {
         let msg = NotificationBuilder::new_vec_nodata(subcode);
         //self.send_raw(msg);
-        self.send_pdu(BgpMsg::Notification(NotificationMessage::from_octets(Bytes::from(msg)).unwrap()));
+        self.send_pdu(BgpMsg::Notification(
+            NotificationMessage::from_octets(Bytes::from(msg)).unwrap(),
+        ));
     }
 
     fn send_keepalive(&self) {
-        self.send_pdu(BgpMsg::Keepalive(KeepaliveBuilder::from_target(BytesMut::new()).unwrap().into_message()));
+        self.send_pdu(BgpMsg::Keepalive(
+            KeepaliveBuilder::from_target(BytesMut::new())
+                .unwrap()
+                .into_message(),
+        ));
     }
 
     /// Returns the local ASN for this session.
@@ -461,7 +460,9 @@ impl<C: BgpConfig + Send> Session<C> {
     /// Trigger a ManualStart event.
     pub async fn manual_start(&mut self) {
         if self.attributes.passive_tcp_establishment() {
-            let _ = self.handle_event(Event::ManualStartWithPassiveTcpEstablishment).await;
+            let _ = self
+                .handle_event(Event::ManualStartWithPassiveTcpEstablishment)
+                .await;
         } else {
             let _ = self.handle_event(Event::ManualStart).await;
         }
@@ -473,40 +474,43 @@ impl<C: BgpConfig + Send> Session<C> {
     }
 
     async fn handle_msg(&mut self, msg: BgpMsg<Bytes>) -> Result<(), Error> {
-       match msg {
-           BgpMsg::Open(m) => {
-               debug!("got OPEN from {}, generating event", m.my_asn());
-               if self.delay_open_timer.is_running() {
-                   self.handle_event(Event::BgpOpenWithDelayOpenTimerRunning(m)).await?;
-               } else {
-                   self.handle_event(Event::BgpOpen(m)).await?;
-               }
-           }
-           BgpMsg::Keepalive(_m) => {
-               self.handle_event(Event::KeepaliveMsg).await?;
-           }
-           BgpMsg::Update(m) => {
-               self.handle_event(Event::UpdateMsg).await?;
-               let tx = self.channel.clone();
-               let _ = tx.send(Message::UpdateMessage(m)).await;
-           }
-           BgpMsg::Notification(m) => {
-               let tx = self.channel.clone();
-               let _ = tx.send(Message::NotificationMessage(m)).await;
-           }
-           BgpMsg::RouteRefresh(_m) => {
-               debug!("got ROUTEREFRESH, not doing anything");
-           }
-       }
-       Ok(())
+        match msg {
+            BgpMsg::Open(m) => {
+                debug!("got OPEN from {}, generating event", m.my_asn());
+                if self.delay_open_timer.is_running() {
+                    self.handle_event(
+                        Event::BgpOpenWithDelayOpenTimerRunning(m),
+                    )
+                    .await?;
+                } else {
+                    self.handle_event(Event::BgpOpen(m)).await?;
+                }
+            }
+            BgpMsg::Keepalive(_m) => {
+                self.handle_event(Event::KeepaliveMsg).await?;
+            }
+            BgpMsg::Update(m) => {
+                self.handle_event(Event::UpdateMsg).await?;
+                let tx = self.channel.clone();
+                let _ = tx.send(Message::UpdateMessage(m)).await;
+            }
+            BgpMsg::Notification(m) => {
+                let tx = self.channel.clone();
+                let _ = tx.send(Message::NotificationMessage(m)).await;
+            }
+            BgpMsg::RouteRefresh(_m) => {
+                debug!("got ROUTEREFRESH, not doing anything");
+            }
+        }
+        Ok(())
     }
 
     // state machine transitions
     #[allow(unreachable_code)]
     #[allow(clippy::too_many_lines)]
     async fn handle_event(&mut self, event: Event) -> Result<(), Error> {
-        use State as S;
         use Event as E;
+        use State as S;
         match (self.state(), &event) {
             //--- Idle -------------------------------------------------------
             (S::Idle, E::ManualStart | E::AutomaticStart) => {
@@ -1790,7 +1794,7 @@ impl<C: BgpConfig + Send> Session<C> {
 }
 
 //------------ Messages & Commands -------------------------------------------
-// 
+//
 // These are enums used to send received PDUs (e.g. UPDATEs) and such to the
 // user of a Session. The Command enum is used to instruct the Session to
 // perform certain actions, or to query its statistics.
@@ -1807,8 +1811,12 @@ pub enum Message {
 /// Commands sent from user to this Session.
 #[derive(Debug)]
 pub enum Command {
-    AttachStream { stream: OwnedReadHalf },
-    GetAttributes { resp: oneshot::Sender<SessionAttributes> },
+    AttachStream {
+        stream: OwnedReadHalf,
+    },
+    GetAttributes {
+        resp: oneshot::Sender<SessionAttributes>,
+    },
     Disconnect(DisconnectReason),
     ForcedKeepalive,
     //RawUpdate(UpdateMessage<Vec<u8>>),
@@ -1861,7 +1869,7 @@ impl Connection {
         Self {
             remote_addr: tcp_in.peer_addr().unwrap(),
             tcp_in,
-            buffer: BytesMut::with_capacity(2^20),
+            buffer: BytesMut::with_capacity(2 ^ 20),
             session_config: SessionConfig::modern(),
         }
     }
@@ -1879,22 +1887,19 @@ impl Connection {
     }
     */
 
-    async fn read_frame(&mut self)
-        -> Result<Option<BgpMsg<Bytes>>, Error>
-    {
+    async fn read_frame(&mut self) -> Result<Option<BgpMsg<Bytes>>, Error> {
         loop {
             if let Some(frame) = self.parse_frame()? {
                 return Ok(Some(frame));
             }
             if 0 == self.tcp_in.read_buf(&mut self.buffer).await? {
                 if self.buffer.is_empty() {
-                    return Ok(None)
+                    return Ok(None);
                 }
                 return Err(Error::for_str("connection reset by peer"));
             }
         }
     }
-
 
     // XXX maybe turn this into a take_frame
     // and do the parsing within the FSM so we can send the correct
@@ -1902,13 +1907,14 @@ impl Connection {
     fn parse_frame(&mut self) -> Result<Option<BgpMsg<Bytes>>, ParseError> {
         let mut buf = Cursor::new(&self.buffer[..]);
 
-        if buf.remaining() >= 16 + 2  {
+        if buf.remaining() >= 16 + 2 {
             buf.set_position(16);
-            let len = buf.get_u16(); 
+            let len = buf.get_u16();
             if buf.remaining() >= ((len as usize) - 18) {
                 //return Ok(len)
                 buf.set_position(0);
-                let b = Bytes::copy_from_slice(&buf.into_inner()[..len.into()]);
+                let b =
+                    Bytes::copy_from_slice(&buf.into_inner()[..len.into()]);
                 // XXX the SessionConfig needs to be updated based on the
                 // exchanged BGP OPENs
                 let msg = BgpMsg::from_octets(b, Some(&self.session_config))?;
@@ -1920,16 +1926,15 @@ impl Connection {
     }
 }
 
-async fn maybe_read_frame(conn: Option<&mut Connection>)
-    -> Option<Result<Option<BgpMsg<Bytes>>, Error>>
-{
+async fn maybe_read_frame(
+    conn: Option<&mut Connection>,
+) -> Option<Result<Option<BgpMsg<Bytes>>, Error>> {
     if let Some(c) = conn {
         Some(c.read_frame().await)
     } else {
         None
     }
 }
-
 
 //------------ BgpConfig ------------------------------------------------------
 
@@ -2012,17 +2017,13 @@ impl BgpConfig for BasicConfig {
     }
 
     fn protocols(&self) -> Vec<AfiSafi> {
-        vec![
-            AfiSafi::Ipv4Unicast,
-            AfiSafi::Ipv6Unicast,
-        ]
+        vec![AfiSafi::Ipv4Unicast, AfiSafi::Ipv6Unicast]
     }
 
     fn addpath(&self) -> Vec<AfiSafi> {
         vec![]
     }
 }
-
 
 //------------ NegotiatedConfig ----------------------------------------------
 
@@ -2065,18 +2066,17 @@ impl NegotiatedConfig {
             remote_bgp_id: [1, 2, 3, 4],
             remote_asn: Asn::from_u32(12345),
             remote_addr: IpAddr::V4([1, 2, 3, 4].into()),
-            addpath: vec![]
+            addpath: vec![],
         }
     }
 }
-
 
 //=========== Error Types ====================================================
 
 use std::fmt;
 #[derive(Debug)]
 pub struct ConnectionError(String);
-impl std::error::Error for ConnectionError { }
+impl std::error::Error for ConnectionError {}
 impl fmt::Display for ConnectionError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Connection error: {}", self.0)
@@ -2090,7 +2090,7 @@ impl From<std::io::Error> for ConnectionError {
 
 #[derive(Debug)]
 pub struct UnexpectedPeer(IpAddr);
-impl std::error::Error for UnexpectedPeer { }
+impl std::error::Error for UnexpectedPeer {}
 impl fmt::Display for UnexpectedPeer {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "unexpected peer {}", self.0)
@@ -2102,20 +2102,22 @@ impl From<UnexpectedPeer> for ConnectionError {
     }
 }
 
-
 #[derive(Debug)]
 pub struct Error {
     msg: &'static str,
 }
 impl std::fmt::Display for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter)  -> Result<(), std::fmt::Error> {
+    fn fmt(
+        &self,
+        f: &mut std::fmt::Formatter,
+    ) -> Result<(), std::fmt::Error> {
         write!(f, "error: {}", self.msg)
     }
 }
 
 impl Error {
     pub const fn for_str(msg: &'static str) -> Self {
-        Self{msg}
+        Self { msg }
     }
 }
 impl From<std::io::Error> for Error {
@@ -2129,7 +2131,6 @@ impl From<ParseError> for Error {
         Self::for_str("parse error")
     }
 }
-
 
 //--- Tests ------------------------------------------------------------------
 
@@ -2153,7 +2154,7 @@ mod tests {
 
         s.handle_event(Event::ManualStart);
         assert_eq!(s.state(), State::Connect);
-        
+
         let t2 = s.session().connect_retry_last_tick;
         assert!(t2.is_some());
     }
