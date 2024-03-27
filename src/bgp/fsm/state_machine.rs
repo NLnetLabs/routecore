@@ -93,18 +93,18 @@ impl SessionAttributes {
         res
     }
 
-    pub fn hold_time(&self) -> u16 {
+    pub const fn hold_time(&self) -> u16 {
         self.hold_time
     }
     pub fn set_hold_time(&mut self, hold_time: u16) {
         self.hold_time = hold_time;
     }
 
-    pub fn state(self) -> State {
+    pub const fn state(self) -> State {
         self.state
     }
 
-    pub fn connect_retry_time(&self) -> u16 {
+    pub const fn connect_retry_time(&self) -> u16 {
         self.connect_retry_time
     }
 
@@ -120,19 +120,19 @@ impl SessionAttributes {
         self.delay_open = true;
     }
 
-    pub fn delay_open(&self) -> bool {
+    pub const fn delay_open(&self) -> bool {
         self.delay_open
     }
 
-    pub fn delay_open_time(&self) -> u16 {
+    pub const fn delay_open_time(&self) -> u16 {
         self.delay_open_time
     }
 
-    pub fn passive_tcp_establishment(&self) -> bool {
+    pub const fn passive_tcp_establishment(&self) -> bool {
         self.passive_tcp_establishment
     }
 
-    pub fn notification_without_open(&self) -> bool {
+    pub const fn notification_without_open(&self) -> bool {
         self.send_notification_without_open
     }
 
@@ -144,7 +144,7 @@ impl SessionAttributes {
 
 impl Default for SessionAttributes {
     fn default() -> Self {
-        SessionAttributes {
+        Self {
             state: State::Idle,
             connect_retry_counter: 0,
             connect_retry_timer: 120,

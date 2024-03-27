@@ -98,7 +98,7 @@ impl Timer {
 
         tokio::spawn(async move {
             tokio::select! {
-                _ = Self::timer_inner(interval, tick_send, reset_recv) => { },
+                () = Self::timer_inner(interval, tick_send, reset_recv) => { },
                 _ = stop_recv => {
                     debug!("timer stopped");
                 }
@@ -136,11 +136,11 @@ impl Timer {
         self.started = false;
     }
 
-    pub fn is_running(&self) -> bool {
+    pub const fn is_running(&self) -> bool {
         self.started
     }
 
-    pub async fn reset(&mut self) {
+    pub fn reset(&mut self) {
         if let Some(tx) = &self.reset_send {
             let _ = tx.try_send(());
             self.last_reset = Instant::now();

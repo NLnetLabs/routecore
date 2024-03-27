@@ -78,7 +78,7 @@ pub struct Session<C> {
     delay_open_timer: Timer,
 }
 
-impl<C: BgpConfig> Session<C> {
+impl<C: BgpConfig + Send> Session<C> {
     /*
     pub fn _new_idle(
         config: C,
@@ -137,9 +137,7 @@ impl<C: BgpConfig> Session<C> {
 
     /// Attach a TCP stream to this Session.
     pub async fn attach_stream(&mut self, stream: OwnedReadHalf) {
-        let _socket_status = tokio::join!(
-            stream.readable()
-        );
+        let _socket_status = stream.readable().await;
         self.connection = Some(Connection::for_read_half(stream));
         self.connection_established().await;
     }
@@ -150,7 +148,7 @@ impl<C: BgpConfig> Session<C> {
     }
 
     /// Returns a reference to the configuration.
-    pub fn config(&self) -> &C {
+    pub const fn config(&self) -> &C {
         &self.config
     }
 
@@ -158,7 +156,7 @@ impl<C: BgpConfig> Session<C> {
     pub fn set_negotiated_config(&mut self, config: NegotiatedConfig) {
         self.negotiated = Some(config);
         if let Some(sc) = self.connection.as_mut() {
-            for famdir in self.negotiated.as_ref().unwrap().addpath.iter() {
+            for famdir in &self.negotiated.as_ref().unwrap().addpath {
                 sc.session_config_mut().add_famdir(*famdir);
             }
         } else {
@@ -166,12 +164,12 @@ impl<C: BgpConfig> Session<C> {
         }
     }
     /// Returns the negotiated config.
-    pub fn negotiated(&self) -> Option<&NegotiatedConfig> {
+    pub const fn negotiated(&self) -> Option<&NegotiatedConfig> {
         self.negotiated.as_ref()
     }
 
     // XXX doesnt need to be async anymore?
-    async fn drop_connection(&mut self) {
+    fn drop_connection(&mut self) {
         //if let Some(ref mut conn) = self.connection {
         //    conn.disconnect().await;
         //} else {
@@ -182,34 +180,34 @@ impl<C: BgpConfig> Session<C> {
         }
     }
 
-    async fn disconnect(&mut self, reason: DisconnectReason) {
+    fn disconnect(&mut self, reason: DisconnectReason) {
         match reason {
             DisconnectReason::ConnectionRejected => {
                 self.send_notification(
                     CeaseSubcode::ConnectionRejected
-                )
+                );
             }
             DisconnectReason::Reconfiguration => {
                 self.send_notification(
                     CeaseSubcode::OtherConfigurationChange
-                )
+                );
             }
             DisconnectReason::Deconfigured => {
                 self.send_notification(
                     CeaseSubcode::PeerDeconfigured
-                )
+                );
             }
             DisconnectReason::HoldTimerExpired => {
-                self.send_notification(Details::HoldTimerExpired)
+                self.send_notification(Details::HoldTimerExpired);
             }
             DisconnectReason::Shutdown => {
                 self.send_notification(
                     CeaseSubcode::AdministrativeShutdown
-                )
+                );
             }
             DisconnectReason::FsmViolation(maybe_notification) => {
                 if let Some(details) = maybe_notification {
-                    self.send_notification(details)
+                    self.send_notification(details);
                 }
             }
             DisconnectReason::Other => {
@@ -225,7 +223,7 @@ impl<C: BgpConfig> Session<C> {
 
         self.keepalive_timer.stop_and_reset();
         self.hold_timer.stop_and_reset();
-        self.drop_connection().await;
+        self.drop_connection();
     }
 
     /*
@@ -274,10 +272,10 @@ impl<C: BgpConfig> Session<C> {
                         let _ = resp.send(self.attributes);
                     }
                     Command::Disconnect(reason) => {
-                        self.disconnect(reason).await;
+                        self.disconnect(reason);
                     }
                     Command::ForcedKeepalive => {
-                        self.send_keepalive()
+                        self.send_keepalive();
                     }
                     //Command::RawUpdate(pdu) => {
                     //    debug!("got Command::RawUpdate");
@@ -386,11 +384,11 @@ impl<C: BgpConfig> Session<C> {
 
         openbuilder.four_octet_capable(self.config.local_asn());
 
-        for afisafi in self.config.protocols().iter() {
+        for afisafi in &self.config.protocols() {
             openbuilder.add_mp(*afisafi);
         }
 
-        for fam in self.config.addpath().into_iter() {
+        for fam in self.config.addpath() {
             openbuilder.add_addpath(fam, AddpathDirection::SendReceive);
         }
 
@@ -419,12 +417,12 @@ impl<C: BgpConfig> Session<C> {
     }
 
     /// Returns a reference to the session attributes.
-    pub fn attributes(&self) -> &SessionAttributes {
+    pub const fn attributes(&self) -> &SessionAttributes {
         &self.attributes
     }
 
     /// Returns the hold time.
-    pub fn hold_time(&self) -> u16 {
+    pub const fn hold_time(&self) -> u16 {
         self.attributes().hold_time()
     }
 
@@ -435,7 +433,7 @@ impl<C: BgpConfig> Session<C> {
 
     /// Enable the Delay Open Timer for this session.
     pub fn enable_delay_open(&mut self) {
-        self.attributes_mut().enable_delay_open()
+        self.attributes_mut().enable_delay_open();
     }
 
     fn attributes_mut(&mut self) -> &mut SessionAttributes {
@@ -443,7 +441,7 @@ impl<C: BgpConfig> Session<C> {
     }
 
     /// Returns the current FSM state.
-    pub fn state(&self) -> State {
+    pub const fn state(&self) -> State {
         self.attributes.state()
     }
 
@@ -505,6 +503,7 @@ impl<C: BgpConfig> Session<C> {
 
     // state machine transitions
     #[allow(unreachable_code)]
+    #[allow(clippy::too_many_lines)]
     async fn handle_event(&mut self, event: Event) -> Result<(), Error> {
         use State as S;
         use Event as E;
@@ -553,7 +552,7 @@ impl<C: BgpConfig> Session<C> {
                 self.set_state(State::Active); 
             }
             (S::Idle, E::ManualStop) => {
-                info!("ignored ManualStop in Idle state")
+                info!("ignored ManualStop in Idle state");
             }
             // optional events:
             //(S::Idle, E::AutomaticStop) => { /* ignore */ }
@@ -590,7 +589,7 @@ impl<C: BgpConfig> Session<C> {
                  E::AutomaticStartWithPassiveTcpEstablishment
                  /* | events 6, 7: Auto start with damp peer oscillations */
             ) => {
-                warn!("ignored {:?} in state Connect", event)
+                warn!("ignored {:?} in state Connect", event);
             }
             (S::Connect, E::ManualStop) => {
                 // - drops the TCP connection,
@@ -775,7 +774,7 @@ impl<C: BgpConfig> Session<C> {
                  E::AutomaticStartWithPassiveTcpEstablishment
                  /* | events 6, 7 */
             ) => {
-                info!("ignored {:?} in state Active", event)
+                info!("ignored {:?} in state Active", event);
             }
             (S::Active, E::ManualStop) => {
                 //- If the DelayOpenTimer is running and the
@@ -784,7 +783,7 @@ impl<C: BgpConfig> Session<C> {
                 if self.delay_open_timer.is_running() &&
                    self.attributes().notification_without_open()
                 {
-                    self.disconnect(DisconnectReason::Shutdown).await;
+                    self.disconnect(DisconnectReason::Shutdown);
                 }
 
                 //- releases all BGP resources including stopping the
@@ -934,7 +933,7 @@ impl<C: BgpConfig> Session<C> {
                     );
                     self.disconnect(DisconnectReason::FsmViolation(Some(
                                 OpenMessageSubcode::BadPeerAs.into()
-                                ))).await;
+                                )));
                     self.set_state(State::Idle);
                     return Err(Error { msg: "stop processing" })
                 }
@@ -1044,8 +1043,6 @@ impl<C: BgpConfig> Session<C> {
                     //- drops the TCP connection, and
                     // TODO tokio
                     
-                    //- changes its state to Idle.
-                    self.set_state(State::Idle);
                 } else {
                     //If the DelayOpenTimer is not running, the local system:
                     //  - sets the ConnectRetryTimer to zero,
@@ -1064,9 +1061,9 @@ impl<C: BgpConfig> Session<C> {
                     //  the DampPeerOscillations attribute is set to TRUE, and
                     // TODO once DampPeerOscillations is implemented
 
-                    //  - changes its state to Idle.
-                    self.set_state(State::Idle);
                 }
+                //  - changes its state to Idle.
+                self.set_state(State::Idle);
             }
             (S::Active, 
                 //E::AutomaticStop |
@@ -1113,12 +1110,12 @@ impl<C: BgpConfig> Session<C> {
                  E::AutomaticStartWithPassiveTcpEstablishment
                  /* | events 6, 7 */
             ) => {
-                info!("ignored {:?} in state OpenSent", event)
+                info!("ignored {:?} in state OpenSent", event);
             }
             (S::OpenSent, E::ManualStop) => {
                 //- sends the NOTIFICATION with a Cease,
                 // TODO tokio
-                self.disconnect(DisconnectReason::Shutdown).await;
+                self.disconnect(DisconnectReason::Shutdown);
 
                 //- sets the ConnectRetryTimer to zero,
                 self.connect_retry_timer.stop_and_reset();
@@ -1141,7 +1138,7 @@ impl<C: BgpConfig> Session<C> {
             (S::OpenSent, E::HoldTimerExpires) => {
                 //- sends a NOTIFICATION message with the error code Hold
                 //Timer Expired,
-                self.disconnect(DisconnectReason::HoldTimerExpired).await;
+                self.disconnect(DisconnectReason::HoldTimerExpired);
 
                 //- sets the ConnectRetryTimer to zero,
                 self.connect_retry_timer.stop_and_reset();
@@ -1184,7 +1181,7 @@ impl<C: BgpConfig> Session<C> {
                 // TODO tokio
 
                 //- restarts the ConnectRetryTimer,
-                let _ = self.connect_retry_timer.reset().await;
+                self.connect_retry_timer.reset();
 
                 //- continues to listen for a connection that may be initiated
                 //  by the remote BGP peer, and
@@ -1234,7 +1231,7 @@ impl<C: BgpConfig> Session<C> {
                     );
                     self.disconnect(DisconnectReason::FsmViolation(Some(
                                 OpenMessageSubcode::BadPeerAs.into()
-                                ))).await;
+                                )));
                     self.set_state(State::Idle);
                     return Err(Error { msg: "stop processing" })
                 }
@@ -1309,7 +1306,7 @@ impl<C: BgpConfig> Session<C> {
                 // TODO something?
 
                 //- drops the TCP connection,
-                self.drop_connection().await;
+                self.drop_connection();
 
                 //- increments the ConnectRetryCounter by 1,
                 self.increase_connect_retry_counter();
@@ -1331,7 +1328,7 @@ impl<C: BgpConfig> Session<C> {
                 // TODO something?
 
                 //- drops the TCP connection, and
-                self.drop_connection().await;
+                self.drop_connection();
 
                 //- changes its state to Idle.
                 self.set_state(State::Idle);
@@ -1352,7 +1349,7 @@ impl<C: BgpConfig> Session<C> {
                 self.disconnect(DisconnectReason::FsmViolation(Some(
                     FiniteStateMachineSubcode::
                         UnexpectedMessageInOpenSentState.into()
-                ))).await;
+                )));
 
                 //- sets the ConnectRetryTimer to zero,
                 self.connect_retry_timer.stop_and_reset();
@@ -1385,11 +1382,11 @@ impl<C: BgpConfig> Session<C> {
                  E::AutomaticStartWithPassiveTcpEstablishment
                  /* | events 6, 7 */
             ) => {
-                info!("ignored {:?} in state OpenConfirm", event)
+                info!("ignored {:?} in state OpenConfirm", event);
             }
             (S::OpenConfirm, E::ManualStop) => {
                 //- sends the NOTIFICATION message with a Cease,
-                self.disconnect(DisconnectReason::Shutdown).await;
+                self.disconnect(DisconnectReason::Shutdown);
 
                 //- releases all BGP resources,
                 // TODO something?
@@ -1412,7 +1409,7 @@ impl<C: BgpConfig> Session<C> {
             (S::OpenConfirm, E::HoldTimerExpires) => {
                 //- sends the NOTIFICATION message with the Error Code Hold
                 //Timer Expired,
-                self.disconnect(DisconnectReason::HoldTimerExpired).await;
+                self.disconnect(DisconnectReason::HoldTimerExpired);
 
                 //- sets the ConnectRetryTimer to zero,
                 self.connect_retry_timer.stop_and_reset();
@@ -1464,7 +1461,7 @@ impl<C: BgpConfig> Session<C> {
                 // TODO something?
 
                 //- drops the TCP connection,
-                self.drop_connection().await;
+                self.drop_connection();
 
                 //- increments the ConnectRetryCounter by 1,
                 self.increase_connect_retry_counter();
@@ -1484,7 +1481,7 @@ impl<C: BgpConfig> Session<C> {
                 //TODO something?
 
                 //- drops the TCP connection, and
-                self.drop_connection().await;
+                self.drop_connection();
 
                 //- changes its state to Idle.
                 self.set_state(State::Idle);
@@ -1548,7 +1545,7 @@ impl<C: BgpConfig> Session<C> {
             //(S::OpenConfirm, E::OpenCollisionDump) => { todo!() }
             (S::OpenConfirm, E::KeepaliveMsg) => {
                 //- restarts the HoldTimer and
-                self.hold_timer.reset().await;
+                self.hold_timer.reset();
 
                 //- changes its state to Established.
                 self.set_state(State::Established);
@@ -1566,7 +1563,7 @@ impl<C: BgpConfig> Session<C> {
                 self.disconnect(DisconnectReason::FsmViolation(Some(
                     FiniteStateMachineSubcode::
                         UnexpectedMessageInOpenConfirmState.into()
-                ))).await;
+                )));
 
                 //- sets the ConnectRetryTimer to zero,
                 self.connect_retry_timer.stop_and_reset();
@@ -1597,11 +1594,11 @@ impl<C: BgpConfig> Session<C> {
                  E::AutomaticStartWithPassiveTcpEstablishment
                  /* | events 6, 7 */
             ) => {
-                info!("ignored {:?} in state Established", event)
+                info!("ignored {:?} in state Established", event);
             }
             (S::Established, E::ManualStop) => {
                 //- sends the NOTIFICATION message with a Cease,
-                self.disconnect(DisconnectReason::Shutdown).await;
+                self.disconnect(DisconnectReason::Shutdown);
 
                 //- sets the ConnectRetryTimer to zero,
                 self.connect_retry_timer.stop_and_reset();
@@ -1628,7 +1625,7 @@ impl<C: BgpConfig> Session<C> {
 
                 //- sends a NOTIFICATION message with the Error Code Hold Timer
                 //  Expired,
-                self.disconnect(DisconnectReason::HoldTimerExpired).await;
+                self.disconnect(DisconnectReason::HoldTimerExpired);
 
                 //- sets the ConnectRetryTimer to zero,
                 self.connect_retry_timer.stop_and_reset();
@@ -1690,7 +1687,7 @@ impl<C: BgpConfig> Session<C> {
                 // TODO something?
 
                 //- drops the TCP connection,
-                self.drop_connection().await;
+                self.drop_connection();
 
                 //- increments the ConnectRetryCounter by 1,
                 self.increase_connect_retry_counter();
@@ -1702,7 +1699,7 @@ impl<C: BgpConfig> Session<C> {
             (S::Established, E::KeepaliveMsg) => {
                 //- restarts its HoldTimer, if the negotiated HoldTime value
                 //  is non-zero
-                self.hold_timer.reset().await;
+                self.hold_timer.reset();
 
                 //- remains in the Established state.
                 // (noop)
@@ -1714,7 +1711,7 @@ impl<C: BgpConfig> Session<C> {
 
                 //- restarts its HoldTimer, if the negotiated HoldTime value is
                 //  non-zero
-                self.hold_timer.reset().await;
+                self.hold_timer.reset();
 
                 //- remains in the Established state.
                 //  (noop)
@@ -1763,7 +1760,7 @@ impl<C: BgpConfig> Session<C> {
                 self.disconnect(DisconnectReason::FsmViolation(Some(
                     FiniteStateMachineSubcode::
                         UnexpectedMessageInEstablishedState.into()
-                ))).await;
+                )));
 
                 //- deletes all routes associated with this connection,
                 // TODO store
@@ -1821,7 +1818,7 @@ pub enum Command {
 ///
 /// When disconnecting a peer, a NOTIFICATION PDU is send out with an error
 /// (sub)code depending on the variant.
-#[derive(Debug)]
+#[derive(Copy, Clone, Debug)]
 pub enum DisconnectReason {
     ConnectionRejected,
     Reconfiguration,
@@ -1856,12 +1853,12 @@ impl Connection {
     }
     */
 
-    pub fn remote_addr(&self) -> IpAddr {
+    pub const fn remote_addr(&self) -> IpAddr {
         self.remote_addr.ip()
     }
 
-    pub fn for_read_half(tcp_in: OwnedReadHalf) -> Connection {
-        Connection {
+    pub fn for_read_half(tcp_in: OwnedReadHalf) -> Self {
+        Self {
             remote_addr: tcp_in.peer_addr().unwrap(),
             tcp_in,
             buffer: BytesMut::with_capacity(2^20),
@@ -1892,9 +1889,8 @@ impl Connection {
             if 0 == self.tcp_in.read_buf(&mut self.buffer).await? {
                 if self.buffer.is_empty() {
                     return Ok(None)
-                } else {
-                    return Err(Error::for_str("connection reset by peer"));
                 }
+                return Err(Error::for_str("connection reset by peer"));
             }
         }
     }
@@ -1972,20 +1968,20 @@ pub struct BasicConfig {
 }
 
 impl BasicConfig {
-    pub fn new(
+    pub const fn new(
         local_asn: Asn,
         bgp_id: [u8; 4],
         remote_addr: IpAddr,
         remote_asn: Asn,
         hold_time: Option<u16>,
-    ) -> BasicConfig {
+    ) -> Self {
         Self {
             local_asn,
             bgp_id,
             remote_asn,
             remote_addr,
             hold_time,
-            _capabilities: vec!(),
+            _capabilities: vec![],
         }
     }
 }
@@ -2054,17 +2050,17 @@ pub struct NegotiatedConfig {
 }
 
 impl NegotiatedConfig {
-    pub fn remote_asn(&self) -> Asn {
+    pub const fn remote_asn(&self) -> Asn {
         self.remote_asn
     }
 
-    pub fn remote_addr(&self) -> IpAddr {
+    pub const fn remote_addr(&self) -> IpAddr {
         self.remote_addr
     }
 
     /// Dummy constructor, only useful for testing.
     pub fn dummy() -> Self {
-        NegotiatedConfig {
+        Self {
             hold_time: 0,
             remote_bgp_id: [1, 2, 3, 4],
             remote_asn: Asn::from_u32(12345),
@@ -2088,7 +2084,7 @@ impl fmt::Display for ConnectionError {
 }
 impl From<std::io::Error> for ConnectionError {
     fn from(e: std::io::Error) -> Self {
-        ConnectionError(format!("Connection io error: {}", e))
+        Self(format!("Connection io error: {e}"))
     }
 }
 
@@ -2102,7 +2098,7 @@ impl fmt::Display for UnexpectedPeer {
 }
 impl From<UnexpectedPeer> for ConnectionError {
     fn from(e: UnexpectedPeer) -> Self {
-        ConnectionError(e.to_string())
+        Self(e.to_string())
     }
 }
 
@@ -2118,7 +2114,7 @@ impl std::fmt::Display for Error {
 }
 
 impl Error {
-    pub fn for_str(msg: &'static str) -> Self {
+    pub const fn for_str(msg: &'static str) -> Self {
         Self{msg}
     }
 }
