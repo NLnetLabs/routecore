@@ -437,6 +437,13 @@ impl<Octs: Octets> UpdateMessage<Octs> {
 
 
     /// Returns an iterator yielding announcements of a specific NLRI type.
+    ///
+    // XXX decide what to do when the 'wrong' ASP is passed:
+    // - return an Err
+    // - return an Ok(None),
+    // - return an Ok(Some(empty-iterator))
+    // 
+    // Depending on what we choose, we might get rid of the Option altogether.
     pub fn typed_announcements<'a, O, ASP>(&'a self)
         -> Result<Option<NlriIter<'a, O, Octs, ASP>>, ParseError>
     where
