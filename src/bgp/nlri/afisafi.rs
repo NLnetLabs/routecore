@@ -571,7 +571,7 @@ afisafi! {
 
 // --- Ipv4Unicast
 
-#[derive(Clone, Debug, Hash, PartialEq)]
+#[derive(Copy, Clone, Debug, Hash, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Ipv4UnicastNlri(Prefix);
 
@@ -672,7 +672,7 @@ impl fmt::Display for Ipv4UnicastNlri {
 
 //--- Ipv4Multicast
 
-#[derive(Clone, Debug, Hash, PartialEq)]
+#[derive(Copy, Clone, Debug, Hash, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Ipv4MulticastNlri(Prefix);
 
@@ -758,7 +758,7 @@ impl fmt::Display for Ipv4MulticastNlri {
 
 //--- Ipv4MplsUnicast
 
-#[derive(Clone, Debug, Hash)]
+#[derive(Copy, Clone, Debug, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Ipv4MplsUnicastNlri<Octs>(MplsNlri<Octs>);
 
@@ -813,7 +813,7 @@ impl<T> fmt::Display for Ipv4MplsUnicastNlri<T> {
 
 //--- Ipv4MplsVpnUnicastNlri
 
-#[derive(Clone, Debug, Hash)]
+#[derive(Copy, Clone, Debug, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Ipv4MplsVpnUnicastNlri<Octs>(MplsVpnNlri<Octs>);
 
@@ -1007,7 +1007,7 @@ impl<T> fmt::Display for Ipv4FlowSpecNlri<T> {
 
 //--- Ipv6Unicast
 
-#[derive(Clone, Debug, Hash, PartialEq)]
+#[derive(Copy, Clone, Debug, Hash, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Ipv6UnicastNlri(Prefix);
 impl AfiSafiNlri for Ipv6UnicastNlri {
@@ -1093,7 +1093,7 @@ impl fmt::Display for Ipv6UnicastNlri {
 
 //--- Ipv6Multicast
 
-#[derive(Clone, Debug, Hash, PartialEq)]
+#[derive(Copy, Clone, Debug, Hash, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Ipv6MulticastNlri(Prefix);
 
@@ -1159,7 +1159,7 @@ impl fmt::Display for Ipv6MulticastNlri {
 
 //--- Ipv6MplsUnicast
 
-#[derive(Clone, Debug, Hash)]
+#[derive(Copy, Clone, Debug, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Ipv6MplsUnicastNlri<Octs>(MplsNlri<Octs>);
 
@@ -1352,7 +1352,7 @@ impl<Octs> Ipv4MplsUnicastNlri<Octs> {
 
 //--- L2VpnVpls
 
-#[derive(Clone, Debug, Hash, PartialEq)]
+#[derive(Copy, Clone, Debug, Hash, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct L2VpnVplsNlri(VplsNlri);
 
