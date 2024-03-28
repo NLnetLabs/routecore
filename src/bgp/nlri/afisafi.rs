@@ -601,6 +601,15 @@ impl TryFrom<Prefix> for Ipv4UnicastNlri {
     }
 }
 
+impl TryFrom<(Prefix, PathId)> for Ipv4UnicastAddpathNlri {
+    type Error = &'static str;
+
+    fn try_from((prefix, path_id): (Prefix, PathId)) -> Result<Self, Self::Error> {
+        Ok(Ipv4UnicastNlri::try_from(prefix)?.into_addpath(path_id))
+    }
+}
+
+
 impl<'a, O, P> AfiSafiParse<'a, O, P> for Ipv4UnicastNlri
 where
     O: Octets,
@@ -690,6 +699,14 @@ impl TryFrom<Prefix> for Ipv4MulticastNlri {
         } else {
             Err("prefix is not IPv4")
         }
+    }
+}
+
+impl TryFrom<(Prefix, PathId)> for Ipv4MulticastAddpathNlri {
+    type Error = &'static str;
+
+    fn try_from((prefix, path_id): (Prefix, PathId)) -> Result<Self, Self::Error> {
+        Ok(Ipv4MulticastNlri::try_from(prefix)?.into_addpath(path_id))
     }
 }
 
@@ -999,6 +1016,7 @@ impl AfiSafiNlri for Ipv6UnicastNlri {
         self.0
     }
 }
+
 impl FromStr for Ipv6UnicastNlri {
     type Err = &'static str;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -1015,6 +1033,14 @@ impl TryFrom<Prefix> for Ipv6UnicastNlri {
         } else {
             Err("prefix is not IPv6")
         }
+    }
+}
+
+impl TryFrom<(Prefix, PathId)> for Ipv6UnicastAddpathNlri {
+    type Error = &'static str;
+
+    fn try_from((prefix, path_id): (Prefix, PathId)) -> Result<Self, Self::Error> {
+        Ok(Ipv6UnicastNlri::try_from(prefix)?.into_addpath(path_id))
     }
 }
 
@@ -1070,6 +1096,33 @@ impl fmt::Display for Ipv6UnicastNlri {
 #[derive(Clone, Debug, Hash, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Ipv6MulticastNlri(Prefix);
+
+impl FromStr for Ipv6MulticastNlri {
+    type Err = &'static str;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let p = Prefix::from_str(s).map_err(|_| "could not parse prefix")?;
+        p.try_into()
+    }
+}
+
+impl TryFrom<Prefix> for Ipv6MulticastNlri {
+    type Error = &'static str;
+    fn try_from(p: Prefix) -> Result<Self, Self::Error> {
+        if p.is_v6() {
+            Ok( Self(p) )
+        } else {
+            Err("prefix is not IPv6")
+        }
+    }
+}
+
+impl TryFrom<(Prefix, PathId)> for Ipv6MulticastAddpathNlri {
+    type Error = &'static str;
+
+    fn try_from((prefix, path_id): (Prefix, PathId)) -> Result<Self, Self::Error> {
+        Ok(Ipv6MulticastNlri::try_from(prefix)?.into_addpath(path_id))
+    }
+}
 
 impl AfiSafiNlri for Ipv6MulticastNlri {
     type Nlri = Prefix;
