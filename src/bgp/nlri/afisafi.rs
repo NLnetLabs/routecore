@@ -78,6 +78,8 @@ paste! {
         }
     }
 
+    impl$(<$gen: AsRef<[u8]>>)? Eq for [<$nlri AddpathNlri>]$(<$gen>)? { }
+
     impl$(<$gen>)? fmt::Display for [<$nlri AddpathNlri>]$(<$gen>)? {
         fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
             write!(f, "[{}] ", self.0)?;
@@ -114,20 +116,6 @@ paste! {
         $( $( [<$afi_name $safi_name>] ,)+)+
         Unsupported(u16, u8),
     }
-
-    /*
-    impl TryFrom<(u16, u8)> for AfiSafiType {
-        type Error = &'static str;
-        fn try_from(t: (u16, u8)) -> Result<Self, Self::Error> {
-            match t {
-                $($(
-                    ($afi_code, $safi_code) => Self::[<$afi_name $safi_name>],
-                )+)+
-                _ => Err("unsupported AFI+SAFI combination")
-            }
-        }
-    }
-    */
 
     impl From<(u16, u8)> for AfiSafiType {
         fn from(t: (u16, u8)) -> Self {
@@ -332,6 +320,8 @@ $($(
             n.1
         }
     }
+
+    impl$(<$gen: AsRef<[u8]>>)? Eq for [<$afi_name $safi_name Nlri>]$(<$gen>)? { }
 
     //--- NlriIter
 
