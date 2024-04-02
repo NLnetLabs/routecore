@@ -324,7 +324,13 @@ impl<N: Clone + Hash + Debug> WorkshopAttribute<N> for Vec<Community> {
                         b.add_community(c)
                     }
                 }
-                Community::Large(_) => todo!(),
+                Community::Large(c) => {
+                    if let Some(mut b) =
+                        attrs.get::<LargeCommunitiesList>()
+                    {
+                        b.add_community(c)
+                    }
+                }
             };
         }
 
