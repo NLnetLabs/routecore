@@ -581,7 +581,7 @@ afisafi! {
 
 // --- Ipv4Unicast
 
-#[derive(Clone, Debug, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Ipv4UnicastNlri(Prefix);
 
@@ -591,6 +591,8 @@ impl AfiSafiNlri for Ipv4UnicastNlri {
         self.0
     }
 }
+
+impl Eq for Ipv4UnicastNlri {}
 
 impl FromStr for Ipv4UnicastNlri {
     type Err = &'static str;
@@ -658,6 +660,7 @@ impl NlriCompose for Ipv4UnicastAddpathNlri {
     }
 
 }
+impl Eq for Ipv4UnicastAddpathNlri {}
 
 impl PartialEq<Ipv4UnicastAddpathNlri> for Ipv4UnicastAddpathNlri {
     fn eq(&self, other: &Ipv4UnicastAddpathNlri) -> bool {
@@ -673,7 +676,7 @@ impl fmt::Display for Ipv4UnicastNlri {
 
 //--- Ipv4Multicast
 
-#[derive(Clone, Debug, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Ipv4MulticastNlri(Prefix);
 
@@ -683,6 +686,8 @@ impl AfiSafiNlri for Ipv4MulticastNlri {
         self.0
     }
 }
+
+impl Eq for Ipv4MulticastNlri {}
 
 impl FromStr for Ipv4MulticastNlri {
     type Err = &'static str;
@@ -737,6 +742,8 @@ impl NlriCompose for Ipv4MulticastNlri {
     }
 }
 
+impl Eq for Ipv4MulticastAddpathNlri {}
+
 impl PartialEq<Ipv4MulticastAddpathNlri> for Ipv4MulticastAddpathNlri {
     fn eq(&self, other: &Ipv4MulticastAddpathNlri) -> bool {
         self.0 == other.0
@@ -780,6 +787,8 @@ where
     }
 }
 
+impl<Octs: AsRef<[u8]>> Eq for Ipv4MplsUnicastNlri<Octs> {}
+
 impl<Octs, Other> PartialEq<Ipv4MplsUnicastNlri<Other>> for Ipv4MplsUnicastNlri<Octs>
 where Octs: AsRef<[u8]>,
       Other: AsRef<[u8]>
@@ -788,6 +797,8 @@ where Octs: AsRef<[u8]>,
         self.0 == other.0
     }
 }
+
+impl<Octs: AsRef<[u8]>> Eq for Ipv4MplsUnicastAddpathNlri<Octs> {}
 
 impl<Octs, Other> PartialEq<Ipv4MplsUnicastAddpathNlri<Other>> for Ipv4MplsUnicastAddpathNlri<Octs>
 where Octs: AsRef<[u8]>,
@@ -872,6 +883,8 @@ impl<Octs: Clone + Debug + Hash> AfiSafiNlri for Ipv4RouteTargetNlri<Octs> {
     }
 }
 
+impl<T: AsRef<[u8]>> Eq for Ipv4RouteTargetNlri<T> {}
+
 impl<'a, O, P> AfiSafiParse<'a, O, P> for Ipv4RouteTargetNlri<O>
 where
     O: Octets,
@@ -895,6 +908,8 @@ where Octs: AsRef<[u8]>,
         self.0 == other.0
     }
 }
+
+impl<T: AsRef<[u8]>> Eq for Ipv4RouteTargetAddpathNlri<T> {}
 
 impl<Octs, Other> PartialEq<Ipv4RouteTargetAddpathNlri<Other>> for Ipv4RouteTargetAddpathNlri<Octs>
 where Octs: AsRef<[u8]>,
@@ -965,6 +980,8 @@ impl<Octs: Clone + Debug + Hash + Octets> NlriCompose for Ipv4FlowSpecNlri<Octs>
     }
 }
 
+impl<T: AsRef<[u8]>> Eq for Ipv4FlowSpecNlri<T> {}
+
 impl<T> From<Ipv4FlowSpecNlri<T>> for FlowSpecNlri<T> {
     fn from(value: Ipv4FlowSpecNlri<T>) -> Self {
         value.0
@@ -1000,7 +1017,7 @@ impl<T> fmt::Display for Ipv4FlowSpecNlri<T> {
 
 //--- Ipv6Unicast
 
-#[derive(Clone, Debug, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Ipv6UnicastNlri(Prefix);
 impl AfiSafiNlri for Ipv6UnicastNlri {
@@ -1009,6 +1026,9 @@ impl AfiSafiNlri for Ipv6UnicastNlri {
         self.0
     }
 }
+
+impl Eq for Ipv6UnicastNlri {}
+
 impl FromStr for Ipv6UnicastNlri {
     type Err = &'static str;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -1062,6 +1082,7 @@ impl NlriCompose for Ipv6UnicastNlri {
     }
 }
 
+impl Eq for Ipv6UnicastAddpathNlri {}
 
 impl PartialEq<Ipv6UnicastAddpathNlri> for Ipv6UnicastAddpathNlri {
     fn eq(&self, other: &Ipv6UnicastAddpathNlri) -> bool {
@@ -1077,7 +1098,7 @@ impl fmt::Display for Ipv6UnicastNlri {
 
 //--- Ipv6Multicast
 
-#[derive(Clone, Debug, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Ipv6MulticastNlri(Prefix);
 
@@ -1100,6 +1121,10 @@ where
         )
     }
 }
+
+impl Eq for Ipv6MulticastNlri {}
+
+impl Eq for Ipv6MulticastAddpathNlri {}
 
 impl PartialEq<Ipv6MulticastAddpathNlri> for Ipv6MulticastAddpathNlri {
     fn eq(&self, other: &Ipv6MulticastAddpathNlri) -> bool {
@@ -1144,6 +1169,8 @@ where
         )
     }
 }
+
+impl<T: AsRef<[u8]>> Eq for Ipv6MplsUnicastNlri<T> {}
 
 impl<Octs, Other> PartialEq<Ipv6MplsUnicastNlri<Other>> for Ipv6MplsUnicastNlri<Octs>
 where Octs: AsRef<[u8]>,
@@ -1199,6 +1226,8 @@ where
     }
 }
 
+impl<T: AsRef<[u8]>> Eq for Ipv6MplsVpnUnicastNlri<T> {}
+
 impl<Octs, Other> PartialEq<Ipv6MplsVpnUnicastNlri<Other>> for Ipv6MplsVpnUnicastNlri<Octs>
 where Octs: AsRef<[u8]>,
       Other: AsRef<[u8]>
@@ -1207,6 +1236,8 @@ where Octs: AsRef<[u8]>,
         self.0 == other.0
     }
 }
+
+impl<T: AsRef<[u8]>> Eq for Ipv6MplsVpnUnicastAddpathNlri<T> {}
 
 impl<Octs, Other> PartialEq<Ipv6MplsVpnUnicastAddpathNlri<Other>> for Ipv6MplsVpnUnicastAddpathNlri<Octs>
 where Octs: AsRef<[u8]>,
@@ -1251,6 +1282,8 @@ where
         Ok(Self(FlowSpecNlri::parse(parser, Afi::Ipv6)?))
     }
 }
+
+impl<T: AsRef<[u8]>> Eq for Ipv6FlowSpecNlri<T> {}
 
 impl<T> From<Ipv6FlowSpecNlri<T>> for FlowSpecNlri<T> {
     fn from(value: Ipv6FlowSpecNlri<T>) -> Self {
@@ -1309,7 +1342,7 @@ impl<Octs> Ipv4MplsUnicastNlri<Octs> {
 
 //--- L2VpnVpls
 
-#[derive(Clone, Debug, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct L2VpnVplsNlri(VplsNlri);
 
@@ -1334,6 +1367,8 @@ where
         Ok(Self(VplsNlri::parse(parser)?))
     }
 }
+
+impl Eq for L2VpnVplsAddpathNlri {}
 
 impl PartialEq<L2VpnVplsAddpathNlri> for L2VpnVplsAddpathNlri {
     fn eq(&self, other: &L2VpnVplsAddpathNlri) -> bool {
@@ -1374,6 +1409,8 @@ where
         Ok(Self(EvpnNlri::parse(parser)?))
     }
 }
+
+impl<T: AsRef<[u8]>> Eq for L2VpnEvpnNlri<T> {}
 
 impl<Octs, Other> PartialEq<L2VpnEvpnNlri<Other>> for L2VpnEvpnNlri<Octs>
 where Octs: AsRef<[u8]>,
