@@ -4,10 +4,11 @@ use std::fmt;
 #[cfg(feature = "serde")]
 use serde::{Serialize, Deserialize};
 
-use octseq::{Octets, Parser};
+use octseq::{Octets, OctetsBuilder, Parser};
+
 use crate::util::parser::ParseError;
-use super::common::parse_prefix_for_len;
 use super::afisafi::Afi;
+use super::common::{compose_prefix_without_len, parse_prefix_for_len, prefix_bits_to_bytes};
 use super::mpls::Labels;
 
 /// NLRI comprised of a [`BasicNlri`], MPLS `Labels` and a VPN
@@ -69,6 +70,22 @@ where
     let prefix = parse_prefix_for_len(parser, prefix_bits, afi)?;
 
     Ok((labels, rd, prefix))
+}
+
+impl<Octs: AsRef<[u8]>> MplsVpnNlri<Octs> {
+    pub(super) fn compose_len(&self) -> usize {
+        8 + self.labels.len() + prefix_bits_to_bytes(self.prefix.len())
+    }
+
+    pub(super) fn compose<Target: OctetsBuilder>(&self, target: &mut Target)
+        -> Result<(), Target::AppendError> {
+        let len = 
+            u8::try_from(8 * (8 + self.labels.len())).unwrap_or(u8::MAX) + self.prefix.len();
+        target.append_slice(&[len])?;
+        target.append_slice(self.labels.as_ref())?;
+        target.append_slice(self.rd.as_ref())?;
+        compose_prefix_without_len(self.prefix, target)
+    }
 }
 
 impl<Octs, Other> PartialEq<MplsVpnNlri<Other>> for MplsVpnNlri<Octs>

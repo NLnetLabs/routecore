@@ -1,9 +1,9 @@
 use inetnum::addr::Prefix;
 use std::fmt;
 
-use octseq::{Octets, Parser};
+use octseq::{Octets, OctetsBuilder, Parser};
 use crate::util::parser::ParseError;
-use super::common::parse_prefix_for_len;
+use super::common::{compose_prefix_without_len, parse_prefix_for_len, prefix_bits_to_bytes};
 use super::afisafi::Afi;
 
 /// NLRI comprised of a [`Prefix`] and MPLS `Labels`.
@@ -57,6 +57,22 @@ impl<Octs: Octets> MplsNlri<Octs> {
         )?;
 
         Ok((prefix, labels))
+    }
+}
+
+impl<Octs: AsRef<[u8]>> MplsNlri<Octs> {
+    pub(super) fn compose_len(&self) -> usize {
+        self.labels.len() + prefix_bits_to_bytes(self.prefix.len())
+    }
+
+    pub(super) fn compose<Target: OctetsBuilder>(&self, target: &mut Target)
+        -> Result<(), Target::AppendError>
+    {
+        let len = u8::try_from(8 * self.labels.len()) .unwrap_or(u8::MAX) +
+            self.prefix.len();
+        target.append_slice(&[len])?;
+        target.append_slice(self.labels.as_ref())?;
+        compose_prefix_without_len(self.prefix, target)
     }
 }
 

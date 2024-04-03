@@ -1,5 +1,5 @@
 
-use octseq::{Octets, Parser};
+use octseq::{Octets, OctetsBuilder, Parser};
 use crate::util::parser::ParseError;
 use inetnum::addr::Prefix;
 use super::afisafi::Afi;
@@ -87,4 +87,42 @@ pub(super) fn prefix_bits_to_bytes(bits: u8) -> usize {
     } else {
         0
     }
+}
+
+pub(super) fn compose_len_prefix(prefix: Prefix) -> usize {
+    prefix_bits_to_bytes(prefix.len())
+}
+
+pub(super) fn compose_prefix<Target: OctetsBuilder>(
+    prefix: Prefix,
+    target: &mut Target
+) -> Result<(), Target::AppendError> {
+    let len = prefix.len();
+    target.append_slice(&[len])?;
+    let prefix_bytes = prefix_bits_to_bytes(len);
+    match prefix.addr() {
+        std::net::IpAddr::V4(a) => {
+            target.append_slice(&a.octets()[..prefix_bytes])?
+        }
+        std::net::IpAddr::V6(a) => {
+            target.append_slice(&a.octets()[..prefix_bytes])?
+        }
+    }
+    Ok(())
+}
+
+pub(super) fn compose_prefix_without_len<Target: OctetsBuilder>(
+    prefix: Prefix,
+    target: &mut Target
+) -> Result<(), Target::AppendError> {
+    let prefix_bytes = prefix_bits_to_bytes(prefix.len());
+    match prefix.addr() {
+        std::net::IpAddr::V4(a) => {
+            target.append_slice(&a.octets()[..prefix_bytes])?
+        }
+        std::net::IpAddr::V6(a) => {
+            target.append_slice(&a.octets()[..prefix_bytes])?
+        }
+    }
+    Ok(())
 }

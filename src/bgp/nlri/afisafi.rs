@@ -17,6 +17,7 @@ use serde::{Serialize, Deserialize};
 // - clean up / remove bgp/workshop/afisafi_nlri.rs 
 
 use inetnum::addr::Prefix;
+use super::common::{compose_prefix, compose_len_prefix};
 use super::common::{PathId, parse_prefix, prefix_bits_to_bytes};
 use crate::util::parser::ParseError;
 use paste::paste;
@@ -63,6 +64,23 @@ paste! {
             Ok(
                 Self(path_id, inner)
             )
+        }
+    }
+
+    impl$(<$gen>)? NlriCompose for [<$nlri AddpathNlri>]$(<$gen>)?
+    $(where 
+        $gen: AsRef<[u8]> + Clone + Debug + Hash
+    )?
+    {
+        fn compose<Target: OctetsBuilder>(&self, target: &mut Target)
+            -> Result<(), Target::AppendError>
+        {
+                target.append_slice(&self.0.0.to_be_bytes())?;
+                self.1.compose(target)
+        }
+
+        fn compose_len(&self) -> usize {
+            4 + self.1.compose_len()
         }
     }
 
@@ -218,7 +236,7 @@ paste! {
     }
 
     impl<Octs> Nlri<Octs> {
-        pub fn afi_safi(&self) -> AfiSafiType {
+        pub const fn afi_safi(&self) -> AfiSafiType {
             match self {
             $($(
                 Self::[<$afi_name $safi_name>](..) => AfiSafiType::[<$afi_name $safi_name >],
@@ -227,6 +245,46 @@ paste! {
             }
         }
     }
+
+    impl<Octs> Nlri<Octs>
+    where
+        Octs: AsRef<[u8]> + Clone + Debug + Hash
+    {
+
+        pub fn compose<Target: OctetsBuilder>(&self, target: &mut Target)
+            -> Result<(), Target::AppendError> {
+            match self {
+                Nlri::Ipv4Unicast(n) => n.compose(target),
+                Nlri::Ipv4UnicastAddpath(n) => n.compose(target),
+                Nlri::Ipv4Multicast(n) => n.compose(target),
+                Nlri::Ipv4MulticastAddpath(n) => n.compose(target),
+                Nlri::Ipv4MplsUnicast(n) => n.compose(target),
+                Nlri::Ipv4MplsUnicastAddpath(n) => n.compose(target),
+                Nlri::Ipv4MplsVpnUnicast(n) => n.compose(target),
+                Nlri::Ipv4MplsVpnUnicastAddpath(n) => n.compose(target),
+                Nlri::Ipv4RouteTarget(n) => n.compose(target),
+                Nlri::Ipv4RouteTargetAddpath(n) => n.compose(target),
+                Nlri::Ipv4FlowSpec(n) => n.compose(target),
+                Nlri::Ipv4FlowSpecAddpath(n) => n.compose(target),
+                Nlri::Ipv6Unicast(n) => n.compose(target),
+                Nlri::Ipv6UnicastAddpath(n) => n.compose(target),
+                Nlri::Ipv6Multicast(n) => n.compose(target),
+                Nlri::Ipv6MulticastAddpath(n) => n.compose(target),
+                Nlri::Ipv6MplsUnicast(n) => n.compose(target),
+                Nlri::Ipv6MplsUnicastAddpath(n) => n.compose(target),
+                Nlri::Ipv6MplsVpnUnicast(n) => n.compose(target),
+                Nlri::Ipv6MplsVpnUnicastAddpath(n) => n.compose(target),
+                Nlri::Ipv6FlowSpec(n) => n.compose(target),
+                Nlri::Ipv6FlowSpecAddpath(n) => n.compose(target),
+                Nlri::L2VpnVpls(n) => n.compose(target),
+                Nlri::L2VpnVplsAddpath(n) => n.compose(target),
+                Nlri::L2VpnEvpn(n) => n.compose(target),
+                Nlri::L2VpnEvpnAddpath(n) => n.compose(target),
+            }
+        }
+    }
+
+
 
     impl<T> fmt::Display for Nlri<T> {
         fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -484,7 +542,7 @@ pub trait NlriCompose: AfiSafiNlri {
     fn compose<Target: OctetsBuilder>(&self, target: &mut Target)
         -> Result<(), Target::AppendError>;
 
-    fn compose_len(&self) -> usize { todo!() }
+    fn compose_len(&self) -> usize;
 }
 
 
@@ -626,36 +684,14 @@ where
 impl NlriCompose for Ipv4UnicastNlri {
     fn compose_len(&self) -> usize {
         // 1 byte for the length itself
-        1 + prefix_bits_to_bytes(self.prefix().len())
-    }
-
-    fn compose<Target: OctetsBuilder>(&self, target: &mut Target)
-        -> Result<(), Target::AppendError> {
-        let len = self.prefix().len();
-        target.append_slice(&[len])?;
-        let prefix_bytes = prefix_bits_to_bytes(len);
-        match self.prefix().addr() {
-            std::net::IpAddr::V4(a) => {
-                target.append_slice(&a.octets()[..prefix_bytes])?
-            }
-            _ => unreachable!()
-        }
-        Ok(())
-    }
-}
-
-impl NlriCompose for Ipv4UnicastAddpathNlri {
-    fn compose_len(&self) -> usize {
-        4 + self.1.compose_len()
+        1 + compose_len_prefix(self.prefix())
     }
 
     fn compose<Target: OctetsBuilder>(&self, target: &mut Target)
         -> Result<(), Target::AppendError>
     {
-            target.append_slice(&self.0.0.to_be_bytes())?;
-            self.1.compose(target)
+        compose_prefix(self.prefix(), target)
     }
-
 }
 impl PartialEq<Ipv4UnicastAddpathNlri> for Ipv4UnicastAddpathNlri {
     fn eq(&self, other: &Ipv4UnicastAddpathNlri) -> bool {
@@ -725,21 +761,13 @@ where
 impl NlriCompose for Ipv4MulticastNlri {
     fn compose_len(&self) -> usize {
         // 1 byte for the length itself
-        1 + prefix_bits_to_bytes(self.prefix().len())
+        1 + compose_len_prefix(self.prefix())
     }
 
     fn compose<Target: OctetsBuilder>(&self, target: &mut Target)
-        -> Result<(), Target::AppendError> {
-        let len = self.prefix().len();
-        target.append_slice(&[len])?;
-        let prefix_bytes = prefix_bits_to_bytes(len);
-        match self.prefix().addr() {
-            std::net::IpAddr::V4(a) => {
-                target.append_slice(&a.octets()[..prefix_bytes])?
-            }
-            _ => unreachable!()
-        }
-        Ok(())
+        -> Result<(), Target::AppendError>
+    {
+        compose_prefix(self.prefix(), target)
     }
 }
 
@@ -783,6 +811,18 @@ where
         Ok(
             Self(MplsNlri::new(prefix,labels,))
         )
+    }
+}
+
+impl<Octs: AsRef<[u8]> + Clone + Debug + Hash> NlriCompose for Ipv4MplsUnicastNlri<Octs> {
+    fn compose_len(&self) -> usize {
+        // 1 byte for the length itself
+        1 + self.nlri().compose_len()
+    }
+
+    fn compose<Target: OctetsBuilder>(&self, target: &mut Target)
+        -> Result<(), Target::AppendError> {
+            self.nlri().compose(target)
     }
 }
 
@@ -840,6 +880,17 @@ where
     }
 }
 
+impl<Octs: AsRef<[u8]> + Clone + Debug + Hash> NlriCompose for Ipv4MplsVpnUnicastNlri<Octs> {
+    fn compose_len(&self) -> usize {
+        1 + self.nlri().compose_len()
+    }
+
+    fn compose<Target: OctetsBuilder>(&self, target: &mut Target)
+        -> Result<(), Target::AppendError> {
+            self.nlri().compose(target)
+    }
+}
+
 impl<Octs, Other> PartialEq<Ipv4MplsVpnUnicastNlri<Other>> for Ipv4MplsVpnUnicastNlri<Octs>
 where Octs: AsRef<[u8]>,
       Other: AsRef<[u8]>
@@ -890,6 +941,17 @@ where
     {
 
         Ok(Self(RouteTargetNlri::parse(parser)?))
+    }
+}
+
+impl<Octs: AsRef<[u8]> + Clone + Debug + Hash> NlriCompose for Ipv4RouteTargetNlri<Octs> {
+    fn compose_len(&self) -> usize {
+        self.nlri().compose_len()
+    }
+
+    fn compose<Target: OctetsBuilder>(&self, target: &mut Target)
+        -> Result<(), Target::AppendError> {
+            self.nlri().compose(target)
     }
 }
 
@@ -945,29 +1007,20 @@ where
     }
 }
 
-impl<Octs: Clone + Debug + Hash + Octets> NlriCompose for Ipv4FlowSpecNlri<Octs> {
+impl<Octs: AsRef<[u8]> + Clone + Debug + Hash> NlriCompose for Ipv4FlowSpecNlri<Octs> {
     fn compose_len(&self) -> usize {
-        let value_len = self.0.raw().as_ref().len();
-        let len_len = if value_len >= 240 { 2 } else { 1 } ;
-        len_len + value_len
+        // for lenghts of >= 240, the lenght is described in two bytes
+        let len = self.nlri().compose_len();
+        if len >= 240 {
+            2 + len
+        } else {
+            1 + len
+        }
     }
 
     fn compose<Target: OctetsBuilder>(&self, target: &mut Target)
         -> Result<(), Target::AppendError> {
-        let len = self.0.raw().as_ref().len();
-        if len >= 240 {
-            todo!(); //FIXME properly encode into 0xfnnn for 239 < len < 4095
-            /*
-            target.append_slice(
-                &u16::try_from(self.compose_len()).unwrap_or(u16::MAX)
-                .to_be_bytes()
-            )?;
-            */
-        } else {
-            // We know len < 255 so we can safely unwrap.
-            target.append_slice(&[u8::try_from(len).unwrap()])?;
-        }
-        target.append_slice(self.0.raw().as_ref())
+            self.nlri().compose(target)
     }
 }
 
@@ -1059,21 +1112,13 @@ where
 impl NlriCompose for Ipv6UnicastNlri {
     fn compose_len(&self) -> usize {
         // 1 byte for the length itself
-        1 + prefix_bits_to_bytes(self.prefix().len())
+        1 + compose_len_prefix(self.prefix())
     }
 
     fn compose<Target: OctetsBuilder>(&self, target: &mut Target)
-        -> Result<(), Target::AppendError> {
-        let len = self.prefix().len();
-        target.append_slice(&[len])?;
-        let prefix_bytes = prefix_bits_to_bytes(len);
-        match self.prefix().addr() {
-            std::net::IpAddr::V6(a) => {
-                target.append_slice(&a.octets()[..prefix_bytes])?
-            }
-            _ => unreachable!()
-        }
-        Ok(())
+        -> Result<(), Target::AppendError>
+    {
+        compose_prefix(self.prefix(), target)
     }
 }
 
@@ -1142,6 +1187,19 @@ where
     }
 }
 
+impl NlriCompose for Ipv6MulticastNlri {
+    fn compose_len(&self) -> usize {
+        // 1 byte for the length itself
+        1 + compose_len_prefix(self.prefix())
+    }
+
+    fn compose<Target: OctetsBuilder>(&self, target: &mut Target)
+        -> Result<(), Target::AppendError>
+    {
+        compose_prefix(self.prefix(), target)
+    }
+}
+
 impl PartialEq<Ipv6MulticastAddpathNlri> for Ipv6MulticastAddpathNlri {
     fn eq(&self, other: &Ipv6MulticastAddpathNlri) -> bool {
         self.0 == other.0
@@ -1183,6 +1241,19 @@ where
         Ok(
             Self(MplsNlri::new(prefix,labels,))
         )
+    }
+}
+
+impl<Octs: AsRef<[u8]> + Clone + Debug + Hash> NlriCompose for Ipv6MplsUnicastNlri<Octs> {
+    fn compose_len(&self) -> usize {
+        // 1 byte for the length itself
+        1 + self.nlri().labels().len() +
+            prefix_bits_to_bytes(self.nlri().prefix().len())
+    }
+
+    fn compose<Target: OctetsBuilder>(&self, target: &mut Target)
+        -> Result<(), Target::AppendError> {
+            self.nlri().compose(target)
     }
 }
 
@@ -1240,6 +1311,18 @@ where
     }
 }
 
+impl<Octs: AsRef<[u8]> + Clone + Debug + Hash> NlriCompose for Ipv6MplsVpnUnicastNlri<Octs> {
+    fn compose_len(&self) -> usize {
+        1 + self.nlri().compose_len()
+    }
+
+    fn compose<Target: OctetsBuilder>(&self, target: &mut Target)
+        -> Result<(), Target::AppendError> {
+            self.nlri().compose(target)
+    }
+}
+
+
 impl<Octs, Other> PartialEq<Ipv6MplsVpnUnicastNlri<Other>> for Ipv6MplsVpnUnicastNlri<Octs>
 where Octs: AsRef<[u8]>,
       Other: AsRef<[u8]>
@@ -1290,6 +1373,23 @@ where
     {
 
         Ok(Self(FlowSpecNlri::parse(parser, Afi::Ipv6)?))
+    }
+}
+
+impl<Octs: AsRef<[u8]> + Clone + Debug + Hash> NlriCompose for Ipv6FlowSpecNlri<Octs> {
+    fn compose_len(&self) -> usize {
+        // for lenghts of >= 240, the lenght is described in two bytes
+        let len = self.nlri().compose_len();
+        if len >= 240 {
+            2 + len
+        } else {
+            1 + len
+        }
+    }
+
+    fn compose<Target: OctetsBuilder>(&self, target: &mut Target)
+        -> Result<(), Target::AppendError> {
+            self.nlri().compose(target)
     }
 }
 
@@ -1376,6 +1476,17 @@ where
     }
 }
 
+impl NlriCompose for L2VpnVplsNlri {
+    fn compose_len(&self) -> usize {
+        self.nlri().compose_len()
+    }
+
+    fn compose<Target: OctetsBuilder>(&self, target: &mut Target)
+        -> Result<(), Target::AppendError> {
+            self.nlri().compose(target)
+    }
+}
+
 impl PartialEq<L2VpnVplsAddpathNlri> for L2VpnVplsAddpathNlri {
     fn eq(&self, other: &L2VpnVplsAddpathNlri) -> bool {
         self.0 == other.0
@@ -1413,6 +1524,18 @@ where
     {
 
         Ok(Self(EvpnNlri::parse(parser)?))
+    }
+}
+
+impl<Octs: AsRef<[u8]> + Clone + Debug + Hash> NlriCompose for L2VpnEvpnNlri<Octs> {
+    fn compose_len(&self) -> usize {
+        // EPVN uses typed NLRI with embedded the length field 
+        self.nlri().compose_len()
+    }
+
+    fn compose<Target: OctetsBuilder>(&self, target: &mut Target)
+        -> Result<(), Target::AppendError> {
+            self.nlri().compose(target)
     }
 }
 
