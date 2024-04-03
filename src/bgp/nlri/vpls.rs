@@ -1,6 +1,6 @@
 use std::fmt;
 
-use octseq::{Octets, Parser};
+use octseq::{Octets, OctetsBuilder, Parser};
 
 use crate::util::parser::ParseError;
 use super::mpls_vpn::RouteDistinguisher;
@@ -39,6 +39,31 @@ impl VplsNlri {
         )
     }
 }
+
+
+impl VplsNlri {
+    pub(super) fn compose_len(&self) -> usize {
+        // XXX from the RFC it is unclear if the NLRI is always 17 or whether
+        // everything after the RD is actually a list. For now we stick to 17.
+        // The length field being two octets hints at a list rather than a
+        // static length that's always 17, but who knows.
+        2 + 17
+    }
+
+    pub(super) fn compose<Target: OctetsBuilder>(&self, target: &mut Target)
+        -> Result<(), Target::AppendError> {
+        // XXX see comment above in compose_len.
+        let len = 17;
+        target.append_slice(&[len])?;
+        target.append_slice(self.rd.as_ref())?;
+        target.append_slice(&self.ve_id.to_be_bytes())?;
+        target.append_slice(&self.ve_block_offset.to_be_bytes())?;
+        target.append_slice(&self.ve_block_size.to_be_bytes())?;
+        target.append_slice(&self.raw_label_base.to_be_bytes()[1..])
+    }
+}
+
+
 
 
 impl fmt::Display for VplsNlri {

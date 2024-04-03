@@ -1,6 +1,6 @@
 use std::fmt;
 
-use octseq::{Octets, Parser};
+use octseq::{Octets, OctetsBuilder, Parser};
 use crate::util::parser::ParseError;
 
 use super::common::prefix_bits_to_bytes;
@@ -27,6 +27,21 @@ impl<Octs> RouteTargetNlri<Octs> {
         Ok(Self{raw})
     }
 }
+
+
+impl<Octs: AsRef<[u8]>> RouteTargetNlri<Octs> {
+    pub(super) fn compose_len(&self) -> usize {
+        self.raw.as_ref().len()
+    }
+
+    pub(super) fn compose<Target: OctetsBuilder>(&self, target: &mut Target)
+        -> Result<(), Target::AppendError> {
+        let len = u8::try_from(8 * self.compose_len()).unwrap_or(u8::MAX);
+        target.append_slice(&[len])?;
+        target.append_slice(self.raw.as_ref())
+    }
+}
+
 
 impl<Octs, Other> PartialEq<RouteTargetNlri<Other>> for RouteTargetNlri<Octs>
 where Octs: AsRef<[u8]>,

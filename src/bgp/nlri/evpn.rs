@@ -1,6 +1,6 @@
 use std::fmt;
 
-use octseq::{Octets, Parser};
+use octseq::{Octets, OctetsBuilder, Parser};
 #[cfg(feature = "serde")]
 use serde::{Serialize, Deserialize};
 
@@ -51,6 +51,21 @@ impl<Octs: Octets> EvpnNlri<Octs> {
                 raw
             }
         )
+    }
+}
+
+
+impl<Octs: AsRef<[u8]>> EvpnNlri<Octs> {
+    pub(super) fn compose_len(&self) -> usize {
+        2 + self.raw.as_ref().len()
+    }
+
+    pub(super) fn compose<Target: OctetsBuilder>(&self, target: &mut Target)
+        -> Result<(), Target::AppendError> {
+        target.append_slice(&[self.route_type.into()])?;
+        let len = u8::try_from(self.raw.as_ref().len()).unwrap_or(u8::MAX);
+        target.append_slice(&[len])?;
+        target.append_slice(self.raw.as_ref())
     }
 }
 

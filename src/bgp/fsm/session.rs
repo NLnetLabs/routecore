@@ -332,7 +332,7 @@ impl<C: BgpConfig + Send> Session<C> {
     /// This takes ownership of the Session. So, while the caller only needs
     /// to call this once, e.g. like
     ///
-    /// ```
+    /// ```ignore
     ///     tokio::spawn(async {
     ///         session.process().await;
     ///     });

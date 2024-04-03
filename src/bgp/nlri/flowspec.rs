@@ -1,7 +1,7 @@
 use std::fmt;
 
 use log::debug;
-use octseq::{Octets, Parser};
+use octseq::{Octets, OctetsBuilder, Parser};
 
 use crate::util::parser::ParseError;
 use crate::flowspec::Component;
@@ -71,6 +71,30 @@ impl<Octs: Octets> FlowSpecNlri<Octs> {
                 raw
             }
         )
+    }
+}
+
+
+impl<Octs: AsRef<[u8]>> FlowSpecNlri<Octs> {
+    pub(super) fn compose_len(&self) -> usize {
+        self.raw.as_ref().len()
+    }
+
+    pub(super) fn compose<Target: OctetsBuilder>(&self, target: &mut Target)
+        -> Result<(), Target::AppendError> {
+        // length is represented as either a single byte for everything < 240,
+        // or as 1.5 bytes with the first nibble set to 0xf, so 0xfnnn.
+        // This results in a max length of 4095.
+        let len = self.raw.as_ref().len();
+        if len >= 240 {
+            target.append_slice(&
+                (0xf000 | u16::try_from(len).unwrap_or(4095)).to_be_bytes()
+            )?;
+        } else {
+            // we know the length is between 0 and 239 so we can unwrap
+            target.append_slice(&[u8::try_from(len).unwrap()])?;
+        }
+        target.append_slice(self.raw.as_ref())
     }
 }
 
