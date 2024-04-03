@@ -311,7 +311,7 @@ paste! {
     }
 
     impl NlriType {
-        pub fn afi_safi(&self) -> AfiSafiType {
+        pub const fn afi_safi(&self) -> AfiSafiType {
             match self {
             $($(
                 Self::[<$afi_name $safi_name>] => AfiSafiType::[<$afi_name $safi_name >],
@@ -388,7 +388,7 @@ $($(
         Octs: Octets,
         P: Octets<Range<'a> = Octs>
     {
-        pub fn [<$afi_name:lower _ $safi_name:lower>](parser: Parser<'a, P>) -> Self {
+        pub const fn [<$afi_name:lower _ $safi_name:lower>](parser: Parser<'a, P>) -> Self {
             NlriIter::<'a, Octs, P, [<$afi_name $safi_name Nlri>]$(<$gen>)?>::new(parser)
         }
     }
@@ -398,7 +398,7 @@ $($(
         Octs: Octets,
         P: Octets<Range<'a> = Octs>
     {
-        pub fn [<$afi_name:lower _ $safi_name:lower _ addpath>](parser: Parser<'a, P>) -> Self {
+        pub const fn [<$afi_name:lower _ $safi_name:lower _ addpath>](parser: Parser<'a, P>) -> Self {
             NlriIter::<'a, Octs, P, [<$afi_name $safi_name AddpathNlri>]$(<$gen>)?>::new(parser)
         }
     }
@@ -436,7 +436,7 @@ $($(
     */
 
     impl$(<$gen>)?  [<$afi_name $safi_name Nlri>]$(<$gen>)?  {
-        pub fn into_addpath(self, path_id: PathId) -> [<$afi_name $safi_name AddpathNlri>]$(<$gen>)? {
+        pub const fn into_addpath(self, path_id: PathId) -> [<$afi_name $safi_name AddpathNlri>]$(<$gen>)? {
             [<$afi_name $safi_name AddpathNlri>](path_id, self)
         }
     }
@@ -693,8 +693,8 @@ impl NlriCompose for Ipv4UnicastNlri {
         compose_prefix(self.prefix(), target)
     }
 }
-impl PartialEq<Ipv4UnicastAddpathNlri> for Ipv4UnicastAddpathNlri {
-    fn eq(&self, other: &Ipv4UnicastAddpathNlri) -> bool {
+impl PartialEq for Ipv4UnicastAddpathNlri {
+    fn eq(&self, other: &Self) -> bool {
         self.0 == other.0
     }
 }
@@ -771,8 +771,8 @@ impl NlriCompose for Ipv4MulticastNlri {
     }
 }
 
-impl PartialEq<Ipv4MulticastAddpathNlri> for Ipv4MulticastAddpathNlri {
-    fn eq(&self, other: &Ipv4MulticastAddpathNlri) -> bool {
+impl PartialEq for Ipv4MulticastAddpathNlri {
+    fn eq(&self, other: &Self) -> bool {
         self.0 == other.0
     }
 }
@@ -1122,8 +1122,8 @@ impl NlriCompose for Ipv6UnicastNlri {
     }
 }
 
-impl PartialEq<Ipv6UnicastAddpathNlri> for Ipv6UnicastAddpathNlri {
-    fn eq(&self, other: &Ipv6UnicastAddpathNlri) -> bool {
+impl PartialEq for Ipv6UnicastAddpathNlri {
+    fn eq(&self, other: &Self) -> bool {
         self.0 == other.0
     }
 }
@@ -1200,8 +1200,8 @@ impl NlriCompose for Ipv6MulticastNlri {
     }
 }
 
-impl PartialEq<Ipv6MulticastAddpathNlri> for Ipv6MulticastAddpathNlri {
-    fn eq(&self, other: &Ipv6MulticastAddpathNlri) -> bool {
+impl PartialEq for Ipv6MulticastAddpathNlri {
+    fn eq(&self, other: &Self) -> bool {
         self.0 == other.0
     }
 }
@@ -1487,8 +1487,8 @@ impl NlriCompose for L2VpnVplsNlri {
     }
 }
 
-impl PartialEq<L2VpnVplsAddpathNlri> for L2VpnVplsAddpathNlri {
-    fn eq(&self, other: &L2VpnVplsAddpathNlri) -> bool {
+impl PartialEq for L2VpnVplsAddpathNlri {
+    fn eq(&self, other: &Self) -> bool {
         self.0 == other.0
     }
 }
@@ -1599,7 +1599,7 @@ where
     P: Octets<Range<'a> = O>,
     ASP: AfiSafiParse<'a, O, P>
 {
-    pub fn new(parser: Parser<'a, P>) -> Self {
+    pub const fn new(parser: Parser<'a, P>) -> Self {
         NlriIter {
             parser,
             asp: std::marker::PhantomData,
@@ -1651,15 +1651,15 @@ pub struct NlriEnumIter<'a, P> {
 }
 
 impl<'a, P> NlriEnumIter<'a, P> {
-    pub fn new(parser: Parser<'a, P>, ty: NlriType) -> Self {
+    pub const fn new(parser: Parser<'a, P>, ty: NlriType) -> Self {
         Self { parser, ty }
     }
 
-    pub fn nlri_type(&self) -> NlriType {
+    pub const fn nlri_type(&self) -> NlriType {
         self.ty
     }
 
-    pub fn afi_safi(&self) -> AfiSafiType {
+    pub const fn afi_safi(&self) -> AfiSafiType {
         self.ty.afi_safi()
     }
 }
