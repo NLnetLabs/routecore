@@ -4,7 +4,7 @@ use crate::util::parser::ParseError;
 use inetnum::addr::Prefix;
 use super::afisafi::Afi;
 
-use std::net::IpAddr;
+use std::net::{Ipv4Addr, Ipv6Addr};
 use std::fmt;
 
 //------------ Types ---------------------------------------------------------
@@ -24,6 +24,9 @@ impl fmt::Display for PathId {
 
 //------------ Helper functions ----------------------------------------------
 
+
+#[deprecated = "use AFI specific methods"]
+#[allow(dead_code)]
 pub(super) fn parse_prefix<R: Octets>(parser: &mut Parser<'_, R>, afi: Afi)
     -> Result<Prefix, ParseError>
 {
@@ -31,7 +34,7 @@ pub(super) fn parse_prefix<R: Octets>(parser: &mut Parser<'_, R>, afi: Afi)
     parse_prefix_for_len(parser, prefix_bits, afi)
 }
 
-pub(super) fn parse_prefix_for_len<R: Octets>(
+pub fn parse_prefix_for_len<R: Octets>(
     parser: &mut Parser<'_, R>,
     prefix_bits: u8,
     afi: Afi
@@ -39,46 +42,67 @@ pub(super) fn parse_prefix_for_len<R: Octets>(
     -> Result<Prefix, ParseError>
 {
     let prefix_bytes = prefix_bits_to_bytes(prefix_bits);
-    let prefix = match (afi, prefix_bytes) {
-        (Afi::Ipv4, 0) => {
-            Prefix::new_v4(0.into(), 0)?
-        },
-        (Afi::Ipv4, _b @ 5..) => { 
-            return Err(
-                ParseError::form_error("illegal byte size for IPv4 NLRI")
-            )
-        },
-        (Afi::Ipv4, _) => {
+    let res = match afi {
+        Afi::Ipv4 => {
             let mut b = [0u8; 4];
-            b[..prefix_bytes].copy_from_slice(parser.peek(prefix_bytes)?);
-            parser.advance(prefix_bytes)?;
-            Prefix::new(IpAddr::from(b), prefix_bits).map_err(|e| 
+            //b[..prefix_bytes].copy_from_slice(parser.peek(prefix_bytes)?);
+            parser.parse_buf(&mut b[..prefix_bytes])?;
+            Prefix::new_v4(Ipv4Addr::from(b), prefix_bits).map_err(|e|
                 ParseError::form_error(e.static_description())
             )?
-        }
-        (Afi::Ipv6, 0) => {
-            Prefix::new_v6(0.into(), 0)?
         },
-        (Afi::Ipv6, _b @ 17..) => { 
-            return Err(
-                ParseError::form_error("illegal byte size for IPv6 NLRI")
-            )
-        },
-        (Afi::Ipv6, _) => {
+        Afi::Ipv6 => {
             let mut b = [0u8; 16];
-            b[..prefix_bytes].copy_from_slice(parser.peek(prefix_bytes)?);
-            parser.advance(prefix_bytes)?;
-            Prefix::new(IpAddr::from(b), prefix_bits).map_err(|e| 
+            //b[..prefix_bytes].copy_from_slice(parser.peek(prefix_bytes)?);
+            parser.parse_buf(&mut b[..prefix_bytes])?;
+            Prefix::new_v6(Ipv6Addr::from(b), prefix_bits).map_err(|e|
                 ParseError::form_error(e.static_description())
             )?
         },
-        (_, _) => {
-            return Err(
-                ParseError::form_error("unknown prefix format")
-            )
-        }
+        _ => { return Err(ParseError::form_error("unknown prefix format")); }
+
     };
-    Ok(prefix)
+    Ok(res)
+}
+
+pub(super) fn parse_v4_prefix<R: Octets>(parser: &mut Parser<'_, R>)
+    -> Result<Prefix, ParseError>
+{
+    let prefix_bits = parser.parse_u8()?;
+    parse_v4_prefix_for_len(parser, prefix_bits)
+}
+
+pub(super) fn parse_v4_prefix_for_len<R: Octets>(
+    parser: &mut Parser<'_, R>,
+    prefix_bits: u8,
+) -> Result<Prefix, ParseError>
+{
+    let prefix_bytes = prefix_bits_to_bytes(prefix_bits);
+    let mut b = [0u8; 4];
+    parser.parse_buf(&mut b[..prefix_bytes])?;
+    Prefix::new_v4(Ipv4Addr::from(b), prefix_bits).map_err(|e|
+        ParseError::form_error(e.static_description())
+    )
+}
+
+pub(super) fn parse_v6_prefix<R: Octets>(parser: &mut Parser<'_, R>)
+    -> Result<Prefix, ParseError>
+{
+    let prefix_bits = parser.parse_u8()?;
+    parse_v6_prefix_for_len(parser, prefix_bits)
+}
+
+pub(super) fn parse_v6_prefix_for_len<R: Octets>(
+    parser: &mut Parser<'_, R>,
+    prefix_bits: u8,
+) -> Result<Prefix, ParseError>
+{
+    let prefix_bytes = prefix_bits_to_bytes(prefix_bits);
+    let mut b = [0u8; 16];
+    parser.parse_buf(&mut b[..prefix_bytes])?;
+    Prefix::new_v6(Ipv6Addr::from(b), prefix_bits).map_err(|e|
+        ParseError::form_error(e.static_description())
+    )
 }
 
 pub(super) fn prefix_bits_to_bytes(bits: u8) -> usize {

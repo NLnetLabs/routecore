@@ -17,8 +17,8 @@ use serde::{Serialize, Deserialize};
 // - clean up / remove bgp/workshop/afisafi_nlri.rs 
 
 use inetnum::addr::Prefix;
-use super::common::{compose_prefix, compose_len_prefix};
-use super::common::{PathId, parse_prefix, prefix_bits_to_bytes};
+use super::common::{compose_len_prefix, compose_prefix, parse_v4_prefix, parse_v6_prefix};
+use super::common::{PathId, prefix_bits_to_bytes};
 use crate::util::parser::ParseError;
 use paste::paste;
 
@@ -676,7 +676,7 @@ where
     type Output = Self;
     fn parse(parser: &mut Parser<'a, P>) -> Result<Self::Output, ParseError> {
         Ok(
-            Self(parse_prefix(parser, Afi::Ipv4)?)
+            Self(parse_v4_prefix(parser)?)
         )
     }
 }
@@ -753,7 +753,7 @@ where
     type Output = Self;
     fn parse(parser: &mut Parser<'a, P>) -> Result<Self::Output, ParseError> {
         Ok(
-            Self(parse_prefix(parser, Afi::Ipv4)?)
+            Self(parse_v4_prefix(parser)?)
         )
     }
 }
@@ -1104,7 +1104,7 @@ where
     type Output = Self;
     fn parse(parser: &mut Parser<'a, P>) -> Result<Self::Output, ParseError> {
         Ok(
-            Self(parse_prefix(parser, Afi::Ipv6)?)
+            Self(parse_v6_prefix(parser)?)
         )
     }
 }
@@ -1182,7 +1182,7 @@ where
     type Output = Self;
     fn parse(parser: &mut Parser<'a, P>) -> Result<Self::Output, ParseError> {
         Ok(
-            Self(parse_prefix(parser, Afi::Ipv6)?)
+            Self(parse_v6_prefix(parser)?)
         )
     }
 }
