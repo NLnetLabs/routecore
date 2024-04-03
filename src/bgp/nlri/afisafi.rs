@@ -582,6 +582,8 @@ impl AfiSafiNlri for Ipv4UnicastNlri {
     }
 }
 
+impl Eq for Ipv4UnicastNlri {}
+
 impl FromStr for Ipv4UnicastNlri {
     type Err = &'static str;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -657,6 +659,7 @@ impl NlriCompose for Ipv4UnicastAddpathNlri {
     }
 
 }
+impl Eq for Ipv4UnicastAddpathNlri {}
 
 impl PartialEq<Ipv4UnicastAddpathNlri> for Ipv4UnicastAddpathNlri {
     fn eq(&self, other: &Ipv4UnicastAddpathNlri) -> bool {
@@ -682,6 +685,8 @@ impl AfiSafiNlri for Ipv4MulticastNlri {
         self.0
     }
 }
+
+impl Eq for Ipv4MulticastNlri {}
 
 impl FromStr for Ipv4MulticastNlri {
     type Err = &'static str;
@@ -744,6 +749,8 @@ impl NlriCompose for Ipv4MulticastNlri {
     }
 }
 
+impl Eq for Ipv4MulticastAddpathNlri {}
+
 impl PartialEq<Ipv4MulticastAddpathNlri> for Ipv4MulticastAddpathNlri {
     fn eq(&self, other: &Ipv4MulticastAddpathNlri) -> bool {
         self.0 == other.0
@@ -787,6 +794,8 @@ where
     }
 }
 
+impl<Octs: AsRef<[u8]>> Eq for Ipv4MplsUnicastNlri<Octs> {}
+
 impl<Octs, Other> PartialEq<Ipv4MplsUnicastNlri<Other>> for Ipv4MplsUnicastNlri<Octs>
 where Octs: AsRef<[u8]>,
       Other: AsRef<[u8]>
@@ -795,6 +804,8 @@ where Octs: AsRef<[u8]>,
         self.0 == other.0
     }
 }
+
+impl<Octs: AsRef<[u8]>> Eq for Ipv4MplsUnicastAddpathNlri<Octs> {}
 
 impl<Octs, Other> PartialEq<Ipv4MplsUnicastAddpathNlri<Other>> for Ipv4MplsUnicastAddpathNlri<Octs>
 where Octs: AsRef<[u8]>,
@@ -879,6 +890,8 @@ impl<Octs: Clone + Debug + Hash> AfiSafiNlri for Ipv4RouteTargetNlri<Octs> {
     }
 }
 
+impl<T: AsRef<[u8]>> Eq for Ipv4RouteTargetNlri<T> {}
+
 impl<'a, O, P> AfiSafiParse<'a, O, P> for Ipv4RouteTargetNlri<O>
 where
     O: Octets,
@@ -902,6 +915,8 @@ where Octs: AsRef<[u8]>,
         self.0 == other.0
     }
 }
+
+impl<T: AsRef<[u8]>> Eq for Ipv4RouteTargetAddpathNlri<T> {}
 
 impl<Octs, Other> PartialEq<Ipv4RouteTargetAddpathNlri<Other>> for Ipv4RouteTargetAddpathNlri<Octs>
 where Octs: AsRef<[u8]>,
@@ -971,6 +986,8 @@ impl<Octs: Clone + Debug + Hash + Octets> NlriCompose for Ipv4FlowSpecNlri<Octs>
         target.append_slice(self.0.raw().as_ref())
     }
 }
+
+impl<T: AsRef<[u8]>> Eq for Ipv4FlowSpecNlri<T> {}
 
 impl<T> From<Ipv4FlowSpecNlri<T>> for FlowSpecNlri<T> {
     fn from(value: Ipv4FlowSpecNlri<T>) -> Self {
@@ -1078,6 +1095,7 @@ impl NlriCompose for Ipv6UnicastNlri {
     }
 }
 
+impl Eq for Ipv6UnicastAddpathNlri {}
 
 impl PartialEq<Ipv6UnicastAddpathNlri> for Ipv6UnicastAddpathNlri {
     fn eq(&self, other: &Ipv6UnicastAddpathNlri) -> bool {
@@ -1144,6 +1162,10 @@ where
     }
 }
 
+impl Eq for Ipv6MulticastNlri {}
+
+impl Eq for Ipv6MulticastAddpathNlri {}
+
 impl PartialEq<Ipv6MulticastAddpathNlri> for Ipv6MulticastAddpathNlri {
     fn eq(&self, other: &Ipv6MulticastAddpathNlri) -> bool {
         self.0 == other.0
@@ -1187,6 +1209,8 @@ where
         )
     }
 }
+
+impl<T: AsRef<[u8]>> Eq for Ipv6MplsUnicastNlri<T> {}
 
 impl<Octs, Other> PartialEq<Ipv6MplsUnicastNlri<Other>> for Ipv6MplsUnicastNlri<Octs>
 where Octs: AsRef<[u8]>,
@@ -1242,6 +1266,8 @@ where
     }
 }
 
+impl<T: AsRef<[u8]>> Eq for Ipv6MplsVpnUnicastNlri<T> {}
+
 impl<Octs, Other> PartialEq<Ipv6MplsVpnUnicastNlri<Other>> for Ipv6MplsVpnUnicastNlri<Octs>
 where Octs: AsRef<[u8]>,
       Other: AsRef<[u8]>
@@ -1250,6 +1276,8 @@ where Octs: AsRef<[u8]>,
         self.0 == other.0
     }
 }
+
+impl<T: AsRef<[u8]>> Eq for Ipv6MplsVpnUnicastAddpathNlri<T> {}
 
 impl<Octs, Other> PartialEq<Ipv6MplsVpnUnicastAddpathNlri<Other>> for Ipv6MplsVpnUnicastAddpathNlri<Octs>
 where Octs: AsRef<[u8]>,
@@ -1294,6 +1322,8 @@ where
         Ok(Self(FlowSpecNlri::parse(parser, Afi::Ipv6)?))
     }
 }
+
+impl<T: AsRef<[u8]>> Eq for Ipv6FlowSpecNlri<T> {}
 
 impl<T> From<Ipv6FlowSpecNlri<T>> for FlowSpecNlri<T> {
     fn from(value: Ipv6FlowSpecNlri<T>) -> Self {
@@ -1378,6 +1408,8 @@ where
     }
 }
 
+impl Eq for L2VpnVplsAddpathNlri {}
+
 impl PartialEq<L2VpnVplsAddpathNlri> for L2VpnVplsAddpathNlri {
     fn eq(&self, other: &L2VpnVplsAddpathNlri) -> bool {
         self.0 == other.0
@@ -1417,6 +1449,8 @@ where
         Ok(Self(EvpnNlri::parse(parser)?))
     }
 }
+
+impl<T: AsRef<[u8]>> Eq for L2VpnEvpnNlri<T> {}
 
 impl<Octs, Other> PartialEq<L2VpnEvpnNlri<Other>> for L2VpnEvpnNlri<Octs>
 where Octs: AsRef<[u8]>,
