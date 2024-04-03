@@ -161,8 +161,10 @@ impl<Octs: Octets> UpdateMessage<Octs> {
 
         res.push_str(&format!("{:02x} {:02x} 02 ", len[0], len[1])); 
 
+        // The length of the withdrawals is described in the two octets prior
+        // to the actual withdrawn NLRI, hence the -2 here.
         for b in &self.octets.as_ref()[
-            self.withdrawals.start..self.announcements.end
+            self.withdrawals.start-2..self.announcements.end
         ] {
             res.push_str(&format!("{:02x} ", b));
         }
