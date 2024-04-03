@@ -96,22 +96,7 @@ impl<N: AfiSafiNlri + Clone + Debug + Hash> RouteWorkshop<N> {
     pub fn new(nlri: N) -> Self {
         Self(nlri, None, PaMap::empty())
     }
-
-    /// Creates a RouteWorkshop from one NLRI and a [`PaMap`].
-    ///
-    /// No logic is applied to the contents of the attributes in the PaMap.
-    /// When creating a RouteWorkshop via this constructor, the caller needs
-    /// to ensure the contents of the PaMap are sensible for the provided
-    /// NLRI.
-    ///
-    /// Consider using [`RouteWorkshop::from_update_pdu`] when the original
-    /// PDU is available.
-    // XXX do we actually need and want this?
-    pub fn from_pa_map(nlri: N, pa_map: PaMap) -> Self {
-        Self(nlri, None, pa_map)
-    }
-
-        
+   
     /// Creates a RouteWorkshop from one NLRI and its BGP [`UpdateMessage`].
     ///
     /// Based on the type of NLRI, i.e. conventional or Multi Protocol, the
