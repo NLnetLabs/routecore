@@ -129,8 +129,8 @@ impl RouteDistinguisher {
         -> Result<Self, ParseError>
     {
         let mut b = [0u8; 8];
-        b[..8].copy_from_slice(parser.peek(8)?);
-        parser.advance(8)?;
+        parser.parse_buf(&mut b)?;
+
         Ok(
             RouteDistinguisher{ bytes: b }
         )
@@ -145,12 +145,12 @@ impl RouteDistinguisher {
 
 impl RouteDistinguisher {
     /// Create a new RouteDistinguisher from a slice.
-    pub fn new(bytes: &[u8]) -> Self {
-        RouteDistinguisher { bytes: bytes.try_into().expect("parsed before") }
+    pub fn new(bytes: [u8; 8]) -> Self {
+        RouteDistinguisher { bytes }
     }
 
     pub fn zeroes() -> Self {
-        RouteDistinguisher::new(&[0_u8; 8])
+        RouteDistinguisher::new([0_u8; 8])
     }
 
     /// Returns the type this RouteDistinguisher.
@@ -164,8 +164,8 @@ impl RouteDistinguisher {
     }
 
     /// Returns the raw value of this RouteDistinguisher.
-    pub fn value(&self) -> [u8; 6] {
-        self.bytes[2..8].try_into().expect("parsed before")
+    pub fn value(&self) -> &[u8] {
+        &self.bytes[2..8]
     }
 }
 

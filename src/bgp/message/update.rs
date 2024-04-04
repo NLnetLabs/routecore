@@ -2538,7 +2538,7 @@ mod tests {
             &SessionConfig::modern()
         ).unwrap();
         if let Ok(Some(NextHop::MplsVpnUnicast(rd, a))) = upd.mp_next_hop() {
-            assert_eq!(rd, RouteDistinguisher::new(&[0; 8]));
+            assert_eq!(rd, RouteDistinguisher::new([0; 8]));
             assert_eq!(a, Ipv6Addr::from_str("::ffff:10.0.0.2").unwrap());
         } else {
             panic!("wrong");
@@ -2557,7 +2557,7 @@ mod tests {
             assert_eq!(
                 n1.nlri().rd(),
                 //RouteDistinguisher::from_str("100:1".unwrap())
-                RouteDistinguisher::new(&[0, 0, 0, 100, 0, 0, 0, 1])
+                RouteDistinguisher::new([0, 0, 0, 100, 0, 0, 0, 1])
             );
         } else {
             panic!("wrong");
