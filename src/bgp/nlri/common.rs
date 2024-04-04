@@ -154,6 +154,7 @@ pub(super) fn compose_prefix_without_len<Target: OctetsBuilder>(
 
 //--- Skip functions
 
+#[allow(dead_code)]
 fn skip_prefix<R: Octets>(parser: &mut Parser<'_, R>)
     -> Result<(), ParseError>
 {
@@ -162,6 +163,7 @@ fn skip_prefix<R: Octets>(parser: &mut Parser<'_, R>)
     Ok(parser.advance(prefix_bytes)?)
 }
 
+#[allow(dead_code)]
 fn skip_prefix_for_len<R: Octets>(parser: &mut Parser<'_, R>, prefix_bits: u8)
     -> Result<(), ParseError>
 {
@@ -169,6 +171,7 @@ fn skip_prefix_for_len<R: Octets>(parser: &mut Parser<'_, R>, prefix_bits: u8)
     Ok(parser.advance(prefix_bytes)?)
 }
 
+#[allow(dead_code)]
 fn skip_prefix_addpath<R: Octets>(parser: &mut Parser<'_, R>)
     -> Result<(), ParseError>
 {
