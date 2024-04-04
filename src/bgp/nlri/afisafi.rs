@@ -361,6 +361,13 @@ $($(
         }
     }
 
+    impl$(<$gen>)? fmt::Display for [<$afi_name $safi_name Nlri>]$(<$gen>)?
+    where <[<$afi_name $safi_name Nlri>]$(<$gen>)? as AfiSafiNlri>::Nlri: fmt::Display {
+        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            write!(f, "{}", self.nlri())
+        }
+    }
+
     impl<Octs> From<[<$afi_name $safi_name Nlri>]$(<$gen>)?> for Nlri<Octs> {
         fn from(n: [<$afi_name $safi_name Nlri>]$(<$gen>)?) -> Self {
             Nlri::[<$afi_name $safi_name>](n)
@@ -699,12 +706,6 @@ impl PartialEq for Ipv4UnicastAddpathNlri {
     }
 }
 
-impl fmt::Display for Ipv4UnicastNlri {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
 //--- Ipv4Multicast
 
 #[derive(Copy, Clone, Debug, Hash, PartialEq)]
@@ -777,12 +778,6 @@ impl PartialEq for Ipv4MulticastAddpathNlri {
     }
 }
 
-impl fmt::Display for Ipv4MulticastNlri {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
 //--- Ipv4MplsUnicast
 
 #[derive(Copy, Clone, Debug, Hash)]
@@ -841,12 +836,6 @@ where Octs: AsRef<[u8]>,
 {
     fn eq(&self, other: &Ipv4MplsUnicastAddpathNlri<Other>) -> bool {
         self.0 == other.0
-    }
-}
-
-impl<T> fmt::Display for Ipv4MplsUnicastNlri<T> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.0)
     }
 }
 
@@ -909,12 +898,6 @@ where Octs: AsRef<[u8]>,
     }
 }
 
-impl<T> fmt::Display for Ipv4MplsVpnUnicastNlri<T> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
 //--- Ipv4RouteTarget
 
 #[derive(Clone, Debug, Hash)]
@@ -969,12 +952,6 @@ where Octs: AsRef<[u8]>,
 {
     fn eq(&self, other: &Ipv4RouteTargetAddpathNlri<Other>) -> bool {
         self.0 == other.0
-    }
-}
-
-impl<T> fmt::Display for Ipv4RouteTargetNlri<T> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.0)
     }
 }
 
@@ -1048,12 +1025,6 @@ where Octs: AsRef<[u8]>,
 }
 
 
-impl<T> fmt::Display for Ipv4FlowSpecNlri<T> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
 //------------ Ipv6 ----------------------------------------------------------
 
 //--- Ipv6Unicast
@@ -1124,12 +1095,6 @@ impl NlriCompose for Ipv6UnicastNlri {
 impl PartialEq for Ipv6UnicastAddpathNlri {
     fn eq(&self, other: &Self) -> bool {
         self.0 == other.0
-    }
-}
-
-impl fmt::Display for Ipv6UnicastNlri {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.0)
     }
 }
 
@@ -1205,12 +1170,6 @@ impl PartialEq for Ipv6MulticastAddpathNlri {
     }
 }
 
-impl fmt::Display for Ipv6MulticastNlri {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
 
 //--- Ipv6MplsUnicast
 
@@ -1274,12 +1233,6 @@ where Octs: AsRef<[u8]>,
     }
 }
 
-impl<T> fmt::Display for Ipv6MplsUnicastNlri<T> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
 //--- Ipv6MplsVpnUnicastNlri
 
 #[derive(Clone, Debug, Hash)]
@@ -1339,13 +1292,6 @@ where Octs: AsRef<[u8]>,
         self.0 == other.0
     }
 }
-
-impl<T> fmt::Display for Ipv6MplsVpnUnicastNlri<T> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
 
 //--- Ipv6FlowSpec
 
@@ -1416,13 +1362,6 @@ where Octs: AsRef<[u8]>,
     }
 }
 
-impl<T> fmt::Display for Ipv6FlowSpecNlri<T> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-
 /*
 impl Ipv6UnicastAddpathNlri {
     pub fn iter<'a, O, P>(parser: Parser<'a, P>) -> NlriIter<'a, O, P, Self>
@@ -1492,12 +1431,6 @@ impl PartialEq for L2VpnVplsAddpathNlri {
     }
 }
 
-impl fmt::Display for L2VpnVplsNlri {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
 //--- Evpn
 
 #[derive(Clone, Debug, Hash)]
@@ -1553,12 +1486,6 @@ where Octs: AsRef<[u8]>,
 {
     fn eq(&self, other: &L2VpnEvpnAddpathNlri<Other>) -> bool {
         self.0 == other.0
-    }
-}
-
-impl<T> fmt::Display for L2VpnEvpnNlri<T> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.0)
     }
 }
 
