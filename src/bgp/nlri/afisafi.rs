@@ -40,10 +40,10 @@ paste! {
     #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
     #[derive(Clone, Debug, Hash)]
     pub struct [<$nlri AddpathNlri>]$(<$gen>)?(PathId, [<$nlri Nlri>]$(<$gen>)?);
-    impl$(<$gen: Clone + Debug + Hash>)? AfiSafiNlri for [<$nlri AddpathNlri>]$(<$gen>)? {
+    impl$(<$gen>)? AfiSafiNlri for [<$nlri AddpathNlri>]$(<$gen>)? {
         type Nlri = <[<$nlri Nlri>]$(<$gen>)? as AfiSafiNlri>::Nlri;
-        fn nlri(&self) -> Self::Nlri {
-            self.1.nlri()
+        fn nlri(&self) -> &Self::Nlri {
+            &self.1.nlri()
         }
     }
 
@@ -69,7 +69,7 @@ paste! {
 
     impl$(<$gen>)? NlriCompose for [<$nlri AddpathNlri>]$(<$gen>)?
     $(where 
-        $gen: AsRef<[u8]> + Clone + Debug + Hash
+        $gen: AsRef<[u8]>
     )?
     {
         fn compose<Target: OctetsBuilder>(&self, target: &mut Target)
@@ -90,7 +90,7 @@ paste! {
         }
     }
 
-    impl$(<$gen: Clone + Debug + Hash>)? Addpath for [<$nlri AddpathNlri>]$(<$gen>)? {
+    impl$(<$gen>)? Addpath for [<$nlri AddpathNlri>]$(<$gen>)? {
         fn path_id(&self) -> PathId {
             self.0
         }
@@ -248,7 +248,7 @@ paste! {
 
     impl<Octs> Nlri<Octs>
     where
-        Octs: AsRef<[u8]> + Clone + Debug + Hash
+        Octs: AsRef<[u8]>
     {
 
         pub fn compose<Target: OctetsBuilder>(&self, target: &mut Target)
@@ -523,9 +523,9 @@ pub trait IsNlri {
 }
 
 /// A type representing an NLRI for a certain AFI+SAFI.
-pub trait AfiSafiNlri: AfiSafi + IsNlri + Clone + Hash + Debug {
+pub trait AfiSafiNlri: AfiSafi + IsNlri { // + Clone + Hash + Debug {
     type Nlri;
-    fn nlri(&self) -> Self::Nlri;
+    fn nlri(&self) -> &Self::Nlri;
 
     // TODO
     //fn nexthop_compatible(&self, nh: &super::nexthop::NextHop) -> bool;
@@ -568,12 +568,12 @@ macro_rules! is_prefix {
     ($nlri:ident) => { paste! {
         impl IsPrefix for [<$nlri Nlri>] {
             fn prefix(&self) -> Prefix {
-                self.nlri().into()
+                (*self.nlri()).into()
             }
         }
         impl IsPrefix for [<$nlri AddpathNlri>] {
             fn prefix(&self) -> Prefix {
-                self.nlri().into()
+                (*self.nlri()).into()
             }
             fn path_id(&self) -> Option<PathId> {
                 Some(<Self as Addpath>::path_id(&self))
@@ -635,8 +635,8 @@ pub struct Ipv4UnicastNlri(Prefix);
 
 impl AfiSafiNlri for Ipv4UnicastNlri {
     type Nlri = Prefix;
-    fn nlri(&self) -> Self::Nlri {
-        self.0
+    fn nlri(&self) -> &Self::Nlri {
+        &self.0
     }
 }
 
@@ -713,8 +713,8 @@ pub struct Ipv4MulticastNlri(Prefix);
 
 impl AfiSafiNlri for Ipv4MulticastNlri {
     type Nlri = Prefix;
-    fn nlri(&self) -> Self::Nlri {
-        self.0
+    fn nlri(&self) -> &Self::Nlri {
+        &self.0
     }
 }
 
@@ -789,10 +789,10 @@ impl fmt::Display for Ipv4MulticastNlri {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Ipv4MplsUnicastNlri<Octs>(MplsNlri<Octs>);
 
-impl<Octs: Clone + Debug + Hash> AfiSafiNlri for Ipv4MplsUnicastNlri<Octs> {
+impl<Octs> AfiSafiNlri for Ipv4MplsUnicastNlri<Octs> {
     type Nlri = MplsNlri<Octs>;
-    fn nlri(&self) -> Self::Nlri {
-        self.0.clone()
+    fn nlri(&self) -> &Self::Nlri {
+        &self.0
     }
 }
 
@@ -814,7 +814,7 @@ where
     }
 }
 
-impl<Octs: AsRef<[u8]> + Clone + Debug + Hash> NlriCompose for Ipv4MplsUnicastNlri<Octs> {
+impl<Octs: AsRef<[u8]>> NlriCompose for Ipv4MplsUnicastNlri<Octs> {
     fn compose_len(&self) -> usize {
         // 1 byte for the length itself
         1 + self.nlri().compose_len()
@@ -856,10 +856,10 @@ impl<T> fmt::Display for Ipv4MplsUnicastNlri<T> {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Ipv4MplsVpnUnicastNlri<Octs>(MplsVpnNlri<Octs>);
 
-impl<Octs: Clone + Debug + Hash> AfiSafiNlri for Ipv4MplsVpnUnicastNlri<Octs> {
+impl<Octs> AfiSafiNlri for Ipv4MplsVpnUnicastNlri<Octs> {
     type Nlri = MplsVpnNlri<Octs>;
-    fn nlri(&self) -> Self::Nlri {
-        self.0.clone()
+    fn nlri(&self) -> &Self::Nlri {
+        &self.0
     }
 }
 
@@ -880,7 +880,7 @@ where
     }
 }
 
-impl<Octs: AsRef<[u8]> + Clone + Debug + Hash> NlriCompose for Ipv4MplsVpnUnicastNlri<Octs> {
+impl<Octs: AsRef<[u8]>> NlriCompose for Ipv4MplsVpnUnicastNlri<Octs> {
     fn compose_len(&self) -> usize {
         1 + self.nlri().compose_len()
     }
@@ -917,15 +917,14 @@ impl<T> fmt::Display for Ipv4MplsVpnUnicastNlri<T> {
 
 //--- Ipv4RouteTarget
 
-
 #[derive(Clone, Debug, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Ipv4RouteTargetNlri<Octs>(RouteTargetNlri<Octs>);
 
-impl<Octs: Clone + Debug + Hash> AfiSafiNlri for Ipv4RouteTargetNlri<Octs> {
+impl<Octs> AfiSafiNlri for Ipv4RouteTargetNlri<Octs> {
     type Nlri = RouteTargetNlri<Octs>;
-    fn nlri(&self) -> Self::Nlri {
-        self.0.clone()
+    fn nlri(&self) -> &Self::Nlri {
+        &self.0
     }
 }
 
@@ -944,7 +943,7 @@ where
     }
 }
 
-impl<Octs: AsRef<[u8]> + Clone + Debug + Hash> NlriCompose for Ipv4RouteTargetNlri<Octs> {
+impl<Octs: AsRef<[u8]>> NlriCompose for Ipv4RouteTargetNlri<Octs> {
     fn compose_len(&self) -> usize {
         self.nlri().compose_len()
     }
@@ -985,10 +984,10 @@ impl<T> fmt::Display for Ipv4RouteTargetNlri<T> {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Ipv4FlowSpecNlri<Octs>(FlowSpecNlri<Octs>);
 
-impl<Octs: Clone + Debug + Hash> AfiSafiNlri for Ipv4FlowSpecNlri<Octs> {
+impl<Octs> AfiSafiNlri for Ipv4FlowSpecNlri<Octs> {
     type Nlri = FlowSpecNlri<Octs>;
-    fn nlri(&self) -> Self::Nlri {
-        self.0.clone()
+    fn nlri(&self) -> &Self::Nlri {
+        &self.0
     }
 }
 
@@ -1007,7 +1006,7 @@ where
     }
 }
 
-impl<Octs: AsRef<[u8]> + Clone + Debug + Hash> NlriCompose for Ipv4FlowSpecNlri<Octs> {
+impl<Octs: AsRef<[u8]>> NlriCompose for Ipv4FlowSpecNlri<Octs> {
     fn compose_len(&self) -> usize {
         // for lenghts of >= 240, the lenght is described in two bytes
         let len = self.nlri().compose_len();
@@ -1064,8 +1063,8 @@ impl<T> fmt::Display for Ipv4FlowSpecNlri<T> {
 pub struct Ipv6UnicastNlri(Prefix);
 impl AfiSafiNlri for Ipv6UnicastNlri {
     type Nlri = Prefix;
-    fn nlri(&self) -> Self::Nlri {
-        self.0
+    fn nlri(&self) -> &Self::Nlri {
+        &self.0
     }
 }
 
@@ -1169,8 +1168,8 @@ impl TryFrom<(Prefix, PathId)> for Ipv6MulticastAddpathNlri {
 
 impl AfiSafiNlri for Ipv6MulticastNlri {
     type Nlri = Prefix;
-    fn nlri(&self) -> Self::Nlri {
-        self.0
+    fn nlri(&self) -> &Self::Nlri {
+        &self.0
     }
 }
 
@@ -1219,10 +1218,10 @@ impl fmt::Display for Ipv6MulticastNlri {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Ipv6MplsUnicastNlri<Octs>(MplsNlri<Octs>);
 
-impl<Octs: Clone + Debug + Hash> AfiSafiNlri for Ipv6MplsUnicastNlri<Octs> {
+impl<Octs> AfiSafiNlri for Ipv6MplsUnicastNlri<Octs> {
     type Nlri = MplsNlri<Octs>;
-    fn nlri(&self) -> Self::Nlri {
-        self.0.clone()
+    fn nlri(&self) -> &Self::Nlri {
+        &self.0
     }
 }
 
@@ -1244,7 +1243,7 @@ where
     }
 }
 
-impl<Octs: AsRef<[u8]> + Clone + Debug + Hash> NlriCompose for Ipv6MplsUnicastNlri<Octs> {
+impl<Octs: AsRef<[u8]>> NlriCompose for Ipv6MplsUnicastNlri<Octs> {
     fn compose_len(&self) -> usize {
         // 1 byte for the length itself
         1 + self.nlri().labels().len() +
@@ -1287,10 +1286,10 @@ impl<T> fmt::Display for Ipv6MplsUnicastNlri<T> {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Ipv6MplsVpnUnicastNlri<Octs>(MplsVpnNlri<Octs>);
 
-impl<Octs: Clone + Debug + Hash> AfiSafiNlri for Ipv6MplsVpnUnicastNlri<Octs> {
+impl<Octs> AfiSafiNlri for Ipv6MplsVpnUnicastNlri<Octs> {
     type Nlri = MplsVpnNlri<Octs>;
-    fn nlri(&self) -> Self::Nlri {
-        self.0.clone()
+    fn nlri(&self) -> &Self::Nlri {
+        &self.0
     }
 }
 
@@ -1311,7 +1310,7 @@ where
     }
 }
 
-impl<Octs: AsRef<[u8]> + Clone + Debug + Hash> NlriCompose for Ipv6MplsVpnUnicastNlri<Octs> {
+impl<Octs: AsRef<[u8]>> NlriCompose for Ipv6MplsVpnUnicastNlri<Octs> {
     fn compose_len(&self) -> usize {
         1 + self.nlri().compose_len()
     }
@@ -1354,10 +1353,10 @@ impl<T> fmt::Display for Ipv6MplsVpnUnicastNlri<T> {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Ipv6FlowSpecNlri<Octs>(FlowSpecNlri<Octs>);
 
-impl<Octs: Clone + Debug + Hash> AfiSafiNlri for Ipv6FlowSpecNlri<Octs> {
+impl<Octs> AfiSafiNlri for Ipv6FlowSpecNlri<Octs> {
     type Nlri = FlowSpecNlri<Octs>;
-    fn nlri(&self) -> Self::Nlri {
-        self.0.clone()
+    fn nlri(&self) -> &Self::Nlri {
+        &self.0
     }
 }
 
@@ -1376,7 +1375,7 @@ where
     }
 }
 
-impl<Octs: AsRef<[u8]> + Clone + Debug + Hash> NlriCompose for Ipv6FlowSpecNlri<Octs> {
+impl<Octs: AsRef<[u8]>> NlriCompose for Ipv6FlowSpecNlri<Octs> {
     fn compose_len(&self) -> usize {
         // for lenghts of >= 240, the lenght is described in two bytes
         let len = self.nlri().compose_len();
@@ -1456,8 +1455,8 @@ pub struct L2VpnVplsNlri(VplsNlri);
 
 impl AfiSafiNlri for L2VpnVplsNlri {
     type Nlri = VplsNlri;
-    fn nlri(&self) -> Self::Nlri {
-        self.0
+    fn nlri(&self) -> &Self::Nlri {
+        &self.0
     }
 }
 
@@ -1505,10 +1504,10 @@ impl fmt::Display for L2VpnVplsNlri {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct L2VpnEvpnNlri<Octs>(EvpnNlri<Octs>);
 
-impl<Octs: Clone + Debug + Hash> AfiSafiNlri for L2VpnEvpnNlri<Octs> {
+impl<Octs> AfiSafiNlri for L2VpnEvpnNlri<Octs> {
     type Nlri = EvpnNlri<Octs>;
-    fn nlri(&self) -> Self::Nlri {
-        self.0.clone()
+    fn nlri(&self) -> &Self::Nlri {
+        &self.0
     }
 }
 
@@ -1527,7 +1526,7 @@ where
     }
 }
 
-impl<Octs: AsRef<[u8]> + Clone + Debug + Hash> NlriCompose for L2VpnEvpnNlri<Octs> {
+impl<Octs: AsRef<[u8]>> NlriCompose for L2VpnEvpnNlri<Octs> {
     fn compose_len(&self) -> usize {
         // EPVN uses typed NLRI with embedded the length field 
         self.nlri().compose_len()

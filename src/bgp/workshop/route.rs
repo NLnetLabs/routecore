@@ -37,9 +37,9 @@ pub enum TypedRoute<N: Clone + Debug + Hash> {
 
 #[derive(Debug, Eq, PartialEq, Clone, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
-pub struct Route<N: Clone + Debug + Hash>(N, PaMap);
+pub struct Route<N>(N, PaMap);
 
-impl<N: Clone + Debug + Hash> Route<N> {
+impl<N> Route<N> {
     pub fn new(nlri: N, attrs: PaMap) -> Self {
         Self(nlri, attrs)
     }
@@ -87,7 +87,7 @@ impl From<crate::bgp::aspath::AsPath<Vec<u8>>> for PathAttribute {
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct RouteWorkshop<N>(N, Option<NextHop>, PaMap);
 
-impl<N: AfiSafiNlri + Clone + Debug + Hash> RouteWorkshop<N> {
+impl<N: AfiSafiNlri> RouteWorkshop<N> {
 
     /// Creates an empty RouteWorkshop.
     ///
@@ -165,6 +165,10 @@ impl<N: AfiSafiNlri + Clone + Debug + Hash> RouteWorkshop<N> {
         &self.0
     }
 
+    pub fn into_nlri(self) -> N {
+        self.0
+    }
+
     pub fn nexthop(&self) -> &Option<NextHop> {
         &self.1
     }
@@ -186,10 +190,6 @@ impl<N: AfiSafiNlri + Clone + Debug + Hash> RouteWorkshop<N> {
         self.2.get::<A>().or_else(|| A::retrieve(&self.2))
     }
 
-    pub fn clone_into_route(&self) -> Route<N> {
-        Route::<N>(self.0.clone(), self.2.clone())
-    }
-
     pub fn into_route(self) -> Route<N> {
         Route::<N>(self.0, self.2)
     }
@@ -206,6 +206,15 @@ impl<N: AfiSafiNlri + Clone + Debug + Hash> RouteWorkshop<N> {
         &mut self.2
     }
 }
+
+impl<N: AfiSafiNlri + Clone > RouteWorkshop<N> {
+    pub fn clone_into_route(&self) -> Route<N> {
+        Route::<N>(self.0.clone(), self.2.clone())
+    }
+}
+
+
+
 
 macro_rules! impl_workshop {
     (

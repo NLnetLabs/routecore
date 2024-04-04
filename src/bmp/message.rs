@@ -1822,7 +1822,7 @@ mod tests {
         let mut nlris = bgp_update.announcements().unwrap();
         if let Some(Ok(Nlri::Ipv4Unicast(n1))) = nlris.next() {
             assert_eq!(
-                n1.nlri(),
+                *n1.nlri(),
                 Prefix::from_str("10.10.10.2/32").unwrap()
             );
         } else {

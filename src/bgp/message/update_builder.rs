@@ -62,8 +62,7 @@ where
     ) -> UpdateBuilder<Vec<u8>, A> {
 
         let mut res = Self::from_attributes_builder(ws.attributes().clone());
-        let nlri = ws.nlri();
-        let _ = res.add_announcement(nlri.clone());
+        let _ = res.add_announcement(ws.into_nlri());
 
         res
     }
@@ -679,7 +678,7 @@ pub struct PduIterator<'a, Target, A> {
 
 impl<'a, Target, A> Iterator for PduIterator<'a, Target, A>
 where
-    A: AfiSafiNlri + NlriCompose,
+    A: AfiSafiNlri + NlriCompose + Clone,
     Target: Clone + OctetsBuilder + FreezeBuilder + AsMut<[u8]> + octseq::Truncate,
     <Target as FreezeBuilder>::Octets: Octets
 {
