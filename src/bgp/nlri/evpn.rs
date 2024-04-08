@@ -1,3 +1,4 @@
+use std::cmp;
 use std::fmt;
 
 use octseq::{Octets, OctetsBuilder, Parser};
@@ -78,6 +79,25 @@ where Octs: AsRef<[u8]>,
             self.raw.as_ref() == other.raw.as_ref()
     }
 }
+
+
+impl<Octs> PartialOrd for EvpnNlri<Octs>
+where Octs: AsRef<[u8]>,
+{
+    fn partial_cmp(&self, other: &EvpnNlri<Octs>) -> Option<cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl<Octs: AsRef<[u8]>> Eq for EvpnNlri<Octs> { }
+
+impl<Octs: AsRef<[u8]>> Ord for EvpnNlri<Octs> {
+    fn cmp(&self, other: &Self) -> cmp::Ordering {
+        self.route_type.cmp(&other.route_type)
+            .then(self.raw.as_ref().cmp(other.raw.as_ref()))
+    }
+}
+
 
 impl<T> fmt::Display for EvpnNlri<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {

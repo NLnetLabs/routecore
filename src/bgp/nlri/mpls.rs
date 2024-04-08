@@ -1,4 +1,6 @@
 use inetnum::addr::Prefix;
+use octseq::OctetsFrom;
+use std::cmp;
 use std::fmt;
 
 use octseq::{Octets, OctetsBuilder, Parser};
@@ -76,6 +78,8 @@ impl<Octs: AsRef<[u8]>> MplsNlri<Octs> {
     }
 }
 
+impl<Octs: AsRef<[u8]>> Eq for MplsNlri<Octs> { }
+
 impl<Octs, Other> PartialEq<MplsNlri<Other>> for MplsNlri<Octs>
 where Octs: AsRef<[u8]>,
       Other: AsRef<[u8]>
@@ -85,11 +89,40 @@ where Octs: AsRef<[u8]>,
     }
 }
 
+impl<Octs> PartialOrd for MplsNlri<Octs>
+where Octs: AsRef<[u8]>,
+{
+    fn partial_cmp(&self, other: &MplsNlri<Octs>) -> Option<cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl<Octs: AsRef<[u8]>> Ord for MplsNlri<Octs> {
+    fn cmp(&self, other: &Self) -> cmp::Ordering {
+        self.prefix.cmp(&other.prefix).then(self.labels.as_ref().cmp(other.labels.as_ref()))
+    }
+}
+
 
 impl<T> fmt::Display for MplsNlri<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "MPLS:{}", self.prefix())
 
+    }
+}
+
+impl<Octs, SrcOcts: Octets> OctetsFrom<MplsNlri<SrcOcts>> for MplsNlri<Octs>
+    where Octs: OctetsFrom<SrcOcts>,
+{
+    type Error = Octs::Error;
+
+    fn try_octets_from(
+        source: MplsNlri<SrcOcts>
+    ) -> Result<Self, Self::Error> {
+        Ok(MplsNlri {
+            prefix: source.prefix,
+            labels: Labels::try_octets_from(source.labels)?
+        })
     }
 }
 
@@ -188,6 +221,20 @@ where Octs: AsRef<[u8]>,
 impl<Octs: AsRef<[u8]>> AsRef<[u8]> for Labels<Octs> {
     fn as_ref(&self) -> &[u8] {
         self.octets.as_ref()
+    }
+}
+
+impl<Octs, SrcOcts: Octets> OctetsFrom<Labels<SrcOcts>> for Labels<Octs>
+    where Octs: OctetsFrom<SrcOcts>,
+{
+    type Error = Octs::Error;
+
+    fn try_octets_from(
+        source: Labels<SrcOcts>
+    ) -> Result<Self, Self::Error> {
+        Ok(Labels {
+            octets: Octs::try_octets_from(source.octets)?
+        })
     }
 }
 

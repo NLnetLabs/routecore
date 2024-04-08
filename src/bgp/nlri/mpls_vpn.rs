@@ -1,4 +1,5 @@
 use inetnum::addr::Prefix;
+use std::cmp;
 use std::fmt;
 
 #[cfg(feature = "serde")]
@@ -88,6 +89,8 @@ impl<Octs: AsRef<[u8]>> MplsVpnNlri<Octs> {
     }
 }
 
+impl<Octs: AsRef<[u8]>> Eq for MplsVpnNlri<Octs> { }
+
 impl<Octs, Other> PartialEq<MplsVpnNlri<Other>> for MplsVpnNlri<Octs>
 where Octs: AsRef<[u8]>,
       Other: AsRef<[u8]>
@@ -96,6 +99,22 @@ where Octs: AsRef<[u8]>,
         self.prefix == other.prefix
             && self.labels == other.labels
             && self.rd == other.rd
+    }
+}
+
+impl<Octs> PartialOrd for MplsVpnNlri<Octs>
+where Octs: AsRef<[u8]>,
+{
+    fn partial_cmp(&self, other: &MplsVpnNlri<Octs>) -> Option<cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl<Octs: AsRef<[u8]>> Ord for MplsVpnNlri<Octs> {
+    fn cmp(&self, other: &Self) -> cmp::Ordering {
+        self.prefix.cmp(&other.prefix)
+            .then(self.labels.as_ref().cmp(other.labels.as_ref()))
+            .then(self.rd.cmp(&other.rd))
     }
 }
 

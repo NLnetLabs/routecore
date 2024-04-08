@@ -11,7 +11,7 @@ use std::fmt;
 /// Path Identifier for BGP Multiple Paths (RFC7911).
 ///
 /// Used in all AddpathNlri variants.
-#[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, Hash, PartialEq, PartialOrd, Ord)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PathId(pub u32);
 

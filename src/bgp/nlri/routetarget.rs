@@ -1,4 +1,4 @@
-use std::fmt;
+use std::{cmp, fmt};
 
 use octseq::{Octets, OctetsBuilder, Parser};
 use crate::util::parser::ParseError;
@@ -42,6 +42,7 @@ impl<Octs: AsRef<[u8]>> RouteTargetNlri<Octs> {
     }
 }
 
+impl<Octs: AsRef<[u8]>> Eq for RouteTargetNlri<Octs> { }
 
 impl<Octs, Other> PartialEq<RouteTargetNlri<Other>> for RouteTargetNlri<Octs>
 where Octs: AsRef<[u8]>,
@@ -52,8 +53,23 @@ where Octs: AsRef<[u8]>,
     }
 }
 
+impl<Octs> PartialOrd for RouteTargetNlri<Octs>
+where Octs: AsRef<[u8]>,
+{
+    fn partial_cmp(&self, other: &RouteTargetNlri<Octs>) -> Option<cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl<Octs: AsRef<[u8]>> Ord for RouteTargetNlri<Octs> {
+    fn cmp(&self, other: &Self) -> cmp::Ordering {
+        self.raw.as_ref().cmp(other.raw.as_ref())
+    }
+}
+
 impl<T> fmt::Display for RouteTargetNlri<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "ROUTE-TARGET-NLRI")
     }
 }
+

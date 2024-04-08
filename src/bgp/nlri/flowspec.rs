@@ -1,4 +1,4 @@
-use std::fmt;
+use std::{cmp, fmt};
 
 use log::debug;
 use octseq::{Octets, OctetsBuilder, Parser};
@@ -98,6 +98,8 @@ impl<Octs: AsRef<[u8]>> FlowSpecNlri<Octs> {
     }
 }
 
+impl<Octs: AsRef<[u8]>> Eq for FlowSpecNlri<Octs> { }
+
 impl<Octs, Other> PartialEq<FlowSpecNlri<Other>> for FlowSpecNlri<Octs>
 where Octs: AsRef<[u8]>,
       Other: AsRef<[u8]>
@@ -108,6 +110,20 @@ where Octs: AsRef<[u8]>,
     }
 }
 
+
+impl<Octs> PartialOrd for FlowSpecNlri<Octs>
+where Octs: AsRef<[u8]>,
+{
+    fn partial_cmp(&self, other: &FlowSpecNlri<Octs>) -> Option<cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl<Octs: AsRef<[u8]>> Ord for FlowSpecNlri<Octs> {
+    fn cmp(&self, other: &Self) -> cmp::Ordering {
+        self.raw.as_ref().cmp(other.raw.as_ref())
+    }
+}
 
 impl<T> fmt::Display for FlowSpecNlri<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

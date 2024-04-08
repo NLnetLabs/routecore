@@ -1,5 +1,6 @@
 use core::hash::Hash;
 use core::str::FromStr;
+use std::cmp;
 use std::fmt::{self, Debug};
 
 
@@ -32,20 +33,59 @@ use super::mpls_vpn::*;
 use super::routetarget::*;
 use super::vpls::*;
 
-macro_rules! addpath { ($nlri:ident $(<$gen:ident>)? ) =>
-{
+// The addpath! macro creates Addpath versions of Nlri types.
+//
+// Because some Nlri types are generic over Octets, the 'first part' of the
+// macro is split up. This way we can derive more traits (most notably, Copy)
+// on the simpler AddpathNlri.
+// After this 'first part' where the structs are generated, both patterns call
+// the generic pattern via `addpath!(@generic $nlri)` to generate all the
+// other parts which are not hindered by the optional generic Octs parameter.
 
-paste! {
-    #[allow(clippy::derived_hash_with_manual_eq)]
+macro_rules! addpath {
+    ($nlri:ident ) => { paste! {
     #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-    #[derive(Clone, Debug, Hash)]
-    pub struct [<$nlri AddpathNlri>]$(<$gen>)?(PathId, [<$nlri Nlri>]$(<$gen>)?);
-    impl$(<$gen>)? AfiSafiNlri for [<$nlri AddpathNlri>]$(<$gen>)? {
-        type Nlri = <[<$nlri Nlri>]$(<$gen>)? as AfiSafiNlri>::Nlri;
+    #[derive(Copy, Clone, Debug, Hash, PartialEq, Ord, PartialOrd)]
+    pub struct [<$nlri AddpathNlri>](PathId, [<$nlri Nlri>]);
+    impl AfiSafiNlri for [<$nlri AddpathNlri>] {
+        type Nlri = <[<$nlri Nlri>] as AfiSafiNlri>::Nlri;
         fn nlri(&self) -> &Self::Nlri {
             &self.1.nlri()
         }
     }
+
+    addpath!(@generic $nlri);
+
+    }};
+
+    ($nlri:ident <$gen:ident>) => { paste! {
+    #[allow(clippy::derived_hash_with_manual_eq)]
+    #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+    #[derive(Clone, Debug, Hash)]
+    pub struct [<$nlri AddpathNlri>]<$gen>(PathId, [<$nlri Nlri>]<$gen>);
+    impl<$gen> AfiSafiNlri for [<$nlri AddpathNlri>]<$gen> {
+        type Nlri = <[<$nlri Nlri>]<$gen> as AfiSafiNlri>::Nlri;
+        fn nlri(&self) -> &Self::Nlri {
+            &self.1.nlri()
+        }
+    }
+
+    impl<$gen: AsRef<[u8]>> Ord for [<$nlri AddpathNlri>]<$gen> {
+        fn cmp(&self, other: &Self) -> cmp::Ordering {
+            self.1.cmp(&other.1).then(self.0.cmp(&other.0))
+        }
+    }
+    impl<$gen: AsRef<[u8]>> PartialOrd for [<$nlri AddpathNlri>]<$gen> {
+        fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
+            Some(self.cmp(&other))
+        }
+    }
+
+    addpath!(@generic $nlri<$gen>);
+
+    }};
+
+    (@generic $nlri:ident $(<$gen:ident>)?) => { paste! {
 
     impl$(<$gen>)? AfiSafi for [<$nlri AddpathNlri>]$(<$gen>)? {
         fn afi() -> Afi { <[<$nlri Nlri>]$(<$gen>)? as AfiSafi>::afi() }
@@ -104,10 +144,8 @@ paste! {
             fmt::Display::fmt(&self.1, f)
         }
     }
-
-}}
+    }};
 }
-
 
 // For Nlri generic over anything, use <Octs> literally. Using another name,
 // e.g. <O>, does not work. This is a limitation of the macro.
@@ -156,32 +194,6 @@ paste! {
             }
         }
     }
-
-    /*
-    impl From<AfiSafiType> for [u8; 3] {
-        fn from(afisafi: AfiSafiType) -> [u8; 3] {
-            match afisafi {
-            $($(
-                AfiSafiType::[<$afi_name $safi_name>] => concat!($afi_code.to_be_bytes().into(), $safi_code),
-            )+)+
-                AfiSafiType::Unsupported(a, s) => [a.to_be_bytes(), s]
-            }
-        }
-    }
-    */
-
-    /*
-    impl AsRef<[u8]> for AfiSafiType {
-        fn as_ref(&self) -> &[u8] {
-            match self {
-            $($(
-                Self::[<$afi_name $safi_name>] => &[$afi_code, $safi_code),
-            )+)+
-                Self::Unsupported(a, s) => (a, s)
-            }
-        }
-    }
-    */
 
     impl AfiSafiType {
         pub const fn afi(self) -> Afi {
@@ -244,47 +256,61 @@ paste! {
             )+)+
             }
         }
+
+        pub const fn nlri_type(&self) -> NlriType {
+            match self {
+            $($(
+                Self::[<$afi_name $safi_name>](..) => NlriType::[<$afi_name $safi_name >],
+                Self::[<$afi_name $safi_name Addpath>](..) => NlriType::[<$afi_name $safi_name Addpath>],
+            )+)+
+            }
+        }
     }
 
     impl<Octs> Nlri<Octs>
     where
         Octs: AsRef<[u8]>
     {
-
         pub fn compose<Target: OctetsBuilder>(&self, target: &mut Target)
             -> Result<(), Target::AppendError> {
             match self {
-                Nlri::Ipv4Unicast(n) => n.compose(target),
-                Nlri::Ipv4UnicastAddpath(n) => n.compose(target),
-                Nlri::Ipv4Multicast(n) => n.compose(target),
-                Nlri::Ipv4MulticastAddpath(n) => n.compose(target),
-                Nlri::Ipv4MplsUnicast(n) => n.compose(target),
-                Nlri::Ipv4MplsUnicastAddpath(n) => n.compose(target),
-                Nlri::Ipv4MplsVpnUnicast(n) => n.compose(target),
-                Nlri::Ipv4MplsVpnUnicastAddpath(n) => n.compose(target),
-                Nlri::Ipv4RouteTarget(n) => n.compose(target),
-                Nlri::Ipv4RouteTargetAddpath(n) => n.compose(target),
-                Nlri::Ipv4FlowSpec(n) => n.compose(target),
-                Nlri::Ipv4FlowSpecAddpath(n) => n.compose(target),
-                Nlri::Ipv6Unicast(n) => n.compose(target),
-                Nlri::Ipv6UnicastAddpath(n) => n.compose(target),
-                Nlri::Ipv6Multicast(n) => n.compose(target),
-                Nlri::Ipv6MulticastAddpath(n) => n.compose(target),
-                Nlri::Ipv6MplsUnicast(n) => n.compose(target),
-                Nlri::Ipv6MplsUnicastAddpath(n) => n.compose(target),
-                Nlri::Ipv6MplsVpnUnicast(n) => n.compose(target),
-                Nlri::Ipv6MplsVpnUnicastAddpath(n) => n.compose(target),
-                Nlri::Ipv6FlowSpec(n) => n.compose(target),
-                Nlri::Ipv6FlowSpecAddpath(n) => n.compose(target),
-                Nlri::L2VpnVpls(n) => n.compose(target),
-                Nlri::L2VpnVplsAddpath(n) => n.compose(target),
-                Nlri::L2VpnEvpn(n) => n.compose(target),
-                Nlri::L2VpnEvpnAddpath(n) => n.compose(target),
+            $($(
+                Nlri::[<$afi_name $safi_name>](n) => n.compose(target),
+                Nlri::[<$afi_name $safi_name Addpath>](n) => n.compose(target),
+            )+)+
             }
         }
     }
 
 
+    impl<Octs, Other> PartialEq<Nlri<Other>> for Nlri<Octs>
+    where Octs: AsRef<[u8]>,
+          Other: AsRef<[u8]>
+    {
+        fn eq(&self, other: &Nlri<Other>) -> bool {
+            match (self, other) {
+            $($(
+                (Nlri::[<$afi_name $safi_name>](p1), Nlri::[<$afi_name $safi_name>](p2)) => p1 == p2,
+                (Nlri::[<$afi_name $safi_name Addpath>](p1), Nlri::[<$afi_name $safi_name Addpath>](p2)) => p1 == p2,
+            )+)+
+            _ => false
+            }
+        }
+    }
+
+    impl<Octs> Ord for Nlri<Octs>
+    where Octs: AsRef<[u8]>
+    {
+        fn cmp(&self, other: &Nlri<Octs>) -> cmp::Ordering {
+            match (self, other) {
+            $($(
+                (Nlri::[<$afi_name $safi_name>](p1), Nlri::[<$afi_name $safi_name>](p2)) => p1.cmp(p2),
+                (Nlri::[<$afi_name $safi_name Addpath>](p1), Nlri::[<$afi_name $safi_name Addpath>](p2)) => p1.cmp(p2),
+            )+)+
+                (a, b) => a.nlri_type().cmp(&b.nlri_type()),
+            }
+        }
+    }
 
     impl<T> fmt::Display for Nlri<T> {
         fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -322,11 +348,12 @@ paste! {
         }
     }
 
+
     impl From<(AfiSafiType, bool)> for NlriType {
         fn from(t: (AfiSafiType, bool)) -> Self {
             match (t.0, t.1) {
                 $($(
-                    (AfiSafiType::[<$afi_name $safi_name>], false)  => NlriType::[<$afi_name $safi_name >],
+                    (AfiSafiType::[<$afi_name $safi_name>], false) => NlriType::[<$afi_name $safi_name >],
                     (AfiSafiType::[<$afi_name $safi_name>], true)  => NlriType::[<$afi_name $safi_name Addpath>],
                 )+)+
                     (AfiSafiType::Unsupported(a, s), _)  => NlriType::Unsupported(a, s),
@@ -459,43 +486,14 @@ $($(
 
 impl<Octs: AsRef<[u8]>> Eq for Nlri<Octs> {}
 
-impl<Octs, Other> PartialEq<Nlri<Other>> for Nlri<Octs>
+impl<Octs> PartialOrd for Nlri<Octs>
 where Octs: AsRef<[u8]>,
-      Other: AsRef<[u8]>
 {
-    fn eq(&self, other: &Nlri<Other>) -> bool {
-        use Nlri::*;
-        match (self, other) {
-            (Ipv4Unicast(p1), Ipv4Unicast(p2)) => p1 == p2,
-            (Ipv4UnicastAddpath(p1), Ipv4UnicastAddpath(p2)) => p1 == p2,
-            (Ipv4Multicast(p1), Ipv4Multicast(p2)) => p1 == p2,
-            (Ipv4MulticastAddpath(p1), Ipv4MulticastAddpath(p2)) => p1 == p2,
-            (Ipv4MplsUnicast(p1), Ipv4MplsUnicast(p2)) => p1 == p2,
-            (Ipv4MplsUnicastAddpath(p1), Ipv4MplsUnicastAddpath(p2)) => p1 == p2,
-            (Ipv4MplsVpnUnicast(p1), Ipv4MplsVpnUnicast(p2)) => p1 == p2,
-            (Ipv4MplsVpnUnicastAddpath(p1), Ipv4MplsVpnUnicastAddpath(p2)) => p1 == p2,
-            (Ipv4RouteTarget(p1), Ipv4RouteTarget(p2)) => p1 == p2,
-            (Ipv4RouteTargetAddpath(p1), Ipv4RouteTargetAddpath(p2)) => p1 == p2,
-            (Ipv4FlowSpec(p1), Ipv4FlowSpec(p2)) => p1 == p2,
-            (Ipv4FlowSpecAddpath(p1), Ipv4FlowSpecAddpath(p2)) => p1 == p2,
-            (Ipv6Unicast(p1), Ipv6Unicast(p2)) => p1 == p2,
-            (Ipv6UnicastAddpath(p1), Ipv6UnicastAddpath(p2)) => p1 == p2,
-            (Ipv6Multicast(p1), Ipv6Multicast(p2)) => p1 == p2,
-            (Ipv6MulticastAddpath(p1), Ipv6MulticastAddpath(p2)) => p1 == p2,
-            (Ipv6MplsUnicast(p1), Ipv6MplsUnicast(p2)) => p1 == p2,
-            (Ipv6MplsUnicastAddpath(p1), Ipv6MplsUnicastAddpath(p2)) => p1 == p2,
-            (Ipv6MplsVpnUnicast(p1), Ipv6MplsVpnUnicast(p2)) => p1 == p2,
-            (Ipv6MplsVpnUnicastAddpath(p1), Ipv6MplsVpnUnicastAddpath(p2)) => p1 == p2,
-            (Ipv6FlowSpec(p1), Ipv6FlowSpec(p2)) => p1 == p2,
-            (Ipv6FlowSpecAddpath(p1), Ipv6FlowSpecAddpath(p2)) => p1 == p2,
-            (L2VpnVpls(p1), L2VpnVpls(p2)) => p1 == p2,
-            (L2VpnVplsAddpath(p1), L2VpnVplsAddpath(p2)) => p1 == p2,
-            (L2VpnEvpn(p1), L2VpnEvpn(p2)) => p1 == p2,
-            (L2VpnEvpnAddpath(p1), L2VpnEvpnAddpath(p2)) => p1 == p2,
-            _ => false
-        }
+    fn partial_cmp(&self, other: &Nlri<Octs>) -> Option<cmp::Ordering> {
+        Some(self.cmp(other))
     }
 }
+
 
 // While Nlri<()> might make more sense, it clashes with trait bounds
 // like Vec<u8>: OctetsFrom<T> elsewhere, as, From<()> is not implemented for
@@ -636,7 +634,7 @@ afisafi! {
 
 // --- Ipv4Unicast
 
-#[derive(Copy, Clone, Debug, Hash, PartialEq)]
+#[derive(Copy, Clone, Debug, Hash, PartialEq, Ord, PartialOrd)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Ipv4UnicastNlri(Prefix);
 
@@ -700,15 +698,10 @@ impl NlriCompose for Ipv4UnicastNlri {
         compose_prefix(self.prefix(), target)
     }
 }
-impl PartialEq for Ipv4UnicastAddpathNlri {
-    fn eq(&self, other: &Self) -> bool {
-        self.0 == other.0
-    }
-}
 
 //--- Ipv4Multicast
 
-#[derive(Copy, Clone, Debug, Hash, PartialEq)]
+#[derive(Copy, Clone, Debug, Hash, PartialEq, Ord, PartialOrd)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Ipv4MulticastNlri(Prefix);
 
@@ -772,12 +765,6 @@ impl NlriCompose for Ipv4MulticastNlri {
     }
 }
 
-impl PartialEq for Ipv4MulticastAddpathNlri {
-    fn eq(&self, other: &Self) -> bool {
-        self.0 == other.0
-    }
-}
-
 //--- Ipv4MplsUnicast
 
 #[derive(Copy, Clone, Debug, Hash)]
@@ -830,12 +817,27 @@ where Octs: AsRef<[u8]>,
     }
 }
 
+
 impl<Octs, Other> PartialEq<Ipv4MplsUnicastAddpathNlri<Other>> for Ipv4MplsUnicastAddpathNlri<Octs>
 where Octs: AsRef<[u8]>,
       Other: AsRef<[u8]>
 {
     fn eq(&self, other: &Ipv4MplsUnicastAddpathNlri<Other>) -> bool {
         self.0 == other.0
+    }
+}
+
+impl<Octs> PartialOrd for Ipv4MplsUnicastNlri<Octs>
+where Octs: AsRef<[u8]>,
+{
+    fn partial_cmp(&self, other: &Ipv4MplsUnicastNlri<Octs>) -> Option<cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl<Octs: AsRef<[u8]>> Ord for Ipv4MplsUnicastNlri<Octs> {
+    fn cmp(&self, other: &Self) -> cmp::Ordering {
+        self.0.cmp(&other.0)
     }
 }
 
@@ -898,6 +900,20 @@ where Octs: AsRef<[u8]>,
     }
 }
 
+impl<Octs> PartialOrd for Ipv4MplsVpnUnicastNlri<Octs>
+where Octs: AsRef<[u8]>,
+{
+    fn partial_cmp(&self, other: &Ipv4MplsVpnUnicastNlri<Octs>) -> Option<cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl<Octs: AsRef<[u8]>> Ord for Ipv4MplsVpnUnicastNlri<Octs> {
+    fn cmp(&self, other: &Self) -> cmp::Ordering {
+        self.0.cmp(&other.0)
+    }
+}
+
 //--- Ipv4RouteTarget
 
 #[derive(Clone, Debug, Hash)]
@@ -952,6 +968,20 @@ where Octs: AsRef<[u8]>,
 {
     fn eq(&self, other: &Ipv4RouteTargetAddpathNlri<Other>) -> bool {
         self.0 == other.0
+    }
+}
+
+impl<Octs> PartialOrd for Ipv4RouteTargetNlri<Octs>
+where Octs: AsRef<[u8]>,
+{
+    fn partial_cmp(&self, other: &Ipv4RouteTargetNlri<Octs>) -> Option<cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl<Octs: AsRef<[u8]>> Ord for Ipv4RouteTargetNlri<Octs> {
+    fn cmp(&self, other: &Self) -> cmp::Ordering {
+        self.0.cmp(&other.0)
     }
 }
 
@@ -1024,12 +1054,25 @@ where Octs: AsRef<[u8]>,
     }
 }
 
+impl<Octs> PartialOrd for Ipv4FlowSpecNlri<Octs>
+where Octs: AsRef<[u8]>,
+{
+    fn partial_cmp(&self, other: &Ipv4FlowSpecNlri<Octs>) -> Option<cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl<Octs: AsRef<[u8]>> Ord for Ipv4FlowSpecNlri<Octs> {
+    fn cmp(&self, other: &Self) -> cmp::Ordering {
+        self.0.cmp(&other.0)
+    }
+}
 
 //------------ Ipv6 ----------------------------------------------------------
 
 //--- Ipv6Unicast
 
-#[derive(Copy, Clone, Debug, Hash, PartialEq)]
+#[derive(Copy, Clone, Debug, Hash, PartialEq, Ord, PartialOrd)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Ipv6UnicastNlri(Prefix);
 impl AfiSafiNlri for Ipv6UnicastNlri {
@@ -1092,15 +1135,9 @@ impl NlriCompose for Ipv6UnicastNlri {
     }
 }
 
-impl PartialEq for Ipv6UnicastAddpathNlri {
-    fn eq(&self, other: &Self) -> bool {
-        self.0 == other.0
-    }
-}
-
 //--- Ipv6Multicast
 
-#[derive(Copy, Clone, Debug, Hash, PartialEq)]
+#[derive(Copy, Clone, Debug, Hash, PartialEq, Ord, PartialOrd)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Ipv6MulticastNlri(Prefix);
 
@@ -1164,13 +1201,6 @@ impl NlriCompose for Ipv6MulticastNlri {
     }
 }
 
-impl PartialEq for Ipv6MulticastAddpathNlri {
-    fn eq(&self, other: &Self) -> bool {
-        self.0 == other.0
-    }
-}
-
-
 //--- Ipv6MplsUnicast
 
 #[derive(Copy, Clone, Debug, Hash)]
@@ -1233,6 +1263,21 @@ where Octs: AsRef<[u8]>,
     }
 }
 
+impl<Octs> PartialOrd for Ipv6MplsUnicastNlri<Octs>
+where Octs: AsRef<[u8]>,
+{
+    fn partial_cmp(&self, other: &Ipv6MplsUnicastNlri<Octs>) -> Option<cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl<Octs: AsRef<[u8]>> Ord for Ipv6MplsUnicastNlri<Octs> {
+    fn cmp(&self, other: &Self) -> cmp::Ordering {
+        self.0.cmp(&other.0)
+    }
+}
+
+
 //--- Ipv6MplsVpnUnicastNlri
 
 #[derive(Clone, Debug, Hash)]
@@ -1290,6 +1335,20 @@ where Octs: AsRef<[u8]>,
 {
     fn eq(&self, other: &Ipv6MplsVpnUnicastAddpathNlri<Other>) -> bool {
         self.0 == other.0
+    }
+}
+
+impl<Octs> PartialOrd for Ipv6MplsVpnUnicastNlri<Octs>
+where Octs: AsRef<[u8]>,
+{
+    fn partial_cmp(&self, other: &Ipv6MplsVpnUnicastNlri<Octs>) -> Option<cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl<Octs: AsRef<[u8]>> Ord for Ipv6MplsVpnUnicastNlri<Octs> {
+    fn cmp(&self, other: &Self) -> cmp::Ordering {
+        self.0.cmp(&other.0)
     }
 }
 
@@ -1362,6 +1421,20 @@ where Octs: AsRef<[u8]>,
     }
 }
 
+impl<Octs> PartialOrd for Ipv6FlowSpecNlri<Octs>
+where Octs: AsRef<[u8]>,
+{
+    fn partial_cmp(&self, other: &Ipv6FlowSpecNlri<Octs>) -> Option<cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl<Octs: AsRef<[u8]>> Ord for Ipv6FlowSpecNlri<Octs> {
+    fn cmp(&self, other: &Self) -> cmp::Ordering {
+        self.0.cmp(&other.0)
+    }
+}
+
 /*
 impl Ipv6UnicastAddpathNlri {
     pub fn iter<'a, O, P>(parser: Parser<'a, P>) -> NlriIter<'a, O, P, Self>
@@ -1388,7 +1461,7 @@ impl<Octs> Ipv4MplsUnicastNlri<Octs> {
 
 //--- L2VpnVpls
 
-#[derive(Copy, Clone, Debug, Hash, PartialEq)]
+#[derive(Copy, Clone, Debug, Hash, PartialEq, Ord, PartialOrd)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct L2VpnVplsNlri(VplsNlri);
 
@@ -1422,12 +1495,6 @@ impl NlriCompose for L2VpnVplsNlri {
     fn compose<Target: OctetsBuilder>(&self, target: &mut Target)
         -> Result<(), Target::AppendError> {
             self.nlri().compose(target)
-    }
-}
-
-impl PartialEq for L2VpnVplsAddpathNlri {
-    fn eq(&self, other: &Self) -> bool {
-        self.0 == other.0
     }
 }
 
@@ -1489,6 +1556,19 @@ where Octs: AsRef<[u8]>,
     }
 }
 
+impl<Octs> PartialOrd for L2VpnEvpnNlri<Octs>
+where Octs: AsRef<[u8]>,
+{
+    fn partial_cmp(&self, other: &L2VpnEvpnNlri<Octs>) -> Option<cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl<Octs: AsRef<[u8]>> Ord for L2VpnEvpnNlri<Octs> {
+    fn cmp(&self, other: &Self) -> cmp::Ordering {
+        self.0.cmp(&other.0)
+    }
+}
 
 //------------ Iteration ------------------------------------------------------
 

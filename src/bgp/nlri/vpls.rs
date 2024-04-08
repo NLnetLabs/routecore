@@ -6,7 +6,7 @@ use crate::util::parser::ParseError;
 use super::mpls_vpn::RouteDistinguisher;
 
 /// VPLS Information as defined in RFC4761.
-#[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, Hash, PartialEq, Ord, PartialOrd)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct VplsNlri {
     rd: RouteDistinguisher,
@@ -62,9 +62,6 @@ impl VplsNlri {
         target.append_slice(&self.raw_label_base.to_be_bytes()[1..])
     }
 }
-
-
-
 
 impl fmt::Display for VplsNlri {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
