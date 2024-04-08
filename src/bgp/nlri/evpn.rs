@@ -23,6 +23,7 @@ typeenum!(
 ///
 /// **TODO**: implement accessor methods for the contents of this NLRI.
 #[derive(Copy, Clone, Debug, Hash)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct EvpnNlri<Octs> {
     #[allow(dead_code)]

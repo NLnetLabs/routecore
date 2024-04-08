@@ -7,6 +7,7 @@ use super::mpls_vpn::RouteDistinguisher;
 
 /// VPLS Information as defined in RFC4761.
 #[derive(Copy, Clone, Debug, Eq, Hash, PartialEq, Ord, PartialOrd)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct VplsNlri {
     rd: RouteDistinguisher,

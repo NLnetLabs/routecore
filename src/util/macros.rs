@@ -62,6 +62,7 @@ macro_rules! typeenum {
         })?
     ) => {
             #[derive(Clone, Copy, Debug, Hash, Eq, Ord, PartialEq, PartialOrd)]
+            #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
             #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
             $(#[$attr])*
             pub enum $name {

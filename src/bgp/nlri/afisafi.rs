@@ -44,8 +44,9 @@ use super::vpls::*;
 
 macro_rules! addpath {
     ($nlri:ident ) => { paste! {
-    #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
     #[derive(Copy, Clone, Debug, Hash, PartialEq, Ord, PartialOrd)]
+    #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+    #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
     pub struct [<$nlri AddpathNlri>](PathId, [<$nlri Nlri>]);
     impl AfiSafiNlri for [<$nlri AddpathNlri>] {
         type Nlri = <[<$nlri Nlri>] as AfiSafiNlri>::Nlri;
@@ -60,8 +61,9 @@ macro_rules! addpath {
 
     ($nlri:ident <$gen:ident>) => { paste! {
     #[allow(clippy::derived_hash_with_manual_eq)]
-    #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
     #[derive(Clone, Debug, Hash)]
+    #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+    #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
     pub struct [<$nlri AddpathNlri>]<$gen>(PathId, [<$nlri Nlri>]<$gen>);
     impl<$gen> AfiSafiNlri for [<$nlri AddpathNlri>]<$gen> {
         type Nlri = <[<$nlri Nlri>]<$gen> as AfiSafiNlri>::Nlri;
@@ -239,6 +241,7 @@ paste! {
 
     // this enforces these derives on all *Nlri structs.
     #[derive(Clone, Debug, Hash)]
+    #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
     #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
     pub enum Nlri<Octs> {
     $($(
@@ -635,6 +638,7 @@ afisafi! {
 // --- Ipv4Unicast
 
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Ord, PartialOrd)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Ipv4UnicastNlri(Prefix);
 
@@ -702,6 +706,7 @@ impl NlriCompose for Ipv4UnicastNlri {
 //--- Ipv4Multicast
 
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Ord, PartialOrd)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Ipv4MulticastNlri(Prefix);
 
@@ -768,6 +773,7 @@ impl NlriCompose for Ipv4MulticastNlri {
 //--- Ipv4MplsUnicast
 
 #[derive(Copy, Clone, Debug, Hash)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Ipv4MplsUnicastNlri<Octs>(MplsNlri<Octs>);
 
@@ -844,6 +850,7 @@ impl<Octs: AsRef<[u8]>> Ord for Ipv4MplsUnicastNlri<Octs> {
 //--- Ipv4MplsVpnUnicastNlri
 
 #[derive(Copy, Clone, Debug, Hash)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Ipv4MplsVpnUnicastNlri<Octs>(MplsVpnNlri<Octs>);
 
@@ -917,6 +924,7 @@ impl<Octs: AsRef<[u8]>> Ord for Ipv4MplsVpnUnicastNlri<Octs> {
 //--- Ipv4RouteTarget
 
 #[derive(Clone, Debug, Hash)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Ipv4RouteTargetNlri<Octs>(RouteTargetNlri<Octs>);
 
@@ -988,6 +996,7 @@ impl<Octs: AsRef<[u8]>> Ord for Ipv4RouteTargetNlri<Octs> {
 //--- Ipv4FlowSpec
 
 #[derive(Clone, Debug, Hash)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Ipv4FlowSpecNlri<Octs>(FlowSpecNlri<Octs>);
 
@@ -1073,6 +1082,7 @@ impl<Octs: AsRef<[u8]>> Ord for Ipv4FlowSpecNlri<Octs> {
 //--- Ipv6Unicast
 
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Ord, PartialOrd)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Ipv6UnicastNlri(Prefix);
 impl AfiSafiNlri for Ipv6UnicastNlri {
@@ -1138,6 +1148,7 @@ impl NlriCompose for Ipv6UnicastNlri {
 //--- Ipv6Multicast
 
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Ord, PartialOrd)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Ipv6MulticastNlri(Prefix);
 
@@ -1204,6 +1215,7 @@ impl NlriCompose for Ipv6MulticastNlri {
 //--- Ipv6MplsUnicast
 
 #[derive(Copy, Clone, Debug, Hash)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Ipv6MplsUnicastNlri<Octs>(MplsNlri<Octs>);
 
@@ -1281,6 +1293,7 @@ impl<Octs: AsRef<[u8]>> Ord for Ipv6MplsUnicastNlri<Octs> {
 //--- Ipv6MplsVpnUnicastNlri
 
 #[derive(Clone, Debug, Hash)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Ipv6MplsVpnUnicastNlri<Octs>(MplsVpnNlri<Octs>);
 
@@ -1355,6 +1368,7 @@ impl<Octs: AsRef<[u8]>> Ord for Ipv6MplsVpnUnicastNlri<Octs> {
 //--- Ipv6FlowSpec
 
 #[derive(Clone, Debug, Hash)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Ipv6FlowSpecNlri<Octs>(FlowSpecNlri<Octs>);
 
@@ -1462,6 +1476,7 @@ impl<Octs> Ipv4MplsUnicastNlri<Octs> {
 //--- L2VpnVpls
 
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Ord, PartialOrd)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct L2VpnVplsNlri(VplsNlri);
 
@@ -1501,6 +1516,7 @@ impl NlriCompose for L2VpnVplsNlri {
 //--- Evpn
 
 #[derive(Clone, Debug, Hash)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct L2VpnEvpnNlri<Octs>(EvpnNlri<Octs>);
 

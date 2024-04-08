@@ -15,6 +15,7 @@ use super::mpls::Labels;
 /// NLRI comprised of a [`BasicNlri`], MPLS `Labels` and a VPN
 /// `RouteDistinguisher`.
 #[derive(Copy, Clone, Debug, Hash)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct MplsVpnNlri<Octs> {
     prefix: Prefix,
@@ -131,6 +132,7 @@ impl<T> fmt::Display for MplsVpnNlri<T> {
 ///
 /// Used in [`MplsVpnNlri`], [`VplsNlri`] and [`NextHop`].
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct RouteDistinguisher {
     bytes: [u8; 8]
