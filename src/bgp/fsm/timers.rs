@@ -219,8 +219,7 @@ mod tests {
 
         t.stop_and_reset();
 
-        if let Err(_) = timeout(d * 2, t.tick()).await {
-            //println!("did not receive value within two intervals, Ok");
+        if timeout(d * 2, t.tick()).await.is_err() {
             assert!(t4.elapsed() >= d * 2);
         } else {
             panic!("wrong");

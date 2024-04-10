@@ -1770,50 +1770,14 @@ mod tests {
     use std::str::FromStr;
 
     #[test]
-    fn test1() {
-        let p = Prefix::from_str("1.2.3.0/24").unwrap();
-        let n = Ipv4UnicastNlri(p);
-
-        let _n2 = n.clone().nlri();
-
-        let _b2 = n.prefix();
-
-        let _nlri_type: Nlri<()> = n.into();
-
-        let mc = Ipv4MulticastNlri(p);
-        let _nlri_type2: Nlri<()> = mc.clone().into();
-
-    }
-
-    #[test]
-    fn addpath() {
-        let n = Ipv4UnicastAddpathNlri(
-            PathId(13),
-            Ipv4UnicastNlri(
-                Prefix::from_str("1.2.3.0/24").unwrap().into()
-        ));
-        dbg!(&n);
-        // XXX From<AddPathNlri> for Nlri is missing
-        /*
-        let nlri: Nlri<()> = n.clone().into();
-        dbg!(&nlri.afi_safi());
-        dbg!(&n.afi());
-        dbg!(&n.path_id());
-        dbg!(&n.basic_nlri());
-        */
-       
-        // and this is why we need a distinc BasicNlriWithPathId type:
-        //assert_eq!(n.path_id(), b.path_id().unwrap());
-    }
-
-    #[test]
     fn parse_ipv4unicast() {
         let raw = vec![24,1,2,3];
         let mut parser = Parser::from_ref(&raw);
         let n = Ipv4UnicastNlri::parse(&mut parser).unwrap();
-        //dbg!(&n);
-        eprintln!("{}", &n);
+
+        assert_eq!(n.prefix(), Prefix::from_str("1.2.3.0/24").unwrap());
     }
+
     #[test]
     fn parse_ipv4mplsunicast() {
         // Label 8000 10.0.0.9/32
@@ -1835,8 +1799,9 @@ mod tests {
 
     #[test]
     fn display() {
-        let n: Nlri<()> = Ipv4UnicastNlri(Prefix::from_str("1.2.3.0/24").unwrap().into()).into();
-        eprintln!("{}", n);
+        let p =  Prefix::from_str("1.2.3.0/24").unwrap();
+        let n: Nlri<()> = Ipv4UnicastNlri(p).into();
+        assert_eq!(n.to_string(), p.to_string());
     }
 
     #[test]

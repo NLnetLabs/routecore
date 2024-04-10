@@ -17,7 +17,7 @@ pub struct RouteTargetNlri<Octs> {
 impl<Octs: AsRef<[u8]>> RouteTargetNlri<Octs> {
     /// Returns true if this represents the default route target.
     pub fn is_default(&self) -> bool {
-        self.raw.as_ref().len() == 0
+        self.raw.as_ref().is_empty()
     }
 
     /// Returns the origin AS, if any.
