@@ -45,6 +45,20 @@ impl<T> MplsVpnNlri<T> {
     }
 }
 
+impl<Octs: Octets> MplsVpnNlri<Octs> {
+    pub fn parse<'a, R>( parser: &mut Parser<'a, R>,
+        afi: Afi,
+    ) -> Result<Self, ParseError>
+    where
+        R: Octets<Range<'a> = Octs>
+    {
+        let (prefix, labels, rd) = parse_labels_rd_prefix(parser, afi)?;
+        Ok(
+            Self::new(rd, prefix, labels)
+        )
+    }
+}
+
 pub(super) fn parse_labels_rd_prefix<'a, R, Octs: Octets>(
     parser: &mut Parser<'a, R>,
     afi: Afi,
@@ -209,4 +223,32 @@ pub enum RouteDistinguisherType {
     Type1,
     Type2,
     UnknownType,
+}
+
+
+#[cfg(test)]
+mod tests {
+    use std::str::FromStr;
+
+    use octseq::Parser;
+    use super::*;
+
+    #[test]
+    fn parse() {
+
+        let raw = vec![
+            0xd8, 0x00, 0x7d, 0xc1, 0x00, 0x00, 0x00, 0x64,
+            0x00, 0x00, 0x00, 0x01, 0xfc, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x01
+        ];
+        let mut parser = Parser::from_ref(&raw);
+        let nlri = MplsVpnNlri::parse(&mut parser, Afi::Ipv6).unwrap();
+        assert_eq!(nlri.labels().iter().next().unwrap().value(), 2012);
+        assert_eq!(
+            nlri.rd(),
+            RouteDistinguisher::new([0, 0, 0, 100, 0, 0, 0, 1])
+        );
+        assert_eq!(nlri.prefix(), Prefix::from_str("fc00::1/128").unwrap());
+    }
 }

@@ -794,10 +794,8 @@ where
     fn parse(parser: &mut Parser<'a, P>)
         -> Result<Self::Output, ParseError>
     {
-        let (prefix, labels) = MplsNlri::parse_labels_and_prefix(parser, Afi::Ipv4)?;
-
         Ok(
-            Self(MplsNlri::new(prefix,labels,))
+            Self(MplsNlri::parse(parser, Afi::Ipv4)?)
         )
     }
 }
@@ -1236,10 +1234,8 @@ where
     fn parse(parser: &mut Parser<'a, P>)
         -> Result<Self::Output, ParseError>
     {
-        let (prefix, labels) = MplsNlri::parse_labels_and_prefix(parser, Afi::Ipv6)?;
-
         Ok(
-            Self(MplsNlri::new(prefix,labels,))
+            Self(MplsNlri::parse(parser, Afi::Ipv6)?)
         )
     }
 }

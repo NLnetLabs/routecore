@@ -2186,11 +2186,10 @@ mod tests {
             0x01
         ];
 
-        use crate::bgp::nlri::evpn::EvpnRouteType;
-
         let upd = UpdateMessage::from_octets(&buf, &SessionConfig::modern())
             .unwrap();
 
+        /* // now tested in bgp::nlri::evpn
         for n in upd.announcements().unwrap() {
             println!("{:?}", n.unwrap());
         }
@@ -2208,6 +2207,7 @@ mod tests {
             )
         } else { panic!() }
         assert!(announcements.next().is_none());
+        */
 
         assert_eq!(
             upd.mp_next_hop().unwrap(),
@@ -2494,9 +2494,8 @@ mod tests {
                 Prefix::from_str("10.0.0.9/32").unwrap()
             );
             assert_eq!(
-                n1.nlri().labels().as_ref(),
-                &[0x01, 0xf4, 0x01] // single label: [2012]
-                //Labels::from(..),
+                n1.nlri().labels().iter().next().unwrap().value(), 
+                8000
             );
         } else {
             panic!("wrong");
@@ -2550,13 +2549,11 @@ mod tests {
                 Prefix::from_str("fc00::1/128").unwrap()
             );
             assert_eq!(
-                n1.nlri().labels().as_ref(),
-                &[0x00, 0x7d, 0xc1] // single label: [2012]
-                //Labels::from([2012]),
+                n1.nlri().labels().iter().next().unwrap().value(),
+                2012
             );
             assert_eq!(
                 n1.nlri().rd(),
-                //RouteDistinguisher::from_str("100:1".unwrap())
                 RouteDistinguisher::new([0, 0, 0, 100, 0, 0, 0, 1])
             );
         } else {
