@@ -106,12 +106,8 @@ pub(super) fn parse_v6_prefix_for_len<R: Octets>(
     )
 }
 
-pub(super) fn prefix_bits_to_bytes(bits: u8) -> usize {
-    if bits != 0 {
-        (bits as usize - 1) / 8 + 1
-    } else {
-        0
-    }
+pub(crate) const fn prefix_bits_to_bytes(bits: u8) -> usize {
+    ((bits as usize) + 8 - 1) / 8
 }
 
 pub(super) fn compose_len_prefix(prefix: Prefix) -> usize {
