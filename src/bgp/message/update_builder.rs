@@ -2,7 +2,7 @@ use std::fmt;
 use std::net::{IpAddr, Ipv6Addr};
 
 use bytes::BytesMut;
-use octseq::{FreezeBuilder, Octets, OctetsBuilder, OctetsFrom, ShortBuf};
+use octseq::{EmptyBuilder, FreezeBuilder, Octets, OctetsBuilder, OctetsFrom, ShortBuf};
 use log::warn;
 
 use crate::bgp::aspath::HopPath;
@@ -48,18 +48,25 @@ where
             attributes: PaMap::empty(),
         })
     }
+}
+
+impl<Target, A> UpdateBuilder<Target, A>
+where
+    A: AfiSafiNlri + NlriCompose,
+    Target: EmptyBuilder + OctetsBuilder + octseq::Truncate,
+{
 
     pub fn from_attributes_builder(
         attributes: PaMap,
-    ) -> UpdateBuilder<Vec<u8>, A> {
-        let mut res = UpdateBuilder::<Vec<u8>, A>::new_vec();
+    ) -> UpdateBuilder<Target, A> {
+        let mut res = UpdateBuilder::from_target(Target::empty()).unwrap();
         res.attributes = attributes;
         res
     }
 
     pub fn from_workshop(
         ws: crate::bgp::workshop::route::RouteWorkshop<A>
-    ) -> UpdateBuilder<Vec<u8>, A> {
+    ) -> UpdateBuilder<Target, A> {
 
         let mut res = Self::from_attributes_builder(ws.attributes().clone());
         let _ = res.add_announcement(ws.into_nlri());

@@ -596,6 +596,7 @@ impl<Octs: Octets> RouteMonitoring<Octs> {
         let mut parser = Parser::from_ref(
             &self.octets,//.range_from(6+42),
         );
+        // XXX note that the BGP PDU will move into a TLV in BMPv4
         parser.advance(6+42).expect("parsed before");
         BgpUpdate::parse(&mut parser, config)
     }
