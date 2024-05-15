@@ -274,6 +274,7 @@ impl PaMap {
 // Deriving Arbitrary for PaMap results in random u8's pointing to random
 // PathAttributes. Those make no sense and .get'ing attributes based on type
 // from such a map does not work and/or gives bogus results.
+#[cfg(feature = "arbitrary")]
 impl arbitrary::Arbitrary<'_> for PaMap {
     fn arbitrary(u: &mut arbitrary::Unstructured<'_>) -> arbitrary::Result<Self> {
         let num = u.arbitrary_len::<Self>()?;
