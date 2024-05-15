@@ -1173,17 +1173,23 @@ impl<'a, Octs> Asns<'a, Octs> {
 
 impl<'a, Octs: Octets> Iterator for Asns<'a, Octs> {
     type Item = Asn;
+    // NB: if the underlying octets are not a multiple of four (or two, in
+    // case of legacy ASNs), the iterator will yield None for that last
+    // incomplete ASN. The only situation where this should occur is in fuzz
+    // tests, as the number of Octets might be random. In other cases, either
+    // the parsing should have caught any illegally formatted AS_PATH and
+    // acted upon it, or the creation of such an illegal AS_PATH should have
+    // been prevented by the public API.
     fn next(&mut self) -> Option<Self::Item> {
         if self.parser.remaining() == 0 {
             return None
         }
-        let n = if self.four_byte_asns {
-            self.parser.parse_u32_be().expect("parsed before")
+        if self.four_byte_asns {
+            self.parser.parse_u32_be().ok()
         }
         else {
-            u32::from(self.parser.parse_u16_be().expect("parsed before"))
-        };
-        Some(Asn::from(n))
+            self.parser.parse_u16_be().ok().map(u32::from)
+        }.map(Asn::from)
     }
 }
 
