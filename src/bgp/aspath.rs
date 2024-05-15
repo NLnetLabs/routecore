@@ -111,7 +111,6 @@ impl HopPath {
     ///
     /// In path selection, every AS in an AS_SEQUENCE counts as 1, an entire
     /// AS_SET counts as 1, and confederation sets/sequences count as 0.
-    // TODO add test
     pub fn hop_count_path_selection(&self) -> usize {
         self.hops.iter().fold(0, |sum, hop|
             match hop {
@@ -127,7 +126,6 @@ impl HopPath {
     ///
     /// This function returns None if the lastly prepended ASN is not in a
     /// AS_SEQUENCE segment.
-    // TODO add test
     pub fn neighbor_path_selection(&self) -> Option<Asn> {
         match self.hops.first() {
             Some(Hop::Asn(a)) => Some(*a),
@@ -1640,4 +1638,19 @@ mod tests {
         assert_eq!(asp16.segments().count(), 2);
     }
 
+    #[test]
+    fn path_selection_methods() {
+        let mut asp = HopPath::from([10, 20, 30].map(Asn::from_u32));
+        assert_eq!(asp.neighbor_path_selection(), Some(Asn::from_u32(10)));
+
+        assert_eq!(asp.hop_count_path_selection(), 3);
+
+        asp.prepend_set([88,99].map(Asn::from_u32));
+        assert!(asp.neighbor_path_selection().is_none());
+
+        assert_eq!(asp.hop_count_path_selection(), 4);
+
+        asp.prepend_confed_sequence([1000,1001].map(Asn::from_u32));
+        assert_eq!(asp.hop_count_path_selection(), 4);
+    }
 }

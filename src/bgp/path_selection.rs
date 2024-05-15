@@ -467,4 +467,11 @@ mod tests {
 
         assert!(route1 < route2);
     }
+
+    #[test]
+    fn route_source_order() {
+        // Order of the variants is important for the path selection tie
+        // breakers.
+        assert!(RouteSource::Ebgp < RouteSource::Ibgp);
+    }
 }
