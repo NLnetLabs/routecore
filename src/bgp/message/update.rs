@@ -901,7 +901,7 @@ impl<Octs: Octets> UpdateMessage<Octs> {
     ///
     /// The 16 byte marker, length and type byte must be present when parsing,
     /// but will not be included in the resulting `Octs`.
-    pub fn parse<'a, R: Octets>(
+    pub fn parse<'a, R>(
         parser: &mut Parser<'a, R>,
         session_config: &SessionConfig
     ) -> Result<UpdateMessage<R::Range<'a>>, ParseError>
