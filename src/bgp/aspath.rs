@@ -82,6 +82,14 @@ impl HopPath {
         self.hops.last()
     }
 
+    /// Returns the lastly prepended hop.
+    ///
+    /// This function will return the `OwnedHop` which might be a segment.
+    /// Also see [`neighbor_path_selection`].
+    pub fn neighbor(&self) -> Option<&OwnedHop> {
+        self.hops.first()
+    }
+
     /// Returns true if this HopPath contains `hop`. 
     pub fn contains(&self, hop: &OwnedHop) -> bool {
         self.hops.iter().any(|h| h == hop)
@@ -97,6 +105,34 @@ impl HopPath {
     /// as a single hop.
     pub fn hop_count(&self) -> usize {
         self.hops.len()
+    }
+
+    /// Hop count as used in path selection.
+    ///
+    /// In path selection, every AS in an AS_SEQUENCE counts as 1, an entire
+    /// AS_SET counts as 1, and confederation sets/sequences count as 0.
+    // TODO add test
+    pub fn hop_count_path_selection(&self) -> usize {
+        self.hops.iter().fold(0, |sum, hop|
+            match hop {
+                Hop::Asn(..)
+                | Hop::Segment(Segment { stype: SegmentType::Set ,..}) => {
+                    sum + 1
+                }
+                _ => sum
+            })
+    }
+
+    /// Neighbor ASN as used in path selection.
+    ///
+    /// This function returns None if the lastly prepended ASN is not in a
+    /// AS_SEQUENCE segment.
+    // TODO add test
+    pub fn neighbor_path_selection(&self) -> Option<Asn> {
+        match self.hops.first() {
+            Some(Hop::Asn(a)) => Some(*a),
+            _ => None
+        }
     }
 
     /// Returns an iterator over the [`Hop`]s.

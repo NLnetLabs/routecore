@@ -152,6 +152,35 @@ impl PaMap {
         self.attributes.insert(attr.type_code(), attr).map(A::from_attribute)?
     }
 
+    pub fn set_from_enum(
+        &mut self, attr: PathAttribute
+    ) -> Option<PathAttribute> {
+        match attr {
+            PathAttribute::Origin(a) => self.set(a).map(Into::into),
+            PathAttribute::AsPath(a) => self.set(a).map(Into::into),
+            PathAttribute::ConventionalNextHop(a) => self.set(a).map(Into::into),
+            PathAttribute::MultiExitDisc(a) => self.set(a).map(Into::into),
+            PathAttribute::LocalPref(a) => self.set(a).map(Into::into),
+            PathAttribute::AtomicAggregate(a) => self.set(a).map(Into::into),
+            PathAttribute::Aggregator(a) => self.set(a).map(Into::into),
+            PathAttribute::StandardCommunities(a) => self.set(a).map(Into::into),
+            PathAttribute::OriginatorId(a) => self.set(a).map(Into::into),
+            PathAttribute::ClusterList(a) => self.set(a).map(Into::into),
+            PathAttribute::ExtendedCommunities(a) => self.set(a).map(Into::into),
+            PathAttribute::As4Path(a) => self.set(a).map(Into::into),
+            PathAttribute::As4Aggregator(a) => self.set(a).map(Into::into),
+            PathAttribute::Connector(a) => self.set(a).map(Into::into),
+            PathAttribute::AsPathLimit(a) => self.set(a).map(Into::into),
+            PathAttribute::Ipv6ExtendedCommunities(a) => self.set(a).map(Into::into),
+            PathAttribute::LargeCommunities(a) => self.set(a).map(Into::into),
+            PathAttribute::Otc(a) => self.set(a).map(Into::into),
+            PathAttribute::AttrSet(a) => self.set(a).map(Into::into),
+            PathAttribute::Reserved(a) => self.set(a).map(Into::into),
+            PathAttribute::Unimplemented(_u) => None, //TODO self.set(a).map(Into::into),
+            PathAttribute::Invalid(_flags, _tc, _v) => None, //self.set(a).map(Into::into),
+        }
+    }
+
     pub fn get<A: FromAttribute>(
         &self,
     ) -> Option<A> {
@@ -1309,6 +1338,12 @@ impl From<[u8; 4]> for BgpIdentifier {
     }
 }
 
+impl From<BgpIdentifier> for [u8; 4] {
+    fn from(bgp_id: BgpIdentifier) -> Self {
+        bgp_id.0
+    }
+}
+
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
@@ -1320,8 +1355,14 @@ impl ClusterIds {
     fn new(cluster_ids: Vec<BgpIdentifier>) -> ClusterIds {
         ClusterIds {cluster_ids }
     }
+
     pub fn cluster_ids(&self) -> &Vec<BgpIdentifier> {
         &self.cluster_ids
+    }
+
+    #[allow(clippy::len_without_is_empty)]
+    pub fn len(&self) -> usize {
+        self.cluster_ids.len()
     }
 }
 
