@@ -52,15 +52,15 @@ pub trait SerializeForOperators: Serialize {
 ///
 /// For example, consider the following AsPath of two segments:
 ///
-/// ```
-/// AS_SEQUENCE(AS10, AS20, AS30), AS_SET(AS40, AS50)
-/// ```
+/// 
+/// `AS_SEQUENCE(AS10, AS20, AS30), AS_SET(AS40, AS50)`
+/// 
 ///
 /// The equivalent HopPath of four hops:
 ///     
-/// ```
-/// Hop(AS10), Hop(AS20), Hop(AS30), Hop(Set(AS40, AS50))
-/// ```
+/// 
+/// `Hop(AS10), Hop(AS20), Hop(AS30), Hop(Set(AS40, AS50))`
+/// 
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[derive(Clone, Debug, Default, Eq, PartialEq, Hash)]
 pub struct HopPath {
