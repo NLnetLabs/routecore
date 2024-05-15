@@ -4,6 +4,7 @@ pub mod nlri;
 pub mod aspath;
 pub mod communities;
 pub mod path_attributes;
+pub mod path_selection;
 pub mod types;
 
 pub mod message;
