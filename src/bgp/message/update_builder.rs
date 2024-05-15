@@ -1199,6 +1199,7 @@ impl<A: NlriCompose> MpUnreachNlriBuilder<A> {
 //
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct StandardCommunitiesList {
     communities: Vec<StandardCommunity>,

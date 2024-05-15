@@ -22,6 +22,7 @@ use crate::util::parser::{ParseError, parse_ipv4addr};
 
 
 #[derive(Copy, Clone, Debug, Eq, Hash, PartialEq, Ord, PartialOrd)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct Flags(u8);
 
@@ -239,8 +240,22 @@ impl PaMap {
         self.attributes.values()
             .fold(0, |sum, a| sum + a.compose_len())
     }
+}
 
-    
+// Deriving Arbitrary for PaMap results in random u8's pointing to random
+// PathAttributes. Those make no sense and .get'ing attributes based on type
+// from such a map does not work and/or gives bogus results.
+impl arbitrary::Arbitrary<'_> for PaMap {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'_>) -> arbitrary::Result<Self> {
+        let num = u.arbitrary_len::<Self>()?;
+        let mut res = PaMap::empty();
+        for _ in 0..num {
+            //let typecode = u8::arbitrary()?;
+            let pa = PathAttribute::arbitrary(u)?;
+            res.set_from_enum(pa);
+        }
+        Ok(res)
+    }
 }
 
 pub trait FromAttribute {
@@ -273,6 +288,7 @@ macro_rules! path_attributes {
 //------------ PathAttribute -------------------------------------------------
 
         #[derive(Clone, Debug, Eq, Hash, PartialEq)]
+        #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
         #[cfg_attr(feature = "serde", derive(serde::Serialize))]
         pub enum PathAttribute {
             $( $name($data) ),+,
@@ -696,6 +712,7 @@ impl Default for PathAttribute {
 //------------ UnimplementedPathAttribute ------------------------------------
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct UnimplementedPathAttribute {
     flags: Flags,
@@ -1131,6 +1148,7 @@ impl Display for crate::bgp::types::AtomicAggregate {
 //--- Aggregator
 
 #[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct AggregatorInfo {
     asn: Asn,
@@ -1281,6 +1299,7 @@ impl Attribute for crate::bgp::types::OriginatorId {
 //--- ClusterList
 
 #[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct BgpIdentifier([u8; 4]);
 
@@ -1291,6 +1310,7 @@ impl From<[u8; 4]> for BgpIdentifier {
 }
 
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct ClusterIds {
     cluster_ids: Vec<BgpIdentifier>
@@ -1642,6 +1662,7 @@ impl<A: Clone + NlriCompose> Attribute for MpUnreachNlriBuilder<A> {
 
 use crate::bgp::communities::ExtendedCommunity;
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct ExtendedCommunitiesList {
     communities: Vec<ExtendedCommunity>
@@ -1815,6 +1836,7 @@ impl Attribute for crate::bgp::types::Connector {
 //--- AsPathLimit (deprecated)
 
 #[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct AsPathLimitInfo {
     upper_bound: u8,
@@ -1863,6 +1885,7 @@ impl Attribute for AsPathLimitInfo {
 
 use crate::bgp::communities::Ipv6ExtendedCommunity;
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct Ipv6ExtendedCommunitiesList {
     communities: Vec<Ipv6ExtendedCommunity>
@@ -1933,6 +1956,7 @@ impl Attribute for Ipv6ExtendedCommunitiesList {
 use crate::bgp::communities::LargeCommunity;
 
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct LargeCommunitiesList {
     communities: Vec<LargeCommunity>
@@ -2030,6 +2054,7 @@ impl Attribute for crate::bgp::types::Otc {
 //--- AttributeSet
 
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct AttributeSet {
     origin: Asn,
@@ -2084,6 +2109,7 @@ impl Attribute for AttributeSet {
 //--- ReservedRaw
 
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct ReservedRaw {
     raw: Vec<u8>,

@@ -61,6 +61,7 @@ pub trait SerializeForOperators: Serialize {
 /// ```
 /// Hop(AS10), Hop(AS20), Hop(AS30), Hop(Set(AS40, AS50))
 /// ```
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[derive(Clone, Debug, Default, Eq, PartialEq, Hash)]
 pub struct HopPath {
     /// The hops in this HopPath.
@@ -762,6 +763,7 @@ impl<'a, Octs: Octets> Iterator for PathSegments<'a, Octs> {
 
 /// AS_PATH Segment generic over [`Octets`].
 #[derive(Copy, Clone, Debug)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct Segment<Octs> {
     stype: SegmentType,
@@ -986,6 +988,7 @@ impl<Octs: Octets> fmt::Display for Segment<Octs> {
 
 /// AS_PATH Segment types as defined in RFC4271 and RFC5065.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum SegmentType {
     Set,
@@ -1044,6 +1047,7 @@ impl fmt::Display for SegmentType {
 /// variant `Segment`, which contain the entire segment and thus (possibly)
 /// multiple ASNs.
 #[derive(Copy, Clone, Debug)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub enum Hop<Octs> {
     Asn(Asn),
