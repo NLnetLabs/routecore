@@ -778,10 +778,6 @@ where
             }
         )
     }
-
-    // TODO fn header_mut(&self) -> &mut Header {
-    //
-    // }
 }
 
 
@@ -878,7 +874,7 @@ where Infallible: From<<Target as OctetsBuilder>::AppendError>
                 let _ = self.target.append_slice(c.as_ref());
             }
         }
-        // TODO self.header_mut().set_length(29 + opt_param_len);
+
         let msg_len = 29 + opt_param_len as u16;
         self.target.as_mut()[16..=17].copy_from_slice( &(msg_len.to_be_bytes()) );
         self.target

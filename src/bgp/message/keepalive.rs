@@ -83,8 +83,6 @@ mod tests {
 
     use super::*;
 
-    // TODO
-
     mod builder {
         use super::*;
 

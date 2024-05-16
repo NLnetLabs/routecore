@@ -30,20 +30,6 @@ pub use routerefresh::RouteRefreshMessage;
 ///
 /// Represents the full BGP message including the 16 byte marker, the message
 /// header and the message payload.
-///
-/// To distinguish between message types, marker types are used. More details
-/// on this can be found in the documentation for
-/// [`bmp::Message`][`crate::bmp::Message`].
-///
-/// The available methods for each of the following message types are listed
-/// per `impl` in the [Implementations][Message#implementations] overview.
-///
-///  * `OpenMessage`
-///  * `UpdateMessage`
-///  * `NotificationMessage`
-///  * `KeepaliveMessage`
-///  * TODO: `RouteRefreshMessage`
-///
 #[derive(Clone)]
 pub enum Message<Octs: Octets> {
     Open(OpenMessage<Octs>),
