@@ -8,9 +8,8 @@ use log::trace;
 use super::{
     aspath::HopPath,
     path_attributes::{BgpIdentifier, ClusterIds, PaMap},
-    types::{LocalPref, MultiExitDisc, Origin, OriginatorId}
+    types::{LocalPref, MultiExitDisc, Origin, OriginatorId},
 };
-
 
 /// Wrapper type used for comparison and path selection.
 #[derive(Copy, Clone, Debug)]
@@ -42,10 +41,12 @@ impl<'a, OS> OrdRoute<'a, OS> {
         }
 
         // In case of EBGP it must contain a neighbour though.
-        if self.tiebreakers.source == RouteSource::Ebgp && 
-            self.pa_map.get::<HopPath>().and_then(|asp|
-                asp.neighbor_path_selection()
-            ).is_none()
+        if self.tiebreakers.source == RouteSource::Ebgp
+            && self
+                .pa_map
+                .get::<HopPath>()
+                .and_then(|asp| asp.neighbor_path_selection())
+                .is_none()
         {
             return Err(DET::EbgpWithoutNeighbour.into());
         }
@@ -53,7 +54,6 @@ impl<'a, OS> OrdRoute<'a, OS> {
         Ok(self)
     }
 }
-
 
 impl<'a, OS: OrdStrat> OrdRoute<'a, OS> {
     /// Create a comparable, orderable route to be used in path selection.
@@ -68,8 +68,9 @@ impl<'a, OS: OrdStrat> OrdRoute<'a, OS> {
         Self {
             pa_map,
             tiebreakers,
-            _strategy: std::marker::PhantomData
-        }.eligble()
+            _strategy: std::marker::PhantomData,
+        }
+        .eligble()
     }
 }
 
@@ -113,7 +114,6 @@ impl<'a, T> OrdRoute<'a, T> {
     }
 }
 
-
 /// Decision process `Ord` strategy.
 ///
 /// For flexibility in the `Ord` implementation of routes, used in the BGP
@@ -127,7 +127,7 @@ pub trait OrdStrat {
     /// The RFC4271 tie breaker concerning interior cost.
     ///
     /// This function defaults to returning `Ordering::Equal`, effectively
-    /// skipping the entire step. 
+    /// skipping the entire step.
     #[allow(unused_variables)]
     fn step_e<OS>(a: &OrdRoute<OS>, b: &OrdRoute<OS>) -> cmp::Ordering {
         cmp::Ordering::Equal
@@ -147,21 +147,21 @@ impl OrdStrat for Rfc4271 {
         // If true, go on and compare the MED.
         // Otherwise, consider the routes equal and go on with step d.
 
-        if
-            a.pa_map.get::<HopPath>()
-                .and_then(|asp| asp.neighbor_path_selection())
-                .unwrap_or(a.tiebreakers.local_asn)
-            ==
-            b.pa_map.get::<HopPath>()
+        if a.pa_map
+            .get::<HopPath>()
+            .and_then(|asp| asp.neighbor_path_selection())
+            .unwrap_or(a.tiebreakers.local_asn)
+            == b.pa_map
+                .get::<HopPath>()
                 .and_then(|asp| asp.neighbor_path_selection())
                 .unwrap_or(b.tiebreakers.local_asn)
         {
             // neighbor ASN is considered equal, check the MEDs:
             trace!("checking MEDs");
-            let a_med = a.pa_map.get::<MultiExitDisc>()
-                .unwrap_or(MultiExitDisc(0));
-            let b_med = b.pa_map.get::<MultiExitDisc>()
-                .unwrap_or(MultiExitDisc(0));
+            let a_med =
+                a.pa_map.get::<MultiExitDisc>().unwrap_or(MultiExitDisc(0));
+            let b_med =
+                b.pa_map.get::<MultiExitDisc>().unwrap_or(MultiExitDisc(0));
             a_med.cmp(&b_med)
         } else {
             cmp::Ordering::Equal
@@ -178,7 +178,6 @@ impl OrdStrat for SkipMed {
         std::cmp::Ordering::Equal
     }
 }
-
 
 impl<'a, OS: OrdStrat> PartialOrd for OrdRoute<'a, OS> {
     fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
@@ -200,143 +199,179 @@ impl<'a, OS: OrdStrat> Ord for OrdRoute<'a, OS> {
         // Degree of preference
         // The DoP is taken from LOCAL_PREF in case of IBGP, or when that's
         // missing or the route comes from EBGP, the DoP is 'computed based on
-        // local policy information'. 
-       
+        // local policy information'.
+
         // Higher DoP is preferred over lower DoP.
         // If the DoP is explicitly passed in the OrdRoute, use that.
         // Otherwise,  check for LOCAL_PREF if ibgp. Otherwise, None/0.
-        let a_dop = self.tiebreakers.degree_of_preference.or_else(|| 
-            if self.tiebreakers.source == RouteSource::Ibgp {
-                self.pa_map.get::<LocalPref>().map(Into::into)
-            } else {
-                None
-            }
-        ).unwrap_or(DegreeOfPreference(0));
+        let a_dop = self
+            .tiebreakers
+            .degree_of_preference
+            .or_else(|| {
+                if self.tiebreakers.source == RouteSource::Ibgp {
+                    self.pa_map.get::<LocalPref>().map(Into::into)
+                } else {
+                    None
+                }
+            })
+            .unwrap_or(DegreeOfPreference(0));
 
+        let b_dop = other
+            .tiebreakers
+            .degree_of_preference
+            .or_else(|| {
+                if other.tiebreakers.source == RouteSource::Ibgp {
+                    other.pa_map.get::<LocalPref>().map(Into::into)
+                } else {
+                    None
+                }
+            })
+            .unwrap_or(DegreeOfPreference(0));
 
-        let b_dop = other.tiebreakers.degree_of_preference.or_else(|| 
-            if other.tiebreakers.source == RouteSource::Ibgp {
-                other.pa_map.get::<LocalPref>().map(Into::into)
-            } else {
-                None
-            }
-        ).unwrap_or(DegreeOfPreference(0));
+        b_dop
+            .cmp(&a_dop)
+            .then_with(|| {
+                trace!("equal after DoP");
+                // Tie breakers
+                //
+                // Some notes/questions/remarks:
+                //  - is there an actual 'default Local Pref value' or is that
+                //  a vendor specific thing? many vendor docs mention 100
+                //  being the default
+                //  - many online explanations include a 'prefer route that is
+                //  older / was learned first' between steps e and f
+                //  - the 'weight' that many explanations start out with is a
+                //  Cisco specific thing. e.g. a locally originated route gets
+                //  the max weight of 32768 and is preferred over everything
+                //  else.
+                //  - after the IGP cost comparison (which we don't do
+                //  currently), paths are considered 'equal-cost' and can be
+                //  used in a BGP multipath scenario. Can we incorporate this
+                //  in the Ord impl somehow? Perhaps introduce (another)
+                //  wrapper(s) in addition to OrdRoute that compare only up to
+                //  that step and after that step, respectively (which,
+                //  combined, does the same as OrdRoute currently does)?
+                //  - another possible 'split up point', that also comes after
+                //  the IGP cost comparison: in JunOS, when the compared paths
+                //  are both external and one is already active, prefer that
+                //  active one to minimize route flapping.
+                //
+                //  seems that the big vendors all have their custom config
+                //  switches to enable/disable/tune certain parts of the tie
+                //  breakers. Perhaps we can come up with a way to do such
+                //  fine-grained tuning (with minimal user input from say roto
+                //  required).
 
-        b_dop.cmp(&a_dop)
-        .then_with(||{
-        trace!("equal after DoP");
-        // Tie breakers
-        //
-        // Some notes/questions/remarks:
-        //  - is there an actual 'default Local Pref value' or is that a
-        //  vendor specific thing? many vendor docs mention 100 being the
-        //  default
-        //  - many online explanations include a 'prefer route that is older /
-        //  was learned first' between steps e and f
-        //  - the 'weight' that many explanations start out with is a Cisco
-        //  specific thing. e.g. a locally originated route gets the max
-        //  weight of 32768 and is preferred over everything else.
-        //  - after the IGP cost comparison (which we don't do currently),
-        //  paths are considered 'equal-cost' and can be used in a BGP
-        //  multipath scenario. Can we incorporate this in the Ord impl
-        //  somehow? Perhaps introduce (another) wrapper(s) in addition to
-        //  OrdRoute that compare only up to that step and after that step,
-        //  respectively (which, combined, does the same as OrdRoute currently
-        //  does)?
-        //  - another possible 'split up point', that also comes after the IGP
-        //  cost comparison: in JunOS, when the compared paths are both
-        //  external and one is already active, prefer that active one to
-        //  minimize route flapping. 
-        //
-        //  seems that the big vendors all have their custom config switches
-        //  to enable/disable/tune certain parts of the tie breakers. Perhaps
-        //  we can come up with a way to do such fine-grained tuning (with
-        //  minimal user input from say roto required).
+                //  a: prefer the shorter aspath len (AS_SET counts as 1)
 
+                match (
+                    self.pa_map.get::<HopPath>(),
+                    other.pa_map.get::<HopPath>(),
+                ) {
+                    (Some(a), Some(b)) => a
+                        .hop_count_path_selection()
+                        .cmp(&b.hop_count_path_selection()),
+                    (_, _) => {
+                        panic!("can not compare routes lacking AS_PATH");
+                        //cmp::Ordering::Equal
+                    }
+                }
+            })
+            .then_with(|| {
+                trace!("equal after step a");
+                //  b: prefer the lower Origin
+                match (
+                    self.pa_map.get::<Origin>(),
+                    other.pa_map.get::<Origin>(),
+                ) {
+                    (Some(a), Some(b)) => a.cmp(&b),
+                    (_, _) => cmp::Ordering::Equal,
+                }
+            })
+            .then_with(|| {
+                trace!("equal after step b");
 
-        //  a: prefer the shorter aspath len (AS_SET counts as 1)
+                // The RFC4271 step C is as follows, and the `Rfc4271` impl of
+                // `OrdStrat` does just that. The `SkipMed` strategy skips
+                // this step.
+                //  c: if the neighbour ASN is the same, prefer lower MED. No
+                //  MED present means the lowest MED (== 0) is used.
 
-        match (self.pa_map.get::<HopPath>(), other.pa_map.get::<HopPath>()) {
-            (Some(a), Some(b)) => a.hop_count_path_selection().cmp(&b.hop_count_path_selection()),
-            (_, _) => {
-                panic!("can not compare routes lacking AS_PATH");
-                //cmp::Ordering::Equal
-            }
-        }}).then_with(||{
-        trace!("equal after step a");
-        //  b: prefer the lower Origin
-            match (self.pa_map.get::<Origin>(), other.pa_map.get::<Origin>()) {
-                (Some(a), Some(b)) => a.cmp(&b),
-                (_, _) => cmp::Ordering::Equal,
-            }
-        }).then_with(||{
-        trace!("equal after step b");
-
-        // The RFC4271 step C is as follows, and the `Rfc4271` impl of
-        // `OrdStrat` does just that. The `SkipMed` strategy skips this step.
-        //  c: if the neighbour ASN is the same, prefer lower MED. No MED
-        //     present means the lowest MED (== 0) is used.
-        //
-
-            OS::step_c(self, other)
-        }).then_with(||{
-        trace!("equal after step c");
-        //  d: EBGP is preferred over all IBGP 
-            self.tiebreakers.source.cmp(&other.tiebreakers.source)
-        }).then_with(||{
-        //  e: prefer lower interior cost, or treat all equally if we can not
-        //     determine this
-            OS::step_e(self, other)
-        }).then_with(||{
-        trace!("equal after step d+e");
-        //  f: prefer the lower BGP Identifier value
-        //     *addition from RFC4456 (Route Reflection)*:
-        //     If a route carries the ORIGINATOR_ID attribute,
-        //     the ORIGINATOR_ID SHOULD be treated as the BGP Identifier of
-        //     the BGP speaker that has advertised the route.
-            self.pa_map.get::<OriginatorId>()
-                .map(|id| id.0.octets())
-                .unwrap_or(self.tiebreakers.bgp_identifier.into())
-                .cmp(
-                    &other.pa_map.get::<OriginatorId>()
+                OS::step_c(self, other)
+            })
+            .then_with(|| {
+                trace!("equal after step c");
+                //  d: EBGP is preferred over all IBGP
+                self.tiebreakers.source.cmp(&other.tiebreakers.source)
+            })
+            .then_with(|| {
+                //  e: prefer lower interior cost, or treat all equally if we
+                //  can not determine this
+                OS::step_e(self, other)
+            })
+            .then_with(|| {
+                trace!("equal after step d+e");
+                //  f: prefer the lower BGP Identifier value
+                //     *addition from RFC4456 (Route Reflection)*:
+                //     If a route carries the ORIGINATOR_ID attribute, the
+                //     ORIGINATOR_ID SHOULD be treated as the BGP Identifier
+                //     of the BGP speaker that has advertised the route.
+                self.pa_map
+                    .get::<OriginatorId>()
                     .map(|id| id.0.octets())
-                    .unwrap_or(other.tiebreakers.bgp_identifier.into())
-                )
+                    .unwrap_or(self.tiebreakers.bgp_identifier.into())
+                    .cmp(
+                        &other
+                            .pa_map
+                            .get::<OriginatorId>()
+                            .map(|id| id.0.octets())
+                            .unwrap_or(
+                                other.tiebreakers.bgp_identifier.into(),
+                            ),
+                    )
+            })
+            .then_with(|| {
+                trace!("equal after step f");
 
-        }).then_with(||{
-        trace!("equal after step f");
-
-        // RFC4456 (Route Reflection):
-        // the following rule SHOULD be inserted between Steps f) and g):
-        // a BGP Speaker SHOULD prefer a route with the shorter CLUSTER_LIST
-        // length.  The CLUSTER_LIST length is zero if a route does not carry
-        // the CLUSTER_LIST attribute.
-            self.pa_map.get::<ClusterIds>()
-                .map(|l| l.len()).unwrap_or(0).cmp(
-                &other.pa_map.get::<ClusterIds>()
-                    .map(|l| l.len()).unwrap_or(0)
-            )
-        }).then_with(||{
-        trace!("equal after step f2");
-        //  g: prefer the lower peer address
-            self.tiebreakers.peer_addr.cmp(&other.tiebreakers.peer_addr)
-        }).then_with(||{
-            // this shouldn't happen when doing actual best path selection!
-            trace!("equal at end of tie breakers");
-            cmp::Ordering::Equal
-        })
+                // RFC4456 (Route Reflection):
+                // the following rule SHOULD be inserted between Steps f) and
+                // g):
+                // a BGP Speaker SHOULD prefer a route with the shorter
+                // CLUSTER_LIST length.  The CLUSTER_LIST length is zero if a
+                // route does not carry the CLUSTER_LIST attribute.
+                self.pa_map
+                    .get::<ClusterIds>()
+                    .map(|l| l.len())
+                    .unwrap_or(0)
+                    .cmp(
+                        &other
+                            .pa_map
+                            .get::<ClusterIds>()
+                            .map(|l| l.len())
+                            .unwrap_or(0),
+                    )
+            })
+            .then_with(|| {
+                trace!("equal after step f2");
+                //  g: prefer the lower peer address
+                self.tiebreakers.peer_addr.cmp(&other.tiebreakers.peer_addr)
+            })
+            .then_with(|| {
+                // this shouldn't happen when doing actual best path
+                // selection!
+                trace!("equal at end of tie breakers");
+                cmp::Ordering::Equal
+            })
     }
 }
 
 impl<'a, OS: OrdStrat> Eq for OrdRoute<'a, OS> {}
-
 
 impl<'a, OS: OrdStrat> PartialEq for OrdRoute<'a, OS> {
     fn eq(&self, other: &Self) -> bool {
         self.cmp(other).is_eq()
     }
 }
-
 
 //------------ Tiebreaker types ----------------------------------------------
 
@@ -348,9 +383,8 @@ pub struct TiebreakerInfo {
     degree_of_preference: Option<DegreeOfPreference>,
     local_asn: Asn,
     bgp_identifier: BgpIdentifier,
-    peer_addr:  net::IpAddr,
+    peer_addr: net::IpAddr,
 }
-
 
 /// Describes whether the route was learned externally or internally.
 #[derive(Copy, Clone, Debug, Eq, Hash, PartialEq, Ord, PartialOrd)]
@@ -375,7 +409,7 @@ impl From<LocalPref> for DegreeOfPreference {
 
 #[derive(Copy, Clone, Debug)]
 pub struct DecissionError {
-    error_type: DecissionErrorType
+    error_type: DecissionErrorType,
 }
 
 impl fmt::Display for DecissionError {
@@ -384,7 +418,7 @@ impl fmt::Display for DecissionError {
     }
 }
 
-impl std::error::Error for DecissionError { }
+impl std::error::Error for DecissionError {}
 
 #[allow(unused)]
 #[derive(Copy, Clone, Debug)]
@@ -415,14 +449,13 @@ impl fmt::Display for DecissionErrorType {
     }
 }
 
-
 //------------ Tests ---------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
 
-    use crate::bgp::types::OriginType;
     use super::*;
+    use crate::bgp::types::OriginType;
 
     #[test]
     fn route_source_order() {
@@ -438,9 +471,8 @@ mod tests {
             degree_of_preference: None,
             local_asn: Asn::from_u32(100),
             bgp_identifier: [0, 0, 0, 0].into(),
-            peer_addr: "::".parse().unwrap()
+            peer_addr: "::".parse().unwrap(),
         };
-
 
         let mut a_pamap = PaMap::empty();
         a_pamap.set(Origin(OriginType::Egp));
@@ -456,7 +488,6 @@ mod tests {
         c_pamap.set(Origin(OriginType::Egp));
         c_pamap.set(HopPath::from([80, 90, 100]));
 
-
         let a = OrdRoute::rfc4271(&a_pamap, tiebreakers).unwrap();
         let b = OrdRoute::rfc4271(&b_pamap, tiebreakers).unwrap();
         let c = OrdRoute::rfc4271(&c_pamap, tiebreakers).unwrap();
@@ -467,7 +498,7 @@ mod tests {
         // total ordering, so:
         //assert!(a > c);  // this would panic
         assert!(a == c);
-                        
+
         // Now if we skip that step using the SkipMed OrdStrat, we get:
         let a: OrdRoute<SkipMed> = a.into_strat();
         let b: OrdRoute<SkipMed> = b.into_strat();
