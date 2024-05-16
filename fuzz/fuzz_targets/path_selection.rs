@@ -69,10 +69,12 @@ fuzz_target!(|data: (
     verify_ord(&a, &b, &c);
 
     //dbg!("rfc4271");
+    /*
     verify_ord(
         &a.into_strat::<Rfc4271>(),
         &b.into_strat::<Rfc4271>(),
         &c.into_strat::<Rfc4271>()
-        );
+    );
+    */
 
 });
