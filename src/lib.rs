@@ -1,15 +1,14 @@
 //! A library for IP routing primitives.
 
-#[cfg(feature = "bgp")]
 pub mod bgp;
+#[cfg(feature = "bgpsec")]
 pub mod bgpsec;
-#[cfg(feature = "bmp")]
-pub mod bmp;
-#[cfg(feature = "bgp")]
-pub mod flowspec;
 
 #[cfg(feature = "bmp")]
-pub use octseq::Octets;
+pub mod bmp;
+
+pub mod flowspec;
+
 
 //--- Private modules
 

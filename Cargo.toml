@@ -28,8 +28,9 @@ memmap2         = "0.9"
 serde_test      = "1"
 
 [features]
-default = []
+default = ["bgp"]
 bgp = ["bytes", "log", "octseq", "const-str"]
 bmp = ["bgp", "chrono"]
 fsm = ["tokio"]
+bgpsec = []
 
