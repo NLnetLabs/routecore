@@ -437,15 +437,19 @@ impl From<Vec<Asn>> for HopPath {
     }
 }
 
-impl From<&[Asn]> for HopPath {
-    fn from(asns: &[Asn]) -> HopPath {
-        HopPath { hops: asns.iter().map(|&a| Hop::Asn(a)).collect() }  
+impl<T: Copy> From<&[T]> for HopPath
+where Asn: From<T>
+{
+    fn from(asns: &[T]) -> HopPath {
+        HopPath { hops: asns.iter().map(|a| Hop::Asn(Asn::from(*a))).collect() }  
     }
 }
 
-impl<const N: usize> From<[Asn; N]> for HopPath {
-    fn from(asns: [Asn; N]) -> HopPath {
-        HopPath { hops: asns.into_iter().map(Hop::Asn).collect() }  
+impl<T, const N: usize> From<[T; N]> for HopPath
+where Asn: From<T>
+{
+    fn from(asns: [T; N]) -> HopPath {
+        HopPath { hops: asns.into_iter().map(|a| Hop::Asn(Asn::from(a))).collect() }  
     }
 }
 
