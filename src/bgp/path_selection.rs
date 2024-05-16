@@ -55,7 +55,7 @@ impl<'a, OS> OrdRoute<'a, OS> {
 }
 
 
-impl<'a, OS> OrdRoute<'a, OS> {
+impl<'a, OS: OrdStrat> OrdRoute<'a, OS> {
     /// Create a comparable, orderable route to be used in path selection.
     ///
     /// This function returns an error whenever the path attributes (i.e., the
@@ -95,19 +95,17 @@ impl<'a> OrdRoute<'a, SkipMed> {
 
 //------------ Traits --------------------------------------------------------
 
-impl<'a> From<OrdRoute<'a, ()>> for OrdRoute<'a, Rfc4271> {
-    fn from(src: OrdRoute<'a, ()>) -> Self {
-        Self {
-            pa_map: src.pa_map,
-            tiebreakers: src.tiebreakers,
+impl<'a, T> OrdRoute<'a, T> {
+    pub fn into_strat<U: OrdStrat>(self) -> OrdRoute<'a, U> {
+        OrdRoute {
+            pa_map: self.pa_map,
+            tiebreakers: self.tiebreakers,
             _strategy: std::marker::PhantomData,
         }
     }
-}
 
-impl<'a> From<OrdRoute<'a, ()>> for OrdRoute<'a, SkipMed> {
-    fn from(src: OrdRoute<'a, ()>) -> Self {
-        Self {
+    pub fn from_strat<U: OrdStrat>(src: OrdRoute<'a, U>) -> Self {
+        OrdRoute {
             pa_map: src.pa_map,
             tiebreakers: src.tiebreakers,
             _strategy: std::marker::PhantomData,
@@ -122,7 +120,7 @@ impl<'a> From<OrdRoute<'a, ()>> for OrdRoute<'a, SkipMed> {
 /// Decision process (path selection), we wrap routes in a struct that is
 /// generic over something implementing parts of the ordering strategy via
 /// this trait.
-trait OrdStrat {
+pub trait OrdStrat {
     /// The RFC4271 tie breaker concerning Multi Exit Discriminator.
     fn step_c<OS>(a: &OrdRoute<OS>, b: &OrdRoute<OS>) -> cmp::Ordering;
 
@@ -159,6 +157,7 @@ impl OrdStrat for Rfc4271 {
                 .unwrap_or(b.tiebreakers.local_asn)
         {
             // neighbor ASN is considered equal, check the MEDs:
+            trace!("checking MEDs");
             let a_med = a.pa_map.get::<MultiExitDisc>()
                 .unwrap_or(MultiExitDisc(0));
             let b_med = b.pa_map.get::<MultiExitDisc>()
@@ -423,55 +422,59 @@ impl fmt::Display for DecissionErrorType {
 mod tests {
 
     use crate::bgp::types::OriginType;
-
     use super::*;
-
-    #[test]
-    fn test1() {
-
-        let mut attrs1 = PaMap::empty();
-        let asp = HopPath::from([Asn::from_u32(100), Asn::from_u32(200)]);
-        
-        attrs1.set(Origin::from(OriginType::Egp));
-        attrs1.set(asp);
-
-        let tiebreakers = TiebreakerInfo {
-            source: RouteSource::Ebgp,
-            degree_of_preference: None,
-            local_asn: Asn::from_u32(1234),
-            bgp_identifier: [1, 2, 3, 4].into(),
-            peer_addr: "9.9.9.9".parse().unwrap(),
-        };
-
-        let route1 = OrdRoute::rfc4271(
-            &attrs1,
-            tiebreakers,
-        ).unwrap();
-
-        let mut attrs2 = PaMap::empty();
-        let asp = HopPath::from([
-            Asn::from_u32(100),
-            Asn::from_u32(200),
-            Asn::from_u32(300),
-
-        ]);
-        
-        attrs2.set(Origin::from(OriginType::Egp));
-        attrs2.set(asp);
-
-        let route2 = OrdRoute::rfc4271(
-            &attrs2,
-            tiebreakers,
-        ).unwrap();
-
-
-        assert!(route1 < route2);
-    }
 
     #[test]
     fn route_source_order() {
         // Order of the variants is important for the path selection tie
         // breakers.
         assert!(RouteSource::Ebgp < RouteSource::Ibgp);
+    }
+
+    #[test]
+    fn rfc4271_total_ordering_fail() {
+        let tiebreakers = TiebreakerInfo {
+            source: RouteSource::Ebgp,
+            degree_of_preference: None,
+            local_asn: Asn::from_u32(100),
+            bgp_identifier: [0, 0, 0, 0].into(),
+            peer_addr: "::".parse().unwrap()
+        };
+
+
+        let mut a_pamap = PaMap::empty();
+        a_pamap.set(Origin(OriginType::Egp));
+        a_pamap.set(HopPath::from([10, 20, 30]));
+        a_pamap.set(MultiExitDisc(100));
+
+        let mut b_pamap = PaMap::empty();
+        b_pamap.set(Origin(OriginType::Egp));
+        b_pamap.set(HopPath::from([10, 25, 30]));
+        b_pamap.set(MultiExitDisc(50));
+
+        let mut c_pamap = PaMap::empty();
+        c_pamap.set(Origin(OriginType::Egp));
+        c_pamap.set(HopPath::from([80, 90, 100]));
+
+
+        let a = OrdRoute::rfc4271(&a_pamap, tiebreakers).unwrap();
+        let b = OrdRoute::rfc4271(&b_pamap, tiebreakers).unwrap();
+        let c = OrdRoute::rfc4271(&c_pamap, tiebreakers).unwrap();
+
+        assert!(a > b);
+        assert!(b == c);
+        // For total ordering, one expects a > c now. But checking MEDs breaks
+        // total ordering, so:
+        //assert!(a > c);  // this would panic
+        assert!(a == c);
+                        
+        // Now if we skip that step using the SkipMed OrdStrat, we get:
+        let a: OrdRoute<SkipMed> = a.into_strat();
+        let b: OrdRoute<SkipMed> = b.into_strat();
+        let c: OrdRoute<SkipMed> = c.into_strat();
+
+        assert!(a == b);
+        assert!(b == c);
+        assert!(a == c);
     }
 }

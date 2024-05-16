@@ -44,33 +44,35 @@ fn verify_ord<T>(a: &T, b: &T, c: &T)
 //  has benefits.
 //
 
-//fuzz_target!(|data: &[u8]| {
-fuzz_target!(|data: (PaMap, TiebreakerInfo, PaMap, TiebreakerInfo, PaMap, TiebreakerInfo)| {
+fuzz_target!(|data: (
+        PaMap, TiebreakerInfo,
+        PaMap, TiebreakerInfo,
+        PaMap, TiebreakerInfo
+    )|{
 
     //dbg!(&data);
 
-    let a = match OrdRoute::<()>::try_new(&data.0, data.1) {
+    let a = match OrdRoute::<SkipMed>::try_new(&data.0, data.1) {
         Ok(r) => r,
         Err(_) => return,
     };
-    let b = match OrdRoute::<()>::try_new(&data.2, data.3) {
+    let b = match OrdRoute::<SkipMed>::try_new(&data.2, data.3) {
         Ok(r) => r,
         Err(_) => return,
     };
-    let c = match OrdRoute::<()>::try_new(&data.4, data.5) {
+    let c = match OrdRoute::<SkipMed>::try_new(&data.4, data.5) {
         Ok(r) => r,
         Err(_) => return,
     };
 
+    //dbg!("skipmed");
+    verify_ord(&a, &b, &c);
+
+    //dbg!("rfc4271");
     verify_ord(
-        &OrdRoute::<SkipMed>::from(a),
-        &OrdRoute::<SkipMed>::from(b),
-        &OrdRoute::<SkipMed>::from(c),
-    );
+        &a.into_strat::<Rfc4271>(),
+        &b.into_strat::<Rfc4271>(),
+        &c.into_strat::<Rfc4271>()
+        );
 
-    //verify_ord(
-    //    &OrdRoute::<Rfc4271>::from(a),
-    //    &OrdRoute::<Rfc4271>::from(b),
-    //    &OrdRoute::<Rfc4271>::from(c),
-    //);
 });
