@@ -26,8 +26,8 @@ impl<'a, OS> OrdRoute<'a, OS> {
     /// * ORIGIN must be present;
     /// * AS_PATH must be present;
     /// * AS_PATH must not be empty in case of EBGP;
-    fn eligble(self) -> Result<Self, DecissionError> {
-        use DecissionErrorType as DET;
+    fn eligible(self) -> Result<Self, DecisionError> {
+        use DecisionErrorType as DET;
 
         // Mandatory path attribute Origin must be present.
         if !self.pa_map.contains::<Origin>() {
@@ -60,17 +60,17 @@ impl<'a, OS: OrdStrat> OrdRoute<'a, OS> {
     ///
     /// This function returns an error whenever the path attributes (i.e., the
     /// contents of `pa_map`) are incomplete or invalid for the path selection
-    /// process. Also see [`eligble`].
+    /// process. Also see [`eligible`].
     pub fn try_new(
         pa_map: &'a PaMap,
         tiebreakers: TiebreakerInfo,
-    ) -> Result<Self, DecissionError> {
+    ) -> Result<Self, DecisionError> {
         Self {
             pa_map,
             tiebreakers,
             _strategy: std::marker::PhantomData,
         }
-        .eligble()
+        .eligible()
     }
 }
 
@@ -79,7 +79,7 @@ impl<'a> OrdRoute<'a, Rfc4271> {
     pub fn rfc4271(
         pa_map: &'a PaMap,
         tiebreakers: TiebreakerInfo,
-    ) -> Result<Self, DecissionError> {
+    ) -> Result<Self, DecisionError> {
         Self::try_new(pa_map, tiebreakers)
     }
 }
@@ -89,7 +89,7 @@ impl<'a> OrdRoute<'a, SkipMed> {
     pub fn skip_med(
         pa_map: &'a PaMap,
         tiebreakers: TiebreakerInfo,
-    ) -> Result<Self, DecissionError> {
+    ) -> Result<Self, DecisionError> {
         Self::try_new(pa_map, tiebreakers)
     }
 }
@@ -141,7 +141,7 @@ impl OrdStrat for Rfc4271 {
     fn step_c<OS>(a: &OrdRoute<OS>, b: &OrdRoute<OS>) -> cmp::Ordering {
         //  c: if the neighbour ASN is the same, prefer lower MED. No MED
         //     present means the lowest MED is used
-        //     also, another can of worms when it comes to ibgp vs ebgp
+        //     also, another can of worms when it comes to IBGP vs EBGP
 
         // First, Determine whether 'neighbour ASN is the same.
         // If true, go on and compare the MED.
@@ -193,7 +193,7 @@ impl<'a, OS: OrdStrat> PartialOrd for OrdRoute<'a, OS> {
 ///
 /// **NB**: for a route to be an actual candidate in the path selection
 /// process, additional checks need to be performed beforehand. Refer to
-/// [`eligble`] for the specific checks.
+/// [`eligible`] for the specific checks.
 impl<'a, OS: OrdStrat> Ord for OrdRoute<'a, OS> {
     fn cmp(&self, other: &Self) -> cmp::Ordering {
         // Degree of preference
@@ -408,36 +408,36 @@ impl From<LocalPref> for DegreeOfPreference {
 //------------ Errors --------------------------------------------------------
 
 #[derive(Copy, Clone, Debug)]
-pub struct DecissionError {
-    error_type: DecissionErrorType,
+pub struct DecisionError {
+    error_type: DecisionErrorType,
 }
 
-impl fmt::Display for DecissionError {
+impl fmt::Display for DecisionError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt::Display::fmt(&self.error_type, f)
     }
 }
 
-impl std::error::Error for DecissionError {}
+impl std::error::Error for DecisionError {}
 
 #[allow(unused)]
 #[derive(Copy, Clone, Debug)]
-enum DecissionErrorType {
+enum DecisionErrorType {
     EbgpWithoutNeighbour,
     AsPathLoop,
     MissingAsPath,
     MissingOrigin,
 }
 
-impl From<DecissionErrorType> for DecissionError {
-    fn from(det: DecissionErrorType) -> Self {
-        DecissionError { error_type: det }
+impl From<DecisionErrorType> for DecisionError {
+    fn from(det: DecisionErrorType) -> Self {
+        DecisionError { error_type: det }
     }
 }
 
-impl fmt::Display for DecissionErrorType {
+impl fmt::Display for DecisionErrorType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        use DecissionErrorType as DET;
+        use DecisionErrorType as DET;
         match self {
             DET::EbgpWithoutNeighbour => {
                 write!(f, "expected non-empty AS_PATH")
