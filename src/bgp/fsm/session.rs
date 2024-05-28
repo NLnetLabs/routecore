@@ -15,7 +15,7 @@ use crate::bgp::message::open::{Capability, OpenBuilder};
 use crate::bgp::message::{
     Message as BgpMsg, NotificationMessage, SessionConfig, UpdateMessage,
 };
-use crate::bgp::types::{AddpathDirection, AddpathFamDir, AfiSafi};
+use crate::bgp::types::{AddpathDirection, AddpathFamDir, AfiSafiType};
 use crate::bgp::ParseError;
 use inetnum::asn::Asn;
 use log::{debug, error, info, warn};
@@ -1947,8 +1947,8 @@ pub trait BgpConfig {
     fn hold_time(&self) -> Option<u16>;
     fn is_exact(&self) -> bool;
 
-    fn protocols(&self) -> Vec<AfiSafi>;
-    fn addpath(&self) -> Vec<AfiSafi>;
+    fn protocols(&self) -> Vec<AfiSafiType>;
+    fn addpath(&self) -> Vec<AfiSafiType>;
 }
 
 //------------ BasicConfig ---------------------------------------------------
@@ -2016,11 +2016,11 @@ impl BgpConfig for BasicConfig {
         true
     }
 
-    fn protocols(&self) -> Vec<AfiSafi> {
-        vec![AfiSafi::Ipv4Unicast, AfiSafi::Ipv6Unicast]
+    fn protocols(&self) -> Vec<AfiSafiType> {
+        vec![AfiSafiType::Ipv4Unicast, AfiSafiType::Ipv6Unicast]
     }
 
-    fn addpath(&self) -> Vec<AfiSafi> {
+    fn addpath(&self) -> Vec<AfiSafiType> {
         vec![]
     }
 }

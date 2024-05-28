@@ -16,14 +16,14 @@ use super::aspath::HopPath;
 use super::path_attributes::AggregatorInfo;
 
 
-pub use crate::bgp::nlri::afisafi::AfiSafiType as AfiSafi;
+pub use crate::bgp::nlri::afisafi::AfiSafiType;
 
 
 #[derive(Clone, Copy, Debug, Hash, Eq, Ord, PartialEq, PartialOrd)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct AddpathFamDir(AfiSafi, AddpathDirection);
+pub struct AddpathFamDir(AfiSafiType, AddpathDirection);
 impl AddpathFamDir {
-    pub fn new(afisafi: AfiSafi, apd: AddpathDirection) -> Self {
+    pub fn new(afisafi: AfiSafiType, apd: AddpathDirection) -> Self {
         Self(afisafi, apd)
     }
 
@@ -34,7 +34,7 @@ impl AddpathFamDir {
         self.1.merge(other.1).map(|dir| Self::new(self.0, dir))
     }
 
-    pub fn fam(&self) -> AfiSafi {
+    pub fn fam(&self) -> AfiSafiType {
         self.0
     }
 

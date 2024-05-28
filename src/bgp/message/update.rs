@@ -20,7 +20,7 @@ use crate::bgp::path_attributes::{
     WireformatPathAttribute, UncheckedPathAttributes,
 };
 use crate::bgp::types::{
-    LocalPref, MultiExitDisc, NextHop, OriginType, AfiSafi, AddpathDirection,
+    LocalPref, MultiExitDisc, NextHop, OriginType, AfiSafiType, AddpathDirection,
     AddpathFamDir
 };
 
@@ -198,11 +198,11 @@ impl<Octs: Octets> UpdateMessage<Octs> {
     ) {
         (
             (!self.withdrawals.is_empty()).then_some((
-                 AfiSafi::Ipv4Unicast,
+                 AfiSafiType::Ipv4Unicast,
                  self.pdu_parse_info.conventional_addpath()).into()
             ),
             (!self.announcements.is_empty()).then_some((
-                    AfiSafi::Ipv4Unicast,
+                    AfiSafiType::Ipv4Unicast,
                     self.pdu_parse_info.conventional_addpath()).into()
             ),
             self.mp_withdrawals().ok().flatten().map(|w| w.nlri_type()),
@@ -259,7 +259,7 @@ impl<Octs: Octets> UpdateMessage<Octs> {
             let mut parser = pa.value_into_parser();
             let afi = parser.parse_u16_be()?;
             let safi = parser.parse_u8()?;
-            let afi_safi = AfiSafi::from((afi, safi));
+            let afi_safi = AfiSafiType::from((afi, safi));
             Ok(Some(NlriEnumIter::new(
                 parser,
                 (afi_safi, self.pdu_parse_info.mp_unreach_addpath()).into()
@@ -295,7 +295,7 @@ impl<Octs: Octets> UpdateMessage<Octs> {
         Octs: Octets<Range<'a> = O>,
         ASP: AfiSafiNlri + AfiSafiParse<'a, O, Octs>
     {
-        if ASP::afi_safi() == AfiSafi::Ipv4Unicast && !self.withdrawals.is_empty() {
+        if ASP::afi_safi() == AfiSafiType::Ipv4Unicast && !self.withdrawals.is_empty() {
             return Ok(Some(NlriIter::<_, _, ASP>::new(
                 Parser::with_range(self.octets(), self.withdrawals.clone())
             )));
@@ -306,7 +306,7 @@ impl<Octs: Octets> UpdateMessage<Octs> {
             let mut parser = pa.value_into_parser();
             let afi = parser.parse_u16_be()?;
             let safi = parser.parse_u8()?;
-            if AfiSafi::from((afi, safi)) != ASP::afi_safi() {
+            if AfiSafiType::from((afi, safi)) != ASP::afi_safi() {
                 return Ok(None);
                 //return Err(ParseError::form_error("different AFI+SAFI than requested"));
             }
@@ -389,7 +389,7 @@ impl<Octs: Octets> UpdateMessage<Octs> {
             let mut parser = pa.value_into_parser();
             let afi = parser.parse_u16_be()?;
             let safi = parser.parse_u8()?;
-            let afi_safi = AfiSafi::from((afi, safi));
+            let afi_safi = AfiSafiType::from((afi, safi));
 
             NextHop::skip(&mut parser)?;
             parser.advance(1)?; // 1 reserved byte
@@ -455,7 +455,7 @@ impl<Octs: Octets> UpdateMessage<Octs> {
     {
         // If the requested announcements are of type Ipv4Unicast, and the
         // conventional announcements range is non-zero, return that.
-        if ASP::afi_safi() == AfiSafi::Ipv4Unicast &&
+        if ASP::afi_safi() == AfiSafiType::Ipv4Unicast &&
             !self.announcements.is_empty()
         {
             return Ok(Some(NlriIter::<_, _, ASP>::new(
@@ -470,7 +470,7 @@ impl<Octs: Octets> UpdateMessage<Octs> {
             let mut parser = pa.value_into_parser();
             let afi = parser.parse_u16_be()?;
             let safi = parser.parse_u8()?;
-            if AfiSafi::from((afi, safi)) != ASP::afi_safi() {
+            if AfiSafiType::from((afi, safi)) != ASP::afi_safi() {
                 return Ok(None);
                 //return Err(ParseError::form_error("different AFI+SAFI than requested"));
             }
@@ -513,12 +513,12 @@ impl<Octs: Octets> UpdateMessage<Octs> {
 
     /// Returns `Option<(AfiSafi)>` if this UPDATE represents the End-of-RIB
     /// marker for a AFI/SAFI combination.
-    pub fn is_eor(&self) -> Result<Option<AfiSafi>, ParseError> {
+    pub fn is_eor(&self) -> Result<Option<AfiSafiType>, ParseError> {
         // Conventional BGP
         if self.length() == 23 {
             // minimum length for a BGP UPDATE indicates EOR
             // (no announcements, no withdrawals)
-            return Ok(Some(AfiSafi::Ipv4Unicast));
+            return Ok(Some(AfiSafiType::Ipv4Unicast));
         }
 
         // Based on MP_UNREACH_NLRI
@@ -597,21 +597,21 @@ impl<Octs: Octets> UpdateMessage<Octs> {
             let mut p = pa.value_into_parser();
             let afi = p.parse_u16_be()?;
             let safi = p.parse_u8()?;
-            let afi_safi = AfiSafi::from((afi, safi));
+            let afi_safi = AfiSafiType::from((afi, safi));
             Ok(Some(NextHop::parse(&mut p, afi_safi)?))
         } else {
             Ok(None)
         }
     }
 
-    fn mp_next_hop_tuple(&self) -> Result<Option<(AfiSafi, NextHop)>, ParseError> {
+    fn mp_next_hop_tuple(&self) -> Result<Option<(AfiSafiType, NextHop)>, ParseError> {
         if let Some(pa) = self.unchecked_path_attributes().find(|pa|
             pa.type_code() == 14
         ) {
             let mut p = pa.value_into_parser();
             let afi = p.parse_u16_be()?;
             let safi = p.parse_u8()?;
-            let afi_safi = AfiSafi::from((afi, safi));
+            let afi_safi = AfiSafiType::from((afi, safi));
             Ok(Some((afi_safi, NextHop::parse(&mut p, afi_safi)?)))
         } else {
             Ok(None)
@@ -619,17 +619,17 @@ impl<Octs: Octets> UpdateMessage<Octs> {
 
     }
 
-    pub fn find_next_hop(&self, afi_safi: AfiSafi)
+    pub fn find_next_hop(&self, afi_safi: AfiSafiType)
         -> Result<NextHop, ParseError>
     {
         match afi_safi {
-            AfiSafi::Ipv4Unicast => {
+            AfiSafiType::Ipv4Unicast => {
                 // If there is Ipv4Unicast in the MP_REACH_NLRI attribute, the
                 // peers must have negotiated that in the BGP OPENs, so we can
                 // assume there are no NLRI in the conventional parts of the
                 // PDU. We return the nexthop from the MP attribute.
                 if let Ok(Some((mp_afisafi, mp))) = self.mp_next_hop_tuple() {
-                    if mp_afisafi == AfiSafi::Ipv4Unicast {
+                    if mp_afisafi == AfiSafiType::Ipv4Unicast {
                         return Ok(mp)
                     }
                 }
@@ -926,7 +926,7 @@ impl<Octs: Octets> UpdateMessage<Octs> {
         if withdrawals_len > 0 {
             let wdraw_parser = parser.parse_parser(withdrawals_len.into())?;
 
-            if session_config.rx_addpath(AfiSafi::Ipv4Unicast) {
+            if session_config.rx_addpath(AfiSafiType::Ipv4Unicast) {
                 NlriIter::ipv4_unicast_addpath(wdraw_parser).validate()?;
             } else {
                 NlriIter::ipv4_unicast(wdraw_parser).validate()?;
@@ -997,7 +997,7 @@ impl<Octs: Octets> UpdateMessage<Octs> {
             header.length() as usize - 19 - (announcements_start)
         )?;
 
-        if session_config.rx_addpath(AfiSafi::Ipv4Unicast) {
+        if session_config.rx_addpath(AfiSafiType::Ipv4Unicast) {
             NlriIter::ipv4_unicast_addpath(ann_parser).validate()?;
         } else {
             NlriIter::ipv4_unicast(ann_parser).validate()?;
@@ -1092,13 +1092,13 @@ impl PduParseInfo {
     /// iterator (e.g. [`typed_announcements`]) from the message.
     pub fn from_session_config(
         sc: &SessionConfig,
-        mp_reach_afisafi: Option<AfiSafi>,
-        mp_unreach_afisafi: Option<AfiSafi>,
+        mp_reach_afisafi: Option<AfiSafiType>,
+        mp_unreach_afisafi: Option<AfiSafiType>,
     ) -> Self {
         Self {
             four_octet_asns: sc.four_octet_asns,
             pdu_addpaths: PduAddpaths {
-                conventional: sc.rx_addpath(AfiSafi::Ipv4Unicast),
+                conventional: sc.rx_addpath(AfiSafiType::Ipv4Unicast),
                 mp_reach: mp_reach_afisafi.map(|fam| sc.rx_addpath(fam))
                     .unwrap_or(false),
                 mp_unreach: mp_unreach_afisafi.map(|fam| sc.rx_addpath(fam))
@@ -1193,22 +1193,22 @@ impl PduAddpaths {
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
-struct SessionAddpaths(HashMap<AfiSafi, AddpathDirection>);
+struct SessionAddpaths(HashMap<AfiSafiType, AddpathDirection>);
 impl SessionAddpaths {
     fn new() -> Self {
         Self(HashMap::new())
     }
 
-    fn set(&mut self, afisafi: AfiSafi, dir: AddpathDirection) {
+    fn set(&mut self, afisafi: AfiSafiType, dir: AddpathDirection) {
         self.0.insert(afisafi, dir);
     }
 
-    fn get(&self, afisafi: AfiSafi) -> Option<AddpathDirection> {
+    fn get(&self, afisafi: AfiSafiType) -> Option<AddpathDirection> {
         self.0.get(&afisafi).copied()
     }
 
     fn enabled_addpaths(&self)
-        -> impl Iterator<Item = (AfiSafi, AddpathDirection)> + '_
+        -> impl Iterator<Item = (AfiSafiType, AddpathDirection)> + '_
     {
         self.0.iter().map(|(&k, &v)| (k, v))
     }
@@ -1254,7 +1254,7 @@ impl SessionConfig {
     }
 
     /// Sets AddPath in a specific direction for a specific address family.
-    pub fn add_addpath(&mut self, fam: AfiSafi, dir: AddpathDirection) {
+    pub fn add_addpath(&mut self, fam: AfiSafiType, dir: AddpathDirection) {
         self.addpath_fams.set(fam, dir);
     }
 
@@ -1264,17 +1264,17 @@ impl SessionConfig {
     }
 
     /// Sets AddPath bidirectionally for a specific address family.
-    pub fn add_addpath_rxtx(&mut self, fam: AfiSafi) {
+    pub fn add_addpath_rxtx(&mut self, fam: AfiSafiType) {
         self.addpath_fams.set(fam, AddpathDirection::SendReceive);
     }
 
     /// Returns the `AddpathDirection` for this address family, if any.
-    pub fn get_addpath(&self, fam: AfiSafi) -> Option<AddpathDirection> {
+    pub fn get_addpath(&self, fam: AfiSafiType) -> Option<AddpathDirection> {
         self.addpath_fams.get(fam)
     }
 
     /// Returns true if incoming NLRI for this address family are AddPath.
-    pub fn rx_addpath(&self, fam: AfiSafi) -> bool {
+    pub fn rx_addpath(&self, fam: AfiSafiType) -> bool {
         if let Some(dir) = self.get_addpath(fam) {
             match dir {
                 AddpathDirection::Receive |
@@ -1288,7 +1288,7 @@ impl SessionConfig {
 
     /// Returns an iterator for all AddPath-enabled address families.
     pub fn enabled_addpaths(&self)
-        -> impl Iterator<Item = (AfiSafi, AddpathDirection)> + '_
+        -> impl Iterator<Item = (AfiSafiType, AddpathDirection)> + '_
     {
         self.addpath_fams.enabled_addpaths()
     }
@@ -1767,7 +1767,7 @@ mod tests {
                 update.announcements_vec().unwrap().into_iter()
         ));
 
-        assert!(update.find_next_hop(AfiSafi::Ipv6Multicast).is_err());
+        assert!(update.find_next_hop(AfiSafiType::Ipv6Multicast).is_err());
 
     }
 
@@ -1993,7 +1993,7 @@ mod tests {
             0x64, 0x00
         ];
         let mut sc = SessionConfig::modern();
-        sc.add_addpath(AfiSafi::Ipv4Unicast, AddpathDirection::Receive);
+        sc.add_addpath(AfiSafiType::Ipv4Unicast, AddpathDirection::Receive);
         let upd: UpdateMessage<_> = Message::from_octets(&buf, Some(&sc))
             .unwrap().try_into().unwrap();
 
@@ -2111,7 +2111,7 @@ mod tests {
             0x64, 0x00
         ];
         let mut sc = SessionConfig::modern();
-        sc.add_addpath(AfiSafi::Ipv4Unicast, AddpathDirection::Receive);
+        sc.add_addpath(AfiSafiType::Ipv4Unicast, AddpathDirection::Receive);
         let upd: UpdateMessage<_> = Message::from_octets(&buf, Some(&sc))
             .unwrap().try_into().unwrap();
 
@@ -2156,7 +2156,7 @@ mod tests {
             ];
 
         let mut sc = SessionConfig::modern();
-        sc.add_addpath(AfiSafi::Ipv4Unicast, AddpathDirection::Receive);
+        sc.add_addpath(AfiSafiType::Ipv4Unicast, AddpathDirection::Receive);
         let _upd: UpdateMessage<_> = Message::from_octets(&buf, Some(&sc))
             .unwrap().try_into().unwrap();
         //for pa in upd.path_attributes() {
@@ -2185,7 +2185,7 @@ mod tests {
             .unwrap().try_into().unwrap();
         assert_eq!(
             upd.mp_announcements().unwrap().unwrap().afi_safi(),
-            AfiSafi::Ipv4Multicast
+            AfiSafiType::Ipv4Multicast
         );
         let prefixes = [
             "198.51.100.0/26",
@@ -2213,7 +2213,7 @@ mod tests {
             .unwrap().try_into().unwrap();
         assert_eq!(
             upd.mp_withdrawals().unwrap().unwrap().afi_safi(),
-            AfiSafi::Ipv4Multicast
+            AfiSafiType::Ipv4Multicast
         );
         assert_eq!(upd.mp_withdrawals().unwrap().iter().count(), 1);
     }
@@ -2667,16 +2667,16 @@ mod tests {
     #[test]
     fn session_addpaths() {
         let mut aps = SessionAddpaths::new();
-        aps.set(AfiSafi::Ipv4Unicast, AddpathDirection::SendReceive);
-        aps.set(AfiSafi::L2VpnEvpn, AddpathDirection::Receive);
+        aps.set(AfiSafiType::Ipv4Unicast, AddpathDirection::SendReceive);
+        aps.set(AfiSafiType::L2VpnEvpn, AddpathDirection::Receive);
         assert_eq!(
-            aps.get(AfiSafi::Ipv4Unicast), Some(AddpathDirection::SendReceive)
+            aps.get(AfiSafiType::Ipv4Unicast), Some(AddpathDirection::SendReceive)
         );
         assert_eq!(
-            aps.get(AfiSafi::L2VpnEvpn), Some(AddpathDirection::Receive)
+            aps.get(AfiSafiType::L2VpnEvpn), Some(AddpathDirection::Receive)
         );
         assert_eq!(
-            aps.get(AfiSafi::Ipv6Unicast), None
+            aps.get(AfiSafiType::Ipv6Unicast), None
         );
 
         assert_eq!(aps.enabled_addpaths().count(), 2);
@@ -2690,15 +2690,15 @@ mod tests {
     fn session_config_addpaths() {
         /*
         let mut sc = SessionConfig::modern();
-        sc.add_addpath_rxtx(AfiSafi::Ipv4Unicast);
-        sc.add_addpath_rxtx(AfiSafi::Ipv6MplsUnicast);
+        sc.add_addpath_rxtx(AfiSafiType::Ipv4Unicast);
+        sc.add_addpath_rxtx(AfiSafiType::Ipv6MplsUnicast);
         assert_eq!(sc.enabled_addpaths().count(), 2);
-        sc.inverse_addpath(AfiSafi::Ipv4Unicast);
+        sc.inverse_addpath(AfiSafiType::Ipv4Unicast);
         assert_eq!(sc.enabled_addpaths().count(), 1);
-        sc.inverse_addpath(AfiSafi::Ipv4Unicast);
+        sc.inverse_addpath(AfiSafiType::Ipv4Unicast);
         sc.inverse_addpaths();
         assert_eq!(sc.enabled_addpaths().count(), 14);
-        sc.inverse_addpath(AfiSafi::Ipv4Unicast);
+        sc.inverse_addpath(AfiSafiType::Ipv4Unicast);
         assert_eq!(sc.enabled_addpaths().count(), 15);
         */
     }

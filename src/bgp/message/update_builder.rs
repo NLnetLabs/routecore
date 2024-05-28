@@ -10,7 +10,7 @@ use crate::bgp::communities::StandardCommunity;
 use crate::bgp::message::{Header, MsgType, UpdateMessage, SessionConfig};
 use crate::bgp::nlri::afisafi::{AfiSafiNlri, AfiSafiParse, NlriCompose};
 use crate::bgp::path_attributes::{Attribute, PaMap, PathAttributeType};
-use crate::bgp::types::{AfiSafi, NextHop};
+use crate::bgp::types::{AfiSafiType, NextHop};
 use crate::util::parser::ParseError;
 
 //------------ UpdateBuilder -------------------------------------------------
@@ -816,7 +816,7 @@ impl<A: AfiSafiNlri + NlriCompose> MpReachNlriBuilder<A> {
     }
 
 
-    pub fn afi_safi(&self) -> AfiSafi {
+    pub fn afi_safi(&self) -> AfiSafiType {
         A::afi_safi()
     }
 
@@ -1361,7 +1361,7 @@ mod tests {
         Ipv4FlowSpecNlri,
         NlriType,
     };
-    use crate::bgp::types::{AfiSafi, OriginType, PathId};
+    use crate::bgp::types::{AfiSafiType, OriginType, PathId};
 
     use super::*;
 
@@ -1688,7 +1688,7 @@ mod tests {
         let _ = builder.append_withdrawals(withdrawals);
         let msg = builder.finish(&SessionConfig::modern()).unwrap();
         let mut sc = SessionConfig::modern();
-        sc.add_addpath_rxtx(AfiSafi::Ipv4Unicast);
+        sc.add_addpath_rxtx(AfiSafiType::Ipv4Unicast);
         assert!(
             UpdateMessage::from_octets(&msg, &sc)
             .is_ok()

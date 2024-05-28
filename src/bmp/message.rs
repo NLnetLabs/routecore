@@ -6,7 +6,7 @@
 
 use inetnum::asn::Asn;
 use crate::bgp::message::{Message as BgpMsg, OpenMessage as BgpOpen, UpdateMessage as BgpUpdate, NotificationMessage as BgpNotification};
-use crate::bgp::types::{Afi, AfiSafi};
+use crate::bgp::types::{Afi, AfiSafiType};
 use crate::bgp::message::update::{SessionConfig, FourOctetAsns};
 use crate::bgp::message::open::CapabilityType;
 use crate::util::parser::ParseError;
@@ -946,7 +946,7 @@ impl<Octs: Octets> PeerUpNotification<Octs> {
         conf
     }
 
-    pub fn supported_protocols(&self) -> Vec<AfiSafi> {
+    pub fn supported_protocols(&self) -> Vec<AfiSafiType> {
         let mut v = Vec::new();
         let mut res = Vec::new();
         let (sent, rcvd) = self.bgp_open_sent_rcvd();
@@ -2036,7 +2036,7 @@ mod tests {
 
         assert_eq!(
             bmp.supported_protocols(),
-            vec![(AfiSafi::Ipv4Unicast)]
+            vec![(AfiSafiType::Ipv4Unicast)]
         );
     }
 

@@ -1,6 +1,6 @@
 use crate::bgp::message::{Header, MsgType};
 use inetnum::asn::Asn;
-use crate::bgp::types::{AfiSafi, AddpathFamDir, AddpathDirection};
+use crate::bgp::types::{AfiSafiType, AddpathFamDir, AddpathDirection};
 use crate::typeenum; // from util::macros
 use crate::util::parser::ParseError;
 use log::warn;
@@ -173,26 +173,8 @@ impl<Octs: Octets> OpenMessage<Octs> {
         )
     }
 
-    /*
-    pub fn addpath_families(&self) -> impl Iterator<Item = (AfiSafi, AddpathDirection)> + '_ {
-        self.capabilities().filter(|c|
-            c.typ() == CapabilityType::AddPath
-        ).map(|c| {
-            &c.value().chunks(4)
-                .map(|c| {
-                let mut parser = Parser::from_ref(c);
-
-                let afi = parser.parse_u16_be().unwrap().into();
-                let safi = parser.parse_u8().unwrap().into();
-                let dir = AddpathDirection::try_from(parser.parse_u8().unwrap());
-                (AfiSafi::try_from((afi, safi)).unwrap(), dir.unwrap())
-            })
-        }).flatten().into_iter()
-    }
-    */
-
     pub fn addpath_families_vec(&self)
-        -> Result<Vec<(AfiSafi, AddpathDirection)>, ParseError>
+        -> Result<Vec<(AfiSafiType, AddpathDirection)>, ParseError>
     {
         let mut res = vec![];
         for c in self.capabilities().filter(|c|
@@ -205,7 +187,7 @@ impl<Octs: Octets> OpenMessage<Octs> {
                 let safi = parser.parse_u8()?;
                 let dir = AddpathDirection::try_from(parser.parse_u8()?)
                     .map_err(|_| ParseError::Unsupported)?;
-                res.push((AfiSafi::from((afi, safi)), dir));
+                res.push((AfiSafiType::from((afi, safi)), dir));
             }
         }
         Ok(res)
@@ -238,9 +220,9 @@ impl<Octs: Octets> OpenMessage<Octs> {
         }).collect::<Vec<_>>()
     }
 
-    /// Returns an iterator over `AfiSafi`s listed as MultiProtocol
+    /// Returns an iterator over `AfiSafiType`s listed as MultiProtocol
     /// Capabilities in the Optional Parameters of this message.
-    pub fn multiprotocol_ids(&self) -> impl Iterator<Item = AfiSafi> + '_ {
+    pub fn multiprotocol_ids(&self) -> impl Iterator<Item = AfiSafiType> + '_ {
         self.capabilities().filter(|c|
             c.typ() == CapabilityType::MultiProtocol
         ).map(|mp_cap| {
@@ -747,7 +729,7 @@ typeenum!(
 pub struct OpenBuilder<Target> {
     target: Target,
     capabilities: Vec<Capability<Vec<u8>>>,
-    addpath_families: Vec<(AfiSafi, AddpathDirection)>,
+    addpath_families: Vec<(AfiSafiType, AddpathDirection)>,
 }
 
 use core::convert::Infallible;
@@ -815,7 +797,7 @@ impl<Target: OctetsBuilder + AsMut<[u8]>> OpenBuilder<Target> {
         self.add_capability(Capability::for_slice(s.to_vec()));
     }
 
-    pub fn add_mp(&mut self, afisafi: AfiSafi) {
+    pub fn add_mp(&mut self, afisafi: AfiSafiType) {
         // code 1
         // length n
         // 2 bytes AFI, rsrvd byte, 1 byte SAFI
@@ -828,7 +810,7 @@ impl<Target: OctetsBuilder + AsMut<[u8]>> OpenBuilder<Target> {
         self.add_capability(Capability::<Vec<u8>>::for_slice(s));
     }
 
-    pub fn add_addpath(&mut self, afisafi: AfiSafi, dir: AddpathDirection) {
+    pub fn add_addpath(&mut self, afisafi: AfiSafiType, dir: AddpathDirection) {
         self.addpath_families.push((afisafi, dir));
     }
 }
@@ -1041,23 +1023,23 @@ mod tests {
 
         assert_eq!(open.multiprotocol_ids().count(), 15);
         let protocols = [
-            AfiSafi::Ipv4Unicast,
-            AfiSafi::Ipv4Multicast,
-            AfiSafi::Ipv4MplsUnicast,
-            AfiSafi::Ipv4MplsVpnUnicast,
-            AfiSafi::Ipv4RouteTarget,
-            AfiSafi::Ipv4FlowSpec,
-            //AfiSafi::Ipv4FlowSpecVpn,
-            AfiSafi::Unsupported(1, 134),
-            AfiSafi::Ipv6Unicast,
-            AfiSafi::Ipv6Multicast,
-            AfiSafi::Ipv6MplsUnicast,
-            AfiSafi::Ipv6MplsVpnUnicast,
-            AfiSafi::Ipv6FlowSpec,
-            //AfiSafi::Ipv6FlowSpecVpn,
-            AfiSafi::Unsupported(2, 134),
-            AfiSafi::L2VpnVpls,
-            AfiSafi::L2VpnEvpn,
+            AfiSafiType::Ipv4Unicast,
+            AfiSafiType::Ipv4Multicast,
+            AfiSafiType::Ipv4MplsUnicast,
+            AfiSafiType::Ipv4MplsVpnUnicast,
+            AfiSafiType::Ipv4RouteTarget,
+            AfiSafiType::Ipv4FlowSpec,
+            //AfiSafiType::Ipv4FlowSpecVpn,
+            AfiSafiType::Unsupported(1, 134),
+            AfiSafiType::Ipv6Unicast,
+            AfiSafiType::Ipv6Multicast,
+            AfiSafiType::Ipv6MplsUnicast,
+            AfiSafiType::Ipv6MplsVpnUnicast,
+            AfiSafiType::Ipv6FlowSpec,
+            //AfiSafiType::Ipv6FlowSpecVpn,
+            AfiSafiType::Unsupported(2, 134),
+            AfiSafiType::L2VpnVpls,
+            AfiSafiType::L2VpnEvpn,
         ];
 
         for (id, protocol) in open.multiprotocol_ids().zip(
@@ -1086,8 +1068,8 @@ mod tests {
 
         assert_eq!(open.capabilities().count(), 1);
         assert!(open.addpath_families_vec().unwrap().iter().eq(
-            &[(AfiSafi::Ipv4Unicast, AddpathDirection::SendReceive),
-              (AfiSafi::Ipv6Unicast, AddpathDirection::SendReceive)]
+            &[(AfiSafiType::Ipv4Unicast, AddpathDirection::SendReceive),
+              (AfiSafiType::Ipv6Unicast, AddpathDirection::SendReceive)]
             )
         );
     }
@@ -1111,8 +1093,8 @@ mod tests {
 
         assert_eq!(open.capabilities().count(), 2);
         assert!(open.addpath_families_vec().unwrap().iter().eq(
-            &[(AfiSafi::Ipv4Unicast, AddpathDirection::SendReceive),
-              (AfiSafi::Ipv6Unicast, AddpathDirection::SendReceive)]
+            &[(AfiSafiType::Ipv4Unicast, AddpathDirection::SendReceive),
+              (AfiSafiType::Ipv6Unicast, AddpathDirection::SendReceive)]
             )
         );
     }
@@ -1127,8 +1109,8 @@ mod builder {
         open.set_holdtime(180);
         open.set_bgp_id([1, 2, 3, 4]);
 
-        open.add_mp(AfiSafi::Ipv4Unicast);
-        open.add_mp(AfiSafi::Ipv6Unicast);
+        open.add_mp(AfiSafiType::Ipv4Unicast);
+        open.add_mp(AfiSafiType::Ipv6Unicast);
 
         let res = open.into_message();
 
@@ -1142,8 +1124,8 @@ mod builder {
         open.set_holdtime(180);
         open.set_bgp_id([1, 2, 3, 4]);
 
-        open.add_mp(AfiSafi::Ipv4Unicast);
-        open.add_mp(AfiSafi::Ipv6Unicast);
+        open.add_mp(AfiSafiType::Ipv4Unicast);
+        open.add_mp(AfiSafiType::Ipv6Unicast);
 
         let res = open.into_message();
 
@@ -1157,10 +1139,10 @@ mod builder {
         open.set_holdtime(180);
         open.set_bgp_id([1, 2, 3, 4]);
 
-        open.add_mp(AfiSafi::Ipv4Unicast);
-        open.add_mp(AfiSafi::Ipv6Unicast);
-        open.add_addpath(AfiSafi::Ipv4Unicast, AddpathDirection::SendReceive);
-        open.add_addpath(AfiSafi::Ipv6Unicast, AddpathDirection::SendReceive);
+        open.add_mp(AfiSafiType::Ipv4Unicast);
+        open.add_mp(AfiSafiType::Ipv6Unicast);
+        open.add_addpath(AfiSafiType::Ipv4Unicast, AddpathDirection::SendReceive);
+        open.add_addpath(AfiSafiType::Ipv6Unicast, AddpathDirection::SendReceive);
 
         let res = open.into_message();
 
