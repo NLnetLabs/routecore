@@ -571,7 +571,7 @@ impl<Octs: Octets> UpdateMessage<Octs> {
             let mut p = epa.value_into_parser();
             Ok(Some(
                 AsPath::new(p.parse_octets(p.remaining())?,
-                epa.pdu_parse_info().has_four_octet_asn())?
+                epa.pdu_parse_info().four_octet_enabled())?
             ))
         } else {
             Ok(None)
@@ -727,7 +727,7 @@ impl<Octs: Octets> UpdateMessage<Octs> {
             // the same as in the fn parse in path_attributes.rs
             use crate::util::parser::parse_ipv4addr;
             let mut pa = epa.value_into_parser();
-            let asn = if self.pdu_parse_info.has_four_octet_asn() {
+            let asn = if self.pdu_parse_info.four_octet_enabled() {
                 Asn::from_u32(pa.parse_u32_be()?)
             } else {
                 Asn::from_u32(pa.parse_u16_be()?.into())
@@ -1054,40 +1054,49 @@ impl<Octs: Octets> UpdateMessage<Octs> {
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct SessionConfig {
-    pub four_octet_asn: FourOctetAsn,
-    ipv4unicast_in_mp: bool,
+    four_octet_asns: FourOctetAsns,
+    ipv4unicast_in_mp: Ipv4UnicastInMp,
     addpath_fams: SessionAddpaths,
 }
 
-
+/// Configuration parameters (state) to parse an individual UPDATE message.
+///
+/// This struct contains a subset of the information that the (non-Copy)
+/// `SessionConfig` holds. It is attached to `UpdateMessage` to enable parsing
+/// of the path attributes and NLRI.
 #[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct PduParseInfo {
-    four_octet_asn: bool,
+    four_octet_asns: FourOctetAsns,
     pdu_addpaths: PduAddpaths,
 }
 
 impl PduParseInfo {
-    pub fn new() -> Self {
-        Self::modern()
-    }
 
+    /// Creates a `PduParseInfo` for 32bit ASNs, no AddPath set.
     pub fn modern() -> Self {
-        Self { four_octet_asn: true, pdu_addpaths: PduAddpaths::default() }
+        Self { four_octet_asns: FourOctetAsns(true), pdu_addpaths: PduAddpaths::default() }
     }
 
+    /// Creates a `PduParseInfo` for 16bit ASNs, no AddPath set.
     pub fn legacy() -> Self {
-        Self { four_octet_asn: false, pdu_addpaths: PduAddpaths::default() }
+        Self { four_octet_asns: FourOctetAsns(false), pdu_addpaths: PduAddpaths::default() }
     }
 
+    /// Creates a `PduParseInfo` from a `SessionConfig` and address families.
+    ///
+    /// This constructor takes two optional address families, describing the
+    /// `AfiSafi` for the MP_REACH and MP_UNREACH path attributes in the BGP
+    /// UPDATE message. These can be used to match upon to get a typed NLRI
+    /// iterator (e.g. [`typed_announcements`]) from the message.
     pub fn from_session_config(
         sc: &SessionConfig,
         mp_reach_afisafi: Option<AfiSafi>,
         mp_unreach_afisafi: Option<AfiSafi>,
     ) -> Self {
         Self {
-            four_octet_asn: sc.has_four_octet_asn(),
+            four_octet_asns: sc.four_octet_asns,
             pdu_addpaths: PduAddpaths {
                 conventional: sc.rx_addpath(AfiSafi::Ipv4Unicast),
                 mp_reach: mp_reach_afisafi.map(|fam| sc.rx_addpath(fam))
@@ -1098,18 +1107,31 @@ impl PduParseInfo {
         }
     }
 
-    pub fn has_four_octet_asn(&self) -> bool {
-        self.four_octet_asn
+    /// Returns the FourOctetAsns setting.
+    pub fn four_octet_asns(&self) -> FourOctetAsns {
+        self.four_octet_asns
     }
 
+    /// Returns true if the sessions carries 32bit ASNs.
+    pub fn four_octet_enabled(&self) -> bool {
+        self.four_octet_asns.0
+    }
+
+    /// Returns true if the conventional IPv4 Unicast NLRI are AddPath.
+    ///
+    /// The conventional IPv4 Unicast NLRI are the withdrawals and
+    /// announcements in the dedicated parts of the PDU, as opposed to
+    /// MP_UNREACH and MP_REACH path attributes.
     pub fn conventional_addpath(&self) -> bool {
         self.pdu_addpaths.conventional()
     }
 
+    /// Returns true if the announced NLRI in MP_REACH are AddPath.
     pub fn mp_reach_addpath(&self) -> bool {
         self.pdu_addpaths.mp_reach()
     }
 
+    /// Returns true if the withdrawn NLRI in MP_UNREACH are AddPath.
     pub fn mp_unreach_addpath(&self) -> bool {
         self.pdu_addpaths.mp_unreach()
     }
@@ -1117,12 +1139,27 @@ impl PduParseInfo {
 
 impl Default for PduParseInfo {
     fn default() -> Self {
-        Self { four_octet_asn: true, pdu_addpaths: PduAddpaths::default() }
+        Self {
+            four_octet_asns: FourOctetAsns(true),
+            pdu_addpaths: PduAddpaths::default(),
+        }
     }
 }
 
 
 
+/// Describes which sections of the PDU contain AddPath-enabled NLRI.
+///
+/// As an UPDATE message can be a mix of e.g. AddPath enabled announcements
+/// and non AddPath enabled withdrawals, this struct holds booleans for all
+/// three sections where AddPath PathIds might or might not occur:
+///
+///  *  the conventional IPv4 Unicast sections in the PDU, which are either
+///  both AddPath enabled or not, and,
+///
+///  * the MP_REACH and MP_UNREACH path attributes, which might carry NLRI for
+///  different address families and (thus) might differ in being AddPath
+///  enabled or not.
 #[derive(Copy, Clone, Default, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
@@ -1178,57 +1215,65 @@ impl SessionAddpaths {
 }
 
 impl SessionConfig {
+    /// Creates a SessionConfig for 32bit ASNs, IPv4 Unicast in MultiProtocol.
     pub fn modern() -> Self {
         Self {
-            four_octet_asn: FourOctetAsn::Enabled,
-            ipv4unicast_in_mp: true,
+            four_octet_asns: FourOctetAsns(true),
+            ipv4unicast_in_mp: Ipv4UnicastInMp(false),
             addpath_fams: SessionAddpaths::new(),
         }
     }
+
+    /// Creates a SessionConfig for 16 bit ASNs.
     pub fn legacy() -> Self {
         Self {
-            four_octet_asn: FourOctetAsn::Disabled,
-            ipv4unicast_in_mp: false,
+            four_octet_asns: FourOctetAsns(false),
+            ipv4unicast_in_mp: Ipv4UnicastInMp(false),
             addpath_fams: SessionAddpaths::new(),
         }
     }
 
-    pub fn ipv4_unicast_mp(&self) -> bool {
-        self.ipv4unicast_in_mp
+    /// Returns true if IPv4 Unicast is carried as MultiProtocol attribute.
+    pub fn ipv4_unicast_in_mp(&self) -> bool {
+        self.ipv4unicast_in_mp.0
     }
 
-    pub fn has_four_octet_asn(&self) -> bool {
-        matches!(self.four_octet_asn, FourOctetAsn::Enabled)
+    /// Returns the FourOctetAsns setting.
+    pub fn four_octet_asns(&self) -> FourOctetAsns {
+        self.four_octet_asns
     }
 
-    pub fn set_four_octet_asn(&mut self, v: FourOctetAsn) {
-        self.four_octet_asn = v;
+    /// Returns true if the sessions carries 32bit ASNs.
+    pub fn four_octet_enabled(&self) -> bool {
+        self.four_octet_asns.0
     }
 
-    pub fn enable_four_octet_asn(&mut self) {
-        self.four_octet_asn = FourOctetAsn::Enabled
+    /// Changes the FourOctetAsns setting.
+    pub fn set_four_octet_asns(&mut self, v: FourOctetAsns) {
+        self.four_octet_asns = v
     }
 
-    pub fn disable_four_octet_asn(&mut self) {
-        self.four_octet_asn = FourOctetAsn::Disabled
-    }
-
+    /// Sets AddPath in a specific direction for a specific address family.
     pub fn add_addpath(&mut self, fam: AfiSafi, dir: AddpathDirection) {
         self.addpath_fams.set(fam, dir);
     }
 
+    /// Sets AddPath in a specific direction for a specific address family.
     pub fn add_famdir(&mut self, famdir: AddpathFamDir) {
         self.addpath_fams.set(famdir.fam(), famdir.dir());
     }
 
+    /// Sets AddPath bidirectionally for a specific address family.
     pub fn add_addpath_rxtx(&mut self, fam: AfiSafi) {
         self.addpath_fams.set(fam, AddpathDirection::SendReceive);
     }
 
+    /// Returns the `AddpathDirection` for this address family, if any.
     pub fn get_addpath(&self, fam: AfiSafi) -> Option<AddpathDirection> {
         self.addpath_fams.get(fam)
     }
 
+    /// Returns true if incoming NLRI for this address family are AddPath.
     pub fn rx_addpath(&self, fam: AfiSafi) -> bool {
         if let Some(dir) = self.get_addpath(fam) {
             match dir {
@@ -1241,26 +1286,36 @@ impl SessionConfig {
         }
     }
 
+    /// Returns an iterator for all AddPath-enabled address families.
     pub fn enabled_addpaths(&self)
         -> impl Iterator<Item = (AfiSafi, AddpathDirection)> + '_
     {
         self.addpath_fams.enabled_addpaths()
     }
     
+    /// Set all address families to be not AddPath-enabled.
     pub fn clear_addpaths(&mut self) {
         self.addpath_fams = SessionAddpaths::new()
     }
 
 }
 
-/// Indicates whether this session is Four Octet capable.
+/// Indicates whether this session is Four Octet capable (32bit ASNs).
 #[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
-pub enum FourOctetAsn {
-    Enabled,
-    Disabled,
-}
+pub struct FourOctetAsns(pub bool);
+
+/// Indicates whether Ipv4Unicast NLRI are carried in the MP attribute.
+///
+/// Upon the introduction of BGP Multi-Protocol (RFC4760, MP_REACH/MP_UNREACH
+/// path attributes), IPv4 Unicast NLRI can go in either the new path
+/// attributes, or in the conventional sections in the PDU. This boolean
+/// indicates where to look.
+#[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+pub struct Ipv4UnicastInMp(pub bool);
 
 /// Iterator for BGP UPDATE Communities.
 ///

@@ -7,7 +7,7 @@
 use inetnum::asn::Asn;
 use crate::bgp::message::{Message as BgpMsg, OpenMessage as BgpOpen, UpdateMessage as BgpUpdate, NotificationMessage as BgpNotification};
 use crate::bgp::types::{Afi, AfiSafi};
-use crate::bgp::message::update::{SessionConfig, FourOctetAsn};
+use crate::bgp::message::update::{SessionConfig, FourOctetAsns};
 use crate::bgp::message::open::CapabilityType;
 use crate::util::parser::ParseError;
 use crate::typeenum; // from util::macros
@@ -878,24 +878,26 @@ impl<Octs: Octets> PeerUpNotification<Octs> {
     /// Returns the SessionConfig and an optional tuple if the BGP OPEN four
     /// octet ASN capability and the one in the Per Peer Header are not the
     /// same.
-    pub fn pph_session_config(&self) -> (SessionConfig, Option<(FourOctetAsn, FourOctetAsn)>)  {
+    pub fn pph_session_config(&self) -> (SessionConfig, Option<(FourOctetAsns, FourOctetAsns)>)  {
         let (sent, rcvd) = self.bgp_open_sent_rcvd();
         let mut conf = SessionConfig::modern();
 
         // The 'modern' SessionConfig has four octet capability set to
         // enabled, so we need to disable it if any of both of the peers do
         // not support it.
-        let bgp_four_octet = match sent.four_octet_capable() && rcvd.four_octet_capable() {
-            true => FourOctetAsn::Enabled,
-            false => FourOctetAsn::Disabled
-        };
+        let bgp_four_octet =
+            match sent.four_octet_capable() && rcvd.four_octet_capable() {
+                true => FourOctetAsns(true),
+                false => FourOctetAsns(false),
+            }
+        ;
 
         let four_octet_asn = match self.per_peer_header().is_legacy_format() {
-            false => FourOctetAsn::Enabled,
-            true => FourOctetAsn::Disabled
+            false => FourOctetAsns(true),
+            true => FourOctetAsns(false),
         };
 
-        conf.set_four_octet_asn(four_octet_asn);
+        conf.set_four_octet_asns(four_octet_asn);
 
         for famdir in sent.addpath_intersection(&rcvd) {
             conf.add_famdir(famdir);
@@ -931,11 +933,11 @@ impl<Octs: Octets> PeerUpNotification<Octs> {
         // enabled, so we need to disable it if any of both of the peers do
         // not support it.
         let bgp_four_octet = match sent.four_octet_capable() && rcvd.four_octet_capable() {
-            true => FourOctetAsn::Enabled,
-            false => FourOctetAsn::Disabled
+            true => FourOctetAsns(true),
+            false => FourOctetAsns(false),
         };
 
-        conf.set_four_octet_asn(bgp_four_octet);
+        conf.set_four_octet_asns(bgp_four_octet);
 
         for famdir in sent.addpath_intersection(&rcvd) {
             conf.add_famdir(famdir);
@@ -1680,7 +1682,6 @@ mod tests {
     use crate::bgp::path_attributes::AttributeHeader;
     use crate::bgp::types::{ConventionalNextHop, MultiExitDisc};
     use crate::bgp::nlri::afisafi::{AfiSafiNlri, Nlri};
-    use crate::bgp::message::update::{FourOctetAsn, SessionConfig};
 
     // Helper for generating a .pcap, pass output to `text2pcap`.
     #[allow(dead_code)]
@@ -2030,7 +2031,7 @@ mod tests {
 
         let sc = bmp.pph_session_config();
         assert_eq!(sc.1, None);
-        assert_eq!(sc.0.four_octet_asn, FourOctetAsn::Enabled);
+        assert!(sc.0.four_octet_enabled());
         assert_eq!(sc.0.enabled_addpaths().count(), 0);
 
         assert_eq!(

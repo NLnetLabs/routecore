@@ -1029,7 +1029,7 @@ impl Attribute for crate::bgp::aspath::HopPath {
         // XXX reusing the old/existing AsPath here for the time being
         let asp = crate::bgp::aspath::AsPath::new(
             parser.peek_all().to_vec(),
-            ppi.has_four_octet_asn()
+            ppi.four_octet_enabled()
         ).map_err(|_| ParseError::form_error("invalid AS_PATH"))?;
 
         Ok(asp.to_hop_path())
@@ -1040,7 +1040,7 @@ impl Attribute for crate::bgp::aspath::HopPath {
         parser: &mut Parser<'_, Octs>,
         pdu_parse_info: PduParseInfo
     ) -> Result<(), ParseError> {
-        let asn_size = if pdu_parse_info.has_four_octet_asn() {
+        let asn_size = if pdu_parse_info.four_octet_enabled() {
             4
         } else {
             2
@@ -1211,7 +1211,7 @@ impl Attribute for AggregatorInfo {
     fn parse<'a, Octs: 'a + Octets>(parser: &mut Parser<'a, Octs>, ppi: PduParseInfo) 
         -> Result<Self, ParseError>
     {
-        let asn = if ppi.has_four_octet_asn() {
+        let asn = if ppi.four_octet_enabled() {
             Asn::from_u32(parser.parse_u32_be()?)
         } else {
             Asn::from_u32(parser.parse_u16_be()?.into())
@@ -1229,7 +1229,7 @@ impl Attribute for AggregatorInfo {
         //if flags != Self::FLAGS.into() {
         //        return Err(ParseError::form_error("invalid flags"));
         //}
-        if pdu_parse_info.has_four_octet_asn() {
+        if pdu_parse_info.four_octet_enabled() {
             check_len_exact!(parser, 8, "AGGREGATOR")?;
         } else {
             check_len_exact!(parser, 6, "AGGREGATOR")?;
@@ -1786,7 +1786,7 @@ impl Attribute for crate::bgp::types::As4Path {
         // XXX Same as with AsPath, reusing the old/existing As4Path here
         let asp = crate::bgp::aspath::AsPath::new(
             parser.peek_all().to_vec(),
-            ppi.has_four_octet_asn()
+            ppi.four_octet_enabled()
         ).map_err(|_| ParseError::form_error("invalid AS4_PATH"))?;
         Ok(Self(asp.to_hop_path()))
     }
