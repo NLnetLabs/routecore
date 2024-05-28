@@ -94,7 +94,7 @@ macro_rules! addpath {
         fn afi_safi() -> AfiSafiType { <[<$nlri Nlri>]$(<$gen>)? as AfiSafi>::afi_safi() }
     }
 
-    impl<'a, Octs, P> AfiSafiParse<'a, Octs, P> for [<$nlri AddpathNlri>]$(<$gen>)?
+    impl<'a, Octs, P> NlriParse<'a, Octs, P> for [<$nlri AddpathNlri>]$(<$gen>)?
     where
         Octs: Octets,
         P: 'a + Octets<Range<'a> = Octs>
@@ -539,7 +539,7 @@ pub trait AfiSafiNlri: AfiSafi + IsNlri { // + Clone + Hash + Debug {
     //fn nexthop_compatible(&self, nh: &super::nexthop::NextHop) -> bool;
 }
 
-pub trait AfiSafiParse<'a, O, P>: Sized + IsNlri
+pub trait NlriParse<'a, O, P>: Sized + IsNlri
     where P: 'a + Octets<Range<'a> = O>
 {
     type Output: AfiSafi;
@@ -604,7 +604,7 @@ pub trait Addpath: AfiSafiNlri {
 
 // adding AFI/SAFIs here requires some manual labor:
 // - at the least, add a struct for $Afi$SafiNlri , deriving Clone,Debug,Hash
-// - impl AfiSafiNlri, AfiSafiParse and Display
+// - impl AfiSafiNlri, NlriParse and Display
 
 afisafi! {
     1_u16 => Ipv4 [
@@ -677,7 +677,7 @@ impl TryFrom<(Prefix, PathId)> for Ipv4UnicastAddpathNlri {
 }
 
 
-impl<'a, O, P> AfiSafiParse<'a, O, P> for Ipv4UnicastNlri
+impl<'a, O, P> NlriParse<'a, O, P> for Ipv4UnicastNlri
 where
     O: Octets,
     P: 'a + Octets<Range<'a> = O>
@@ -744,7 +744,7 @@ impl TryFrom<(Prefix, PathId)> for Ipv4MulticastAddpathNlri {
     }
 }
 
-impl<'a, O, P> AfiSafiParse<'a, O, P> for Ipv4MulticastNlri
+impl<'a, O, P> NlriParse<'a, O, P> for Ipv4MulticastNlri
 where
     O: Octets,
     P: 'a + Octets<Range<'a> = O>
@@ -784,7 +784,7 @@ impl<Octs> AfiSafiNlri for Ipv4MplsUnicastNlri<Octs> {
     }
 }
 
-impl<'a, O, P> AfiSafiParse<'a, O, P> for Ipv4MplsUnicastNlri<O>
+impl<'a, O, P> NlriParse<'a, O, P> for Ipv4MplsUnicastNlri<O>
 where
     O: Octets,
     P: 'a + Octets<Range<'a> = O>
@@ -859,7 +859,7 @@ impl<Octs> AfiSafiNlri for Ipv4MplsVpnUnicastNlri<Octs> {
     }
 }
 
-impl<'a, O, P> AfiSafiParse<'a, O, P> for Ipv4MplsVpnUnicastNlri<O>
+impl<'a, O, P> NlriParse<'a, O, P> for Ipv4MplsVpnUnicastNlri<O>
 where
     O: Octets,
     P: 'a + Octets<Range<'a> = O>
@@ -933,7 +933,7 @@ impl<Octs> AfiSafiNlri for Ipv4RouteTargetNlri<Octs> {
     }
 }
 
-impl<'a, O, P> AfiSafiParse<'a, O, P> for Ipv4RouteTargetNlri<O>
+impl<'a, O, P> NlriParse<'a, O, P> for Ipv4RouteTargetNlri<O>
 where
     O: Octets,
     P: 'a + Octets<Range<'a> = O>
@@ -1005,7 +1005,7 @@ impl<Octs> AfiSafiNlri for Ipv4FlowSpecNlri<Octs> {
     }
 }
 
-impl<'a, O, P> AfiSafiParse<'a, O, P> for Ipv4FlowSpecNlri<O>
+impl<'a, O, P> NlriParse<'a, O, P> for Ipv4FlowSpecNlri<O>
 where
     O: Octets,
     P: 'a + Octets<Range<'a> = O>
@@ -1117,7 +1117,7 @@ impl TryFrom<(Prefix, PathId)> for Ipv6UnicastAddpathNlri {
     }
 }
 
-impl<'a, O, P> AfiSafiParse<'a, O, P> for Ipv6UnicastNlri
+impl<'a, O, P> NlriParse<'a, O, P> for Ipv6UnicastNlri
 where
     O: Octets,
     P: 'a + Octets<Range<'a> = O>
@@ -1184,7 +1184,7 @@ impl AfiSafiNlri for Ipv6MulticastNlri {
     }
 }
 
-impl<'a, O, P> AfiSafiParse<'a, O, P> for Ipv6MulticastNlri
+impl<'a, O, P> NlriParse<'a, O, P> for Ipv6MulticastNlri
 where
     O: Octets,
     P: 'a + Octets<Range<'a> = O>
@@ -1224,7 +1224,7 @@ impl<Octs> AfiSafiNlri for Ipv6MplsUnicastNlri<Octs> {
     }
 }
 
-impl<'a, O, P> AfiSafiParse<'a, O, P> for Ipv6MplsUnicastNlri<O>
+impl<'a, O, P> NlriParse<'a, O, P> for Ipv6MplsUnicastNlri<O>
 where
     O: Octets,
     P: 'a + Octets<Range<'a> = O>
@@ -1300,7 +1300,7 @@ impl<Octs> AfiSafiNlri for Ipv6MplsVpnUnicastNlri<Octs> {
     }
 }
 
-impl<'a, O, P> AfiSafiParse<'a, O, P> for Ipv6MplsVpnUnicastNlri<O>
+impl<'a, O, P> NlriParse<'a, O, P> for Ipv6MplsVpnUnicastNlri<O>
 where
     O: Octets,
     P: 'a + Octets<Range<'a> = O>
@@ -1375,7 +1375,7 @@ impl<Octs> AfiSafiNlri for Ipv6FlowSpecNlri<Octs> {
     }
 }
 
-impl<'a, O, P> AfiSafiParse<'a, O, P> for Ipv6FlowSpecNlri<O>
+impl<'a, O, P> NlriParse<'a, O, P> for Ipv6FlowSpecNlri<O>
 where
     O: Octets,
     P: 'a + Octets<Range<'a> = O>
@@ -1483,7 +1483,7 @@ impl AfiSafiNlri for L2VpnVplsNlri {
     }
 }
 
-impl<'a, O, P> AfiSafiParse<'a, O, P> for L2VpnVplsNlri
+impl<'a, O, P> NlriParse<'a, O, P> for L2VpnVplsNlri
 where
     O: Octets,
     P: 'a + Octets<Range<'a> = O>
@@ -1523,7 +1523,7 @@ impl<Octs> AfiSafiNlri for L2VpnEvpnNlri<Octs> {
     }
 }
 
-impl<'a, O, P> AfiSafiParse<'a, O, P> for L2VpnEvpnNlri<O>
+impl<'a, O, P> NlriParse<'a, O, P> for L2VpnEvpnNlri<O>
 where
     O: Octets,
     P: 'a + Octets<Range<'a> = O>
@@ -1615,7 +1615,7 @@ impl<'a, O, P, ASP> NlriIter<'a, O, P, ASP>
 where
     O: Octets,
     P: Octets<Range<'a> = O>,
-    ASP: AfiSafiParse<'a, O, P>
+    ASP: NlriParse<'a, O, P>
 {
     pub const fn new(parser: Parser<'a, P>) -> Self {
         NlriIter {
@@ -1647,7 +1647,7 @@ where
 }
 
 
-impl<'a, O, P, ASP: AfiSafiParse<'a, O, P>> Iterator for NlriIter<'a, O, P, ASP>
+impl<'a, O, P, ASP: NlriParse<'a, O, P>> Iterator for NlriIter<'a, O, P, ASP>
 where 
     P: Octets<Range<'a> = O>
 {
@@ -1731,7 +1731,7 @@ where
 impl<'a, O, P, ASP> From<NlriIter<'a, O, P, ASP>> for NlriEnumIter<'a, P>
 where 
     O: Octets,
-    ASP: AfiSafiParse<'a, O, P>,
+    ASP: NlriParse<'a, O, P>,
     P: Octets<Range<'a> = O>,
 {
     fn from(iter: NlriIter<'a, O, P, ASP>) -> Self {
@@ -1742,7 +1742,7 @@ where
     }
 }
 
-impl<'a, O, P, ASP: AfiSafiParse<'a, O, P>> NlriIter<'a, O, P, ASP>
+impl<'a, O, P, ASP: NlriParse<'a, O, P>> NlriIter<'a, O, P, ASP>
 where
     O: Octets,
     P: Octets<Range<'a> = O>

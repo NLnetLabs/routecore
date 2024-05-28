@@ -8,7 +8,7 @@ use log::warn;
 use crate::bgp::aspath::HopPath;
 use crate::bgp::communities::StandardCommunity;
 use crate::bgp::message::{Header, MsgType, UpdateMessage, SessionConfig};
-use crate::bgp::nlri::afisafi::{AfiSafiNlri, AfiSafiParse, NlriCompose};
+use crate::bgp::nlri::afisafi::{AfiSafiNlri, NlriParse, NlriCompose};
 use crate::bgp::path_attributes::{Attribute, PaMap, PathAttributeType};
 use crate::bgp::types::{AfiSafiType, NextHop};
 use crate::util::parser::ParseError;
@@ -217,7 +217,7 @@ where
         _session_config: &SessionConfig
     )
     where
-        A: AfiSafiNlri + NlriCompose + AfiSafiParse<'a, O, Octs, Output = A>,
+        A: AfiSafiNlri + NlriCompose + NlriParse<'a, O, Octs, Output = A>,
         Octs: Octets<Range<'a> = O>,
         O: Octets,
     {
@@ -239,7 +239,7 @@ where
         _session_config: &SessionConfig
     )
     where
-        A: AfiSafiNlri + NlriCompose + AfiSafiParse<'a, O, Octs, Output = A>,
+        A: AfiSafiNlri + NlriCompose + NlriParse<'a, O, Octs, Output = A>,
         Octs: Octets<Range<'a> = O>,
         O: Octets,
     {
@@ -770,7 +770,7 @@ impl<A> MpReachNlriBuilder<A> {
         _session_config: &SessionConfig
     )
     where
-        A: AfiSafiNlri + NlriCompose + AfiSafiParse<'a, O, Octs, Output = A>,
+        A: AfiSafiNlri + NlriCompose + NlriParse<'a, O, Octs, Output = A>,
         Octs: Octets<Range<'a> = O>,
         O: Octets,
     {
@@ -1136,7 +1136,7 @@ where
         _session_config: &SessionConfig
     )
     where
-        A: AfiSafiNlri + NlriCompose + AfiSafiParse<'a, O, Octs, Output = A>,
+        A: AfiSafiNlri + NlriCompose + NlriParse<'a, O, Octs, Output = A>,
         Octs: Octets<Range<'a> = O>,
         O: Octets,
     {

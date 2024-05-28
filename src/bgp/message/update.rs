@@ -25,7 +25,7 @@ use crate::bgp::types::{
 };
 
 use crate::bgp::nlri::afisafi::{
-    AfiSafiNlri, AfiSafiParse, NlriIter, NlriEnumIter, Nlri, NlriType
+    AfiSafiNlri, NlriParse, NlriIter, NlriEnumIter, Nlri, NlriType
 };
 
 use crate::util::parser::ParseError;
@@ -293,7 +293,7 @@ impl<Octs: Octets> UpdateMessage<Octs> {
     where
         O: Octets,
         Octs: Octets<Range<'a> = O>,
-        ASP: AfiSafiNlri + AfiSafiParse<'a, O, Octs>
+        ASP: AfiSafiNlri + NlriParse<'a, O, Octs>
     {
         if ASP::afi_safi() == AfiSafiType::Ipv4Unicast && !self.withdrawals.is_empty() {
             return Ok(Some(NlriIter::<_, _, ASP>::new(
@@ -451,7 +451,7 @@ impl<Octs: Octets> UpdateMessage<Octs> {
     where
         O: Octets,
         Octs: Octets<Range<'a> = O>,
-        ASP: AfiSafiNlri + AfiSafiParse<'a, O, Octs>
+        ASP: AfiSafiNlri + NlriParse<'a, O, Octs>
     {
         // If the requested announcements are of type Ipv4Unicast, and the
         // conventional announcements range is non-zero, return that.
