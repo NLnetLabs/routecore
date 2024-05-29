@@ -1,7 +1,7 @@
 //! FlowSpec v1 parsing.
 
-use crate::addr::Prefix;
-use crate::bgp::types::Afi;
+use inetnum::addr::Prefix;
+use crate::bgp::{nlri::common::prefix_bits_to_bytes, types::Afi};
 use crate::util::parser::ParseError;
 use log::debug;
 use octseq::{Octets, Parser};
@@ -94,14 +94,6 @@ impl BitmaskOp {
             _ => panic!("illegal case"),
         };
         Ok(Self(op, value))
-    }
-}
-
-fn prefix_bits_to_bytes(bits: u8) -> usize {
-    if bits != 0 {
-        (bits as usize - 1) / 8 + 1
-    } else {
-        0
     }
 }
 

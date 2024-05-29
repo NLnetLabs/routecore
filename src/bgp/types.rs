@@ -1,161 +1,29 @@
-use crate::typeenum; // from util::macros
 use std::fmt;
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use std::net::Ipv4Addr;
 
-use crate::bgp::message::nlri::RouteDistinguisher;
 
 #[cfg(feature = "serde")]
 use serde::{Serialize, Deserialize};
 
-typeenum!(
-/// AFI as used in BGP OPEN and UPDATE messages.
-#[cfg_attr(feature = "serde", serde(from = "u16"))]
-        Afi, u16,
-        {
-            1 => Ipv4,
-            2 => Ipv6,
-            25 => L2Vpn
-        });
+use inetnum::asn::Asn;
+pub use crate::bgp::nlri::afisafi::Afi;
+pub use crate::bgp::nlri::common::PathId;
+pub use crate::bgp::nlri::mpls_vpn::RouteDistinguisher;
+pub use crate::bgp::nlri::nexthop::NextHop;
+use crate::typeenum; // from util::macros
 
-typeenum!(
-/// SAFI as used in BGP OPEN and UPDATE messages.
-#[cfg_attr(feature = "serde", serde(from = "u8"))]
-    Safi, u8,
-    {
-        1 => Unicast,
-        2 => Multicast,
-        4 => MplsUnicast,
-        65 => Vpls,
-        70 => Evpn,
-        128 => MplsVpnUnicast,
-    132 => RouteTarget,
-    133 => FlowSpec,
-    134 => FlowSpecVpn
-    });
+use super::aspath::HopPath;
+use super::path_attributes::AggregatorInfo;
 
-/// Valid/supported pair of `AFI` and `SAFI`.
-///
-/// Not all combinations of the `AFI` and `SAFI` variants make sense. This
-/// enum explicitly comprises combinations which are described in standards
-/// documents.
-#[derive(Clone, Copy, Debug, Hash, Eq, Ord, PartialEq, PartialOrd)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub enum AfiSafi {
-    Ipv4Unicast,
-    Ipv6Unicast,
-    Ipv4Multicast,
-    Ipv6Multicast,
 
-    Ipv4MplsUnicast,
-    Ipv6MplsUnicast,
-
-    Ipv4MplsVpnUnicast,
-    Ipv6MplsVpnUnicast,
-
-    Ipv4RouteTarget,
-
-    Ipv4FlowSpec,
-    Ipv6FlowSpec,
-
-    L2VpnVpls,
-    L2VpnEvpn,
-}
-
-impl TryFrom<(Afi, Safi)> for AfiSafi {
-    type Error = &'static str;
-    fn try_from(t: (Afi, Safi)) -> Result<Self, Self::Error> {
-
-        use AfiSafi::*;
-        match t {
-            (Afi::Ipv4, Safi::Unicast) => Ok(Ipv4Unicast),
-            (Afi::Ipv6, Safi::Unicast) => Ok(Ipv6Unicast),
-
-            (Afi::Ipv4, Safi::Multicast) => Ok(Ipv4Multicast),
-            (Afi::Ipv6, Safi::Multicast) => Ok(Ipv6Multicast),
-
-            (Afi::Ipv4, Safi::MplsUnicast) => Ok(Ipv4MplsUnicast),
-            (Afi::Ipv6, Safi::MplsUnicast) => Ok(Ipv6MplsUnicast),
-
-            (Afi::Ipv4, Safi::MplsVpnUnicast) => Ok(Ipv4MplsVpnUnicast),
-            (Afi::Ipv6, Safi::MplsVpnUnicast) => Ok(Ipv6MplsVpnUnicast),
-
-            (Afi::Ipv4, Safi::RouteTarget) => Ok(Ipv4RouteTarget),
-
-            (Afi::Ipv4, Safi::FlowSpec) => Ok(Ipv4FlowSpec),
-            (Afi::Ipv6, Safi::FlowSpec) => Ok(Ipv6FlowSpec),
-
-            (Afi::L2Vpn, Safi::Vpls) => Ok(L2VpnVpls),
-            (Afi::L2Vpn, Safi::Evpn) => Ok(L2VpnEvpn),
-            _ => Err("unsupported Afi/Safi combination")
-        }
-    }
-}
-
-impl AfiSafi {
-    pub fn afi(&self) -> Afi {
-        self.split().0
-    }
-
-    pub fn safi(&self) -> Safi {
-        self.split().1
-    }
-
-    pub fn split(&self) -> (Afi, Safi) {
-        match self {
-            Self::Ipv4Unicast => (Afi::Ipv4, Safi::Unicast),
-            Self::Ipv6Unicast => (Afi::Ipv6, Safi::Unicast),
-            Self::Ipv4Multicast => (Afi::Ipv4, Safi::Multicast),
-            Self::Ipv6Multicast => (Afi::Ipv6, Safi::Multicast),
-
-            Self::Ipv4MplsUnicast => (Afi::Ipv4, Safi::MplsUnicast),
-            Self::Ipv6MplsUnicast => (Afi::Ipv6, Safi::MplsUnicast),
-
-            Self::Ipv4MplsVpnUnicast => (Afi::Ipv4, Safi::MplsVpnUnicast),
-            Self::Ipv6MplsVpnUnicast => (Afi::Ipv6, Safi::MplsVpnUnicast),
-
-            Self::Ipv4RouteTarget => (Afi::Ipv4, Safi::RouteTarget),
-
-            Self::Ipv4FlowSpec => (Afi::Ipv4, Safi::FlowSpec),
-            Self::Ipv6FlowSpec => (Afi::Ipv6, Safi::FlowSpec),
-
-            Self::L2VpnVpls => (Afi::L2Vpn, Safi::Vpls),
-            Self::L2VpnEvpn => (Afi::L2Vpn, Safi::Evpn),
-        }
-    }
-}
-
-impl fmt::Display for AfiSafi {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Self::Ipv4Unicast => write!(f, "Ipv4Unicast"),
-            Self::Ipv6Unicast => write!(f, "Ipv6Unicast"),
-            Self::Ipv4Multicast => write!(f, "Ipv4Multicast"),
-            Self::Ipv6Multicast => write!(f, "Ipv6Multicast"),
-
-            Self::Ipv4MplsUnicast => write!(f, "Ipv4MplsUnicast"),
-            Self::Ipv6MplsUnicast => write!(f, "Ipv6MplsUnicast"),
-
-            Self::Ipv4MplsVpnUnicast => write!(f, "Ipv4MplsVpnUnicast"),
-            Self::Ipv6MplsVpnUnicast => write!(f, "Ipv6MplsVpnUnicast"),
-
-            Self::Ipv4RouteTarget => write!(f, "Ipv4RouteTarget"),
-
-            Self::Ipv4FlowSpec => write!(f, "Ipv4FlowSpec"),
-            Self::Ipv6FlowSpec => write!(f, "Ipv6FlowSpec"),
-
-            Self::L2VpnVpls => write!(f, "L2VpnVpls"),
-            Self::L2VpnEvpn => write!(f, "L2VpnEvpn"),
-        }
-
-    }
-}
+pub use crate::bgp::nlri::afisafi::AfiSafiType;
 
 
 #[derive(Clone, Copy, Debug, Hash, Eq, Ord, PartialEq, PartialOrd)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct AddpathFamDir(AfiSafi, AddpathDirection);
+pub struct AddpathFamDir(AfiSafiType, AddpathDirection);
 impl AddpathFamDir {
-    pub fn new(afisafi: AfiSafi, apd: AddpathDirection) -> Self {
+    pub fn new(afisafi: AfiSafiType, apd: AddpathDirection) -> Self {
         Self(afisafi, apd)
     }
 
@@ -166,7 +34,7 @@ impl AddpathFamDir {
         self.1.merge(other.1).map(|dir| Self::new(self.0, dir))
     }
 
-    pub fn fam(&self) -> AfiSafi {
+    pub fn fam(&self) -> AfiSafiType {
         self.0
     }
 
@@ -211,6 +79,16 @@ impl TryFrom<u8> for AddpathDirection {
 
 }
 
+impl From<AddpathDirection> for u8 {
+    fn from(apd: AddpathDirection) -> u8 {
+        match apd {
+            AddpathDirection::Receive => 1,
+            AddpathDirection::Send => 2,
+            AddpathDirection::SendReceive => 3,
+        }
+    }
+}
+
 
 typeenum!(
 /// BGP Origin types as used in BGP UPDATE messages.
@@ -243,7 +121,7 @@ typeenum!(
         0 => Reserved,
         1 => Origin,
         2 => AsPath,
-        3 => NextHop,
+        3 => ConventionalNextHop,
         4 => MultiExitDisc,
         5 => LocalPref,
         6 => AtomicAggregate,
@@ -262,13 +140,33 @@ typeenum!(
         25 => Ipv6ExtendedCommunities,
         32 => LargeCommunities,
         33 => BgpsecAsPath,
+        35 => Otc,
         128 => AttrSet,
         255 => RsrvdDevelopment
     }
 );
 
+/// Wrapper for the 1 byte Origin.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct Origin(pub OriginType);
+
+impl From<OriginType> for Origin {
+    fn from(t: OriginType) -> Origin {
+        Origin(t)
+    }
+}
+
+impl std::fmt::Display for Origin {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
 /// Wrapper for the 4 byte Multi-Exit Discriminator in path attributes.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct MultiExitDisc(pub u32);
 
@@ -280,6 +178,7 @@ impl std::fmt::Display for MultiExitDisc {
 
 /// Wrapper for the 4 byte Local Preference value in path attributes.
 #[derive(Debug, Eq, PartialEq, Clone, Copy, Hash)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct LocalPref(pub u32);
 
@@ -295,57 +194,59 @@ impl std::fmt::Display for LocalPref {
     }
 }
 
-/// Conventional and BGP-MP Next Hop variants.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+
+#[derive(Debug, Eq, PartialEq, Clone, Copy, Hash)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub enum NextHop {
-    Unicast(IpAddr),
-    Multicast(IpAddr),
-    Ipv6LL(Ipv6Addr, Ipv6Addr), // is this always unicast?
-    MplsVpnUnicast(RouteDistinguisher, IpAddr),
-    Empty, // FlowSpec
-    Unimplemented(Afi, Safi),
-}
+pub struct AtomicAggregate;
 
-impl NextHop {
-    pub fn new(afisafi: AfiSafi) -> Self {
-        use AfiSafi::*;
-        match afisafi {
-            Ipv4Unicast => Self::Unicast(Ipv4Addr::from(0).into()),
-            Ipv6Unicast => Self::Unicast(Ipv6Addr::from(0).into()),
-            Ipv4Multicast => Self::Multicast(Ipv4Addr::from(0).into()),
-            Ipv6Multicast => Self::Multicast(Ipv6Addr::from(0).into()),
+/// Wrapper for the 4 byte OnlyToCustomer (Otc) value in path attributes.
+#[derive(Debug, Eq, PartialEq, Clone, Copy, Hash)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct Otc(pub Asn);
 
-            Ipv4MplsUnicast => Self::Unicast(Ipv4Addr::from(0).into()),
-            Ipv6MplsUnicast => Self::Unicast(Ipv6Addr::from(0).into()),
-
-            Ipv4MplsVpnUnicast => Self::MplsVpnUnicast(
-                RouteDistinguisher::zeroes(),
-                Ipv4Addr::from(0).into()
-            ),
-            Ipv6MplsVpnUnicast => Self::MplsVpnUnicast(
-                RouteDistinguisher::zeroes(),
-                Ipv6Addr::from(0).into()
-            ),
-
-            Ipv4RouteTarget => Self::Unicast(Ipv4Addr::from(0).into()),
-
-            Ipv4FlowSpec | Ipv6FlowSpec => Self::Empty,
-
-            L2VpnVpls => Self::Unicast(Ipv4Addr::from(0).into()),
-            L2VpnEvpn => Self::Unicast(Ipv4Addr::from(0).into()),
-        }
+impl From<Otc> for u32 {
+    fn from(value: Otc) -> Self {
+        value.0.into()
     }
 }
 
-impl std::fmt::Display for NextHop {
+impl std::fmt::Display for Otc {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Unicast(ip) | Self::Multicast(ip)  => write!(f, "{}", ip),
-            Self::Ipv6LL(ip1, ip2) => write!(f, "{} {} ", ip1, ip2),
-            Self::MplsVpnUnicast(rd, ip) => write!(f, "rd {} {}", rd, ip),
-            Self::Empty => write!(f, "empty"),
-            Self::Unimplemented(afi, safi) => write!(f, "unimplemented for AFI {} /SAFI {}", afi, safi),
-        }
+        write!(f, "{}", self.0)
     }
 }
+
+/// Conventional NextHop only, this gets stored in the
+/// `PathAttribute::ConventionalNextHop` variant.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct ConventionalNextHop(pub Ipv4Addr);
+
+impl std::fmt::Display for ConventionalNextHop {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct OriginatorId(pub Ipv4Addr);
+
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct Connector(pub Ipv4Addr);
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+#[cfg_attr(feature = "serde", derive(Serialize))]
+pub struct As4Path(pub HopPath);
+
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct As4Aggregator(pub AggregatorInfo);

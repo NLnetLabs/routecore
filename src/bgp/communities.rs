@@ -26,7 +26,7 @@
 //! and [`to_wellknown()`](`Community::to_wellknown()`).
 //!
 //! ```
-//! use routecore::asn::Asn;
+//! use inetnum::asn::Asn;
 //! use routecore::bgp::communities::Community;
 //! use std::str::FromStr;
 //!
@@ -93,7 +93,7 @@ use std::fmt::{self, Display, Error, Formatter};
 use std::net::{Ipv4Addr, Ipv6Addr};
 use std::str::FromStr;
 
-use crate::asn::{Asn, Asn16, ParseAsnError};
+use inetnum::asn::{Asn, Asn16, ParseAsnError};
 
 #[cfg(feature = "serde")]
 use serde::{Serialize, Serializer};
@@ -482,8 +482,9 @@ wellknown!(Wellknown,
 
 /// Conventional, RFC1997 4-byte community.
 #[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd )]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
-pub struct StandardCommunity([u8; 4]);
+pub struct StandardCommunity(pub(crate) [u8; 4]);
 
 impl StandardCommunity {
     pub fn new(asn: Asn16, tag: Tag) -> StandardCommunity {
@@ -751,6 +752,7 @@ impl Display for Tag {
 
 /// Extended Community as defined in RFC4360.
 #[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd )]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct ExtendedCommunity([u8; 8]);
 
@@ -1309,6 +1311,7 @@ impl SerializeForOperators for ExtendedCommunity {
 
 /// IPv6 Extended Community as defined in RFC5701.
 #[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd )]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct Ipv6ExtendedCommunity([u8; 20]);
 
@@ -1437,6 +1440,7 @@ impl Display for Ipv6ExtendedCommunity {
 
 /// Large Community as defined in RFC8092.
 #[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd )]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct LargeCommunity([u8; 12]);
 

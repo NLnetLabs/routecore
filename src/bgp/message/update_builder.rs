@@ -1,52 +1,37 @@
 use std::fmt;
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
-use std::collections::BTreeMap;
+use std::net::{IpAddr, Ipv6Addr};
 
 use bytes::BytesMut;
-use octseq::{FreezeBuilder, Octets, OctetsBuilder, OctetsFrom, OctetsInto, ShortBuf};
+use octseq::{EmptyBuilder, FreezeBuilder, Octets, OctetsBuilder, OctetsFrom, ShortBuf};
 use log::warn;
 
 use crate::bgp::aspath::HopPath;
 use crate::bgp::communities::StandardCommunity;
-use crate::bgp::message::{Header, MsgType, SessionConfig, UpdateMessage};
-use crate::bgp::message::nlri::Nlri;
-use crate::bgp::message::update::{Afi, Safi, AfiSafi, NextHop};
-use crate::bgp::types::OriginType;
+use crate::bgp::message::{Header, MsgType, UpdateMessage, SessionConfig};
+use crate::bgp::nlri::afisafi::{AfiSafiNlri, NlriParse, NlriCompose};
+use crate::bgp::path_attributes::{Attribute, PaMap, PathAttributeType};
+use crate::bgp::types::{AfiSafiType, NextHop};
 use crate::util::parser::ParseError;
-
-//use rotonda_fsm::bgp::session::AgreedConfig;
-
-use crate::bgp::path_attributes::{
-    AsPath,
-    Communities,
-    LocalPref,
-    MpReachNlri,
-    MpUnreachNlri,
-    MultiExitDisc,
-    NextHop as NextHopAttribute,
-    Origin,
-    PathAttribute, PathAttributeType
-};
 
 //------------ UpdateBuilder -------------------------------------------------
 #[derive(Debug)]
-pub struct UpdateBuilder<Target> {
+pub struct UpdateBuilder<Target, A> {
     target: Target,
     //config: AgreedConfig, //FIXME this lives in rotonda_fsm, but that
     //depends on routecore. Sounds like a depedency hell.
-    announcements: Vec<Nlri<Vec<u8>>>,
-    withdrawals: Vec<Nlri<Vec<u8>>>,
-    addpath_enabled: Option<bool>, // for conventional nlri (unicast v4)
-    // attributes:
-    attributes: BTreeMap<PathAttributeType, PathAttribute>,
+    announcements: Option<MpReachNlriBuilder<A>>,
+    withdrawals: Option<MpUnreachNlriBuilder<A>>,
+    attributes: PaMap,
 }
 
-impl<T> UpdateBuilder<T> {
+impl<T, A> UpdateBuilder<T, A> {
     const MAX_PDU: usize = 4096; // XXX should come from NegotiatedConfig
 }
 
-impl<Target: OctetsBuilder> UpdateBuilder<Target>
-where Target: octseq::Truncate
+impl<Target, A> UpdateBuilder<Target, A>
+where
+    A: AfiSafiNlri + NlriCompose,
+    Target: OctetsBuilder + octseq::Truncate,
 {
 
     pub fn from_target(mut target: Target) -> Result<Self, ShortBuf> {
@@ -54,15 +39,39 @@ where Target: octseq::Truncate
         let mut h = Header::<&[u8]>::new();
         h.set_length(19 + 2 + 2);
         h.set_type(MsgType::Update);
-        let _ =target.append_slice(h.as_ref());
+        let _ = target.append_slice(h.as_ref());
 
         Ok(UpdateBuilder {
             target,
-            announcements: Vec::new(),
-            withdrawals: Vec::new(),
-            addpath_enabled: None,
-            attributes: BTreeMap::new(),
+            announcements: None,
+            withdrawals: None,
+            attributes: PaMap::empty(),
         })
+    }
+}
+
+impl<Target, A> UpdateBuilder<Target, A>
+where
+    A: AfiSafiNlri + NlriCompose,
+    Target: EmptyBuilder + OctetsBuilder + octseq::Truncate,
+{
+
+    pub fn from_attributes_builder(
+        attributes: PaMap,
+    ) -> UpdateBuilder<Target, A> {
+        let mut res = UpdateBuilder::from_target(Target::empty()).unwrap();
+        res.attributes = attributes;
+        res
+    }
+
+    pub fn from_workshop(
+        ws: crate::bgp::workshop::route::RouteWorkshop<A>
+    ) -> UpdateBuilder<Target, A> {
+
+        let mut res = Self::from_attributes_builder(ws.attributes().clone());
+        let _ = res.add_announcement(ws.into_nlri());
+
+        res
     }
 
     /// Creates an UpdateBuilder with Path Attributes from an UpdateMessage
@@ -70,9 +79,9 @@ where Target: octseq::Truncate
     ///
     pub fn from_update_message<'a, Octs: 'a + Octets>(
         pdu: &'a UpdateMessage<Octs>, 
-        _session_config: SessionConfig,
+        _session_config: &SessionConfig,
         target: Target
-    ) -> Result<UpdateBuilder<Target>, ComposeError>
+    ) -> Result<UpdateBuilder<Target, A>, ComposeError>
     where
         Vec<u8>: OctetsFrom<Octs::Range<'a>>
     {
@@ -80,153 +89,48 @@ where Target: octseq::Truncate
         let mut builder = UpdateBuilder::from_target(target)
             .map_err(|_| ComposeError::ShortBuf)?;
 
-        // Add all path attributes, except for MP_(UN)REACH_NLRI, ordered by
-        // their type_code.
-        for pa in pdu.path_attributes()? {
-            if let Ok(pa) = pa {
-                if pa.type_code() != PathAttributeType::MpReachNlri
-                    && pa.type_code() != PathAttributeType::MpUnreachNlri
-                {
-                    if let PathAttributeType::Invalid(n) = pa.type_code() {
-                        warn!("invalid PA {}:\n{}", n, pdu.fmt_pcap_string());
-                    }
-                    builder.add_attribute(pa.to_owned()?)?;
-                }
-            } else {
-                return Err(ComposeError::InvalidAttribute);
-            }
-        }
+        let pa_map = PaMap::from_update_pdu(pdu)?;
+        builder.attributes = pa_map;
 
         Ok(builder)
     }
 
     //--- Withdrawals
 
-    pub fn add_withdrawal<T>(
-        &mut self,
-        withdrawal: &Nlri<T>
-    ) -> Result<(), ComposeError>
-        where
-            Vec<u8>: OctetsFrom<T>,
-            T: Octets,
+    pub fn add_withdrawal(&mut self, withdrawal: A)
+        -> Result<(), ComposeError>
     {
-        match *withdrawal {
-            Nlri::Unicast(b) => {
-                if b.is_v4() {
-                    if let Some(addpath_enabled) = self.addpath_enabled {
-                        if addpath_enabled != b.is_addpath() {
-                            return Err(ComposeError::IllegalCombination)
-                        }
-                    } else {
-                        self.addpath_enabled = Some(b.is_addpath());
-                    }
+        if let Some(ref mut w) = self.withdrawals.as_mut() {
+            w.add_withdrawal(withdrawal);
+        } else {
+            self.withdrawals = Some(MpUnreachNlriBuilder::from(withdrawal));
+        }
 
-                    self.withdrawals.push(
-                        <&Nlri<T> as OctetsInto<Nlri<Vec<u8>>>>::try_octets_into(withdrawal).map_err(|_| ComposeError::todo() )?
-                    );
-                } else {
-                    // Nlri::Unicast only holds IPv4 and IPv6, so this must be
-                    // IPv6.
-
-                    // Check if we have an attribute in self.attributes
-                    // Again, like with Communities, we cant rely on
-                    // entry().or_insert(), because that does not do a max pdu
-                    // length check and it does not allow us to error out.
-                    
-                    if !self.attributes.contains_key(
-                        &PathAttributeType::MpUnreachNlri
-                    ) {
-                        self.add_attribute(MpUnreachNlri::new(
-                                MpUnreachNlriBuilder::new(
-                                    Afi::Ipv6, Safi::Unicast,
-                                    b.is_addpath()
-                                )
-                        ).into())?;
-                    }
-                    let pa = self.attributes.get_mut(&PathAttributeType::MpUnreachNlri)
-                        .unwrap(); // Just added it, so we know it is there.
-            
-                    if let PathAttribute::MpUnreachNlri(ref mut pa) = pa {
-                        let builder = pa.as_mut();
-
-                        if !builder.valid_combination(
-                            Afi::Ipv6, Safi::Unicast, b.is_addpath()
-                        ) {
-                            // We are already constructing a
-                            // MP_UNREACH_NLRI but for a different
-                            // AFI,SAFI than the prefix in `withdrawal`,
-                            // or we are mixing addpath with non-addpath.
-                            return Err(ComposeError::IllegalCombination);
-                        }
-
-                        builder.add_withdrawal(withdrawal);
-
-                    } else {
-                        unreachable!()
-                    }
-                }
-
-            }
-            _ => todo!() // TODO 
-        };
         Ok(())
     }
 
+    
     pub fn withdrawals_from_iter<I>(&mut self, withdrawals: I)
         -> Result<(), ComposeError>
-    where I: IntoIterator<Item = Nlri<Vec<u8>>>
+    where I: IntoIterator<Item = A>
     {
-        withdrawals.into_iter().try_for_each(|w| self.add_withdrawal(&w) )?;
+        withdrawals.into_iter().try_for_each(|w| self.add_withdrawal(w) )?;
         Ok(())
     }
+    
 
-    pub fn append_withdrawals<T>(&mut self, withdrawals: &mut Vec<Nlri<T>>)
+    
+    pub fn append_withdrawals(&mut self, withdrawals: Vec<A>)
         -> Result<(), ComposeError>
-    where
-        Vec<u8>: OctetsFrom<T>,
-        T: Octets,
     {
-        for (idx, w) in withdrawals.iter().enumerate() {
-            if let Err(e) = self.add_withdrawal(w) {
-                withdrawals.drain(..idx);
-                return Err(e);
-            }
+        for w in withdrawals {
+            self.add_withdrawal(w)?;
         }
+
         Ok(())
     }
 
     //--- Path Attributes
-
-
-    /// Upsert a Path Attribute.
-    ///
-    /// Insert a new, or update an existing Path Attribute in this builder. If
-    /// the new Path Attribute would cause the total PDU length to exceed the
-    /// maximum, a `ComposeError::PduTooLarge` is returned.
-
-    pub fn add_attribute(&mut self, pa: PathAttribute)
-        -> Result<(), ComposeError>
-    {
-        if let PathAttribute::Invalid(..) = pa {
-            warn!(
-                "adding Invalid attribute to UpdateBuilder: {}",
-                  &pa.type_code()
-            );
-        }
-        if let Some(existing_pa) = self.attributes.get_mut(&pa.type_code()) {
-            *existing_pa = pa;
-        } else {
-            self.attributes.insert(pa.type_code(), pa);
-        }
-        
-        Ok(())
-    }
-
-    pub fn set_origin(&mut self, origin: OriginType)
-        -> Result<(), ComposeError>
-    {
-        self.add_attribute(Origin::new(origin).into())
-    }
 
     pub fn set_aspath(&mut self , aspath: HopPath)
         -> Result<(), ComposeError>
@@ -244,428 +148,229 @@ where Target: octseq::Truncate
             return Err(ComposeError::InvalidAttribute)
         }
 
-        self.add_attribute(AsPath::new(aspath).into())
+        self.attributes.set(aspath);
+        Ok(())
     }
 
-    pub fn set_conventional_nexthop(&mut self, addr: Ipv4Addr) -> Result<(), ComposeError> {
-        self.add_attribute(NextHopAttribute::new(addr).into())
+    pub fn set_nexthop(&mut self, nexthop: NextHop)
+        -> Result<(), ComposeError>
+    {
+        self.set_mp_nexthop(nexthop)
     }
 
-    pub fn set_mp_nexthop(&mut self, nexthop: NextHop) -> Result<(), ComposeError> {
-        if let Some(PathAttribute::MpReachNlri(ref mut pa)) = self.attributes.get_mut(
-            &PathAttributeType::MpReachNlri
-        ) {
-            let builder = pa.as_mut();
-            builder.set_nexthop(nexthop)
+    pub fn set_mp_nexthop(&mut self, nexthop: NextHop)
+        -> Result<(), ComposeError>
+    {
+        if let Some(ref mut a) = self.announcements.as_mut() {
+            a.set_nexthop(nexthop)?;
         } else {
-            // We need to know the AfiSafi of MP_REACH_NLRI, so it should be
-            // added first via either an NLRI, or explicitly via fn new.
-            Err(ComposeError::IllegalCombination)
+            self.announcements =
+                Some(MpReachNlriBuilder::for_nexthop(nexthop))
+            ;
         }
-    }
 
-    pub fn set_nexthop_unicast(&mut self, addr: IpAddr) -> Result<(), ComposeError> {
-        match addr {
-            IpAddr::V4(a) => self.set_conventional_nexthop(a),
-            IpAddr::V6(_) => self.set_mp_nexthop(NextHop::Unicast(addr))
-        }
+        Ok(())
     }
 
     pub fn set_nexthop_ll_addr(&mut self, addr: Ipv6Addr)
         -> Result<(), ComposeError>
     {
-        // We could/should check for addr.is_unicast_link_local() once that
-        // lands in stable.
-        
-        if let Some(ref mut pa) = self.attributes.get_mut(
-            &PathAttributeType::MpReachNlri
-        ) {
-            if let PathAttribute::MpReachNlri(ref mut pa) = pa {
-                let builder = pa.as_mut();
-                match builder.get_nexthop() {
-                    NextHop::Unicast(a) if a.is_ipv6() => { } ,
-                    NextHop::Ipv6LL(_,_) => { },
-                    _ => return Err(ComposeError::IllegalCombination),
-                }
-                
-                builder.set_nexthop_ll_addr(addr);
-            } else {
-                unreachable!()
-            }
+        if let Some(ref mut a) = self.announcements.as_mut() {
+            a.set_nexthop_ll_addr(addr);
         } else {
-            self.add_attribute(MpReachNlri::new(
-                MpReachNlriBuilder::new(
-                    Afi::Ipv6, Safi::Unicast, NextHop::Ipv6LL(0.into(), addr),
-                    false
-                )
-            ).into())?;
+            let nexthop = NextHop::Ipv6LL(Ipv6Addr::from(0), addr);
+            self.announcements =
+                Some(MpReachNlriBuilder::for_nexthop(nexthop))
+            ;
         }
 
         Ok(())
     }
-
-    pub fn set_multi_exit_disc(&mut self, med: MultiExitDisc)
-    -> Result<(), ComposeError>
-    {
-        self.add_attribute(med.into())
-    }
-
-    pub fn set_local_pref(&mut self, local_pref: LocalPref)
-    -> Result<(), ComposeError>
-    {
-        self.add_attribute(local_pref.into())
-    }
-
+    
 
     //--- Announcements
 
-    pub fn add_announcement<T>(&mut self, announcement: &Nlri<T>)
+    pub fn add_announcement(&mut self, announcement: A)
         -> Result<(), ComposeError>
-    where
-        Vec<u8>: OctetsFrom<T>,
-        T: Octets,
     {
-        match announcement {
-            Nlri::Unicast(b) if b.is_v4() => {
-                // These go in the conventional NLRI part at the end of the
-                // PDU.
-                if let Some(addpath_enabled) = self.addpath_enabled {
-                    if addpath_enabled != b.is_addpath() {
-                        return Err(ComposeError::IllegalCombination)
-                    }
-                } else {
-                    self.addpath_enabled = Some(b.is_addpath());
-                }
-
-                self.announcements.push(
-                    <&Nlri<T> as OctetsInto<Nlri<Vec<u8>>>>::try_octets_into(announcement).map_err(|_| ComposeError::todo() ).unwrap()
-                );
-            }
-            n => {
-                if !self.attributes.contains_key(&PathAttributeType::MpReachNlri) {
-                    self.add_attribute(MpReachNlri::new(
-                            MpReachNlriBuilder::new_for_nlri(n)
-                    ).into())?;
-                }
-
-                let pa = self.attributes.get_mut(&PathAttributeType::MpReachNlri)
-                    .unwrap(); // Just added it, so we know it is there.
-        
-                if let PathAttribute::MpReachNlri(ref mut pa) = pa {
-                    let builder = pa.as_mut();
-
-                    if !builder.valid_combination(n) {
-                        // We are already constructing a
-                        // MP_UNREACH_NLRI but for a different
-                        // AFI,SAFI than the prefix in `announcement`,
-                        // or we are mixing addpath with non-addpath.
-                        return Err(ComposeError::IllegalCombination);
-                    }
-
-                    builder.add_announcement(announcement);
-                } else {
-                    unreachable!()
-                }
-            }
+        if let Some(ref mut a) = self.announcements.as_mut() {
+            a.add_announcement(announcement);
+        } else {
+            self.announcements =
+                Some(MpReachNlriBuilder::for_nlri(announcement))
+            ;
         }
-
         Ok(())
     }
 
-    pub fn announcements_from_iter<I, T>(
-        &mut self, announcements: I
-    ) -> Result<(), ComposeError>
-    where
-        I: IntoIterator<Item = Nlri<T>>,
-        Vec<u8>: OctetsFrom<T>,
-        T: Octets,
+    pub fn announcements_from_iter<I>(&mut self, announcements: I)
+        -> Result<(), ComposeError>
+    where I: IntoIterator<Item = A>
     {
-        announcements.into_iter().try_for_each(|w| self.add_announcement(&w) )?;
+        announcements.into_iter().try_for_each(|w| self.add_announcement(w))?;
         Ok(())
+    }
+
+    pub fn add_announcements_from_pdu<'a, Octs, O>(
+        &mut self,
+        source: &'a UpdateMessage<Octs>,
+        _session_config: &SessionConfig
+    )
+    where
+        A: AfiSafiNlri + NlriCompose + NlriParse<'a, O, Octs, Output = A>,
+        Octs: Octets<Range<'a> = O>,
+        O: Octets,
+    {
+        if source.announcements().is_ok_and(|i| i.count() == 0) {
+            return;
+        }
+        if let Some(ref mut a) = self.announcements.as_mut() {
+            a.add_announcements_from_pdu::<Octs, O>(source, _session_config);
+        } else {
+            let mut a = MpReachNlriBuilder::new();
+            a.add_announcements_from_pdu::<Octs, O>(source, _session_config);
+            self.announcements = Some(a);
+        }
+    }
+
+    pub fn add_withdrawals_from_pdu<'a, Octs, O>(
+        &mut self,
+        source: &'a UpdateMessage<Octs>,
+        _session_config: &SessionConfig
+    )
+    where
+        A: AfiSafiNlri + NlriCompose + NlriParse<'a, O, Octs, Output = A>,
+        Octs: Octets<Range<'a> = O>,
+        O: Octets,
+    {
+        if source.withdrawals().is_ok_and(|i| i.count() == 0) {
+            return;
+        }
+        if let Some(ref mut w) = self.withdrawals.as_mut() {
+            w.add_withdrawals_from_pdu::<Octs, O>(source, _session_config);
+        } else {
+            let mut w = MpUnreachNlriBuilder::new();
+            w.add_withdrawals_from_pdu::<Octs, O>(source, _session_config);
+            self.withdrawals = Some(w);
+        }
     }
 
     //--- Standard communities
-    
-    pub fn add_community(&mut self, community: StandardCommunity)
-        -> Result<(), ComposeError>
-    {
-        if !self.attributes.contains_key(&PathAttributeType::Communities) {
-            self.add_attribute(Communities::new(
-                    StandardCommunitiesBuilder::new()
-            ).into())?;
+
+    pub fn add_community(
+        &mut self,
+        community: StandardCommunity,
+    ) -> Result<(), ComposeError> {
+        if !self.attributes.contains::<StandardCommunitiesList>() {
+            self.attributes.set(StandardCommunitiesList::new());
         }
-        let pa = self.attributes.get_mut(&PathAttributeType::Communities)
+        let mut builder = self
+            .attributes
+            .take::<StandardCommunitiesList>()
             .unwrap(); // Just added it, so we know it is there.
-            
-        if let PathAttribute::Communities(ref mut pa) = pa {
-            let builder = pa.as_mut();
-            builder.add_community(community);
-            Ok(())
-        } else {
-            unreachable!()
-        }
+        builder.add_community(community);
+        self.attributes.set(builder);
+        Ok(())
     }
 }
 
-/*
-impl<Target: OctetsBuilder + AsMut<[u8]>> UpdateBuilder<Target>
-where Infallible: From<<Target as OctetsBuilder>::AppendError>
+impl<Target, A> UpdateBuilder<Target, A>
+where
+    A: Clone + AfiSafiNlri + NlriCompose
 {
-    #[deprecated]
-    pub fn build_acs(mut self, acs: AttrChangeSet)
-        -> Result<Target, ComposeError>
-    {
-        // Withdrawals
-        let withdraw_len = 0_usize;
-        // placeholder
-        let _ = self.target.append_slice(&(withdraw_len as u16).to_be_bytes());
-        //self.target.as_mut()[19..=20].copy_from_slice(
-        //    &(withdraw_len as u16).to_be_bytes()
-        //);
-        // TODO actual withdrawals
-
-
-        // Path Attributes
-            // flags (from msb to lsb):
-            // optional
-            // transitive
-            // partial
-            // extended_length (2 octet length)
-        
-        let mut total_pa_len = 0_usize;
-        // Total Path Attribute len place holder:
-        let _ = self.target.append_slice(&[0x00, 0x00]);
-
-        if let Some(origin) = acs.origin_type.into_opt() {
-            let attr_flags = 0b0100_0000;
-            let attr_type_code = PathAttributeType::Origin.into();
-            let attr_len = 1_u8; 
-            let _ = self.target.append_slice(
-                &[attr_flags, attr_type_code, attr_len, origin.into()]);
-            total_pa_len += 2 + 1 + usize::from(attr_len);
-        }
-
-        if let Some(as_path) = acs.as_path.into_opt() {
-            let attr_flags = 0b0101_0000;
-            let attr_type_code = PathAttributeType::AsPath.into();
-            let asp = as_path.into_inner();
-            let attr_len = asp.len();
-            if u16::try_from(attr_len).is_err() {
-                return Err(ComposeError::AttributeTooLarge(
-                    PathAttributeType::AsPath,
-                    attr_len
-                ));
-            }
-            let _ = self.target.append_slice(&[attr_flags, attr_type_code]);
-            let _ = self.target.append_slice(&(attr_len as u16).to_be_bytes());
-            let _ = self.target.append_slice(&asp);
-
-            total_pa_len += 2 + 2 + attr_len;
-        }
-
-
-        // XXX the next_hop is either a (conventional, for v4/unicast) path
-        // attribute, or, it is part of MP_REACH_NLRI.
-        // Should/must v4/unicast always go in MP_REACH_NLRI when both peers
-        // sent such capability though?
-        if let Some(next_hop) = acs.next_hop.into_opt() {
-            match next_hop {
-                NextHop::Ipv4(v4addr) => {
-                    let attr_flags = 0b0100_0000;
-                    let attr_type_code = PathAttributeType::NextHop.into();
-                    let attr_len = 4_u8; 
-
-                    let _ = self.target.append_slice(
-                        &[attr_flags, attr_type_code, attr_len]
-                    );
-                    let _ = self.target.append_slice(&v4addr.octets());
-
-                    total_pa_len += 2 + 1 + usize::from(attr_len);
-                }
-                _ => todo!() // this is MP_REACH_NLRI territory
-            }
-        }
-
-
-        if let Some(comms) = acs.standard_communities.into_opt() {
-            let attr_flags = 0b0100_0000;
-            let attr_type_code = PathAttributeType::Communities.into();
-            let attr_len = match u8::try_from(4 * comms.len()) {
-                Ok(n) => n,
-                Err(..) => {
-                    return Err(ComposeError::AttributeTooLarge(
-                        PathAttributeType::Communities,
-                        4 * comms.len()
-                    ));
-                }
-            };
-
-            let _ = self.target.append_slice(
-                &[attr_flags, attr_type_code, attr_len]
-            );
-
-            for c in comms {
-                let _ = self.target.append_slice(&c.to_raw());
-            }
-            total_pa_len += 2 + 1 + usize::from(attr_len);
-        }
-
-
-        if u16::try_from(total_pa_len).is_err() {
-            return Err(ComposeError::AttributesTooLarge(total_pa_len));
-        }
-
-        // update total path attribute len:
-        self.target.as_mut()[21+withdraw_len..21+withdraw_len+2]
-            .copy_from_slice(&(total_pa_len as u16).to_be_bytes());
-
-
-        // NLRI
-        // TODO this all needs to be a lot more sophisticated:
-        //  - prefixes can not occur in both withdrawals and nlris, so check
-        //  for that;
-        //  - non v4/unicast NLRI should go in MP_REACH_NLRI, not here (at the
-        //  end of the PDU);
-        //  - we should be able to put multiple NLRI in one UPDATE, though
-        //  currently the AttrChangeSet only holds one;
-        //  - probably more
-        
-        let mut nlri_len = 0;
-
-        if let Some(nlri) = acs.nlri.into_opt() {
-            match nlri {
-                Nlri::Unicast(b) => {
-                    if let Some(id) = b.path_id() {
-                        let _ = self.target.append_slice(&id.to_raw());
-                        nlri_len += 4;
-                    }
-                    match b.prefix().addr_and_len() {
-                        (std::net::IpAddr::V4(addr), len) => {
-                            let _ = self.target.append_slice(&[len]);
-                            let len_bytes = (usize::from(len)-1) / 8 + 1;
-                            let _ = self.target.append_slice(
-                                &addr.octets()[0..len_bytes]
-                            );
-                            nlri_len += 1 + len_bytes;
-                        }
-                        _ => todo!()
-                    }
-                }
-                _ => todo!()
-            }
-        }
-
-        // update pdu len
-        let msg_len = 19 
-            + 2 + withdraw_len 
-            + 2 + total_pa_len
-            + nlri_len
-        ;
-
-        if msg_len > 4096 {
-            // TODO handle Extended Messages (max pdu size 65535)
-            return Err(ComposeError::PduTooLarge(msg_len));
-        }
-
-        //if u16::try_from(msg_len).is_err() {
-        //    return Err(ComposeError::PduTooLarge(msg_len));
-        //}
-
-        self.target.as_mut()[16..=17].copy_from_slice(
-            &(msg_len as u16).to_be_bytes()
-        );
-
-        Ok(self.target)
-    }
-}
-*/
-
-impl<Target> UpdateBuilder<Target>
-{
-    pub fn into_message(self) ->
+    pub fn into_message(self, session_config: &SessionConfig) ->
         Result<UpdateMessage<<Target as FreezeBuilder>::Octets>, ComposeError>
     where
         Target: OctetsBuilder + FreezeBuilder + AsMut<[u8]> + octseq::Truncate,
-        <Target as FreezeBuilder>::Octets: Octets,
+        <Target as FreezeBuilder>::Octets: Octets
     {
         self.is_valid()?;
-        // FIXME this SessionConfig::modern should come from self
         Ok(UpdateMessage::from_octets(
-            self.finish().map_err(|_| ShortBuf)?, SessionConfig::modern()
+            self.finish(session_config).map_err(|_| ShortBuf)?, session_config,
         )?)
+    }
+
+    pub fn attributes(&self) -> &PaMap {
+        &self.attributes
+    }
+
+    // What is this suppose to do?
+    // It basically creates a copy of the PaMap, not an UpdateBuilder?
+    pub fn from_map(&self, map: &mut PaMap) -> PaMap {
+        let mut pab = PaMap::empty();
+        pab.merge_upsert(map);
+        pab
     }
 
     // Check whether the combination of NLRI and attributes would produce a
     // valid UPDATE pdu.
     fn is_valid(&self) -> Result<(), ComposeError> {
-        // If we have builders for MP_(UN)REACH_NLRI, they should carry
-        // prefixes.
-
-        if let Some(pa) = self.attributes.get(
-            &PathAttributeType::MpReachNlri
-        ) {
-            if let PathAttribute::MpReachNlri(pa) = pa {
-                if pa.as_ref().is_empty() {
-                    return Err(ComposeError::EmptyMpReachNlri);
-                }
-            } else {
-                unreachable!()
-            }
+        // If we have a builder for MP_REACH_NLRI, it should carry prefixes.
+        if self.announcements.as_ref()
+            .is_some_and(|b| b.announcements.is_empty())
+        {
+            return Err(ComposeError::EmptyMpReachNlri);
         }
 
-        if let Some(pa) = self.attributes.get(
-            &PathAttributeType::MpUnreachNlri
-        ) {
-            if let PathAttribute::MpUnreachNlri(pa) = pa {
-                // FIXME an empty MP_UNREACH_NLRI can be valid when signaling
-                // EoR, but then it has to be the only path attribute.
-                if pa.as_ref().is_empty() {
-                    return Err(ComposeError::EmptyMpUnreachNlri);
-                }
-            } else {
-                unreachable!()
-            }
+        if self.withdrawals.as_ref().is_some_and(|b| b.is_empty()) &&
+            (
+                self.announcements.as_ref().is_some_and(|b| !b.is_empty())
+                || !self.attributes.is_empty()
+            )
+        {
+            // Empty MP_UNREACH but other announcements/attributes
+            // present, so this is not a valid EoR
+            return Err(ComposeError::EmptyMpUnreachNlri);
         }
 
         Ok(())
     }
 
-    fn calculate_pdu_length(&self) -> usize {
+    fn calculate_pdu_length(&self, _session_config: &SessionConfig) -> usize {
         // Marker, length and type.
         let mut res: usize = 16 + 2 + 1;
 
+        // TODO we must check where the ipv4 unicast withdrawals/announcements
+        // for this session should go: MP attributes or conventional PDU
+        // sections?
+        // For now, we do everything in MP.
+        
+       
         // Withdrawals, 2 bytes for length + N bytes for NLRI:
-        res += 2 + self.withdrawals.iter()
-            .fold(0, |sum, w| sum + w.compose_len());
+        res += 2; // + self.withdrawals.iter() .fold(0, |sum, w| sum + w.compose_len());
 
         // Path attributes, 2 bytes for length + N bytes for attributes:
-        res += 2 + self.attributes.values()
-            .fold(0, |sum, pa| sum + pa.compose_len());
+        res += 2 + self.attributes.bytes_len();
 
-        // Announcements, no length bytes:
-        res += self.announcements.iter()
-            .fold(0, |sum, a| sum + a.compose_len());
+        // Manually add in the MP attributes:
+        if let Some(mp_reach) = &self.announcements {
+            res += mp_reach.compose_len();
+        }
+
+        if let Some(mp_unreach) = &self.withdrawals {
+            res += mp_unreach.compose_len();
+        }
 
         res
     }
 
-    fn larger_than(&self, max: usize) -> bool {
+    fn larger_than(&self, max: usize, session_config: &SessionConfig) -> bool {
         // TODO add more 'quick returns' here, e.g. for MpUnreachNlri or
         // conventional withdrawals/announcements.
 
-        if let Some(PathAttribute::MpReachNlri(b)) = self.attributes.get(&PathAttributeType::MpReachNlri) {
-            if b.as_ref().announcements.len() * 2 > max {
-                return true
+        if let Some(b) = &self.announcements {
+            if b.announcements.len() * 2 > max {
+                return true;
             }
         }
-        self.calculate_pdu_length() > max
+        self.calculate_pdu_length(session_config) > max
     }
 
     /// Compose the PDU, returns the builder if it exceeds the max PDU size.
     ///
     /// Note that `UpdateBuilder` implements `IntoIterator`, which is perhaps
     /// more appropriate for many use cases.
-    pub fn take_message(mut self) -> (
+    pub fn take_message(mut self, session_config: &SessionConfig) -> (
         Result<UpdateMessage<<Target as FreezeBuilder>::Octets>, ComposeError>,
         Option<Self>
     )
@@ -673,8 +378,8 @@ impl<Target> UpdateBuilder<Target>
         Target: Clone + OctetsBuilder + FreezeBuilder + AsMut<[u8]> + octseq::Truncate,
         <Target as FreezeBuilder>::Octets: Octets
     {
-        if !self.larger_than(Self::MAX_PDU) {
-            return (self.into_message(), None)
+        if !self.larger_than(Self::MAX_PDU, session_config) {
+            return (self.into_message(session_config), None)
 
         }
 
@@ -699,6 +404,13 @@ impl<Target> UpdateBuilder<Target>
         // First naive approach: we split off at most 450 NLRI. In the extreme
         // case of AddPathed /32's this would still fit in a 4096 PDU.
 
+        // TODO we need to see if, for this session, there is anything that
+        // should go into the conventional withdrawals.
+        // Note that because we are making the builders generic over (a
+        // single) AfiSafiNlri, these parts are probably prone to change
+        // anyway.
+        
+        /*
         if !self.withdrawals.is_empty() {
             //let withdrawal_len = self.withdrawals.iter()
             //    .fold(0, |sum, w| sum + w.compose_len());
@@ -711,52 +423,55 @@ impl<Target> UpdateBuilder<Target>
 
             return (builder.into_message(), Some(self));
         }
+        */
 
         // Scenario 2: many withdrawals in MP_UNREACH_NLRI
         // At this point, we have no conventional withdrawals anymore.
-        
-        let maybe_pdu = 
-            if let Some(PathAttribute::MpUnreachNlri(b)) = self.attributes.get_mut(&PathAttributeType::MpUnreachNlri) {
-                let unreach_builder = b.as_mut();
-                let mut split_at = 0;
-                if !unreach_builder.withdrawals.is_empty() {
-                    let mut compose_len = 0;
-                    for (idx, w) in unreach_builder.withdrawals.iter().enumerate() {
-                        compose_len += w.compose_len();
-                        if compose_len > 4000 {
-                            split_at = idx;
-                            break;
-                        }
+
+        let maybe_pdu = if let Some(ref mut unreach_builder) =
+            self.withdrawals
+        {
+            let mut split_at = 0;
+            if !unreach_builder.withdrawals.is_empty() {
+                let mut compose_len = 0;
+                for (idx, w) in unreach_builder.withdrawals.iter().enumerate()
+                {
+                    compose_len += w.compose_len();
+                    if compose_len > 4000 {
+                        split_at = idx;
+                        break;
                     }
-
-                    let this_batch = unreach_builder.split(split_at);
-                    let mut builder = Self::from_target(self.target.clone()).unwrap();
-                    builder.add_attribute(MpUnreachNlri::new(this_batch).into()).unwrap();
-
-                    Some(builder.into_message())
-                } else {
-                    None
                 }
+
+                let this_batch = unreach_builder.split(split_at);
+                let mut builder =
+                    UpdateBuilder::from_target(self.target.clone()).unwrap();
+                builder.withdrawals = Some(this_batch);
+
+                Some(builder.into_message(session_config))
             } else {
                 None
             }
-        ;
+        } else {
+            None
+        };
+
         // Bit of a clumsy workaround as we can not return Some(self) from
         // within the if let ... self.attributes.get_mut above
         if let Some(pdu) = maybe_pdu {
             return (pdu, Some(self))
         }
 
+        // TODO: like with conventional withdrawals, handle this case for
+        // sessions where ipv4 unicast does not go into MP attributes.
         // Scenario 3: many conventional announcements
         // Similar but different to the scenario of many withdrawals, as
         // announcements are tied to the attributes. At this point, we know we
         // have no conventional withdrawals left, and no MP_UNREACH_NLRI.
 
+        /*
         if !self.announcements.is_empty() {
-            //let announcement_len = self.announcements.iter()
-            //    .fold(0, |sum, a| sum + a.compose_len());
-
-            let split_at = std::cmp::min(self.announcements.len() / 2,  450);
+            let split_at = std::cmp::min(self.announcements.len() / 2, 450);
             let this_batch = self.announcements.drain(..split_at);
             let mut builder = Self::from_target(self.target.clone()).unwrap();
 
@@ -764,8 +479,8 @@ impl<Target> UpdateBuilder<Target>
             builder.attributes = self.attributes.clone();
 
             return (builder.into_message(), Some(self));
-
         }
+        */
 
         // Scenario 4: many MP_REACH_NLRI announcements
         // This is tricky: we need to split the MP_REACH_NLRI attribute, and
@@ -777,13 +492,13 @@ impl<Target> UpdateBuilder<Target>
         // sets. The first PDUs take longer to construct than the later ones.
         // Flamegraph currently hints at the fn split on MpReachNlriBuilder.
 
-        let maybe_pdu = 
-            if let Some(PathAttribute::MpReachNlri(b)) = self.attributes.remove(&PathAttributeType::MpReachNlri) {
-                let mut reach_builder = b.inner();
-                let mut split_at = 0;
+        let maybe_pdu = if let Some(ref mut reach_builder) =
+            self.announcements
+        {
+            let mut split_at = 0;
 
-                let other_attrs_len = self.attributes.values().fold(0, |sum, pa| sum + pa.compose_len());
-                let limit = Self::MAX_PDU 
+            let other_attrs_len = self.attributes.bytes_len();
+            let limit = Self::MAX_PDU 
                     // marker/len/type, wdraw len, total pa len
                     - (16 + 2 + 1 + 2 + 2)
                     // MP_REACH_NLRI flags/type/len/afi/safi/rsrved, next_hop
@@ -801,12 +516,13 @@ impl<Target> UpdateBuilder<Target>
                     }
 
                     let this_batch = reach_builder.split(split_at);
-                    let mut builder = Self::from_target(self.target.clone()).unwrap();
+                    let mut builder = Self::from_target(
+                        self.target.clone()
+                    ).unwrap();
                     builder.attributes = self.attributes.clone();
-                    self.add_attribute(MpReachNlri::new(reach_builder).into()).unwrap();
-                    builder.add_attribute(MpReachNlri::new(this_batch).into()).unwrap();
+                    builder.announcements = Some(this_batch);
 
-                    Some(builder.into_message())
+                    Some(builder.into_message(session_config))
                 } else {
                     None
                 }
@@ -825,7 +541,7 @@ impl<Target> UpdateBuilder<Target>
         // those without altering the information that the user intends to
         // convey. So, we error out.
 
-        let pdu_len = self.calculate_pdu_length();
+        let pdu_len = self.calculate_pdu_length(session_config);
         (Err(ComposeError::PduTooLarge(pdu_len)), None)
 
     }
@@ -835,7 +551,7 @@ impl<Target> UpdateBuilder<Target>
     ///
     /// Note that `UpdateBuilder` implements `IntoIterator`, which is perhaps
     /// more appropriate for many use cases.
-    pub fn into_messages(self) -> Result<
+    pub fn into_messages(self, session_config: &SessionConfig) -> Result<
         Vec<UpdateMessage<<Target as FreezeBuilder>::Octets>>,
         ComposeError
     >
@@ -849,7 +565,9 @@ impl<Target> UpdateBuilder<Target>
             if remainder.is_none() {
                 return Ok(res);
             }
-            let (pdu, new_remainder) = remainder.take().unwrap().take_message();
+            let (pdu, new_remainder) =
+                remainder.take().unwrap().take_message(session_config)
+            ;
             match pdu {
                 Ok(pdu) => {
                     res.push(pdu);
@@ -863,17 +581,33 @@ impl<Target> UpdateBuilder<Target>
         }
     }
 
-    fn finish(mut self)
+    pub fn into_pdu_iter(self, session_config: &SessionConfig)
+        -> PduIterator<'_, Target, A>
+    {
+        PduIterator { builder: Some(self), session_config }
+    }
+
+    fn finish(mut self, session_config: &SessionConfig)
         -> Result<<Target as FreezeBuilder>::Octets, Target::AppendError>
     where
-        Target: OctetsBuilder + FreezeBuilder + AsMut<[u8]> + octseq::Truncate
+        Target: OctetsBuilder + FreezeBuilder + AsMut<[u8]> + octseq::Truncate,
+        <Target as FreezeBuilder>::Octets: Octets
     {
-        let total_pdu_len = self.calculate_pdu_length();
+        let total_pdu_len = self.calculate_pdu_length(session_config);
         let mut header = Header::for_slice_mut(self.target.as_mut());
         header.set_length(u16::try_from(total_pdu_len).unwrap());
 
         // `withdrawals_len` is checked to be <= 4096 or <= 65535
         // so it will always fit in a u16.
+        //
+        // TODO handle the case where ipv4 unicast does not go into MP.
+        // For now, we put everything in MP_UNREACH_NLRI, leaving the
+        // conventional withdrawals section empty, i.e. length 0
+
+        self.target.append_slice(&0_u16.to_be_bytes())?;
+
+        //
+        /*
         let withdrawals_len = self.withdrawals.iter()
             .fold(0, |sum, w| sum + w.compose_len());
         self.target.append_slice(
@@ -888,27 +622,48 @@ impl<Target> UpdateBuilder<Target>
                 _ => todo!(),
             }
         }
+        */
+
+        // TODO we need checks for things like the total attributes length.
+        // These happened in other places (in cumbersome ways), but are now
+        // gone.
+        let mut attributes_len = self.attributes.bytes_len();
 
 
-        // We can do these unwraps because of the checks in the add/append
-        // methods.
+        if let Some(ref mp_reach_builder) = self.announcements {
+            attributes_len += mp_reach_builder.compose_len();
+        }
 
-        // attributes_len` is checked to be <= 4096 or <= 65535
-        // so it will always fit in a u16.
-        let attributes_len = self.attributes.values()
-            .fold(0, |sum, a| sum + a.compose_len());
+        if let Some(ref mp_unreach_builder) = self.withdrawals {
+            attributes_len += mp_unreach_builder.compose_len();
+        }
+
         let _ = self.target.append_slice(
             &u16::try_from(attributes_len).unwrap().to_be_bytes()
         );
 
-        self.attributes.iter().try_for_each(
-            |(_tc, pa)| pa.compose(&mut self.target)
-        )?;
+        if let Some(mp_reach_builder) = self.announcements {
+            mp_reach_builder.compose(&mut self.target)?;
+        }
+
+        if let Some(mp_unreach_builder) = self.withdrawals {
+            mp_unreach_builder.compose(&mut self.target)?;
+        }
+
+        self.attributes
+            .attributes()
+            .iter()
+            .try_for_each(|(_tc, pa)| pa.compose(&mut self.target))?;
+
 
         // XXX Here, in the conventional NLRI field at the end of the PDU, we
         // write IPv4 Unicast announcements. But what if we have agreed to do
         // MP for v4/unicast, should these announcements go in the
         // MP_REACH_NLRI attribute then instead?
+        //
+        // TODO see note at conventional withdrawals. For now, everything goes
+        // into MP.
+        /*
         for a in &self.announcements {
             match a {
                 Nlri::Unicast(b) if b.is_v4() => {
@@ -917,17 +672,20 @@ impl<Target> UpdateBuilder<Target>
                 _ => unreachable!(),
             }
         }
+        */
 
         Ok(self.target.freeze())
     }
 }
 
-pub struct PduIterator<Target> {
-    builder: Option<UpdateBuilder<Target>>
+pub struct PduIterator<'a, Target, A> {
+    builder: Option<UpdateBuilder<Target, A>>,
+    session_config: &'a SessionConfig,
 }
 
-impl<Target> Iterator for PduIterator<Target>
+impl<'a, Target, A> Iterator for PduIterator<'a, Target, A>
 where
+    A: AfiSafiNlri + NlriCompose + Clone,
     Target: Clone + OctetsBuilder + FreezeBuilder + AsMut<[u8]> + octseq::Truncate,
     <Target as FreezeBuilder>::Octets: Octets
 {
@@ -938,36 +696,45 @@ where
 
     fn next(&mut self) -> Option<Self::Item> {
         self.builder.as_ref()?;
-        let (res, remainder) = self.builder.take().unwrap().take_message();
+        let (res, remainder) =
+            self.builder.take().unwrap().take_message(self.session_config)
+        ;
         self.builder = remainder;
         Some(res)
     }
 
 }
-impl<Target> IntoIterator for UpdateBuilder<Target>
+
+// XXX impl IntoIterator seems untrivial because we need to squeeze in a
+// lifetime for the &SessionConfig, which the trait does not facilitate.
+// The fn into_pdu_iterator()->PduIterator on UpdateBuilder provides
+// similar functionality for now.
+/*
+impl<Target, A: AfiSafiNlri + NlriCompose> IntoIterator for UpdateBuilder<Target, A>
     where
     Target: Clone + OctetsBuilder + FreezeBuilder + AsMut<[u8]> + octseq::Truncate,
-    <Target as FreezeBuilder>::Octets: Octets
+    <Target as FreezeBuilder>::Octets: Octets,
+    for<'a> Self: 'a
 {
     type Item = Result<
         UpdateMessage<<Target as FreezeBuilder>::Octets>,
         ComposeError
     >;
-    type IntoIter = PduIterator<Target>;
+    type IntoIter = PduIterator<'a, Target, A>;
 
     fn into_iter(self) -> Self::IntoIter {
         PduIterator { builder: Some(self) }
     }
-
 }
+*/
 
-impl UpdateBuilder<Vec<u8>> {
+impl<A: AfiSafiNlri + NlriCompose> UpdateBuilder<Vec<u8>, A> {
     pub fn new_vec() -> Self {
-        Self::from_target(Vec::with_capacity(23)).unwrap()
+        UpdateBuilder::from_target(Vec::with_capacity(23)).unwrap()
     }
 }
 
-impl UpdateBuilder<BytesMut> {
+impl<A: AfiSafiNlri + NlriCompose> UpdateBuilder<BytesMut, A> {
     pub fn new_bytes() -> Self {
         Self::from_target(BytesMut::new()).unwrap()
     }
@@ -991,16 +758,144 @@ impl UpdateBuilder<BytesMut> {
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
-pub struct MpReachNlriBuilder {
-    announcements: Vec<Nlri<Vec<u8>>>,
-    len: usize, // size of value, excluding path attribute flags+type_code+len
-    extended: bool,
-    afi: Afi,
-    safi: Safi,
+pub struct MpReachNlriBuilder<AfiSafi> {
+    announcements: Vec<AfiSafi>,
     nexthop: NextHop,
-    addpath_enabled: bool,
 }
 
+impl<A> MpReachNlriBuilder<A> {
+    pub fn add_announcements_from_pdu<'a, Octs, O>(
+        &mut self,
+        source: &'a UpdateMessage<Octs>,
+        _session_config: &SessionConfig
+    )
+    where
+        A: AfiSafiNlri + NlriCompose + NlriParse<'a, O, Octs, Output = A>,
+        Octs: Octets<Range<'a> = O>,
+        O: Octets,
+    {
+        if let Ok(Some(iter)) = source.typed_announcements::<_, A>() {
+            for a in iter {
+                self.add_announcement(a.unwrap());
+            }
+        }
+    }
+}
+
+impl<A: AfiSafiNlri + NlriCompose> MpReachNlriBuilder<A> {
+    pub fn new() -> Self {
+        Self {
+            announcements: Vec::new(),
+            nexthop: NextHop::new(A::afi_safi())
+        }
+    }
+
+    pub(crate) fn is_empty(&self) -> bool {
+        self.announcements.is_empty()
+    }
+
+    pub fn for_nlri(nlri: A) -> Self {
+        Self {
+            announcements: vec![nlri],
+            nexthop: NextHop::new(A::afi_safi())
+        }
+    }
+
+    pub fn for_nexthop(nexthop: NextHop) -> Self {
+        Self {
+            announcements: Vec::new(),
+            nexthop,
+        }
+    }
+
+    pub fn for_nlri_and_nexthop(nlri: A, nexthop: NextHop) -> Self {
+        Self {
+            announcements: vec![nlri],
+            nexthop,
+        }
+    }
+
+
+    pub fn afi_safi(&self) -> AfiSafiType {
+        A::afi_safi()
+    }
+
+    pub fn add_announcement(&mut self, nlri: A) {
+        self.announcements.push(nlri);
+    }
+
+    pub fn set_nexthop(&mut self, nexthop: NextHop) -> Result<(), ComposeError> {
+
+        // TODO check whether nexthop is valid for the AfiSafi this builder is
+        // generic over
+        //if !<AfiSafi>::nh_valid(&nexthop) {
+        //{
+        //        return Err(ComposeError::IllegalCombination);
+        //}
+
+        self.nexthop = nexthop;
+        Ok(())
+    }
+
+    pub fn set_nexthop_ll_addr(&mut self, addr: Ipv6Addr) {
+        match self.nexthop {
+            NextHop::Unicast(IpAddr::V6(a)) => {
+                self.nexthop = NextHop::Ipv6LL(a, addr);
+            }
+            NextHop::Ipv6LL(a, _ll) => {
+                self.nexthop = NextHop::Ipv6LL(a, addr);
+            }
+            _ => unreachable!()
+        }
+    }
+
+
+    pub(crate) fn get_nexthop(&self) -> &NextHop {
+        &self.nexthop
+    }
+
+    //--- Composing related
+
+    pub(crate) fn split(&mut self, n: usize) -> Self {
+        let this_batch = self.announcements.drain(..n).collect();
+        MpReachNlriBuilder {
+            announcements: this_batch,
+            ..*self
+        }
+    }
+
+    pub fn value_len(&self) -> usize {
+        2 + 1 + 1  // afi, safi + 1 reserved byte
+          + self.nexthop.compose_len() 
+          + self.announcements.iter().fold(0, |sum, w| sum + w.compose_len())
+    }
+
+    pub fn compose_value<Target: OctetsBuilder>(
+        &self,
+        target: &mut Target
+    ) -> Result<(), Target::AppendError>
+    {
+        target.append_slice(&A::afi_safi().as_bytes())?;
+        self.nexthop.compose(target)?;
+
+        // Reserved byte:
+        target.append_slice(&[0x00])?;
+
+        for a in &self.announcements {
+            a.compose(target)?
+        }
+
+        Ok(())
+    }
+}
+
+impl<A: AfiSafiNlri + NlriCompose> Default for MpReachNlriBuilder<A> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/*
 impl MpReachNlriBuilder {
     // MP_REACH_NLRI and MP_UNREACH_NLRI can only occur once (like any path
     // attribute), and can carry only a single tuple of (AFI, SAFI).
@@ -1015,8 +910,7 @@ impl MpReachNlriBuilder {
     // byte (1) and then space for at least an IPv6 /48 announcement (7)
 
     pub(crate) fn new(
-        afi: Afi,
-        safi: Safi,
+        afisafi: AfiSafi,
         nexthop: NextHop,
         addpath_enabled: bool,
     ) -> Self {
@@ -1025,8 +919,7 @@ impl MpReachNlriBuilder {
             // 3 bytes for AFI+SAFI, nexthop len, reserved byte
             len: 3 + nexthop.compose_len() + 1,
             extended: false,
-            afi,
-            safi,
+            afisafi,
             nexthop,
             addpath_enabled
         }
@@ -1040,14 +933,13 @@ impl MpReachNlriBuilder {
         }
     }
 
-    fn new_for_nlri<T>(nlri: &Nlri<T>) -> Self
+    pub fn new_for_nlri<T>(nlri: &Nlri<T>) -> Self
     where T: Octets,
           Vec<u8>: OctetsFrom<T>
     {
-        let (afi, safi) = nlri.afi_safi().split();
         let addpath_enabled = nlri.is_addpath();
         let nexthop = NextHop::new(nlri.afi_safi());
-        Self::new(afi, safi, nexthop, addpath_enabled)
+        Self::new(nlri.afi_safi(), nexthop, addpath_enabled)
     }
 
     pub(crate) fn value_len(&self) -> usize {
@@ -1060,8 +952,19 @@ impl MpReachNlriBuilder {
         self.announcements.is_empty()
     }
 
+    pub(crate) fn first_nlri(self) -> Option<Nlri<Vec<u8>>> {
+        self.announcements.first().cloned()
+    }
+
     pub(crate) fn get_nexthop(&self) -> &NextHop {
         &self.nexthop
+    }
+
+    pub(crate) fn set_nlri(&mut self, nlri: Nlri<Vec<u8>>) -> Result<(), ComposeError> {
+        self.afisafi = nlri.afi_safi();
+        self.addpath_enabled = nlri.is_addpath();
+        self.announcements = vec![nlri];
+        Ok(())
     }
 
     pub(crate) fn set_nexthop(&mut self, nexthop: NextHop) -> Result<(), ComposeError> {
@@ -1094,7 +997,7 @@ impl MpReachNlriBuilder {
      fn valid_combination<T>(
         &self, nlri: &Nlri<T>
     ) -> bool {
-        AfiSafi::try_from((self.afi, self.safi)) == Ok(nlri.afi_safi())
+        self.afisafi == nlri.afi_safi()
         && (self.announcements.is_empty()
              || self.addpath_enabled == nlri.is_addpath())
     }
@@ -1119,8 +1022,9 @@ impl MpReachNlriBuilder {
         target: &mut Target
     ) -> Result<(), Target::AppendError>
     {
-        target.append_slice(&u16::from(self.afi).to_be_bytes())?;
-        target.append_slice(&[self.safi.into()])?;
+        //target.append_slice(&u16::from(self.afi).to_be_bytes())?;
+        //target.append_slice(&[self.safi.into()])?;
+        target.append_slice(&self.afisafi.as_bytes())?;
         self.nexthop.compose(target)?;
 
         // Reserved byte:
@@ -1149,6 +1053,7 @@ impl MpReachNlriBuilder {
     }
 
 }
+*/
 
 // **NB:** this is bgp::message::update::NextHop
 impl NextHop {
@@ -1161,7 +1066,7 @@ impl NextHop {
             NextHop::MplsVpnUnicast(_rd, IpAddr::V4(_)) => 8 + 4,
             NextHop::MplsVpnUnicast(_rd, IpAddr::V6(_)) => 8 + 16,
             NextHop::Empty => 0, // FlowSpec
-            NextHop::Unimplemented(_afi, _safi) => {
+            NextHop::Unimplemented(_afisafi) => {
                 warn!(
                     "unexpected compose_len called on NextHop::Unimplemented \
                     returning usize::MAX, this will cause failure."
@@ -1193,7 +1098,7 @@ impl NextHop {
                 target.append_slice(&a.octets())?;
             }
             NextHop::Empty => { },
-            NextHop::Unimplemented(_afi, _safi) => todo!(),
+            NextHop::Unimplemented(_afisafi) => todo!(),
         }
 
         Ok(())
@@ -1215,22 +1120,44 @@ impl NextHop {
 //    add_withdrawal should check whether the remote side is able to receive
 //    path ids if the Nlri passed to add_withdrawal contains Some(PathId).
 //
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+
+#[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
-pub struct MpUnreachNlriBuilder {
-    withdrawals: Vec<Nlri<Vec<u8>>>,
-    afi: Afi,
-    safi: Safi,
-    addpath_enabled: bool,
+pub struct MpUnreachNlriBuilder<AfiSafi> {
+    withdrawals: Vec<AfiSafi>,
 }
 
-impl MpUnreachNlriBuilder {
-    pub(crate) fn new(afi: Afi, safi: Safi, addpath_enabled: bool) -> Self {
-        MpUnreachNlriBuilder {
-            withdrawals: vec![],
-            afi,
-            safi,
-            addpath_enabled
+impl<A> MpUnreachNlriBuilder<A>
+where
+{
+    pub fn add_withdrawals_from_pdu<'a, Octs, O>(
+        &mut self,
+        source: &'a UpdateMessage<Octs>,
+        _session_config: &SessionConfig
+    )
+    where
+        A: AfiSafiNlri + NlriCompose + NlriParse<'a, O, Octs, Output = A>,
+        Octs: Octets<Range<'a> = O>,
+        O: Octets,
+    {
+        if let Ok(Some(iter)) = source.typed_withdrawals::<_, A>() {
+            for w in iter {
+                self.add_withdrawal(w.unwrap());
+            }
+        }
+    }
+}
+
+impl<A: NlriCompose> MpUnreachNlriBuilder<A> {
+    pub fn new() -> Self {
+        Self {
+            withdrawals: Vec::new(),
+        }
+    }
+
+    pub fn from(withdrawal: A) -> Self {
+        Self {
+            withdrawals: vec![withdrawal],
         }
     }
 
@@ -1238,7 +1165,6 @@ impl MpUnreachNlriBuilder {
         let this_batch = self.withdrawals.drain(..n).collect();
         MpUnreachNlriBuilder {
             withdrawals: this_batch,
-            ..*self
         }
     }
 
@@ -1250,45 +1176,17 @@ impl MpUnreachNlriBuilder {
         self.withdrawals.is_empty()
     }
 
-    pub(crate) fn valid_combination(
-        &self, afi: Afi, safi: Safi, is_addpath: bool
-    ) -> bool {
-        self.afi == afi
-        && self.safi == safi
-        && (self.withdrawals.is_empty()
-             || self.addpath_enabled == is_addpath)
-    }
-
-    pub(crate) fn add_withdrawal<T>(&mut self, withdrawal: &Nlri<T>)
-    where
-        Vec<u8>: OctetsFrom<T>,
-        T: Octets,
-
-    {
-        self.withdrawals.push(
-            <&Nlri<T> as OctetsInto<Nlri<Vec<u8>>>>::try_octets_into(withdrawal).map_err(|_| ComposeError::todo() ).unwrap()
-            );
+    pub fn add_withdrawal(&mut self, nlri: A) {
+        self.withdrawals.push(nlri);
     }
 
     pub(crate) fn compose_value<Target: OctetsBuilder>(&self, target: &mut Target)
         -> Result<(), Target::AppendError>
     {
-        target.append_slice(&u16::from(self.afi).to_be_bytes())?;
-        target.append_slice(&[self.safi.into()])?;
+        target.append_slice(&A::afi_safi().as_bytes())?;
 
         for w in &self.withdrawals {
-            match w {
-                Nlri::Unicast(b) if b.is_v4() => {
-                    unreachable!()
-                }
-                Nlri::Unicast(b) | Nlri::Multicast(b) => b.compose(target)?,
-                //Nlri::Mpls(m) => m.compose(target)?,
-                //Nlri::MplsVpn(m) => m.compose(target)?,
-                //Nlri::Vpls(v) => v.compose(target)?,
-                Nlri::FlowSpec(f) => f.compose(target)?,
-                //Nlri::RouteTarget(r) => r.compose(target)?,
-                _ => todo!()
-            }
+            w.compose(target)?;
         }
 
         Ok(())
@@ -1301,31 +1199,32 @@ impl MpUnreachNlriBuilder {
 //
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
-pub struct StandardCommunitiesBuilder {
+pub struct StandardCommunitiesList {
     communities: Vec<StandardCommunity>,
     len: usize, // size of value, excluding path attribute flags+type_code+len
     extended: bool,
 }
 
-impl StandardCommunitiesBuilder {
-    pub(crate) fn new() -> StandardCommunitiesBuilder {
-        StandardCommunitiesBuilder {
+impl StandardCommunitiesList {
+    pub(crate) fn new() -> StandardCommunitiesList {
+        StandardCommunitiesList {
             communities: Vec::new(),
             len: 0,
             extended: false
         }
     }
 
-    pub(crate) fn with_capacity(c: usize) -> StandardCommunitiesBuilder {
-        StandardCommunitiesBuilder {
+    pub(crate) fn with_capacity(c: usize) -> StandardCommunitiesList {
+        StandardCommunitiesList {
             communities: Vec::with_capacity(c),
             len: 0,
             extended: false
         }
     }
 
-    pub(crate) fn communities(&self) -> &Vec<StandardCommunity> {
+    pub fn communities(&self) -> &Vec<StandardCommunity> {
         &self.communities
     }
 
@@ -1337,7 +1236,7 @@ impl StandardCommunitiesBuilder {
     //    }
     //}
 
-    pub(crate) fn add_community(&mut self, community: StandardCommunity) {
+    pub fn add_community(&mut self, community: StandardCommunity) {
         if !self.extended && self.len + 4 > 255 {
             self.extended = true;
         }
@@ -1374,6 +1273,7 @@ pub enum ComposeError{
 }
 
 impl ComposeError {
+    #[allow(dead_code)]
     fn todo() -> Self {
         ComposeError::Todo
     }
@@ -1440,17 +1340,29 @@ impl fmt::Display for ComposeError {
 #[cfg(test)]
 mod tests {
 
-    use std::collections::BTreeSet;
-    use std::net::Ipv4Addr;
+    //use std::collections::BTreeSet;
+    use std::fs::File;
+    use std::net::{Ipv4Addr, Ipv6Addr};
     use std::str::FromStr;
 
+    use memmap2::Mmap;
     use octseq::Parser;
 
-    use crate::addr::Prefix;
-    use crate::asn::Asn;
-    //use crate::bgp::communities::Wellknown;
-    use crate::bgp::message::nlri::BasicNlri;
-    use crate::bgp::message::update::AfiSafi;
+
+    //use crate::bgp::path_attributes::AttributeHeader;
+    use inetnum::addr::Prefix;
+    use inetnum::asn::Asn;
+    use crate::bgp::aspath::HopPath;
+    use crate::bgp::communities::{StandardCommunity, Tag};
+    use crate::bgp::nlri::afisafi::{
+        Ipv4UnicastNlri,
+        Ipv4MulticastNlri,
+        Ipv6UnicastNlri,
+        Ipv4FlowSpecNlri,
+        NlriType,
+    };
+    use crate::bgp::types::{AfiSafiType, OriginType, PathId};
+
     use super::*;
 
     fn print_pcap<T: AsRef<[u8]>>(buf: T) {
@@ -1466,30 +1378,30 @@ mod tests {
     fn empty_nlri_iterators() {
         let mut builder = UpdateBuilder::new_vec();
         builder.add_withdrawal(
-            &Nlri::unicast_from_str("2001:db8::/32").unwrap()
+            Ipv6UnicastNlri::from_str("2001:db8::/32").unwrap()
         ).unwrap();
 
-        let msg = builder.into_message().unwrap();
+        let msg = builder.into_message(&SessionConfig::modern()).unwrap();
         print_pcap(msg.as_ref());
         assert_eq!(msg.withdrawals().unwrap().count(), 1);
 
         let mut builder2 = UpdateBuilder::new_vec();
         builder2.add_withdrawal(
-            &Nlri::unicast_from_str("10.0.0.0/8").unwrap()
+            Ipv4UnicastNlri::from_str("10.0.0.0/8").unwrap()
         ).unwrap();
 
-        let msg2 = builder2.into_message().unwrap();
+        let msg2 = builder2.into_message(&SessionConfig::modern()).unwrap();
         print_pcap(msg2.as_ref());
         assert_eq!(msg2.withdrawals().unwrap().count(), 1);
     }
 
     #[test]
     fn build_empty() {
-        let builder = UpdateBuilder::new_vec();
-        let msg = builder.finish().unwrap();
+        let builder: UpdateBuilder<_, Ipv4UnicastNlri> = UpdateBuilder::new_vec();
+        let msg = builder.finish(&SessionConfig::modern()).unwrap();
         //print_pcap(&msg);
         assert!(
-            UpdateMessage::from_octets(msg, SessionConfig::modern()).is_ok()
+            UpdateMessage::from_octets(msg, &SessionConfig::modern()).is_ok()
         );
     }
 
@@ -1506,27 +1418,31 @@ mod tests {
             "10.0.0.0/7",
             "10.0.0.0/8",
             "10.0.0.0/9",
-        ].map(|s| Nlri::unicast_from_str(s).unwrap())
+        ].map(|s| Ipv4UnicastNlri::from_str(s).unwrap())
          .into_iter()
          .collect::<Vec<_>>();
 
-        let _ = builder.append_withdrawals(&mut withdrawals.clone());
-        let msg = builder.finish().unwrap();
+        let _ = builder.append_withdrawals(withdrawals.clone());
+        let msg = builder.finish(&SessionConfig::modern()).unwrap();
+        
+        if let Err(e) = UpdateMessage::from_octets(&msg, &SessionConfig::modern()) {
+            dbg!(e);
+        }
         assert!(
-            UpdateMessage::from_octets(&msg, SessionConfig::modern())
+            UpdateMessage::from_octets(&msg, &SessionConfig::modern())
             .is_ok()
         );
         print_pcap(&msg);
 
 
         let mut builder2 = UpdateBuilder::new_vec();
-        for w in &withdrawals {
+        for w in withdrawals {
             builder2.add_withdrawal(w).unwrap();
         }
 
-        let msg2 = builder2.finish().unwrap();
+        let msg2 = builder2.finish(&SessionConfig::modern()).unwrap();
         assert!(
-            UpdateMessage::from_octets(&msg2, SessionConfig::modern())
+            UpdateMessage::from_octets(&msg2, &SessionConfig::modern())
             .is_ok()
         );
         print_pcap(&msg2);
@@ -1534,6 +1450,7 @@ mod tests {
         assert_eq!(msg, msg2);
     }
 
+    /*
     #[test]
     fn build_withdrawals_from_iter() {
         let mut builder = UpdateBuilder::new_vec();
@@ -1555,26 +1472,28 @@ mod tests {
         let msg = builder.into_message().unwrap();
         print_pcap(msg);
     }
+    */
 
     #[test]
     fn take_message_many_withdrawals() {
         let mut builder = UpdateBuilder::new_vec();
-        let mut prefixes: Vec<Nlri<Vec<u8>>> = vec![];
-        for i in 1..1500_u32 {
+        let mut prefixes: Vec<Ipv4UnicastNlri> = vec![];
+        for i in 1..3000_u32 {
             prefixes.push(
-                Nlri::Unicast(
+                Ipv4UnicastNlri::try_from(
                     Prefix::new_v4(
                         Ipv4Addr::from((i << 10).to_be_bytes()),
                         22
-                    ).unwrap().into()
-                )
+                    ).unwrap()
+                ).unwrap()
             );
         }
+
         let prefixes_len = prefixes.len();
         builder.withdrawals_from_iter(prefixes).unwrap();
 
         let mut w_cnt = 0;
-        let remainder = if let (pdu1, Some(remainder)) = builder.take_message() {
+        let remainder = if let (pdu1, Some(remainder)) = builder.take_message(&SessionConfig::modern()) {
             match pdu1 {
                 Ok(pdu) => {
                     w_cnt += pdu.withdrawals().unwrap().count();
@@ -1583,10 +1502,10 @@ mod tests {
                 Err(e) => panic!("{}", e)
             }
         } else {
-            panic!("wrong");
+            panic!("wrong 1");
         };
 
-        let remainder2 = if let (pdu2, Some(remainder2)) = remainder.take_message() {
+        let remainder2 = if let (pdu2, Some(remainder2)) = remainder.take_message(&SessionConfig::modern()) {
             match pdu2 {
                 Ok(pdu) => {
                     w_cnt += pdu.withdrawals().unwrap().count();
@@ -1595,10 +1514,10 @@ mod tests {
                 Err(e) => panic!("{}", e)
             }
         } else {
-            panic!("wrong");
+            panic!("wrong 2");
         };
 
-        if let (pdu3, None) = remainder2.take_message() {
+        if let (pdu3, None) = remainder2.take_message(&SessionConfig::modern()) {
             match pdu3 {
                 Ok(pdu) => {
                     w_cnt += pdu.withdrawals().unwrap().count();
@@ -1606,7 +1525,7 @@ mod tests {
                 Err(e) => panic!("{}", e)
             }
         } else {
-            panic!("wrong");
+            panic!("wrong 3");
         };
 
         assert_eq!(w_cnt, prefixes_len);
@@ -1615,19 +1534,19 @@ mod tests {
     #[test]
     fn take_message_many_withdrawals_2() {
         let mut builder = UpdateBuilder::new_vec();
-        let mut prefixes: Vec<Nlri<Vec<u8>>> = vec![];
+        let mut prefixes: Vec<Ipv4UnicastNlri> = vec![];
         for i in 1..1500_u32 {
             prefixes.push(
-                Nlri::Unicast(
+                Ipv4UnicastNlri::try_from(
                     Prefix::new_v4(
                         Ipv4Addr::from((i << 10).to_be_bytes()),
                         22
-                    ).unwrap().into()
-                )
+                    ).unwrap()
+                ).unwrap()
             );
         }
         let prefixes_len = prefixes.len();
-        builder.append_withdrawals(&mut prefixes).unwrap();
+        builder.append_withdrawals(prefixes).unwrap();
 
         let mut w_cnt = 0;
         let mut remainder = Some(builder);
@@ -1635,7 +1554,7 @@ mod tests {
             if remainder.is_none() {
                 break
             }
-            let (pdu, new_remainder) = remainder.take().unwrap().take_message();
+            let (pdu, new_remainder) = remainder.take().unwrap().take_message(&SessionConfig::modern());
             match pdu {
                 Ok(pdu) => {
                     w_cnt += pdu.withdrawals().unwrap().count();
@@ -1651,22 +1570,22 @@ mod tests {
     #[test]
     fn into_messages_many_withdrawals() {
         let mut builder = UpdateBuilder::new_vec();
-        let mut prefixes: Vec<Nlri<Vec<u8>>> = vec![];
+        let mut prefixes: Vec<Ipv4UnicastNlri> = vec![];
         for i in 1..1500_u32 {
             prefixes.push(
-                Nlri::Unicast(
+                Ipv4UnicastNlri::try_from(
                     Prefix::new_v4(
                         Ipv4Addr::from((i << 10).to_be_bytes()),
                         22
-                    ).unwrap().into()
-                )
+                    ).unwrap()
+                ).unwrap()
             );
         }
         let prefixes_len = prefixes.len();
-        builder.append_withdrawals(&mut prefixes).unwrap();
+        builder.append_withdrawals(prefixes).unwrap();
 
         let mut w_cnt = 0;
-        for pdu in builder.into_messages().unwrap() {
+        for pdu in builder.into_messages(&SessionConfig::modern()).unwrap() {
             w_cnt += pdu.withdrawals().unwrap().count();
         }
 
@@ -1676,24 +1595,24 @@ mod tests {
     #[test]
     fn into_messages_many_announcements() {
         let mut builder = UpdateBuilder::new_vec();
-        let mut prefixes: Vec<Nlri<Vec<u8>>> = vec![];
+        let mut prefixes: Vec<Ipv4UnicastNlri> = vec![];
         for i in 1..1500_u32 {
             prefixes.push(
-                Nlri::Unicast(
+                Ipv4UnicastNlri::try_from(
                     Prefix::new_v4(
                         Ipv4Addr::from((i << 10).to_be_bytes()),
                         22
-                    ).unwrap().into()
-                )
+                    ).unwrap()
+                ).unwrap()
             );
         }
         let prefixes_len = prefixes.len();
-        prefixes.iter().by_ref().for_each(|p|
-            builder.add_announcement(p).unwrap()
-        );
+        for p in prefixes {
+            builder.add_announcement(p).unwrap();
+        }
 
         let mut w_cnt = 0;
-        for pdu in builder.into_messages().unwrap() {
+        for pdu in builder.into_messages(&SessionConfig::modern()).unwrap() {
             w_cnt += pdu.announcements().unwrap().count();
         }
 
@@ -1706,42 +1625,39 @@ mod tests {
         let prefixes_num = 1024;
         for i in 0..prefixes_num {
             builder.add_withdrawal(
-                &Nlri::unicast_from_str(&format!("2001:db:{:04}::/48", i))
+                Ipv6UnicastNlri::from_str(&format!("2001:db:{:04}::/48", i))
                     .unwrap()
             ).unwrap();
         }
 
         let mut w_cnt = 0;
-        for pdu in builder.into_messages().unwrap() {
+        for pdu in builder.into_messages(&SessionConfig::modern()).unwrap() {
             w_cnt += pdu.withdrawals().unwrap().count();
         }
 
         assert_eq!(w_cnt, prefixes_num);
     }
 
-    use crate::bgp::communities::{StandardCommunity, Tag};
     #[test]
     fn into_messages_many_announcements_mp() {
         let mut builder = UpdateBuilder::new_vec();
         let prefixes_num = 1_000_000;
         for i in 0..prefixes_num {
             builder.add_announcement(
-                &Nlri::<&[u8]>::Unicast(BasicNlri::new(Prefix::new_v6((i << 96).into(), 32).unwrap()))
-                //&Nlri::unicast_from_str(&format!("2001:db:{:04}::/48", i))
-                //    .unwrap()
+                Ipv6UnicastNlri::try_from(Prefix::new_v6((i << 96).into(), 32).unwrap()).unwrap()
             ).unwrap();
         }
-        builder.set_local_pref(LocalPref::new(123)).unwrap();
-        builder.set_multi_exit_disc(MultiExitDisc::new(123)).unwrap();
+        builder.attributes.set(crate::bgp::types::LocalPref(123));
+        builder.attributes.set(crate::bgp::types::MultiExitDisc(123));
         (1..=300).for_each(|n| {
             builder.add_community(StandardCommunity::new(n.into(), Tag::new(123))).unwrap();
         });
 
         let mut a_cnt = 0;
-        for pdu in builder {
+        for pdu in builder.into_pdu_iter(&SessionConfig::modern()) {
             //eprint!(".");
             let pdu = pdu.unwrap();
-            assert!(pdu.as_ref().len() <= UpdateBuilder::<()>::MAX_PDU);
+            assert!(pdu.as_ref().len() <= UpdateBuilder::<(), Ipv4UnicastNlri>::MAX_PDU);
             a_cnt += pdu.announcements().unwrap().count();
             assert!(pdu.local_pref().unwrap().is_some());
             assert!(pdu.multi_exit_disc().unwrap().is_some());
@@ -1755,9 +1671,8 @@ mod tests {
 
     #[test]
     fn build_withdrawals_basic_v4_addpath() {
-        use crate::bgp::message::nlri::PathId;
         let mut builder = UpdateBuilder::new_vec();
-        let mut withdrawals = [
+        let withdrawals = [
             "0.0.0.0/0",
             "10.2.1.0/24",
             "10.2.2.0/24",
@@ -1766,16 +1681,16 @@ mod tests {
             "10.0.0.0/7",
             "10.0.0.0/8",
             "10.0.0.0/9",
-        ].iter().enumerate().map(|(idx, s)| Nlri::<&[u8]>::Unicast(BasicNlri {
-            prefix: Prefix::from_str(s).unwrap(),
-            path_id: Some(PathId::from_u32(idx.try_into().unwrap()))})
+        ].iter().enumerate().map(|(idx, s)|
+            Ipv4UnicastNlri::from_str(s).unwrap()
+                .into_addpath(PathId(idx.try_into().unwrap()))
         ).collect::<Vec<_>>();
-        let _ = builder.append_withdrawals(&mut withdrawals);
-        let msg = builder.finish().unwrap();
+        let _ = builder.append_withdrawals(withdrawals);
+        let msg = builder.finish(&SessionConfig::modern()).unwrap();
         let mut sc = SessionConfig::modern();
-        sc.add_addpath_rxtx(AfiSafi::Ipv4Unicast);
+        sc.add_addpath_rxtx(AfiSafiType::Ipv4Unicast);
         assert!(
-            UpdateMessage::from_octets(&msg, sc)
+            UpdateMessage::from_octets(&msg, &sc)
             .is_ok()
         );
         print_pcap(&msg);
@@ -1784,49 +1699,52 @@ mod tests {
     #[test]
     fn build_withdrawals_basic_v6_single() {
         let mut builder = UpdateBuilder::new_vec();
-        let mut withdrawals = vec![
-            Nlri::unicast_from_str("2001:db8::/32").unwrap()
+        let withdrawals = vec![
+            Ipv6UnicastNlri::from_str("2001:db8::/32").unwrap()
         ];
 
-        let _ = builder.append_withdrawals(&mut withdrawals);
+        let _ = builder.append_withdrawals(withdrawals);
 
-        let msg = builder.finish().unwrap();
+        let msg = builder.finish(&SessionConfig::modern()).unwrap();
         println!("msg raw len: {}", &msg.len());
         print_pcap(&msg);
         
-        UpdateMessage::from_octets(&msg, SessionConfig::modern()).unwrap();
+        UpdateMessage::from_octets(&msg, &SessionConfig::modern()).unwrap();
     }
 
     #[test]
     fn build_withdrawals_basic_v6_from_iter() {
         let mut builder = UpdateBuilder::new_vec();
 
-        let mut withdrawals: Vec<Nlri<Vec<u8>>> = vec![];
+        let mut withdrawals = vec![];
         for i in 1..512_u128 {
             withdrawals.push(
-                Nlri::Unicast(
+                Ipv6UnicastNlri::try_from(
                     Prefix::new_v6(
                         Ipv6Addr::from((i << 64).to_be_bytes()),
                         64
-                    ).unwrap().into()
-                )
+                    ).unwrap()
+                ).unwrap()
             );
         }
 
         let _ = builder.withdrawals_from_iter(withdrawals);
-        let raw = builder.finish().unwrap();
+        let raw = builder.finish(&SessionConfig::modern()).unwrap();
         print_pcap(&raw);
-        UpdateMessage::from_octets(&raw, SessionConfig::modern()).unwrap();
+        UpdateMessage::from_octets(&raw, &SessionConfig::modern()).unwrap();
     }
 
+    /* not possible anymore with the new typed builders
     #[test]
     fn build_mixed_withdrawals() {
         let mut builder = UpdateBuilder::new_vec();
         builder.add_withdrawal(
-            &Nlri::unicast_from_str("10.0.0.0/8").unwrap()
+            //&Nlri::unicast_from_str("10.0.0.0/8").unwrap()
+            Ipv4UnicastNlri::from_str("10.0.0.0/8").unwrap()
         ).unwrap();
         builder.add_withdrawal(
-            &Nlri::unicast_from_str("2001:db8::/32").unwrap()
+            //&Nlri::unicast_from_str("2001:db8::/32").unwrap()
+            Ipv6UnicastNlri::from_str("2001:db8::/32").unwrap()
         ).unwrap();
         let msg = builder.into_message().unwrap();
         print_pcap(msg.as_ref());
@@ -1836,7 +1754,6 @@ mod tests {
 
     #[test]
     fn build_mixed_addpath_conventional() {
-        use crate::bgp::message::nlri::PathId;
         let mut builder = UpdateBuilder::new_vec();
         builder.add_withdrawal(
             &Nlri::unicast_from_str("10.0.0.0/8").unwrap()
@@ -1852,7 +1769,6 @@ mod tests {
 
     #[test]
     fn build_mixed_addpath_mp() {
-        use crate::bgp::message::nlri::PathId;
         let mut builder = UpdateBuilder::new_vec();
         builder.add_withdrawal(
             &Nlri::unicast_from_str("2001:db8::/32").unwrap()
@@ -1868,7 +1784,6 @@ mod tests {
 
     #[test]
     fn build_mixed_addpath_ok() {
-        use crate::bgp::message::nlri::PathId;
         let mut builder = UpdateBuilder::new_vec();
         builder.add_withdrawal(
             &Nlri::unicast_from_str("10.0.0.0/8").unwrap()
@@ -1882,6 +1797,7 @@ mod tests {
         assert!(res.is_ok());
         print_pcap(builder.finish().unwrap());
     }
+    */
 
     #[test]
     fn build_conv_mp_mix() {
@@ -1910,26 +1826,25 @@ mod tests {
 
         ];
 
-        let upd = UpdateMessage::from_octets(&buf, SessionConfig::modern()).unwrap();
+        let upd = UpdateMessage::from_octets(&buf, &SessionConfig::modern()).unwrap();
         print_pcap(upd.as_ref());
 
         assert!(upd.has_conventional_nlri() && upd.has_mp_nlri().unwrap());
-        assert_eq!(upd.unicast_announcements().unwrap().count(), 7);
+        assert_eq!(upd.announcements().unwrap().count(), 7);
     }
 
     #[test]
     fn build_announcements_conventional() {
-        use crate::bgp::aspath::HopPath;
         let mut builder = UpdateBuilder::new_vec();
         let prefixes = [
             "1.0.1.0/24",
             "1.0.2.0/24",
             "1.0.3.0/24",
             "1.0.4.0/24",
-        ].map(|p| Nlri::unicast_from_str(p).unwrap());
+        ].map(|p| Ipv4UnicastNlri::from_str(p).unwrap());
         builder.announcements_from_iter(prefixes).unwrap();
-        builder.set_origin(OriginType::Igp).unwrap();
-        builder.set_nexthop_unicast(Ipv4Addr::from_str("1.2.3.4").unwrap().into()).unwrap();
+        builder.attributes.set(crate::bgp::types::Origin(OriginType::Igp));
+        builder.set_nexthop(NextHop::Unicast(Ipv4Addr::from_str("1.2.3.4").unwrap().into())).unwrap();
         let path = HopPath::from([
              Asn::from_u32(123); 70
         ]);
@@ -1937,7 +1852,7 @@ mod tests {
         //builder.set_aspath::<Vec<u8>>(path.to_as_path().unwrap()).unwrap();
         builder.set_aspath(path).unwrap();
 
-        let raw = builder.finish().unwrap();
+        let raw = builder.finish(&SessionConfig::modern()).unwrap();
         print_pcap(raw);
 
         //let pdu = builder.into_message().unwrap();
@@ -1946,17 +1861,16 @@ mod tests {
 
     #[test]
     fn build_announcements_mp() {
-        use crate::bgp::aspath::HopPath;
 
         let mut builder = UpdateBuilder::new_vec();
         let prefixes = [
             "2001:db8:1::/48",
             "2001:db8:2::/48",
             "2001:db8:3::/48",
-        ].map(|p| Nlri::unicast_from_str(p).unwrap());
+        ].map(|p| Ipv6UnicastNlri::from_str(p).unwrap());
         builder.announcements_from_iter(prefixes).unwrap();
-        builder.set_origin(OriginType::Igp).unwrap();
-        builder.set_nexthop_unicast(Ipv6Addr::from_str("fe80:1:2:3::").unwrap().into()).unwrap();
+        builder.attributes.set(crate::bgp::types::Origin(OriginType::Igp));
+        builder.set_nexthop(NextHop::Unicast(Ipv6Addr::from_str("fe80:1:2:3::").unwrap().into())).unwrap();
         let path = HopPath::from([
              Asn::from_u32(100),
              Asn::from_u32(200),
@@ -1965,18 +1879,15 @@ mod tests {
         //builder.set_aspath::<Vec<u8>>(path.to_as_path().unwrap()).unwrap();
         builder.set_aspath(path).unwrap();
 
-        let raw = builder.finish().unwrap();
+        let raw = builder.finish(&SessionConfig::modern()).unwrap();
         print_pcap(raw);
     }
 
-    #[ignore = "currently the MP nexthop can't be set this way"]
     #[test]
     fn build_announcements_mp_missing_nlri() {
-        use crate::bgp::aspath::HopPath;
-
-        let mut builder = UpdateBuilder::new_vec();
-        builder.set_origin(OriginType::Igp).unwrap();
-        builder.set_nexthop_unicast(Ipv6Addr::from_str("fe80:1:2:3::").unwrap().into()).unwrap();
+        let mut builder = UpdateBuilder::<_, Ipv6UnicastNlri>::new_vec();
+        builder.attributes.set(crate::bgp::types::Origin(OriginType::Igp));
+        builder.set_nexthop(NextHop::Unicast(Ipv6Addr::from_str("fe80:1:2:3::").unwrap().into())).unwrap();
         let path = HopPath::from([
              Asn::from_u32(100),
              Asn::from_u32(200),
@@ -1985,25 +1896,23 @@ mod tests {
         builder.set_aspath(path).unwrap();
 
         assert!(matches!(
-                builder.into_message(),
-                Err(ComposeError::EmptyMpReachNlri)
+            builder.into_message(&SessionConfig::modern()),
+            Err(ComposeError::EmptyMpReachNlri)
         ));
     }
 
     #[test]
     fn build_announcements_mp_link_local() {
-        use crate::bgp::aspath::HopPath;
-
         let mut builder = UpdateBuilder::new_vec();
 
         let prefixes = [
             "2001:db8:1::/48",
             "2001:db8:2::/48",
             "2001:db8:3::/48",
-        ].map(|p| Nlri::unicast_from_str(p).unwrap());
+        ].map(|p| Ipv6UnicastNlri::from_str(p).unwrap());
 
         builder.announcements_from_iter(prefixes).unwrap();
-        builder.set_origin(OriginType::Igp).unwrap();
+        builder.attributes.set(crate::bgp::types::Origin(OriginType::Igp));
         builder.set_nexthop_ll_addr("fe80:1:2:3::".parse().unwrap()).unwrap();
 
 
@@ -2017,16 +1926,14 @@ mod tests {
 
         //let unchecked = builder.finish().unwrap();
         //print_pcap(unchecked);
-        let msg = builder.into_message().unwrap();
+        let msg = builder.into_message(&SessionConfig::modern()).unwrap();
         msg.print_pcap();
     }
 
     #[test]
     fn build_announcements_mp_ll_no_nlri() {
-        use crate::bgp::aspath::HopPath;
-
-        let mut builder = UpdateBuilder::new_vec();
-        builder.set_origin(OriginType::Igp).unwrap();
+        let mut builder = UpdateBuilder::<_, Ipv6UnicastNlri>::new_vec();
+        builder.attributes.set(crate::bgp::types::Origin(OriginType::Igp));
         //builder.set_nexthop("2001:db8::1".parse().unwrap()).unwrap();
         builder.set_nexthop_ll_addr("fe80:1:2:3::".parse().unwrap()).unwrap();
         let path = HopPath::from([
@@ -2037,24 +1944,23 @@ mod tests {
         builder.set_aspath(path).unwrap();
 
         assert!(matches!(
-                builder.into_message(),
-                Err(ComposeError::EmptyMpReachNlri)
+            builder.into_message(&SessionConfig::modern()),
+            Err(ComposeError::EmptyMpReachNlri)
         ));
     }
 
     #[test]
     fn build_standard_communities() {
-        use crate::bgp::aspath::HopPath;
         let mut builder = UpdateBuilder::new_vec();
         let prefixes = [
             "1.0.1.0/24",
             "1.0.2.0/24",
             "1.0.3.0/24",
             "1.0.4.0/24",
-        ].map(|p| Nlri::unicast_from_str(p).unwrap());
+        ].map(|p| Ipv4UnicastNlri::from_str(p).unwrap());
         builder.announcements_from_iter(prefixes).unwrap();
-        builder.set_origin(OriginType::Igp).unwrap();
-        builder.set_nexthop_unicast("1.2.3.4".parse::<Ipv4Addr>().unwrap().into()).unwrap();
+        builder.attributes.set(crate::bgp::types::Origin(OriginType::Igp));
+        builder.set_nexthop(NextHop::Unicast(Ipv4Addr::from_str("1.2.3.4").unwrap().into())).unwrap();
         let path = HopPath::from([
              Asn::from_u32(100),
              Asn::from_u32(200),
@@ -2070,24 +1976,23 @@ mod tests {
             builder.add_community(format!("AS999:{n}").parse().unwrap()).unwrap();
         }
 
-        builder.into_message().unwrap();
+        builder.into_message(&SessionConfig::modern()).unwrap();
         //let raw = builder.finish().unwrap();
         //print_pcap(&raw);
     }
 
     #[test]
     fn build_other_attributes() {
-        use crate::bgp::aspath::HopPath;
         let mut builder = UpdateBuilder::new_vec();
         let prefixes = [
             "1.0.1.0/24",
             "1.0.2.0/24",
             "1.0.3.0/24",
             "1.0.4.0/24",
-        ].map(|p| Nlri::unicast_from_str(p).unwrap());
+        ].map(|p| Ipv4UnicastNlri::from_str(p).unwrap());
         builder.announcements_from_iter(prefixes).unwrap();
-        builder.set_origin(OriginType::Igp).unwrap();
-        builder.set_nexthop_unicast(Ipv4Addr::from_str("1.2.3.4").unwrap().into()).unwrap();
+        builder.attributes.set(crate::bgp::types::Origin(OriginType::Igp));
+        builder.set_nexthop(NextHop::Unicast(Ipv4Addr::from_str("1.2.3.4").unwrap().into())).unwrap();
         let path = HopPath::from([
              Asn::from_u32(100),
              Asn::from_u32(200),
@@ -2096,10 +2001,10 @@ mod tests {
         //builder.set_aspath::<Vec<u8>>(path.to_as_path().unwrap()).unwrap();
         builder.set_aspath(path).unwrap();
 
-        builder.set_multi_exit_disc(MultiExitDisc::new(1234)).unwrap();
-        builder.set_local_pref(LocalPref::new(9876)).unwrap();
+        builder.attributes.set(crate::bgp::types::MultiExitDisc(1234));
+        builder.attributes.set(crate::bgp::types::LocalPref(9876));
 
-        let msg = builder.into_message().unwrap();
+        let msg = builder.into_message(&SessionConfig::modern()).unwrap();
         msg.print_pcap();
     }
 
@@ -2115,18 +2020,27 @@ mod tests {
             0x01, 0x20, 0x0a, 0x0a, 0x0a, 0x02
         ];
         let sc = SessionConfig::modern();
-        let upd = UpdateMessage::from_octets(&raw, sc).unwrap();
+        let upd = UpdateMessage::from_octets(&raw, &sc).unwrap();
         let target = BytesMut::new();
-        let mut builder = UpdateBuilder::from_update_message(&upd, sc, target).unwrap();
+        let mut builder = UpdateBuilder::from_update_message(&upd, &sc, target).unwrap();
+
 
         assert_eq!(builder.attributes.len(), 4);
 
         builder.add_announcement(
-            &Nlri::unicast_from_str("10.10.10.2/32").unwrap()
+            Ipv4UnicastNlri::from_str("10.10.10.2/32").unwrap()
         ).unwrap();
 
-        let upd2 = builder.into_message().unwrap();
-        assert_eq!(&raw, upd2.as_ref());
+        let upd2 = builder.into_message(&SessionConfig::modern()).unwrap();
+
+        // doesn't work as we put everything in MP attributes
+        //assert_eq!(&raw, upd2.as_ref());
+
+        assert!(
+            upd.typed_announcements::<_, Ipv4UnicastNlri>().unwrap().unwrap().eq(
+                upd2.typed_announcements::<_, Ipv4UnicastNlri>().unwrap().unwrap()
+            )
+        );
     }
 
     #[test]
@@ -2145,47 +2059,47 @@ mod tests {
             0x01, 0x20, 0x0a, 0x0a, 0x0a, 0x02
         ];
         let sc = SessionConfig::modern();
-        let upd = UpdateMessage::from_octets(&raw, sc).unwrap();
+        let upd = UpdateMessage::from_octets(&raw, &sc).unwrap();
         for pa in upd.clone().path_attributes().unwrap() {
             eprintln!("{:?}", pa.unwrap().to_owned().unwrap());
         }
         let target = BytesMut::new();
-        let mut builder = UpdateBuilder::from_update_message(&upd, sc, target).unwrap();
+        let mut builder = UpdateBuilder::from_update_message(&upd, &sc, target).unwrap();
 
         
         assert_eq!(builder.attributes.len(), 4);
 
-        builder.set_origin(OriginType::Igp).unwrap();
-        builder.set_origin(OriginType::Egp).unwrap();
-        builder.set_origin(OriginType::Igp).unwrap();
+        builder.attributes.set(crate::bgp::types::Origin(OriginType::Igp));
+        builder.attributes.set(crate::bgp::types::Origin(OriginType::Egp));
+        builder.attributes.set(crate::bgp::types::Origin(OriginType::Igp));
 
         assert_eq!(builder.attributes.len(), 4);
 
         builder.add_announcement(
-            &Nlri::unicast_from_str("10.10.10.2/32").unwrap()
+            Ipv4UnicastNlri::from_str("10.10.10.2/32").unwrap()
         ).unwrap();
 
-        let upd2 = builder.into_message().unwrap();
-        assert_eq!(&raw, upd2.as_ref());
+        let upd2 = builder.into_message(&SessionConfig::modern()).unwrap();
+        assert_eq!(upd2.origin(), Ok(Some(OriginType::Igp)));
     }
 
     #[test]
     fn build_ordered_attributes() {
-        let mut builder = UpdateBuilder::new_vec();
+        let mut builder = UpdateBuilder::<_, Ipv4UnicastNlri>::new_vec();
         builder.add_community(
             StandardCommunity::from_str("AS1234:999").unwrap()
         ).unwrap();
-        builder.set_origin(OriginType::Igp).unwrap();
+        builder.attributes.set(crate::bgp::types::Origin(OriginType::Igp));
         builder.add_community(
             StandardCommunity::from_str("AS1234:1000").unwrap()
         ).unwrap();
 
         assert_eq!(builder.attributes.len(), 2);
 
-        let pdu = builder.into_message().unwrap();
+        let pdu = builder.into_message(&SessionConfig::modern()).unwrap();
         let mut prev_type_code = 0_u8;
         for pa in pdu.path_attributes().unwrap() {
-            let type_code = u8::from(pa.unwrap().type_code());
+            let type_code = pa.unwrap().type_code();
             assert!(prev_type_code < type_code);
             prev_type_code = type_code; 
         }
@@ -2193,11 +2107,14 @@ mod tests {
     }
 
     // TODO also do fn check(raw: Bytes)
+    // XXX this will not work anymore as we put conventional NLRI in MP
+    // attributes.. but we can check a subset of things perhaps.
     fn parse_build_compare(raw: &[u8]) {
+            
         let sc = SessionConfig::modern();
         let original =
-            match UpdateMessage::from_octets(&raw, sc) {
-                Ok(msg) => msg,// UpdateMessage::from_octets(&raw, sc) {
+            match UpdateMessage::from_octets(raw, &sc) {
+                Ok(msg) => msg,
                 Err(_e) => {
                     //TODO get the ShortInput ones (and retry with a different
                     //SessionConfig)
@@ -2209,12 +2126,59 @@ mod tests {
             };
 
             let target = BytesMut::new();
-            let mut builder = UpdateBuilder::from_update_message(
-                &original, sc, target
-            ).unwrap();
+            let reach_afisafi = original.announcement_fams().last()
+                .or(
+                    original.withdrawal_fams().last()
+                )
+                .unwrap_or(NlriType::Ipv4Unicast);
 
-            for w in original.withdrawals().unwrap() {
-                builder.add_withdrawal(&w.unwrap()).unwrap();
+
+            let composed = match reach_afisafi {
+                NlriType::Ipv4Unicast => {
+                    let mut builder = UpdateBuilder::<_, Ipv4UnicastNlri>::from_update_message(&original, &sc, target).unwrap();
+                    builder.add_announcements_from_pdu(&original, &sc);
+                    builder.add_withdrawals_from_pdu(&original, &sc);
+                    builder.into_message(&sc)
+                }
+                NlriType::Ipv4Multicast => {
+                    let mut builder = UpdateBuilder::<_, Ipv4MulticastNlri>::from_update_message(&original, &sc, target).unwrap();
+                    builder.add_announcements_from_pdu(&original, &sc);
+                    builder.add_withdrawals_from_pdu(&original, &sc);
+                    builder.into_message(&sc)
+                }
+                NlriType::Ipv4MplsUnicast => todo!(),
+                NlriType::Ipv4MplsVpnUnicast => todo!(),
+                NlriType::Ipv4RouteTarget => todo!(),
+                NlriType::Ipv4FlowSpec => {
+                    let mut builder = UpdateBuilder::<_, Ipv4FlowSpecNlri<_>>::from_update_message(&original, &sc, target).unwrap();
+                    builder.add_announcements_from_pdu(&original, &sc);
+                    builder.add_withdrawals_from_pdu(&original, &sc);
+                    builder.into_message(&sc)
+                }
+                NlriType::Ipv6Unicast => {
+                    let mut builder = UpdateBuilder::<_, Ipv6UnicastNlri>::from_update_message(&original, &sc, target).unwrap();
+                    builder.add_announcements_from_pdu(&original, &sc);
+                    builder.add_withdrawals_from_pdu(&original, &sc);
+                    builder.into_message(&sc)
+                }
+
+                NlriType::Ipv6Multicast => todo!(),
+                NlriType::Ipv6MplsUnicast => todo!(),
+                NlriType::Ipv6MplsVpnUnicast => todo!(),
+                NlriType::Ipv6FlowSpec => todo!(),
+                NlriType::L2VpnVpls => todo!(),
+                NlriType::L2VpnEvpn => todo!(),
+                NlriType::Unsupported(_, _) => todo!(),
+                _ => todo!(), // ADD-PATH catch-all
+            };
+            //let mut builder = UpdateBuilder::<_, reach_afisafi>::from_update_message(
+            //    &original, &sc, target
+            //).unwrap();
+
+            /*
+            //for w in original.withdrawals().unwrap() {
+            for w in original.typed_withdrawals().unwrap().unwrap() {
+                builder.add_withdrawal(w.unwrap()).unwrap();
             }
 
             for a in original.announcements().unwrap() {
@@ -2223,7 +2187,7 @@ mod tests {
 
             if let Some(nh) = original.conventional_next_hop().unwrap() {
                 if let NextHop::Unicast(IpAddr::V4(a))= nh {
-                    builder.set_conventional_nexthop(a).unwrap();
+                    builder.attributes.set(crate::bgp::types::ConventionalNextHop(a));
                 } else {
                     unreachable!()
                 }
@@ -2241,7 +2205,9 @@ mod tests {
 
             let calculated_len = builder.calculate_pdu_length();
 
-            let composed = match builder.take_message() {
+            */
+            /*
+            let composed = match composed {
                 (Ok(msg), None) => msg,
                 (Err(e), _) => {
                     print_pcap(raw);
@@ -2251,8 +2217,47 @@ mod tests {
                     unimplemented!("builder returning remainder")
                 }
             };
+            */
+            let composed = match composed {
+                Ok(msg) => msg,
+                Err(e) => {
+                    print_pcap(raw);
+                    panic!("error: {e}");
+                }
+            };
 
-            assert_eq!(composed.as_ref().len(), calculated_len);
+        if std::panic::catch_unwind(|| {
+            assert_eq!(
+              original.announcements().unwrap().count(),
+              composed.announcements().unwrap().count(),
+            );
+            assert_eq!(
+              original.withdrawals().unwrap().count(),
+              composed.withdrawals().unwrap().count(),
+            );
+
+            // In case of an original with conventional withdrawals and
+            // announcements, we end up with 2 extra attributes (MP
+            // REACH/UNREACH), so allow a margin of 2 here.
+            assert!(
+                composed.path_attributes().unwrap().count().abs_diff(
+                    original.path_attributes().unwrap().count()
+                ) <= 2
+            );
+
+            assert_eq!(original.origin(), composed.origin());
+            assert_eq!(original.multi_exit_disc(), composed.multi_exit_disc());
+            assert_eq!(original.local_pref(), composed.local_pref());
+        }).is_err() {
+            eprintln!("--");
+            print_pcap(raw);
+            print_pcap(composed.as_ref());
+
+            eprintln!("--");
+            panic!("tmp");
+        }
+
+            //assert_eq!(composed.as_ref().len(), calculated_len);
 
             // XXX there are several possible reasons why our composed pdu
             // differs from the original input, especially if the attributes
@@ -2261,8 +2266,9 @@ mod tests {
             //assert_eq!(raw, composed.as_ref());
 
 
+            /*
             // compare as much as possible:
-            #[allow(clippy::blocks_in_if_conditions)]
+            #[allow(clippy::blocks_in_conditions)]
             if std::panic::catch_unwind(|| {
             assert_eq!(original.origin(), composed.origin());
             //assert_eq!(original.aspath(), composed.aspath());
@@ -2289,10 +2295,10 @@ mod tests {
             ).collect();
             if !diff_pas.is_empty() {
                 for d in &diff_pas {
-                    match d {
+                    match *d {
                         // FIXME: check if MPU is the _only_ attribute,
                         // perhaps we are dealing with an EoR here?
-                        PathAttributeType::MpUnreachNlri => {
+                        &crate::bgp::message::update_builder::MpUnreachNlriBuilder::TYPE_CODE => {
                             // XXX RIS data contains empty-but-non-EoR
                             // MP_UNREACH_NLRI for some reason. 
                             //assert!(original.is_eor().is_some());
@@ -2300,7 +2306,7 @@ mod tests {
 
                         }
                         _ => {
-                            dbg!(&diff_pas);
+                            dbg!(diff_pas);
                             panic!("unclear why PAs differ")
                         }
                     }
@@ -2330,6 +2336,7 @@ mod tests {
             } else {
                 eprint!("×");
             }
+            */
     }
 
     #[test]
@@ -2382,11 +2389,8 @@ mod tests {
     }
 
 
-    use std::fs::File;
-    use memmap2::Mmap;
-
-    #[test]
     #[ignore]
+    #[test]
     fn parse_build_compare_bulk() {
         let filename = "examples/raw_bgp_updates";
         let file = File::open(filename).unwrap();
@@ -2583,63 +2587,33 @@ mod tests {
         ];
 
         let sc = SessionConfig::modern();
-        let original = UpdateMessage::from_octets(&raw, sc).unwrap();
-        let mut builder = UpdateBuilder::from_update_message(
+        let original = UpdateMessage::from_octets(&raw, &sc).unwrap();
+        // XXX unsure about Ipv4UnicastNlri here
+        let mut builder = UpdateBuilder::<_, Ipv4UnicastNlri>::from_update_message(
             &original,
-            sc,
+            &sc,
             Vec::new()
         ).unwrap();
 
-        for w in original.withdrawals().unwrap() {
-            builder.add_withdrawal(&w.unwrap()).unwrap();
+        if let Ok(Some(iter)) = 
+            original.typed_withdrawals::<_, Ipv4UnicastNlri>()
+        {
+            for a in iter {
+                builder.add_withdrawal(a.unwrap()).unwrap();
+            }
         }
 
-        for a in original.announcements().unwrap() {
-            builder.add_announcement(&a.unwrap()).unwrap();
+        if let Ok(Some(iter)) = 
+            original.typed_announcements::<_, Ipv4UnicastNlri>()
+        {
+            for a in iter {
+                builder.add_announcement(a.unwrap()).unwrap();
+            }
         }
 
-        let composed = builder.into_message().unwrap();
+        let composed = builder.into_message(&SessionConfig::modern()).unwrap();
 
         assert_eq!(original.path_attributes().unwrap().count(), 4);
-        assert_eq!(composed.path_attributes().unwrap().count(), 3);
+        assert_eq!(composed.path_attributes().unwrap().count(), 2);
     }
-/*
-    #[test]
-    #[allow(deprecated)]
-    fn build_acs() {
-        use crate::bgp::aspath::HopPath;
-        use crate::bgp::message::nlri::PathId;
-
-        let builder = UpdateBuilder::new_vec();
-        let mut acs = AttrChangeSet::empty();
-
-        // ORIGIN
-        acs.origin_type.set(OriginType::Igp);
-
-        // AS_PATH
-        let mut hp = HopPath::new();
-        hp.prepend(Asn::from_u32(100));
-        hp.prepend(Asn::from_u32(101));
-        acs.as_path.set(hp.to_as_path().unwrap());
-
-        // NEXT_HOP
-        acs.next_hop.set(NextHop::Ipv4(Ipv4Addr::from_str("192.0.2.1").unwrap()));
-
-
-        // now for some NLRI
-        // XXX currently ACS only holds one single Nlri
-        acs.nlri.set(Nlri::Unicast(BasicNlri{
-            prefix: Prefix::from_str("1.2.0.0/25").unwrap(),
-            path_id: Some(PathId::from_u32(123))
-        }));
-
-        acs.standard_communities.set(vec![
-            Wellknown::NoExport.into(),
-            Wellknown::Blackhole.into(),
-        ]);
-
-        let _msg = builder.build_acs(acs).unwrap();
-        //print_pcap(&msg);
-    }
-*/
 }

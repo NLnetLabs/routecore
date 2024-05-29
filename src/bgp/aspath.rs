@@ -13,7 +13,7 @@ use core::hash::Hash;
 use std::slice::SliceIndex;
 use std::{error, fmt};
 
-use crate::asn::{Asn, LargeAsnError};
+use inetnum::asn::{Asn, LargeAsnError};
 
 #[cfg(feature = "serde")]
 use serde::ser::SerializeSeq;
@@ -52,12 +52,16 @@ pub trait SerializeForOperators: Serialize {
 ///
 /// For example, consider the following AsPath of two segments:
 ///
-/// ```AS_SEQUENCE(AS10, AS20, AS30), AS_SET(AS40, AS50)```
+/// 
+/// `AS_SEQUENCE(AS10, AS20, AS30), AS_SET(AS40, AS50)`
+/// 
 ///
 /// The equivalent HopPath of four hops:
 ///     
-/// ```Hop(AS10), Hop(AS20), Hop(AS30), Hop(Set(AS40, AS50))```
-///
+/// 
+/// `Hop(AS10), Hop(AS20), Hop(AS30), Hop(Set(AS40, AS50))`
+/// 
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[derive(Clone, Debug, Default, Eq, PartialEq, Hash)]
 pub struct HopPath {
     /// The hops in this HopPath.
@@ -78,9 +82,21 @@ impl HopPath {
         self.hops.last()
     }
 
+    /// Returns the lastly prepended hop.
+    ///
+    /// This function will return the `OwnedHop` which might be a segment.
+    /// Also see [`neighbor_path_selection`].
+    pub fn neighbor(&self) -> Option<&OwnedHop> {
+        self.hops.first()
+    }
+
     /// Returns true if this HopPath contains `hop`. 
     pub fn contains(&self, hop: &OwnedHop) -> bool {
         self.hops.iter().any(|h| h == hop)
+    }
+
+    pub fn get_hop(&self, index: usize) -> Option<&OwnedHop> {
+        self.hops.get(index)
     }
 
     /// Returns the number of [`Hop`]s in this HopPath.
@@ -89,6 +105,32 @@ impl HopPath {
     /// as a single hop.
     pub fn hop_count(&self) -> usize {
         self.hops.len()
+    }
+
+    /// Hop count as used in path selection.
+    ///
+    /// In path selection, every AS in an AS_SEQUENCE counts as 1, an entire
+    /// AS_SET counts as 1, and confederation sets/sequences count as 0.
+    pub fn hop_count_path_selection(&self) -> usize {
+        self.hops.iter().fold(0, |sum, hop|
+            match hop {
+                Hop::Asn(..)
+                | Hop::Segment(Segment { stype: SegmentType::Set ,..}) => {
+                    sum + 1
+                }
+                _ => sum
+            })
+    }
+
+    /// Neighbor ASN as used in path selection.
+    ///
+    /// This function returns None if the lastly prepended ASN is not in a
+    /// AS_SEQUENCE segment.
+    pub fn neighbor_path_selection(&self) -> Option<Asn> {
+        match self.hops.first() {
+            Some(Hop::Asn(a)) => Some(*a),
+            _ => None
+        }
     }
 
     /// Returns an iterator over the [`Hop`]s.
@@ -240,7 +282,9 @@ impl HopPath {
                     )?;
                     head.iter().try_for_each(|h| {
                         match h {
-                            Hop::Asn(asn) => asn.compose(target),
+                            Hop::Asn(asn) => {
+                                target.append_slice(&asn.to_raw())
+                            }
                             _ => unreachable!()
                         }
                     })?;
@@ -255,7 +299,9 @@ impl HopPath {
                     )?;
                     c.iter().try_for_each(|h| {
                         match h {
-                            Hop::Asn(asn) => asn.compose(target),
+                            Hop::Asn(asn) => {
+                                target.append_slice(&asn.to_raw())
+                            }
                             _ => unreachable!()
                         }
                     })?;
@@ -391,15 +437,19 @@ impl From<Vec<Asn>> for HopPath {
     }
 }
 
-impl From<&[Asn]> for HopPath {
-    fn from(asns: &[Asn]) -> HopPath {
-        HopPath { hops: asns.iter().map(|&a| Hop::Asn(a)).collect() }  
+impl<T: Copy> From<&[T]> for HopPath
+where Asn: From<T>
+{
+    fn from(asns: &[T]) -> HopPath {
+        HopPath { hops: asns.iter().map(|a| Hop::Asn(Asn::from(*a))).collect() }  
     }
 }
 
-impl<const N: usize> From<[Asn; N]> for HopPath {
-    fn from(asns: [Asn; N]) -> HopPath {
-        HopPath { hops: asns.into_iter().map(Hop::Asn).collect() }  
+impl<T, const N: usize> From<[T; N]> for HopPath
+where Asn: From<T>
+{
+    fn from(asns: [T; N]) -> HopPath {
+        HopPath { hops: asns.into_iter().map(|a| Hop::Asn(Asn::from(a))).collect() }  
     }
 }
 
@@ -751,6 +801,7 @@ impl<'a, Octs: Octets> Iterator for PathSegments<'a, Octs> {
 
 /// AS_PATH Segment generic over [`Octets`].
 #[derive(Copy, Clone, Debug)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct Segment<Octs> {
     stype: SegmentType,
@@ -841,7 +892,9 @@ impl<Octs: AsRef<[u8]>> Segment<Octs> {
             target.append_slice(self.octets.as_ref())?;
         }
         else {
-            self.asns().try_for_each(|asn| asn.compose(target))?;
+            self.asns().try_for_each(|asn|
+                target.append_slice(&asn.to_raw())
+            )?;
         }
         Ok(())
     }
@@ -973,6 +1026,7 @@ impl<Octs: Octets> fmt::Display for Segment<Octs> {
 
 /// AS_PATH Segment types as defined in RFC4271 and RFC5065.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum SegmentType {
     Set,
@@ -1031,6 +1085,7 @@ impl fmt::Display for SegmentType {
 /// variant `Segment`, which contain the entire segment and thus (possibly)
 /// multiple ASNs.
 #[derive(Copy, Clone, Debug)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub enum Hop<Octs> {
     Asn(Asn),
@@ -1156,17 +1211,23 @@ impl<'a, Octs> Asns<'a, Octs> {
 
 impl<'a, Octs: Octets> Iterator for Asns<'a, Octs> {
     type Item = Asn;
+    // NB: if the underlying octets are not a multiple of four (or two, in
+    // case of legacy ASNs), the iterator will yield None for that last
+    // incomplete ASN. The only situation where this should occur is in fuzz
+    // tests, as the number of Octets might be random. In other cases, either
+    // the parsing should have caught any illegally formatted AS_PATH and
+    // acted upon it, or the creation of such an illegal AS_PATH should have
+    // been prevented by the public API.
     fn next(&mut self) -> Option<Self::Item> {
         if self.parser.remaining() == 0 {
             return None
         }
-        let n = if self.four_byte_asns {
-            self.parser.parse_u32_be().expect("parsed before")
+        if self.four_byte_asns {
+            self.parser.parse_u32_be().ok()
         }
         else {
-            u32::from(self.parser.parse_u16_be().expect("parsed before"))
-        };
-        Some(Asn::from(n))
+            self.parser.parse_u16_be().ok().map(u32::from)
+        }.map(Asn::from)
     }
 }
 
@@ -1581,4 +1642,19 @@ mod tests {
         assert_eq!(asp16.segments().count(), 2);
     }
 
+    #[test]
+    fn path_selection_methods() {
+        let mut asp = HopPath::from([10, 20, 30].map(Asn::from_u32));
+        assert_eq!(asp.neighbor_path_selection(), Some(Asn::from_u32(10)));
+
+        assert_eq!(asp.hop_count_path_selection(), 3);
+
+        asp.prepend_set([88,99].map(Asn::from_u32));
+        assert!(asp.neighbor_path_selection().is_none());
+
+        assert_eq!(asp.hop_count_path_selection(), 4);
+
+        asp.prepend_confed_sequence([1000,1001].map(Asn::from_u32));
+        assert_eq!(asp.hop_count_path_selection(), 4);
+    }
 }

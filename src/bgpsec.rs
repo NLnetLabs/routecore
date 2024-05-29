@@ -1,7 +1,6 @@
 //! Types related to BGPsec.
 
 use std::{error, fmt, str};
-use std::convert::{TryFrom, TryInto};
 use std::str::FromStr;
 
 use crate::util::hex;

@@ -45,3 +45,15 @@ name = "parse_open_message"
 path = "fuzz_targets/parse_open_message.rs"
 test = false
 doc = false
+
+[[bin]]
+name = "nlri_ord"
+path = "fuzz_targets/nlri_ord.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "path_selection"
+path = "fuzz_targets/path_selection.rs"
+test = false
+doc = false
