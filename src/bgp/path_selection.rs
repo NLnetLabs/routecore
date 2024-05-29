@@ -458,11 +458,21 @@ pub fn preferred<'a, OS: OrdStrat>(
     cmp::min(a,b)
 }
 
-pub fn best<'a, OS: 'a + OrdStrat, I>(it: I)-> Option<I::Item>
+pub fn best<'a, OS: 'a + OrdStrat, I>(it: I) -> Option<I::Item>
 where
-    I: Iterator<Item = &'a OrdRoute<'a, OS>>
+    I: Iterator<Item = OrdRoute<'a, OS>>
 {
     it.min()
+}
+
+pub fn best_with_strat<'a, OS, AltOS, I>(it: I)
+-> Option<OrdRoute<'a, AltOS>>
+where
+    OS: 'a + OrdStrat,
+    AltOS: 'a + OrdStrat,
+    I: Iterator<Item = OrdRoute<'a, OS>>,
+{
+    it.map(|r| r.into_strat()).min()
 }
 
 
@@ -475,8 +485,8 @@ pub fn best_alt<'a, OS: OrdStrat>(
 }
 
 pub fn best_backup_vec<'a, OS: OrdStrat>(
-    it: impl Iterator<Item = &'a OrdRoute<'a, OS>>
-) -> (Option<&'a OrdRoute<'a, OS>>, Option<&'a OrdRoute<'a, OS>>) 
+    it: impl Iterator<Item = OrdRoute<'a, OS>>
+) -> (Option<OrdRoute<'a, OS>>, Option<OrdRoute<'a, OS>>) 
 {
     let mut sorted = it.collect::<Vec<_>>();
     sorted.sort();
@@ -489,8 +499,8 @@ pub fn best_backup_vec<'a, OS: OrdStrat>(
 }
 
 pub fn best_backup<'a, OS: OrdStrat>(
-    it: impl Iterator<Item = &'a OrdRoute<'a, OS>>
-) -> (Option<&'a OrdRoute<'a, OS>>, Option<&'a OrdRoute<'a, OS>>) 
+    it: impl Iterator<Item = OrdRoute<'a, OS>>
+) -> (Option<OrdRoute<'a, OS>>, Option<OrdRoute<'a, OS>>) 
 {
     let mut best = None;
     let mut backup = None; 
@@ -524,20 +534,26 @@ pub fn best_backup<'a, OS: OrdStrat>(
     (best, backup)
 }
 
-/*
-pub fn best_multistrat<'a, OS1: OrdStrat, OS2: OrdStrat, I>(it: I)
--> (Option<&'a OrdRoute<'a, OS1>>, Option<&'a OrdRoute<'a, OS2>>)  
-where
-    I: Iterator<Item = &'a OrdRoute<'a, OS1>>,
-    I::Item: Copy
-{
-    let res1 = best(it);
-    let it2 = it.copied().map(|r| r.into_strat());
-    let res2 = best::<'a, OS2, _>(it2);
 
-    (res1, res2)
+pub fn best_multistrat<'a, OS1: 'a + OrdStrat, OS2: 'a + OrdStrat, I>(it: I)
+-> Option<(OrdRoute<'a, OS1>, OrdRoute<'a, OS2>)>  
+where
+    I: Clone + Iterator<Item = OrdRoute<'a, OS1>>,
+{
+    let res1 = best(it.clone());
+    let res1 = match res1 {
+        Some(r) => r,
+        None => return None
+    };
+
+    // Given that res1 is not None, `it` is non-empty.
+    // For a non-empty collection of OrdRoutes, there is always a best, so we
+    // can unwrap().
+    let res2 = best_with_strat::<'_, _, OS2, _>(it).unwrap();
+
+    Some((res1, res2))
 }
-*/
+
 
 //------------ Tests ---------------------------------------------------------
 
@@ -631,15 +647,18 @@ mod tests {
             OrdRoute::rfc4271(&c_pamap, tiebreakers).unwrap(),
         ];
 
-        let best1 = best(candidates.iter());
-        let (best2, backup2) = best_backup_vec(candidates.iter());
-        let (best3, backup3) = best_backup(candidates.iter());
+        let best1 = best(candidates.into_iter());
+        let (best2, backup2) = best_backup_vec(candidates.into_iter());
+        let (best3, backup3) = best_backup(candidates.into_iter());
 
         assert_eq!(best1, best2);
         assert_eq!(best2, best3);
         assert_eq!(backup2, backup3);
         assert_ne!(best2, backup2);
         assert_ne!(best3, backup3);
+
+        dbg!(&best1);
+        dbg!(&backup2);
     }
 
 }
