@@ -1,4 +1,8 @@
-## Unreleased new version
+## 0.5.0-rc0
+
+Released 2024-05-29.
+
+TODO
 
 Breaking changes
 
@@ -7,6 +11,7 @@ New
 Bug fixes
 
 Other changes
+
 
 
 ## 0.4.0
