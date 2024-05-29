@@ -135,7 +135,7 @@ pub trait OrdStrat {
 }
 
 /// Decision process strategy as described in RFC 4271.
-#[derive(Debug)]
+#[derive(Copy, Clone, Debug)]
 pub struct Rfc4271;
 impl OrdStrat for Rfc4271 {
     fn step_c<OS>(a: &OrdRoute<OS>, b: &OrdRoute<OS>) -> cmp::Ordering {
@@ -170,7 +170,7 @@ impl OrdStrat for Rfc4271 {
 }
 
 /// Decision process strategy skipping comparison of Multi Exit Discriminator.
-#[derive(Debug)]
+#[derive(Copy, Clone, Debug)]
 pub struct SkipMed;
 
 impl OrdStrat for SkipMed {
@@ -449,6 +449,96 @@ impl fmt::Display for DecisionErrorType {
     }
 }
 
+
+//------------ Helpers -------------------------------------------------------
+
+pub fn preferred<'a, OS: OrdStrat>(
+    a: OrdRoute<'a, OS>, b: OrdRoute<'a, OS>
+) -> OrdRoute<'a, OS> {
+    cmp::min(a,b)
+}
+
+pub fn best<'a, OS: 'a + OrdStrat, I>(it: I)-> Option<I::Item>
+where
+    I: Iterator<Item = &'a OrdRoute<'a, OS>>
+{
+    it.min()
+}
+
+
+// XXX would this be convenient?
+pub fn best_alt<'a, OS: OrdStrat>(
+    _pamaps: impl Iterator<Item = &'a PaMap>,
+    _tiebreakers: impl Iterator<Item = TiebreakerInfo>
+) -> Option<OrdRoute<'a, OS>> {
+    unimplemented!()
+}
+
+pub fn best_backup_vec<'a, OS: OrdStrat>(
+    it: impl Iterator<Item = &'a OrdRoute<'a, OS>>
+) -> (Option<&'a OrdRoute<'a, OS>>, Option<&'a OrdRoute<'a, OS>>) 
+{
+    let mut sorted = it.collect::<Vec<_>>();
+    sorted.sort();
+    let mut iter = sorted.into_iter();
+
+    let best = iter.next();
+    let backup = iter.next();
+
+    (best, backup)
+}
+
+pub fn best_backup<'a, OS: OrdStrat>(
+    it: impl Iterator<Item = &'a OrdRoute<'a, OS>>
+) -> (Option<&'a OrdRoute<'a, OS>>, Option<&'a OrdRoute<'a, OS>>) 
+{
+    let mut best = None;
+    let mut backup = None; 
+
+    for c in it {
+        match best.take() {
+            None => { best = Some(c); continue }
+            Some(cur_best) => {
+                if c < cur_best  {
+                    // c is preferred over current
+                    best = Some(c);
+                    backup = Some(cur_best);
+                    continue;
+                }
+                // put it back in
+                best = Some(cur_best);
+
+                // c is not better than best, now check backup
+                if let Some(bkup) = backup.take() {
+                    if c <  bkup {
+                        // c is preferred over backup
+                        backup = Some(c);
+                        continue;
+                    }
+                    backup = Some(bkup);
+                }
+            }
+        }
+    }
+
+    (best, backup)
+}
+
+/*
+pub fn best_multistrat<'a, OS1: OrdStrat, OS2: OrdStrat, I>(it: I)
+-> (Option<&'a OrdRoute<'a, OS1>>, Option<&'a OrdRoute<'a, OS2>>)  
+where
+    I: Iterator<Item = &'a OrdRoute<'a, OS1>>,
+    I::Item: Copy
+{
+    let res1 = best(it);
+    let it2 = it.copied().map(|r| r.into_strat());
+    let res2 = best::<'a, OS2, _>(it2);
+
+    (res1, res2)
+}
+*/
+
 //------------ Tests ---------------------------------------------------------
 
 #[cfg(test)]
@@ -508,4 +598,48 @@ mod tests {
         assert!(b == c);
         assert!(a == c);
     }
+
+
+    #[test]
+    fn helpers() {
+
+        let tiebreakers = TiebreakerInfo {
+            source: RouteSource::Ebgp,
+            degree_of_preference: None,
+            local_asn: Asn::from_u32(100),
+            bgp_identifier: [0, 0, 0, 0].into(),
+            peer_addr: "::".parse().unwrap(),
+        };
+
+        let mut a_pamap = PaMap::empty();
+        a_pamap.set(Origin(OriginType::Egp));
+        a_pamap.set(HopPath::from([10, 20, 30]));
+        a_pamap.set(MultiExitDisc(100));
+
+        let mut b_pamap = PaMap::empty();
+        b_pamap.set(Origin(OriginType::Egp));
+        b_pamap.set(HopPath::from([10, 25, 30]));
+        b_pamap.set(MultiExitDisc(50));
+
+        let mut c_pamap = PaMap::empty();
+        c_pamap.set(Origin(OriginType::Egp));
+        c_pamap.set(HopPath::from([80, 90, 100]));
+
+        let candidates = [
+            OrdRoute::rfc4271(&a_pamap, tiebreakers).unwrap(),
+            OrdRoute::rfc4271(&b_pamap, tiebreakers).unwrap(),
+            OrdRoute::rfc4271(&c_pamap, tiebreakers).unwrap(),
+        ];
+
+        let best1 = best(candidates.iter());
+        let (best2, backup2) = best_backup_vec(candidates.iter());
+        let (best3, backup3) = best_backup(candidates.iter());
+
+        assert_eq!(best1, best2);
+        assert_eq!(best2, best3);
+        assert_eq!(backup2, backup3);
+        assert_ne!(best2, backup2);
+        assert_ne!(best3, backup3);
+    }
+
 }
