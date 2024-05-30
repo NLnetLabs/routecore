@@ -2,6 +2,10 @@
 
 Released 2024-05-29.
 
+This release features a lot of changes, big and small. The list below is not
+exhaustive but tries to highlight and describe the bigger (and perhaps, more
+important) ones.
+
 
 Breaking changes
 
@@ -41,24 +45,25 @@ New
 
 * RouteWorkshop / PaMap
 
-  This release introduces the RouteWorkshop to create UPDATE messages based on
+  This release introduces the `RouteWorkshop` to create UPDATE messages based on
   an NLRI and a set of attributes. For creation, inspection and manipulation of
   those attributes, the `PaMap` is introduced. These new types work in
   conjunction with the existing `UpdateBuilder`.
  
 * BGP FSM (absorbed from _rotonda-fsm_)
   
-  _routecore_ now contains the code to enable actual BGP sessions, i.e. the BGP
-  FSM and related machinery. By pulling this in into _routecore_ allows for less
-  dependency juggling, easier development iterations and more sensible code in
-  all parts.
+  _routecore_ now contains the code to enable for actual BGP sessions, i.e. the
+  BGP FSM and related machinery. By pulling this in into _routecore_ allows for
+  less dependency juggling, easier development iterations and more sensible code
+  in all parts. All of this has some rough edges and is prone to changes on the
+  near future.
 
   The _rotonda-fsm_ crate for now is left as-is.
 
 
-* Route Selection ('BGP Decision Process') fundamentals
+* Route Selection fundamentals
 
-  This releases introduces a first attempt at providing handles to perform the
+  This release introduces a first attempt at providing handles to perform the
   BGP Decision Process as described in RFC4271, colloquially known as 'route
   selection' or 'best path selection'.
   
@@ -77,21 +82,23 @@ Other changes
 
   After splitting of parts of _routecore_ into the _inetnum_ crate, the default
   features set resulted in an almost empty library. Therefore the `bgp` flag is
-  now on by default, and we introduced an `fsm` flag to enable the code absorbed
-  from _rotonda-fsm_.
+  now on by default, and we introduced an `fsm` flag to enable the BGP FSM code
+  absorbed from _rotonda-fsm_.
 
 
 Known limitations
 
 * Constructed UPDATE messages are MultiProtocol-only
 
-  No conventional withdrawals/announcements, IPv4 Unicast goes into MP path
-  attributes as well.
-
+  With regards to announcing and withdrawing NLRI, the `UpdateBuilder` is currently
+  limited to putting everything in the MultiProtocol path attributes
+  (MP_REACH_NLRI, MP_UNREACH_NLRI), so even for IPv4 Unicast.
+ 
   Note that this behaviour is considered preferable as it leads to somewhat more
-  flexibility/resilience on the protocol level. The _actual_ limitation in
-  routecore is that the `UpdateBuilder` lacks the option to use the conventional
-  PDU sections after all. We do plan to reintroduce this, however.
+  flexibility/resilience on the protocol level. But in case one of the peers
+  does not signal the capability of doing IPv4 Unicast in MultiProtocol
+  attributes, we should allow creation of PDUs in the traditional form anyway,
+  so we plan to reintroduce this functionality.
 
 
 ## 0.4.0
