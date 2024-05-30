@@ -2,16 +2,96 @@
 
 Released 2024-05-29.
 
-TODO
 
 Breaking changes
 
+* Several common basic types (e.g. `Asn` and `Prefix`) are moved out of
+  _routecore_ to the new _inetnum_ crate.
+ 
+* Refactor of PathAttributes 
+
+  The introduction of `PaMap` and `RouteWorkshop` (see below) required refactoring
+  of the `PathAttributes` enum and related types. Most significantly, an entire
+  layer in the enum was removed, changing how one matches on variants.
+  Furthermore some of the types in those variants slightly changed.
+ 
+* Overhaul of address family related code
+  
+  The types describing address families, and related traits to parse and compose
+  NLRI of such families, have severely changed. This eliminates any possible
+  ambiguity regarding the address family of announcements/withdrawals in UPDATE
+  messages at compile time. 
+ 
+    * Supported address families are now explicitly and exhaustively enumerated
+      in the `AfiSafiType` enum.  As a SAFI by itself does not carry much meaning,
+      the separate `SAFI` enum is removed. Almost all of the code now works
+      based on the more descriptive `AfiSafiType`.
+    * ADD-PATH is now supported on all supported address families, i.e. the
+      `AfiSafiType` includes `~AddPath` variants for every single AFI+SAFI
+      combination. 
+    * This now allows for e.g. efficient iterators over NLRI that are generic
+      over the `AfiSafiType`.
+      But, as a possible downside, this moves the task of determining what
+      address family a set of NLRI holds to the caller in order to then use the
+      correctly typed iterator. The less efficient, 'easier to use' iterators
+      returning an enum instead of a distinct NLRI type are therefore still
+      available.
+
 New
 
-Bug fixes
+* RouteWorkshop / PaMap
+
+  This release introduces the RouteWorkshop to create UPDATE messages based on
+  an NLRI and a set of attributes. For creation, inspection and manipulation of
+  those attributes, the `PaMap` is introduced. These new types work in
+  conjunction with the existing `UpdateBuilder`.
+ 
+* BGP FSM (absored from _rotonda-fsm_)
+  
+  _routecore_ now contains the code to enable actual BGP sessions, i.e. the BGP
+  FSM and related machinery. By pulling this in into _routecore_ allows for less
+  dependency juggling, easier development iterations and more sensible code in
+  all parts.
+
+  The _rotonda-fsm_ crate for now is left as-is.
+
+
+* Route Selection ('BGP Decision Process') fundamentals
+
+  This releases introduces a first attempt at providing handles to perform the
+  BGP Decision Process as described in RFC4271, colloquially known as 'route
+  selection' or 'best path selection'.
+  
+  Most of the heavy-lifting for this comes from implementing `Ord` on a wrapper
+  struct holding a 'route' (i.e., `PaMap`) and additional information to allow
+  tie-breaking as described in the RFC.
+  
+  As the tie-breaking in RFC4271 is actually broken and not totally ordered, we
+  aim to provide a certain degree of flexibility in the tie-breaking process by
+  means of different `OrdStrat` ordering strategies.
+
 
 Other changes
 
+* Feature flags
+
+  After splitting of parts of _routecore_ into the _inetnum_ crate, the default
+  features set resulted in an almost empty library. Therefore the `bgp` flag is
+  now on by default, and we introduced an `fsm` flag to enable the code absorbed
+  from _rotonda-fsm_.
+
+
+Known limitations
+
+* Constructed UPDATE messages are MultiProtocol-only
+
+  No conventional withdrawals/announcements, IPv4 Unicast goes into MP path
+  attributes as well.
+
+  Note that this behaviour is considered preferable as it leads to somewhat more
+  flexibility/resilience on the protocol level. The _actual_ limitation in
+  routecore is that the `UpdateBuilder` lacks the option to use the conventional
+  PDU sections after all. We do plan to reintroduce this, however.
 
 
 ## 0.4.0
