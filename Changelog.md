@@ -46,7 +46,7 @@ New
   those attributes, the `PaMap` is introduced. These new types work in
   conjunction with the existing `UpdateBuilder`.
  
-* BGP FSM (absored from _rotonda-fsm_)
+* BGP FSM (absorbed from _rotonda-fsm_)
   
   _routecore_ now contains the code to enable actual BGP sessions, i.e. the BGP
   FSM and related machinery. By pulling this in into _routecore_ allows for less
