@@ -498,9 +498,9 @@ pub fn best_backup_vec<'a, OS: OrdStrat>(
     (best, backup)
 }
 
-pub fn best_backup<'a, OS: OrdStrat>(
-    it: impl Iterator<Item = OrdRoute<'a, OS>>
-) -> (Option<OrdRoute<'a, OS>>, Option<OrdRoute<'a, OS>>) 
+pub fn best_backup<T: Ord>(
+    it: impl Iterator<Item = T>
+) -> (Option<T>, Option<T>) 
 {
     let mut best = None;
     let mut backup = None; 
@@ -519,13 +519,17 @@ pub fn best_backup<'a, OS: OrdStrat>(
                 best = Some(cur_best);
 
                 // c is not better than best, now check backup
-                if let Some(bkup) = backup.take() {
-                    if c <  bkup {
-                        // c is preferred over backup
-                        backup = Some(c);
-                        continue;
+                match backup.take() {
+                    None => { backup = Some(c); }
+                    Some(cur_backup) => {
+                        if c <  cur_backup {
+                            // c is preferred over backup
+                            backup = Some(c);
+                        } else {
+                            backup = Some(cur_backup);
+                        }
+
                     }
-                    backup = Some(bkup);
                 }
             }
         }
@@ -617,7 +621,7 @@ mod tests {
 
 
     #[test]
-    fn helpers() {
+    fn helpers_ordroute() {
 
         let tiebreakers = TiebreakerInfo {
             source: RouteSource::Ebgp,
@@ -657,8 +661,17 @@ mod tests {
         assert_ne!(best2, backup2);
         assert_ne!(best3, backup3);
 
-        dbg!(&best1);
-        dbg!(&backup2);
+        //dbg!(&best1);
+        //dbg!(&backup2);
     }
 
+    #[test]
+    fn helpers_generic() {
+        let (a,b,c) = ("2".to_string(), "1".to_string(), "3".to_string());
+        //let (a,b,c) = (2, 1, 3);
+        let values = vec![&a, &b, &c];
+        let (best, backup) = best_backup(values.into_iter());
+        assert_eq!(best, Some(&b));
+        assert_eq!(backup, Some(&a));
+    }
 }
