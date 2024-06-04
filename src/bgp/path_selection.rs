@@ -386,6 +386,24 @@ pub struct TiebreakerInfo {
     peer_addr: net::IpAddr,
 }
 
+impl TiebreakerInfo {
+    pub fn new(
+        source: RouteSource, 
+        degree_of_preference: Option<DegreeOfPreference>,
+        local_asn: Asn,
+        bgp_identifier: BgpIdentifier,
+        peer_addr: net::IpAddr,
+    ) -> Self {
+        Self {
+            source,
+            degree_of_preference,
+            local_asn,
+            bgp_identifier,
+            peer_addr,
+        }
+    }
+}
+
 /// Describes whether the route was learned externally or internally.
 #[derive(Copy, Clone, Debug, Eq, Hash, PartialEq, Ord, PartialOrd)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
