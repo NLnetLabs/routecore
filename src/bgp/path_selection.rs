@@ -12,7 +12,13 @@ use super::{
 };
 
 /// Wrapper type used for comparison and path selection.
-#[derive(Copy, Clone, Debug)]
+///
+/// Be aware that the `PartialEq` implementation of `OrdRoute` is specifically
+/// tailored towards its `Ord` implementation, to do the BGP Decision Process.
+/// Comparing two `OrdRoute`s, wrapping two routes with different sets of path
+/// attributes, might still yield 'equal'. Instead, consider comparing on the
+/// `PaMap` and/or `Tiebreakerinfo` directly (or [`fn inner`]).
+#[derive(Copy, Clone, Debug, Hash)]
 pub struct OrdRoute<'a, OS> {
     pa_map: &'a PaMap,
     tiebreakers: TiebreakerInfo,
@@ -52,6 +58,22 @@ impl<'a, OS> OrdRoute<'a, OS> {
         }
 
         Ok(self)
+    }
+
+
+    /// Returns the `TiebreakerInfo`.
+    pub fn tiebreakers(&self) -> TiebreakerInfo {
+        self.tiebreakers
+    }
+
+    /// Returns a reference to the Path Attributes.
+    pub fn pa_map(&self) -> &PaMap {
+        self.pa_map
+    }
+
+    /// Returns a tuple of the actual content of this OrdRoute.
+    pub fn inner(&self) -> (TiebreakerInfo, &PaMap) {
+        (self.tiebreakers, self.pa_map())
     }
 }
 
@@ -476,22 +498,28 @@ pub fn preferred<'a, OS: OrdStrat>(
     cmp::min(a,b)
 }
 
-pub fn best<'a, OS: 'a + OrdStrat, I>(it: I) -> Option<I::Item>
+/// Selects the preferred ('best') route.
+pub fn best<'a, T, I, OS>(it: I) -> Option<T>
 where
-    I: Iterator<Item = OrdRoute<'a, OS>>
+    T: Ord,
+    I: Iterator<Item = T>,
+    T: core::borrow::Borrow<OrdRoute<'a, OS>>
 {
     it.min()
 }
 
-pub fn best_with_strat<'a, OS, AltOS, I>(it: I)
+/*
+pub fn best_with_strat<'a, OS, AltOS, I, T1>(it: I)
 -> Option<OrdRoute<'a, AltOS>>
 where
     OS: 'a + OrdStrat,
     AltOS: 'a + OrdStrat,
-    I: Iterator<Item = OrdRoute<'a, OS>>,
+    I: Iterator<Item = T1>,
+    T1: core::borrow::Borrow<OrdRoute<'a, OS>>
 {
     it.map(|r| r.into_strat()).min()
 }
+*/
 
 
 // XXX would this be convenient?
@@ -502,23 +530,23 @@ pub fn best_alt<'a, OS: OrdStrat>(
     unimplemented!()
 }
 
-pub fn best_backup_vec<'a, OS: OrdStrat>(
-    it: impl Iterator<Item = OrdRoute<'a, OS>>
-) -> (Option<OrdRoute<'a, OS>>, Option<OrdRoute<'a, OS>>) 
-{
-    let mut sorted = it.collect::<Vec<_>>();
-    sorted.sort();
-    let mut iter = sorted.into_iter();
-
-    let best = iter.next();
-    let backup = iter.next();
-
-    (best, backup)
-}
-
-pub fn best_backup<T: Ord>(
+/// Returns the 'best' and second-best path.
+///
+/// If the iterator passed in contains no paths, `(None, None)` is returned.
+/// If the iterator yields only a single item, that will be the 'best' path,
+/// and the 'backup' will be None, i.e. `(Some(best), None)`.
+///
+/// In all other cases (an iterator yielding two or more non-identical
+/// values), both members of the tuple should be `Some(..)`. 
+/// 
+/// The returned 'best' path is the same as the path returned by [`fn best`].
+pub fn best_backup<'a, OS, T>(
     it: impl Iterator<Item = T>
 ) -> (Option<T>, Option<T>) 
+    where 
+        OS: OrdStrat,
+        T: Ord,
+        T: core::borrow::Borrow<OrdRoute<'a, OS>>
 {
     let mut best = None;
     let mut backup = None; 
@@ -528,7 +556,7 @@ pub fn best_backup<T: Ord>(
             None => { best = Some(c); continue }
             Some(cur_best) => {
                 if c < cur_best  {
-                    // c is preferred over current
+                    // c is preferred over current best
                     best = Some(c);
                     backup = Some(cur_best);
                     continue;
@@ -538,12 +566,35 @@ pub fn best_backup<T: Ord>(
 
                 // c is not better than best, now check backup
                 match backup.take() {
-                    None => { backup = Some(c); }
+                    None => { 
+                        // Before we set the backup route, ensure it is not
+                        // the same route as best.
+                        // We compare the actual contents of the OrdRoute
+                        // here, i.e. the TiebreakerInfo and PaMap. If we'd
+                        // simply compare the OrdRoutes themselves, we'd be
+                        // testing whether or not they are considered equal in
+                        // terms of path preference, NOT in terms of content.
+                        // If for example we have a candidate backup path with
+                        // a different AS_PATH but of equal length as the best
+                        // path, the OrdRoutes are considered equal even
+                        // though the actual path attributes differ.
+                        //
+
+                        // Best is always Some at this point, unwrap is safe.
+                        if best.as_ref().unwrap().borrow().inner() != c.borrow().inner() {
+                            backup = Some(c);
+                        }                    }
                     Some(cur_backup) => {
                         if c <  cur_backup {
-                            // c is preferred over backup
-                            backup = Some(c);
+                            // c is preferred over current backup
+                            // check if it is not the same route as 'best'
+                            if best.as_ref() != Some(&c) {
+                                backup = Some(c);
+                            } else {
+                                backup = Some(cur_backup);
+                            }
                         } else {
+                            // put it back in
                             backup = Some(cur_backup);
                         }
 
@@ -556,7 +607,7 @@ pub fn best_backup<T: Ord>(
     (best, backup)
 }
 
-
+/*
 pub fn best_multistrat<'a, OS1: 'a + OrdStrat, OS2: 'a + OrdStrat, I>(it: I)
 -> Option<(OrdRoute<'a, OS1>, OrdRoute<'a, OS2>)>  
 where
@@ -575,6 +626,33 @@ where
 
     Some((res1, res2))
 }
+*/
+ 
+/*
+pub fn best_multistrat<'a, I, T1, T2, OS1, OS2>(it: I) -> Option<(T1, T2)>  
+where
+    T1: Ord + core::borrow::Borrow<OrdRoute<'a, OS1>>,
+    T2: Ord,
+    OS1: OrdStrat,
+    OS2: OrdStrat,
+    I: Clone + Iterator<Item = T1>,
+{
+    let res1 = best(it.clone());
+    let res1 = match res1 {
+        Some(r) => r,
+        None => return None
+    };
+
+    // Given that res1 is not None, `it` is non-empty.
+    // For a non-empty collection of OrdRoutes, there is always a best, so we
+    // can unwrap().
+    let res2 = best_with_strat::<'_, OS1, OS2, _>(it).unwrap();
+
+    Some((res1, res2))
+}
+*/
+
+
 
 
 //------------ Tests ---------------------------------------------------------
@@ -656,33 +734,38 @@ mod tests {
 
         let mut b_pamap = PaMap::empty();
         b_pamap.set(Origin(OriginType::Egp));
-        b_pamap.set(HopPath::from([10, 25, 30]));
+        b_pamap.set(HopPath::from([10, 25, 30, 40]));
         b_pamap.set(MultiExitDisc(50));
 
         let mut c_pamap = PaMap::empty();
         c_pamap.set(Origin(OriginType::Egp));
-        c_pamap.set(HopPath::from([80, 90, 100]));
+        c_pamap.set(HopPath::from([80, 90, 100, 200, 300]));
 
         let candidates = [
-            OrdRoute::rfc4271(&a_pamap, tiebreakers).unwrap(),
-            OrdRoute::rfc4271(&b_pamap, tiebreakers).unwrap(),
-            OrdRoute::rfc4271(&c_pamap, tiebreakers).unwrap(),
+            OrdRoute::skip_med(&a_pamap, tiebreakers).unwrap(),
+            OrdRoute::skip_med(&b_pamap, tiebreakers).unwrap(),
+            OrdRoute::skip_med(&a_pamap, tiebreakers).unwrap(),
+            //OrdRoute::skip_med(&c_pamap, tiebreakers).unwrap(),
         ];
 
-        let best1 = best(candidates.into_iter());
-        let (best2, backup2) = best_backup_vec(candidates.into_iter());
-        let (best3, backup3) = best_backup(candidates.into_iter());
+        let best1 = best(candidates.iter().cloned()).unwrap();
+        let (best2, backup2) = best_backup(candidates.iter());
+        let (best2, backup2) = (best2.unwrap(), backup2.unwrap());
 
-        assert_eq!(best1, best2);
-        assert_eq!(best2, best3);
-        assert_eq!(backup2, backup3);
-        assert_ne!(best2, backup2);
-        assert_ne!(best3, backup3);
+        assert_eq!(best1.pa_map(), best2.pa_map());
+        assert_eq!(best1.tiebreakers(), best2.tiebreakers());
 
-        //dbg!(&best1);
-        //dbg!(&backup2);
+        dbg!(&best2);
+        dbg!(&backup2);
+
+        assert_ne!(
+            (best2.pa_map(), best2.tiebreakers()),
+            (backup2.pa_map(), backup2.tiebreakers())
+        );
+
     }
 
+    /*
     #[test]
     fn helpers_generic() {
         let (a,b,c) = ("2".to_string(), "1".to_string(), "3".to_string());
@@ -692,4 +775,5 @@ mod tests {
         assert_eq!(best, Some(&b));
         assert_eq!(backup, Some(&a));
     }
+    */
 }
