@@ -607,6 +607,70 @@ pub fn best_backup<'a, OS, T>(
     (best, backup)
 }
 
+/// Alternative, generic version of `fn best_backup`.
+///
+/// This method takes any iterator providing Items implementing Ord, such as
+/// `OrdRoute`. As such, it has little to do with routes or path selection per
+/// se.
+///
+/// Note that because of this genericness, we have no access to methods or
+/// members of `T`, and thus are unable to compare actual contents such as a
+/// `PaMap` or the `TiebreakerInfo`. This means the method can not check for
+/// any duplicate route information between `T`s, and really only order them.
+/// The caller therefore has to make sure to pass in an iterator that does not
+/// yield any duplicate routes.
+///
+/// This method enables the caller to attach additional information, as long
+/// as it implements `Ord`. For example, one can pass in an iterator over
+/// tuples of `OrdRoute` and something else. As long as the `OrdRoute` is the
+/// first member of that tuple and no duplicates are yielded from the
+/// iterator, the additional information is not used in the ordering process
+/// but is returned together with the 'best' and 'backup' tuples. This can be
+/// useful when the caller needs to relate routes to local IDs or something
+/// alike.
+///
+pub fn best_backup_generic<I, T>(it: I) -> (Option<T>, Option<T>) 
+where 
+    I: Iterator<Item = T>,
+    T: Ord
+{
+    let mut best = None;
+    let mut backup = None; 
+
+    for c in it {
+        match best.take() {
+            None => { best = Some(c); continue }
+            Some(cur_best) => {
+                if c < cur_best  {
+                    // c is preferred over current best
+                    best = Some(c);
+                    backup = Some(cur_best);
+                    continue;
+                }
+                // put it back in
+                best = Some(cur_best);
+
+                // c is not better than best, now check backup
+                match backup.take() {
+                    None => { backup = Some(c); }
+                    Some(cur_backup) => {
+                        if c <  cur_backup {
+                            // c is preferred over current backup
+                            backup = Some(c);
+                        } else {
+                            // put it back in
+                            backup = Some(cur_backup);
+                        }
+
+                    }
+                }
+            }
+        }
+    }
+
+    (best, backup)
+}
+
 /*
 pub fn best_multistrat<'a, OS1: 'a + OrdStrat, OS2: 'a + OrdStrat, I>(it: I)
 -> Option<(OrdRoute<'a, OS1>, OrdRoute<'a, OS2>)>  
