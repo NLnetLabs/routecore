@@ -492,133 +492,42 @@ impl fmt::Display for DecisionErrorType {
 
 //------------ Helpers -------------------------------------------------------
 
-pub fn preferred<'a, OS: OrdStrat>(
-    a: OrdRoute<'a, OS>, b: OrdRoute<'a, OS>
-) -> OrdRoute<'a, OS> {
+
+/// Returns the preferred route.
+///
+/// Note this method works on anything `T: Ord` and is thus not limited to
+/// `OrdRoute`. Hence one can pass in a tuple of `(OrdRoute, L)` as long as
+/// `L` implements `Ord`, to include and get back any local value like an ID.
+/// This is consistent with [`fn best`] and [`fn best_backup_generic`].
+pub fn preferred<T: Ord>(a: T, b: T) -> T {
     cmp::min(a,b)
 }
 
 /// Selects the preferred ('best') route.
-pub fn best<'a, T, I, OS>(it: I) -> Option<T>
+///
+/// Note this method works on an iterator yielding anything `T: Ord`, so not
+/// limited to `OrdRoute`. It is in that sense consistent with [`fn
+/// best_backup_generic`], i.e. one can pass in tuples of `OrdRoute` and
+/// something else that implements `Ord`.
+pub fn best<T, I>(it: I) -> Option<T>
 where
     T: Ord,
     I: Iterator<Item = T>,
-    T: core::borrow::Borrow<OrdRoute<'a, OS>>
 {
     it.min()
 }
 
-/*
-pub fn best_with_strat<'a, OS, AltOS, I, T1>(it: I)
--> Option<OrdRoute<'a, AltOS>>
-where
-    OS: 'a + OrdStrat,
-    AltOS: 'a + OrdStrat,
-    I: Iterator<Item = T1>,
-    T1: core::borrow::Borrow<OrdRoute<'a, OS>>
-{
-    it.map(|r| r.into_strat()).min()
-}
-*/
-
-
-// XXX would this be convenient?
-pub fn best_alt<'a, OS: OrdStrat>(
-    _pamaps: impl Iterator<Item = &'a PaMap>,
-    _tiebreakers: impl Iterator<Item = TiebreakerInfo>
-) -> Option<OrdRoute<'a, OS>> {
-    unimplemented!()
-}
-
-/// Returns the 'best' and second-best path.
-///
-/// If the iterator passed in contains no paths, `(None, None)` is returned.
-/// If the iterator yields only a single item, that will be the 'best' path,
-/// and the 'backup' will be None, i.e. `(Some(best), None)`.
-///
-/// In all other cases (an iterator yielding two or more non-identical
-/// values), both members of the tuple should be `Some(..)`. 
-/// 
-/// The returned 'best' path is the same as the path returned by [`fn best`].
-pub fn best_backup<'a, OS, T>(
-    it: impl Iterator<Item = T>
-) -> (Option<T>, Option<T>) 
-    where 
-        OS: OrdStrat,
-        T: Ord,
-        T: core::borrow::Borrow<OrdRoute<'a, OS>>
-{
-    let mut best = None;
-    let mut backup = None; 
-
-    for c in it {
-        match best.take() {
-            None => { best = Some(c); continue }
-            Some(cur_best) => {
-                if c < cur_best  {
-                    // c is preferred over current best
-                    best = Some(c);
-                    backup = Some(cur_best);
-                    continue;
-                }
-                // put it back in
-                best = Some(cur_best);
-
-                // c is not better than best, now check backup
-                match backup.take() {
-                    None => { 
-                        // Before we set the backup route, ensure it is not
-                        // the same route as best.
-                        // We compare the actual contents of the OrdRoute
-                        // here, i.e. the TiebreakerInfo and PaMap. If we'd
-                        // simply compare the OrdRoutes themselves, we'd be
-                        // testing whether or not they are considered equal in
-                        // terms of path preference, NOT in terms of content.
-                        // If for example we have a candidate backup path with
-                        // a different AS_PATH but of equal length as the best
-                        // path, the OrdRoutes are considered equal even
-                        // though the actual path attributes differ.
-                        //
-
-                        // Best is always Some at this point, unwrap is safe.
-                        if best.as_ref().unwrap().borrow().inner() != c.borrow().inner() {
-                            backup = Some(c);
-                        }                    }
-                    Some(cur_backup) => {
-                        if c <  cur_backup {
-                            // c is preferred over current backup
-                            // check if it is not the same route as 'best'
-                            if best.as_ref() != Some(&c) {
-                                backup = Some(c);
-                            } else {
-                                backup = Some(cur_backup);
-                            }
-                        } else {
-                            // put it back in
-                            backup = Some(cur_backup);
-                        }
-
-                    }
-                }
-            }
-        }
-    }
-
-    (best, backup)
-}
-
 /// Alternative, generic version of `fn best_backup`.
 ///
-/// This method takes any iterator providing Items implementing Ord, such as
-/// `OrdRoute`. As such, it has little to do with routes or path selection per
-/// se.
+/// This method takes any iterator yielding items implementing Ord. As such,
+/// it has little to do with routes or path selection per se.
 ///
 /// Note that because of this genericness, we have no access to methods or
 /// members of `T`, and thus are unable to compare actual contents such as a
-/// `PaMap` or the `TiebreakerInfo`. This means the method can not check for
-/// any duplicate route information between `T`s, and really only order them.
-/// The caller therefore has to make sure to pass in an iterator that does not
-/// yield any duplicate routes.
+/// `PaMap` or the `TiebreakerInfo` when comparing `OrdRoute`s. This means the
+/// method can not check for any duplicate route information between `T`s, and
+/// really only order them.  The caller therefore has to make sure to pass in
+/// an iterator that does not yield any duplicate routes.
 ///
 /// This method enables the caller to attach additional information, as long
 /// as it implements `Ord`. For example, one can pass in an iterator over
@@ -628,7 +537,6 @@ pub fn best_backup<'a, OS, T>(
 /// but is returned together with the 'best' and 'backup' tuples. This can be
 /// useful when the caller needs to relate routes to local IDs or something
 /// alike.
-///
 pub fn best_backup_generic<I, T>(it: I) -> (Option<T>, Option<T>) 
 where 
     I: Iterator<Item = T>,
@@ -671,50 +579,112 @@ where
     (best, backup)
 }
 
-/*
-pub fn best_multistrat<'a, OS1: 'a + OrdStrat, OS2: 'a + OrdStrat, I>(it: I)
--> Option<(OrdRoute<'a, OS1>, OrdRoute<'a, OS2>)>  
-where
-    I: Clone + Iterator<Item = OrdRoute<'a, OS1>>,
+
+// Attaches an index to a (generic) T, only used internally in _best_backup.
+type RouteWithIndex<T> = (usize, T);
+
+// Internal version doing the heavy lifting for both best_backup and
+// best_backup_position. Returns both the routes themselves (T) and their
+// index (usize).
+fn _best_backup<'a, I, T, OS>(it: I)
+    -> (Option<RouteWithIndex<T>>, Option<RouteWithIndex<T>>) 
+where 
+    OS: OrdStrat,
+    I: Iterator<Item = T>,
+    T: Ord + core::borrow::Borrow<OrdRoute<'a, OS>>
 {
-    let res1 = best(it.clone());
-    let res1 = match res1 {
-        Some(r) => r,
-        None => return None
-    };
+    let mut best: Option<RouteWithIndex<T>> = None;
+    let mut backup: Option<RouteWithIndex<T>> = None;
 
-    // Given that res1 is not None, `it` is non-empty.
-    // For a non-empty collection of OrdRoutes, there is always a best, so we
-    // can unwrap().
-    let res2 = best_with_strat::<'_, _, OS2, _>(it).unwrap();
+    for (idx, c) in it.enumerate() {
+        match best.take() {
+            None => { best = Some((idx, c)); continue }
+            Some((idx_best, cur_best)) => {
+                if c < cur_best  {
+                    // c is preferred over current best
+                    best = Some((idx, c));
+                    backup = Some((idx_best, cur_best));
+                    continue;
+                }
+                // put it back in
+                best = Some((idx_best, cur_best));
 
-    Some((res1, res2))
+                // c is not better than best, now check backup
+                match backup.take() {
+                    None => { 
+                        // Before we set the backup route, ensure it is not
+                        // the same route as best.
+                        // We compare the actual contents of the OrdRoute
+                        // here, i.e. the TiebreakerInfo and PaMap. If we'd
+                        // simply compare the OrdRoutes themselves, we'd be
+                        // testing whether or not they are considered equal in
+                        // terms of path preference, NOT in terms of content.
+                        // If for example we have a candidate backup path with
+                        // a different AS_PATH but of equal length as the best
+                        // path, the OrdRoutes are considered equal even
+                        // though the actual path attributes differ.
+                        //
+
+                        // `best` is always Some(..) at this point, but we do
+                        // an `if let` instead of an `unwrap` anyway.
+                        if let Some((_, cur_best)) = best.as_ref() {
+                            if cur_best.borrow().inner() != c.borrow().inner()
+                            {
+                                backup = Some((idx, c));
+                            }
+                        }
+                    }
+                    Some((idx_backup, cur_backup)) => {
+                        if c <  cur_backup {
+                            // c is preferred over current backup
+                            // check if it is not the same route as 'best'
+                            if best.as_ref().map(|t| &t.1) != Some(&c) {
+                                backup = Some((idx, c));
+                                continue;
+                            }
+                        }
+                        // put it back in
+                        backup = Some((idx_backup, cur_backup));
+                    }
+                }
+            }
+        }
+    }
+
+    (best, backup)
 }
-*/
- 
-/*
-pub fn best_multistrat<'a, I, T1, T2, OS1, OS2>(it: I) -> Option<(T1, T2)>  
-where
-    T1: Ord + core::borrow::Borrow<OrdRoute<'a, OS1>>,
-    T2: Ord,
-    OS1: OrdStrat,
-    OS2: OrdStrat,
-    I: Clone + Iterator<Item = T1>,
+
+/// Returns the 'best' and second-best path.
+///
+/// If the iterator passed in contains no paths, `(None, None)` is returned.
+/// If the iterator yields only a single item, that will be the 'best' path,
+/// and the 'backup' will be None, i.e. `(Some(best), None)`.
+///
+/// In all other cases (an iterator yielding two or more non-identical
+/// values), both members of the tuple should be `Some(..)`. 
+/// 
+/// The returned 'best' path is the same as the path returned by [`fn best`].
+pub fn best_backup<'a, I, T, OS>(it: I) -> (Option<T>, Option<T>) 
+where 
+    OS: OrdStrat,
+    I: Iterator<Item = T>,
+    T: Ord + core::borrow::Borrow<OrdRoute<'a, OS>>
 {
-    let res1 = best(it.clone());
-    let res1 = match res1 {
-        Some(r) => r,
-        None => return None
-    };
-
-    // Given that res1 is not None, `it` is non-empty.
-    // For a non-empty collection of OrdRoutes, there is always a best, so we
-    // can unwrap().
-    let res2 = best_with_strat::<'_, OS1, OS2, _>(it).unwrap();
-
-    Some((res1, res2))
+    let (best, backup) = _best_backup(it);
+    (best.map(|b| b.1), backup.map(|b| b.1))
 }
-*/
+
+/// Returns the index of the best and backup paths in the passed iterator.
+pub fn best_backup_position<'a, I, T, OS>(it: I)
+    -> (Option<usize>, Option<usize>) 
+where 
+    OS: OrdStrat,
+    I: Iterator<Item = T>,
+    T: Ord + core::borrow::Borrow<OrdRoute<'a, OS>>
+{
+    let (best, backup) = _best_backup(it);
+    (best.map(|b| b.0), backup.map(|b| b.0))
+}
 
 
 
