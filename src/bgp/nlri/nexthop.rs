@@ -12,6 +12,7 @@ use super::afisafi::AfiSafiType as AfiSafi;
 /// Conventional and BGP-MP Next Hop variants.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Decode, bincode::Encode))]
 pub enum NextHop {
     Unicast(IpAddr),
     Multicast(IpAddr),

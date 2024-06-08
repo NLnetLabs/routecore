@@ -85,6 +85,7 @@ impl From<crate::bgp::aspath::AsPath<Vec<u8>>> for PathAttribute {
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Decode, bincode::Encode))]
 pub struct RouteWorkshop<N>(N, Option<NextHop>, PaMap);
 
 impl<N: AfiSafiNlri> RouteWorkshop<N> {

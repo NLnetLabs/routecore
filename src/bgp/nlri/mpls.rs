@@ -12,6 +12,7 @@ use super::afisafi::Afi;
 #[derive(Copy, Clone, Debug, Hash)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Decode, bincode::Encode))]
 pub struct MplsNlri<Octs> {
     prefix: Prefix,
     labels: Labels<Octs>,
@@ -150,6 +151,7 @@ impl<Octs, SrcOcts: Octets> OctetsFrom<MplsNlri<SrcOcts>> for MplsNlri<Octs>
 #[derive(Copy, Clone, Debug, Hash)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Decode, bincode::Encode))]
 pub struct Labels<Octs> {
     octets: Octs
 }

@@ -24,6 +24,7 @@ use crate::util::parser::{ParseError, parse_ipv4addr};
 #[derive(Copy, Clone, Debug, Eq, Hash, PartialEq, Ord, PartialOrd)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Decode, bincode::Encode))]
 pub struct Flags(u8);
 
 impl core::ops::BitOr<u8> for Flags {
@@ -105,6 +106,7 @@ pub type AttributesMap = BTreeMap<u8, PathAttribute>;
 
 #[derive(Debug, Clone, Default, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Decode, bincode::Encode))]
 pub struct PaMap {
     attributes: AttributesMap,
 }
@@ -320,6 +322,8 @@ macro_rules! path_attributes {
         #[derive(Clone, Debug, Eq, Hash, PartialEq)]
         #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
         #[cfg_attr(feature = "serde", derive(serde::Serialize))]
+        #[cfg_attr(feature = "bincode", derive(bincode::Decode, 
+            bincode::Encode))]
         pub enum PathAttribute {
             $( $name($data) ),+,
             Unimplemented(UnimplementedPathAttribute),
@@ -744,6 +748,7 @@ impl Default for PathAttribute {
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Decode, bincode::Encode))]
 pub struct UnimplementedPathAttribute {
     flags: Flags,
     type_code: u8,
@@ -1174,6 +1179,7 @@ impl Display for crate::bgp::types::AtomicAggregate {
 #[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Decode, bincode::Encode))]
 pub struct AggregatorInfo {
     asn: Asn,
     address: Ipv4Addr,
@@ -1325,6 +1331,7 @@ impl Attribute for crate::bgp::types::OriginatorId {
 #[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Decode, bincode::Encode))]
 pub struct BgpIdentifier([u8; 4]);
 
 impl From<[u8; 4]> for BgpIdentifier {
@@ -1342,6 +1349,7 @@ impl From<BgpIdentifier> for [u8; 4] {
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Decode, bincode::Encode))]
 pub struct ClusterIds {
     cluster_ids: Vec<BgpIdentifier>
 }
@@ -1700,6 +1708,7 @@ use crate::bgp::communities::ExtendedCommunity;
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Decode, bincode::Encode))]
 pub struct ExtendedCommunitiesList {
     communities: Vec<ExtendedCommunity>
 }
@@ -1874,6 +1883,7 @@ impl Attribute for crate::bgp::types::Connector {
 #[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Decode, bincode::Encode))]
 pub struct AsPathLimitInfo {
     upper_bound: u8,
     attacher: Asn,
@@ -1923,6 +1933,7 @@ use crate::bgp::communities::Ipv6ExtendedCommunity;
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Decode, bincode::Encode))]
 pub struct Ipv6ExtendedCommunitiesList {
     communities: Vec<Ipv6ExtendedCommunity>
 }
@@ -1994,6 +2005,7 @@ use crate::bgp::communities::LargeCommunity;
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Decode, bincode::Encode))]
 pub struct LargeCommunitiesList {
     communities: Vec<LargeCommunity>
 }
@@ -2092,6 +2104,7 @@ impl Attribute for crate::bgp::types::Otc {
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Decode, bincode::Encode))]
 pub struct AttributeSet {
     origin: Asn,
     attributes: Vec<u8>,
@@ -2147,6 +2160,7 @@ impl Attribute for AttributeSet {
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Decode, bincode::Encode))]
 pub struct ReservedRaw {
     raw: Vec<u8>,
 }

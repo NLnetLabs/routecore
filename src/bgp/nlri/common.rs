@@ -1,5 +1,6 @@
 
 use octseq::{Octets, OctetsBuilder, Parser};
+use bincode::{Decode, Encode};
 use crate::util::parser::ParseError;
 use inetnum::addr::Prefix;
 use super::afisafi::Afi;
@@ -12,6 +13,7 @@ use std::fmt;
 ///
 /// Used in all AddpathNlri variants.
 #[derive(Copy, Clone, Debug, Eq, Hash, PartialEq, PartialOrd, Ord)]
+#[cfg_attr(feature = "bincode", derive(Decode,Encode))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PathId(pub u32);

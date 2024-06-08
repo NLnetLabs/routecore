@@ -34,6 +34,7 @@ use crate::util::parser::ParseError;
 /// BGP UPDATE message, variant of the [`Message`] enum.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Decode, bincode::Encode))]
 pub struct UpdateMessage<Octs: Octets> {
     octets: Octs,
     withdrawals: Range<usize>,
@@ -1053,6 +1054,7 @@ impl<Octs: Octets> UpdateMessage<Octs> {
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Decode, bincode::Encode))]
 pub struct SessionConfig {
     four_octet_asns: FourOctetAsns,
     ipv4unicast_in_mp: Ipv4UnicastInMp,
@@ -1067,6 +1069,7 @@ pub struct SessionConfig {
 #[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Decode, bincode::Encode))]
 pub struct PduParseInfo {
     four_octet_asns: FourOctetAsns,
     pdu_addpaths: PduAddpaths,
@@ -1163,6 +1166,7 @@ impl Default for PduParseInfo {
 #[derive(Copy, Clone, Default, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Decode, bincode::Encode))]
 struct PduAddpaths {
     conventional: bool,
     mp_reach: bool,
@@ -1193,6 +1197,7 @@ impl PduAddpaths {
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Decode, bincode::Encode))]
 struct SessionAddpaths(HashMap<AfiSafiType, AddpathDirection>);
 impl SessionAddpaths {
     fn new() -> Self {
@@ -1304,6 +1309,7 @@ impl SessionConfig {
 #[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Decode, bincode::Encode))]
 pub struct FourOctetAsns(pub bool);
 
 /// Indicates whether Ipv4Unicast NLRI are carried in the MP attribute.
@@ -1315,6 +1321,7 @@ pub struct FourOctetAsns(pub bool);
 #[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Decode, bincode::Encode))]
 pub struct Ipv4UnicastInMp(pub bool);
 
 /// Iterator for BGP UPDATE Communities.

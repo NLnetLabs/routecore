@@ -17,6 +17,7 @@ use super::mpls::Labels;
 #[derive(Copy, Clone, Debug, Hash)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Decode, bincode::Encode))]
 pub struct MplsVpnNlri<Octs> {
     prefix: Prefix,
     labels: Labels<Octs>,
@@ -148,6 +149,7 @@ impl<T> fmt::Display for MplsVpnNlri<T> {
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Decode, bincode::Encode))]
 pub struct RouteDistinguisher {
     bytes: [u8; 8]
 }

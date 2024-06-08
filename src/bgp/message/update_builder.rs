@@ -1201,6 +1201,7 @@ impl<A: NlriCompose> MpUnreachNlriBuilder<A> {
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Decode, bincode::Encode))]
 pub struct StandardCommunitiesList {
     communities: Vec<StandardCommunity>,
     len: usize, // size of value, excluding path attribute flags+type_code+len

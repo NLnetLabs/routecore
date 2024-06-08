@@ -47,6 +47,7 @@ macro_rules! addpath {
     #[derive(Copy, Clone, Debug, Hash, PartialEq, Ord, PartialOrd)]
     #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
     #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+    #[cfg_attr(feature = "bincode", derive(bincode::Decode, bincode::Encode))]
     pub struct [<$nlri AddpathNlri>](PathId, [<$nlri Nlri>]);
     impl AfiSafiNlri for [<$nlri AddpathNlri>] {
         type Nlri = <[<$nlri Nlri>] as AfiSafiNlri>::Nlri;
@@ -64,6 +65,7 @@ macro_rules! addpath {
     #[derive(Clone, Debug, Hash)]
     #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
     #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+    #[cfg_attr(feature = "bincode", derive(bincode::Decode, bincode::Encode))]
     pub struct [<$nlri AddpathNlri>]<$gen>(PathId, [<$nlri Nlri>]<$gen>);
     impl<$gen> AfiSafiNlri for [<$nlri AddpathNlri>]<$gen> {
         type Nlri = <[<$nlri Nlri>]<$gen> as AfiSafiNlri>::Nlri;
@@ -170,6 +172,7 @@ paste! {
     #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
     #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
     #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+    #[cfg_attr(feature = "bincode", derive(bincode::Decode, bincode::Encode))]
     pub enum AfiSafiType {
         $( $( [<$afi_name $safi_name>] ,)+)+
         Unsupported(u16, u8),
@@ -331,6 +334,7 @@ paste! {
     #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
     #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
     #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+    #[cfg_attr(feature = "bincode", derive(bincode::Decode, bincode::Encode))]
     pub enum NlriType {
     $($(
         [<$afi_name $safi_name>],
@@ -518,6 +522,27 @@ impl Nlri<&[u8]> {
     }
 }
 
+#[cfg(feature = "bincode")]
+impl<Octs: Octets> bincode::Encode for Nlri<Octs> {
+    fn encode<E: bincode::enc::Encoder>(&self, encoder: &mut E) -> Result<(), bincode::error::EncodeError> {
+        todo!()
+    }
+}
+
+#[cfg(feature = "bincode")]
+impl<Octs: Octets> bincode::Decode for Nlri<Octs> {
+    fn decode<D: bincode::de::Decoder>(decoder: &mut D) -> Result<Self, bincode::error::DecodeError> {
+        todo!()
+    }
+}
+
+#[cfg(feature = "bincode")]
+impl<'de, Octs: Octets> bincode::BorrowDecode<'de> for Nlri<Octs> {
+    fn borrow_decode<D: bincode::de::BorrowDecoder<'de>>(decoder: &mut D) -> Result<Self, bincode::error::DecodeError> {
+        todo!()
+    }
+}
+
 //------------ Traits ---------------------------------------------------------
 
 /// A type characterized by an AFI and SAFI.
@@ -640,6 +665,7 @@ afisafi! {
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Ord, PartialOrd)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Decode, bincode::Encode))]
 pub struct Ipv4UnicastNlri(Prefix);
 
 impl AfiSafiNlri for Ipv4UnicastNlri {
@@ -708,6 +734,7 @@ impl NlriCompose for Ipv4UnicastNlri {
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Ord, PartialOrd)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Decode, bincode::Encode))]
 pub struct Ipv4MulticastNlri(Prefix);
 
 impl AfiSafiNlri for Ipv4MulticastNlri {
@@ -775,6 +802,7 @@ impl NlriCompose for Ipv4MulticastNlri {
 #[derive(Copy, Clone, Debug, Hash)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Decode, bincode::Encode))]
 pub struct Ipv4MplsUnicastNlri<Octs>(MplsNlri<Octs>);
 
 impl<Octs> AfiSafiNlri for Ipv4MplsUnicastNlri<Octs> {
@@ -850,6 +878,7 @@ impl<Octs: AsRef<[u8]>> Ord for Ipv4MplsUnicastNlri<Octs> {
 #[derive(Copy, Clone, Debug, Hash)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Decode, bincode::Encode))]
 pub struct Ipv4MplsVpnUnicastNlri<Octs>(MplsVpnNlri<Octs>);
 
 impl<Octs> AfiSafiNlri for Ipv4MplsVpnUnicastNlri<Octs> {
@@ -924,6 +953,7 @@ impl<Octs: AsRef<[u8]>> Ord for Ipv4MplsVpnUnicastNlri<Octs> {
 #[derive(Clone, Debug, Hash)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Decode, bincode::Encode))]
 pub struct Ipv4RouteTargetNlri<Octs>(RouteTargetNlri<Octs>);
 
 impl<Octs> AfiSafiNlri for Ipv4RouteTargetNlri<Octs> {
@@ -996,6 +1026,7 @@ impl<Octs: AsRef<[u8]>> Ord for Ipv4RouteTargetNlri<Octs> {
 #[derive(Clone, Debug, Hash)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Decode, bincode::Encode))]
 pub struct Ipv4FlowSpecNlri<Octs>(FlowSpecNlri<Octs>);
 
 impl<Octs> AfiSafiNlri for Ipv4FlowSpecNlri<Octs> {
@@ -1082,6 +1113,7 @@ impl<Octs: AsRef<[u8]>> Ord for Ipv4FlowSpecNlri<Octs> {
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Ord, PartialOrd)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Decode, bincode::Encode))]
 pub struct Ipv6UnicastNlri(Prefix);
 impl AfiSafiNlri for Ipv6UnicastNlri {
     type Nlri = Prefix;
@@ -1148,6 +1180,7 @@ impl NlriCompose for Ipv6UnicastNlri {
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Ord, PartialOrd)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Decode, bincode::Encode))]
 pub struct Ipv6MulticastNlri(Prefix);
 
 impl FromStr for Ipv6MulticastNlri {
@@ -1215,6 +1248,7 @@ impl NlriCompose for Ipv6MulticastNlri {
 #[derive(Copy, Clone, Debug, Hash)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Decode, bincode::Encode))]
 pub struct Ipv6MplsUnicastNlri<Octs>(MplsNlri<Octs>);
 
 impl<Octs> AfiSafiNlri for Ipv6MplsUnicastNlri<Octs> {
@@ -1291,6 +1325,7 @@ impl<Octs: AsRef<[u8]>> Ord for Ipv6MplsUnicastNlri<Octs> {
 #[derive(Clone, Debug, Hash)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Decode, bincode::Encode))]
 pub struct Ipv6MplsVpnUnicastNlri<Octs>(MplsVpnNlri<Octs>);
 
 impl<Octs> AfiSafiNlri for Ipv6MplsVpnUnicastNlri<Octs> {
@@ -1366,6 +1401,7 @@ impl<Octs: AsRef<[u8]>> Ord for Ipv6MplsVpnUnicastNlri<Octs> {
 #[derive(Clone, Debug, Hash)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Decode, bincode::Encode))]
 pub struct Ipv6FlowSpecNlri<Octs>(FlowSpecNlri<Octs>);
 
 impl<Octs> AfiSafiNlri for Ipv6FlowSpecNlri<Octs> {
@@ -1474,6 +1510,7 @@ impl<Octs> Ipv4MplsUnicastNlri<Octs> {
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Ord, PartialOrd)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Decode, bincode::Encode))]
 pub struct L2VpnVplsNlri(VplsNlri);
 
 impl AfiSafiNlri for L2VpnVplsNlri {
@@ -1514,6 +1551,7 @@ impl NlriCompose for L2VpnVplsNlri {
 #[derive(Clone, Debug, Hash)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Decode, bincode::Encode))]
 pub struct L2VpnEvpnNlri<Octs>(EvpnNlri<Octs>);
 
 impl<Octs> AfiSafiNlri for L2VpnEvpnNlri<Octs> {

@@ -10,6 +10,7 @@ use super::common::prefix_bits_to_bytes;
 #[derive(Clone, Debug, Hash)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Decode, bincode::Encode))]
 pub struct RouteTargetNlri<Octs> {
     raw: Octs
 }

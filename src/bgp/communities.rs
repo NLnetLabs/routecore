@@ -113,6 +113,7 @@ pub trait SerializeForOperators: Serialize {
 /// Standard and Extended/Large Communities variants.
 #[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, )]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Decode, bincode::Encode))]
 pub enum Community {
     Standard(StandardCommunity),
     Extended(ExtendedCommunity),
@@ -260,6 +261,7 @@ impl Display for Community {
 /// serializing our Community type and in turn the contained routecore
 /// Community type and its children.
 #[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, )]
+#[cfg_attr(feature = "bincode", derive(bincode::Decode, bincode::Encode))]
 pub struct HumanReadableCommunity(pub Community);
 
 impl From<Community> for HumanReadableCommunity {
@@ -484,6 +486,7 @@ wellknown!(Wellknown,
 #[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Decode, bincode::Encode))]
 pub struct StandardCommunity(pub(crate) [u8; 4]);
 
 impl StandardCommunity {
@@ -754,6 +757,7 @@ impl Display for Tag {
 #[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Decode, bincode::Encode))]
 pub struct ExtendedCommunity([u8; 8]);
 
 impl ExtendedCommunity {
@@ -1313,6 +1317,7 @@ impl SerializeForOperators for ExtendedCommunity {
 #[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Decode, bincode::Encode))]
 pub struct Ipv6ExtendedCommunity([u8; 20]);
 
 
@@ -1442,6 +1447,7 @@ impl Display for Ipv6ExtendedCommunity {
 #[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Decode, bincode::Encode))]
 pub struct LargeCommunity([u8; 12]);
 
 impl LargeCommunity {

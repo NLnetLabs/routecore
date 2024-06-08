@@ -63,6 +63,7 @@ pub trait SerializeForOperators: Serialize {
 /// 
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[derive(Clone, Debug, Default, Eq, PartialEq, Hash)]
+#[cfg_attr(feature = "bincode", derive(bincode::Decode, bincode::Encode))]
 pub struct HopPath {
     /// The hops in this HopPath.
     hops: Vec<OwnedHop>,
@@ -803,6 +804,7 @@ impl<'a, Octs: Octets> Iterator for PathSegments<'a, Octs> {
 #[derive(Copy, Clone, Debug)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Decode, bincode::Encode))]
 pub struct Segment<Octs> {
     stype: SegmentType,
     four_byte_asns: bool,
@@ -1028,6 +1030,7 @@ impl<Octs: Octets> fmt::Display for Segment<Octs> {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Decode, bincode::Encode))]
 pub enum SegmentType {
     Set,
     Sequence,
@@ -1087,6 +1090,7 @@ impl fmt::Display for SegmentType {
 #[derive(Copy, Clone, Debug)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Decode, bincode::Encode))]
 pub enum Hop<Octs> {
     Asn(Asn),
     Segment(Segment<Octs>),
