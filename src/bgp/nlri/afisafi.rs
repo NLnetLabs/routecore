@@ -246,6 +246,7 @@ paste! {
     #[derive(Clone, Debug, Hash)]
     #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
     #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+    #[cfg_attr(feature = "bincode", derive(bincode::Decode, bincode::Encode))]
     pub enum Nlri<Octs> {
     $($(
         [<$afi_name $safi_name>]([<$afi_name $safi_name Nlri>]$(<$gen>)?),
@@ -519,27 +520,6 @@ impl Nlri<&[u8]> {
         } else {
             Ok(Nlri::Ipv6Unicast(Ipv6UnicastNlri(p)))
         }
-    }
-}
-
-#[cfg(feature = "bincode")]
-impl<Octs: Octets> bincode::Encode for Nlri<Octs> {
-    fn encode<E: bincode::enc::Encoder>(&self, encoder: &mut E) -> Result<(), bincode::error::EncodeError> {
-        todo!()
-    }
-}
-
-#[cfg(feature = "bincode")]
-impl<Octs: Octets> bincode::Decode for Nlri<Octs> {
-    fn decode<D: bincode::de::Decoder>(decoder: &mut D) -> Result<Self, bincode::error::DecodeError> {
-        todo!()
-    }
-}
-
-#[cfg(feature = "bincode")]
-impl<'de, Octs: Octets> bincode::BorrowDecode<'de> for Nlri<Octs> {
-    fn borrow_decode<D: bincode::de::BorrowDecoder<'de>>(decoder: &mut D) -> Result<Self, bincode::error::DecodeError> {
-        todo!()
     }
 }
 
