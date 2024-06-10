@@ -1,6 +1,6 @@
-## 0.5.0-rc0
+## 0.5.0-rc1
 
-Released 2024-05-29.
+Released 2024-06-10.
 
 This release features a lot of changes, big and small. The list below is not
 exhaustive but tries to highlight and describe the bigger (and perhaps, more
