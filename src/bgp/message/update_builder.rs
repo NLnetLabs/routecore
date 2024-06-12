@@ -1209,7 +1209,7 @@ pub struct StandardCommunitiesList {
 }
 
 impl StandardCommunitiesList {
-    pub(crate) fn new() -> StandardCommunitiesList {
+    pub fn new() -> StandardCommunitiesList {
         StandardCommunitiesList {
             communities: Vec::new(),
             len: 0,
