@@ -10,8 +10,6 @@ pub mod bmp;
 pub mod flowspec;
 
 pub use octseq::Octets;
-pub use inetnum::asn::Asn;
-pub use inetnum::addr::Prefix;
 
 //--- Private modules
 
