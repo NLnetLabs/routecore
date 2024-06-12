@@ -1,9 +1,11 @@
 
 use octseq::{Octets, OctetsBuilder, Parser};
-use bincode::{Decode, Encode};
 use crate::util::parser::ParseError;
 use inetnum::addr::Prefix;
 use super::afisafi::Afi;
+
+#[cfg(feature = "bincode")]
+use bincode::{Decode, Encode};
 
 use std::net::{Ipv4Addr, Ipv6Addr};
 use std::fmt;
