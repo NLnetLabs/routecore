@@ -6,7 +6,7 @@ use libfuzzer_sys::fuzz_target;
 use routecore::bgp::{
     path_attributes::PaMap,
     path_selection::{OrdStrat, OrdRoute, Rfc4271, SkipMed, TiebreakerInfo,
-        best_backup, best
+        best_backup, best_backup_generic, best
     }
 };
 
@@ -73,6 +73,38 @@ fn verify_path_selection<'a, T, OS, I>(candidates: I)
         (best2.borrow().tiebreakers(), best2.borrow().pa_map()),
         (backup2.borrow().tiebreakers(), backup2.borrow().pa_map()),
     );
+
+    let (best_gen, backup_gen) = verify_path_selection_generic(candidates);
+    let (best_gen, _backup_gen) = (best_gen.unwrap(), backup_gen.unwrap());
+
+    assert_eq!(best2, best_gen);
+    
+    // Because best_backup_generic can't deal with duplicates, this won't
+    // always hold:
+    //assert_eq!(backup2, backup_gen);
+
+}
+
+fn verify_path_selection_generic<I, T>(candidates: I) -> (Option<T>, Option<T>)
+where
+    I: Iterator<Item = T>,
+    T: Debug + Ord
+{
+
+    let (best, backup) = best_backup_generic(
+        // create tuples of the OrdRoute and a unique 'id'
+        candidates.enumerate().map(|(idx, c)| (c, idx))
+    );
+    // because the returned values are tuples as well, we can now compare
+    // those (instead of comparing the OrdRoute). With the unique IDs
+    // attached, we can check whether `best` and `backup` are not equal in
+    // terms of content.
+    assert!(best.is_some());
+    assert!(backup.is_some());
+    assert_ne!(best, backup);
+
+
+    (best.map(|t| t.0), backup.map(|t| t.0))
 }
 
 // XXX while doing fuzz_target!(|data: &[u8]| ... and then creating an
@@ -104,9 +136,9 @@ fuzz_target!(|data: (
         Err(_) => return,
     };
 
-    //dbg!("skipmed");
     verify_ord(&a, &b, &c);
     verify_path_selection([&a, &b, &c, &b, &c, &a].into_iter());
+    //verify_path_selection_generic([&a, &b, &c].into_iter());
 
     //dbg!("rfc4271");
     /*
