@@ -10,6 +10,7 @@ pub mod bmp;
 pub mod flowspec;
 
 pub use octseq::Octets;
+pub use octseq::Parser;
 
 //--- Private modules
 
