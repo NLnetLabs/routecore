@@ -1244,7 +1244,6 @@ impl StandardCommunitiesList {
         self.len += 4;
         self.communities.push(community);
     }
-
     // TODO fn add_community_from_iter() 
 }
 
@@ -1255,6 +1254,12 @@ impl From<Vec<StandardCommunity>> for StandardCommunitiesList {
             std_l.add_community(c)
         }
         std_l
+    }
+}
+
+impl Default for StandardCommunitiesList {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
