@@ -105,12 +105,12 @@ impl<N: AfiSafiNlri> RouteWorkshop<N> {
     /// MP_REACH_NLRI attribute is set in the resulting RouteWorkshop.
     /// In both cases, the NEXT_HOP path attribute is omitted from the
     /// attached [`PaMap`].
-    pub fn from_update_pdu<Octs: Octets>(
+    pub fn from_update_pdu<'a, Octs: Octets>(
         nlri: N,
-        pdu: &UpdateMessage<Octs>,
+        pdu: &'a UpdateMessage<Octs>,
     ) -> Result<Self, ComposeError>
     where
-        for<'a> Vec<u8>: OctetsFrom<Octs::Range<'a>>,
+        Vec<u8>: From<<Octs as Octets>::Range<'a>>
     {
         let mut res = Self::new(nlri);
 
@@ -440,7 +440,7 @@ mod tests {
 
         let conv_nlri = pdu.typed_announcements::<_, Ipv4UnicastNlri>()
             .unwrap().unwrap().next().unwrap().unwrap();
-        let conv_rws =RouteWorkshop::from_update_pdu(conv_nlri, &pdu).unwrap();
+        let conv_rws = RouteWorkshop::from_update_pdu(conv_nlri, &pdu).unwrap();
 
         assert_eq!(
             conv_rws.1,

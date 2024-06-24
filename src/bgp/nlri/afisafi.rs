@@ -1003,11 +1003,11 @@ impl<Octs: AsRef<[u8]>> Ord for Ipv4RouteTargetNlri<Octs> {
 
 //--- Ipv4FlowSpec
 
-#[derive(Clone, Debug, Hash)]
+#[derive(Clone, Hash)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "bincode", derive(bincode::Decode, bincode::Encode))]
-pub struct Ipv4FlowSpecNlri<Octs>(FlowSpecNlri<Octs>);
+pub struct Ipv4FlowSpecNlri<Octs>(pub FlowSpecNlri<Octs>);
 
 impl<Octs> AfiSafiNlri for Ipv4FlowSpecNlri<Octs> {
     type Nlri = FlowSpecNlri<Octs>;
@@ -1048,10 +1048,12 @@ impl<Octs: AsRef<[u8]>> NlriCompose for Ipv4FlowSpecNlri<Octs> {
     }
 }
 
-impl<T> From<Ipv4FlowSpecNlri<T>> for FlowSpecNlri<T> {
-    fn from(value: Ipv4FlowSpecNlri<T>) -> Self {
-        value.0
-    }
+impl<'a, O: Octets + 'a> From<&'a Ipv4FlowSpecNlri<O>> for FlowSpecNlri<bytes::Bytes> {
+    fn from(value: &Ipv4FlowSpecNlri<O>) -> Self {
+        let raw = bytes::Bytes::copy_from_slice(value.0.raw().as_ref());
+        let p = &mut Parser::from_ref(&raw);
+        FlowSpecNlri::parse(p, Afi::Ipv4).unwrap()
+   }
 }
 
 impl<Octs, Other> PartialEq<Ipv4FlowSpecNlri<Other>> for Ipv4FlowSpecNlri<Octs>
@@ -1083,6 +1085,12 @@ where Octs: AsRef<[u8]>,
 impl<Octs: AsRef<[u8]>> Ord for Ipv4FlowSpecNlri<Octs> {
     fn cmp(&self, other: &Self) -> cmp::Ordering {
         self.0.cmp(&other.0)
+    }
+}
+
+impl<T> Debug for Ipv4FlowSpecNlri<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+       write!(f, "{}", self.nlri())
     }
 }
 
@@ -1378,11 +1386,11 @@ impl<Octs: AsRef<[u8]>> Ord for Ipv6MplsVpnUnicastNlri<Octs> {
 
 //--- Ipv6FlowSpec
 
-#[derive(Clone, Debug, Hash)]
+#[derive(Clone, Hash)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "bincode", derive(bincode::Decode, bincode::Encode))]
-pub struct Ipv6FlowSpecNlri<Octs>(FlowSpecNlri<Octs>);
+pub struct Ipv6FlowSpecNlri<Octs>(pub FlowSpecNlri<Octs>);
 
 impl<Octs> AfiSafiNlri for Ipv6FlowSpecNlri<Octs> {
     type Nlri = FlowSpecNlri<Octs>;
@@ -1458,6 +1466,12 @@ where Octs: AsRef<[u8]>,
 impl<Octs: AsRef<[u8]>> Ord for Ipv6FlowSpecNlri<Octs> {
     fn cmp(&self, other: &Self) -> cmp::Ordering {
         self.0.cmp(&other.0)
+    }
+}
+
+impl<T> Debug for Ipv6FlowSpecNlri<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+       write!(f, "{}", self.nlri())
     }
 }
 
