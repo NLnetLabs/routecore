@@ -1244,8 +1244,13 @@ impl StandardCommunitiesList {
         self.len += 4;
         self.communities.push(community);
     }
-
     // TODO fn add_community_from_iter() 
+}
+
+impl Default for StandardCommunitiesList {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 //------------ Errors --------------------------------------------------------
