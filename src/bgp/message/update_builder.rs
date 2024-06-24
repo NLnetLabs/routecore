@@ -1248,6 +1248,16 @@ impl StandardCommunitiesList {
     // TODO fn add_community_from_iter() 
 }
 
+impl From<Vec<StandardCommunity>> for StandardCommunitiesList {
+    fn from(value: Vec<StandardCommunity>) -> Self {
+        let mut std_l = Self::new();
+        for c in value {
+            std_l.add_community(c)
+        }
+        std_l
+    }
+}
+
 //------------ Errors --------------------------------------------------------
 
 #[derive(Debug)]
