@@ -2,7 +2,7 @@ use std::fmt::Debug;
 use std::hash::Hash;
 //use std::marker::PhantomData;
 
-use octseq::{Octets, OctetsFrom};
+use octseq::Octets;
 
 use crate::bgp::communities::Community;
 use crate::bgp::message::update_builder::{ComposeError, /*MpReachNlriBuilder*/};

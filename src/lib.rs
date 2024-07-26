@@ -11,6 +11,7 @@ pub mod flowspec;
 
 pub use octseq::Octets;
 pub use octseq::Parser;
+pub use octseq::OctetsFrom;
 
 //--- Private modules
 

@@ -96,6 +96,21 @@ impl HopPath {
         self.hops.iter().any(|h| h == hop)
     }
 
+    pub fn contains_segments(&self) -> bool {
+        self.hops.iter().any(|h| if let Hop::Segment(_) = h { true } else { false })
+    }
+
+    pub fn contains_sets(&self) -> bool {
+        self.hops.iter().any(|h| if let Hop::Segment(s) = h { 
+            if s.stype == SegmentType::Set || s.stype == SegmentType::ConfedSet { 
+                true
+            } else { 
+                false }
+            } else { 
+                false }
+        )
+    }
+
     pub fn get_hop(&self, index: usize) -> Option<&OwnedHop> {
         self.hops.get(index)
     }
@@ -261,9 +276,25 @@ impl HopPath {
         })
     }
 
+    pub fn try_to_asn32_path<Octs>(
+        &self
+        ) -> Result<AsPath<Octs>,
+        <<Octs as FromBuilder>::Builder as OctetsBuilder>::AppendError
+            >
+    where
+        Octs: FromBuilder,
+        <Octs as FromBuilder>::Builder: EmptyBuilder
+    {
+        let mut target = EmptyBuilder::empty();
+        Self::compose_as_path(&self.hops, &mut target)?;
+        Ok(unsafe {
+            AsPath::new_unchecked(Octs::from_builder(target), false)
+        })
+    }
+
 
     // Turn this HopPath into the four-octet based AS_PATH wireformat.
-    fn compose_as_path<Octs: Octets, Target: OctetsBuilder>(
+    pub fn compose_as_path<Octs: Octets, Target: OctetsBuilder>(
         mut hops: &[Hop<Octs>], target: &mut Target
     ) -> Result<(), Target::AppendError> {
         while !hops.is_empty() {
@@ -762,6 +793,7 @@ impl<'a, Octs: Octets> Iterator for PathHops<'a, Octs> {
 //----------- PathSegments ---------------------------------------------------
 
 /// Iterates over [`Segment`]s in an [`AsPath`].
+#[derive(Debug)]
 pub struct PathSegments<'a, Octs> {
     parser: Parser<'a, Octs>,
     four_byte_asns: bool,
