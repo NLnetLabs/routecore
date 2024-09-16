@@ -1893,6 +1893,14 @@ impl AsPathLimitInfo {
     pub fn new(upper_bound: u8, attacher: Asn) -> AsPathLimitInfo {
         AsPathLimitInfo { upper_bound, attacher }
     }
+
+    pub fn upper_bound(&self) -> u8 {
+        self.upper_bound
+    }
+
+    pub fn attacher(&self) -> Asn {
+        self.attacher
+    }
 }
 
 impl Attribute for AsPathLimitInfo {
