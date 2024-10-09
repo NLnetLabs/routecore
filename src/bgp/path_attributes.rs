@@ -102,6 +102,7 @@ pub trait AttributeHeader {
 //------------ OwnedPathAttributes -------------------------------------------
 
 
+/// Owned version of [`PathAttributes`].
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct OwnedPathAttributes {
@@ -110,23 +111,28 @@ pub struct OwnedPathAttributes {
 }
 
 impl OwnedPathAttributes {
+    /// Creates a new `OwnedPathAttributes`.
     pub fn new(ppi: PduParseInfo, raw: Vec<u8>) -> Self {
         Self { ppi, raw }
     }
 
+    /// Returns a [`PathAttributes`] iterator.
     pub fn iter(&self) -> PathAttributes<Vec<u8>> {
         let parser = Parser::from_ref(&self.raw);
         PathAttributes::new(parser, self.ppi)
     }
 
+    /// Returns the [`PduParseInfo`] used to parse the attributes.
     pub fn pdu_parse_info(&self) -> PduParseInfo {
         self.ppi
     }
 
+    /// Returns the underlying `Vec<u8>`, consuming itself.
     pub fn into_vec(self) -> Vec<u8> {
         self.raw
     }
 
+    /// Returns the requested path attribute, if any.
     pub fn get<A: FromAttribute>(&self) -> Option<A> {
         if let Some(attr_type) = A::attribute_type() {
             self.iter().get(attr_type)
