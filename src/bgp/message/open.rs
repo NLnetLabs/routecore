@@ -29,13 +29,13 @@ pub struct OpenMessage<Octets> {
 /// ## Convenience methods
 ///
 /// * [`my_asn()`][`OpenMessage::my_asn`]: returns the 32bit ASN if present,
-/// otherwise falls back to the conventional 16bit ASN (though represented as
-/// the 32bit [`inetnum::asn::Asn`][`Asn`]);
+///   otherwise falls back to the conventional 16bit ASN (though represented
+///   as the 32bit [`inetnum::asn::Asn`][`Asn`]);
 /// * [`multiprotocol_ids()`][`OpenMessage::multiprotocol_ids`]: returns an
-/// iterator over all the AFI/SAFI combinations listed as Capability in the
-/// Optional Parameters. If this yields an empty iterator, one can assume the
-/// default (IPv4/Unicast) can be used, but it is up to the user to handle as
-/// such.
+///   iterator over all the AFI/SAFI combinations listed as Capability in the
+///   Optional Parameters. If this yields an empty iterator, one can assume
+///   the default (IPv4/Unicast) can be used, but it is up to the user to
+///   handle as such.
 //
 //  0                   1                   2                   3
 //  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
