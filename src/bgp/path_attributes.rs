@@ -102,7 +102,8 @@ pub trait AttributeHeader {
 //------------ OwnedPathAttributes -------------------------------------------
 
 
-#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct OwnedPathAttributes {
     ppi: PduParseInfo,
     raw: Vec<u8>
