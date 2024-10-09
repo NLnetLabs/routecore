@@ -99,6 +99,64 @@ pub trait AttributeHeader {
 }
 
 
+//------------ OwnedPathAttributes -------------------------------------------
+
+
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize)]
+pub struct OwnedPathAttributes {
+    ppi: PduParseInfo,
+    raw: Vec<u8>
+}
+
+impl OwnedPathAttributes {
+    pub fn new(ppi: PduParseInfo, raw: Vec<u8>) -> Self {
+        Self { ppi, raw }
+    }
+
+    pub fn iter(&self) -> PathAttributes<Vec<u8>> {
+        let parser = Parser::from_ref(&self.raw);
+        PathAttributes::new(parser, self.ppi)
+    }
+
+    pub fn pdu_parse_info(&self) -> PduParseInfo {
+        self.ppi
+    }
+
+    pub fn into_vec(self) -> Vec<u8> {
+        self.raw
+    }
+
+    pub fn get<A: FromAttribute>(&self) -> Option<A> {
+        if let Some(attr_type) = A::attribute_type() {
+            self.iter().get(attr_type)
+                .and_then(|a| a.to_owned().ok())
+                .and_then(|a| A::from_attribute(a))
+        } else {
+            None
+        }
+    }
+}
+
+impl<'a, O> From<PathAttributes<'a, O>> for OwnedPathAttributes
+where
+    O: AsRef<[u8]>
+{
+    fn from(value: PathAttributes<'a, O>) -> Self {
+        OwnedPathAttributes {
+            ppi: value.pdu_parse_info,
+            raw: value.parser.as_slice().to_owned()
+        }
+    }
+}
+
+impl From<(PduParseInfo, Vec<u8>)> for OwnedPathAttributes {
+    fn from(value: (PduParseInfo, Vec<u8>)) -> Self {
+        Self::new(value.0, value.1)
+    }
+}
+
+
+
 //------------ PathAttributesBuilder -----------------------------------------
 
 pub type AttributesMap = BTreeMap<u8, PathAttribute>;
