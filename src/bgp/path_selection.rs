@@ -18,7 +18,7 @@ use super::{
 /// Comparing two `OrdRoute`s, wrapping two routes with different sets of path
 /// attributes, might still yield 'equal'. Instead, consider comparing on the
 /// `PaMap` and/or `Tiebreakerinfo` directly (or [`fn inner`]).
-#[derive(Copy, Clone, Debug, Hash)]
+#[derive(Copy, Clone, Debug)]
 pub struct OrdRoute<'a, OS> {
     pa_map: &'a PaMap,
     tiebreakers: TiebreakerInfo,

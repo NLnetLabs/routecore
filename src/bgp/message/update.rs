@@ -94,12 +94,12 @@ impl<Octs: Octets> AsRef<[u8]> for UpdateMessage<Octs> {
 /// To accommodate for these hassles, the following methods are provided:
 ///
 /// * [`nlris()`][`UpdateMessage::nlris`] and
-/// [`withdrawals()`][`UpdateMessage::withdrawals`],
-/// providing iterators over announced and withdrawn prefixes ;
+///   [`withdrawals()`][`UpdateMessage::withdrawals`],
+///   providing iterators over announced and withdrawn prefixes ;
 /// * [`next_hop()`][`UpdateMessage::next_hop`], returning the [`NextHop`] ;
 /// * [`all_communities()`][`UpdateMessage::all_communities`], returning an
-/// optional `Vec` containing all conventional, Extended and Large
-/// Communities, wrapped in the [`Community`] enum.
+///   optional `Vec` containing all conventional, Extended and Large
+///   Communities, wrapped in the [`Community`] enum.
 ///
 /// For the mandatory path attributes, we have:
 ///
@@ -1154,12 +1154,12 @@ impl Default for PduParseInfo {
 /// and non AddPath enabled withdrawals, this struct holds booleans for all
 /// three sections where AddPath PathIds might or might not occur:
 ///
-///  *  the conventional IPv4 Unicast sections in the PDU, which are either
-///  both AddPath enabled or not, and,
+///  * the conventional IPv4 Unicast sections in the PDU, which are either
+///    both AddPath enabled or not, and,
 ///
 ///  * the MP_REACH and MP_UNREACH path attributes, which might carry NLRI for
-///  different address families and (thus) might differ in being AddPath
-///  enabled or not.
+///    different address families and (thus) might differ in being AddPath
+///    enabled or not.
 #[derive(Copy, Clone, Default, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
