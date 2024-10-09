@@ -49,6 +49,11 @@ New
   an NLRI and a set of attributes. For creation, inspection and manipulation of
   those attributes, the `PaMap` is introduced. These new types work in
   conjunction with the existing `UpdateBuilder`.
+  
+  Another new, related type is the `OwnedPathAttributes`, which is sort of a mix
+  between the `PathAttributes` and `PaMap`, keeping the actual wireformat
+  attributes blob in tact (using a `Vec<u8>`). This makes it more memory
+  efficient than the `PaMap`, at a small cost in forms of compute.
  
 * BGP FSM (absorbed from _rotonda-fsm_)
   
