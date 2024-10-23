@@ -151,7 +151,7 @@ where
     fn from(value: PathAttributes<'a, O>) -> Self {
         OwnedPathAttributes {
             ppi: value.pdu_parse_info,
-            raw: value.parser.as_slice().to_owned()
+            raw: value.parser.peek_all().to_owned()
         }
     }
 }
