@@ -385,6 +385,7 @@ macro_rules! path_attributes {
         #[derive(Clone, Debug, Eq, Hash, PartialEq)]
         #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
         #[cfg_attr(feature = "serde", derive(serde::Serialize))]
+        #[cfg_attr(feature = "serde", serde(rename_all = "camelCase"))]
         pub enum PathAttribute {
             $( $name($data) ),+,
             Unimplemented(UnimplementedPathAttribute),
