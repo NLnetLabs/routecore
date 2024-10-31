@@ -79,6 +79,9 @@ pub(super) fn parse_v4_prefix_for_len<R: Octets>(
 ) -> Result<Prefix, ParseError>
 {
     let prefix_bytes = prefix_bits_to_bytes(prefix_bits);
+    if prefix_bytes > 4 {
+        return Err(ParseError::form_error("illegal prefix length"));
+    }
     let mut b = [0u8; 4];
     parser.parse_buf(&mut b[..prefix_bytes])?;
     Prefix::new_v4(Ipv4Addr::from(b), prefix_bits).map_err(|e|
@@ -99,6 +102,9 @@ pub(super) fn parse_v6_prefix_for_len<R: Octets>(
 ) -> Result<Prefix, ParseError>
 {
     let prefix_bytes = prefix_bits_to_bytes(prefix_bits);
+    if prefix_bytes > 16 {
+        return Err(ParseError::form_error("illegal prefix length"));
+    }
     let mut b = [0u8; 16];
     parser.parse_buf(&mut b[..prefix_bytes])?;
     Prefix::new_v6(Ipv6Addr::from(b), prefix_bits).map_err(|e|
