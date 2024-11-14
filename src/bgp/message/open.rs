@@ -235,6 +235,14 @@ impl<Octs: Octets> OpenMessage<Octs> {
         })
     }
 
+    /// Returns the Software Version capability string.
+    pub fn get_software_version(&self) -> Option<String> {
+        self.capabilities().find(|c|
+            c.typ() == CapabilityType::SoftwareVersion
+        ).map(|cap|
+            String::from_utf8_lossy(cap.value()).to_string()
+        )
+    }
 }
 
 
@@ -488,6 +496,10 @@ impl<Octs: Octets> Capability<Octs> {
                 let domain_len = parser.parse_u8()? as usize;
                 parser.advance(domain_len)?;
             },
+            CapabilityType::SoftwareVersion => {
+                let len = parser.parse_u8()? as usize;
+                parser.advance(len)?;
+            },
             CapabilityType::PrestandardRouteRefresh => {
                 if len > 0 {
                     warn!("PrestandardRouteRefresh with len > 0, capture me for testing purposes!");
@@ -700,6 +712,7 @@ typeenum!(
         70 => EnhancedRouteRefresh,
         71 => LongLivedGracefulRestart,
         73 => FQDN,
+        75 => SoftwareVersion,
         128 => PrestandardRouteRefresh,
         130 => PrestandardOutboundRouteFiltering,
         131 => PrestandardMultisession,
