@@ -1,3 +1,19 @@
+## Unreleased new version
+
+
+Breaking changes
+
+
+New
+
+
+Other changes
+
+
+Known limitations/issues
+
+
+
 ## 0.5.0
 
 Released 2024-11-20.
