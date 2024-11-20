@@ -1,6 +1,6 @@
-## 0.5.0-rc2
+## 0.5.0
 
-Released 2024-06-10.
+Released 2024-11-20.
 
 This release features a lot of changes, big and small. The list below is not
 exhaustive but tries to highlight and describe the bigger (and perhaps, more
@@ -80,6 +80,14 @@ New
   aim to provide a certain degree of flexibility in the tie-breaking process by
   means of different `OrdStrat` ordering strategies.
 
+ 
+* Limited MRT read support
+
+  Support for reading and parsing MRT files, such as those published by RIPE
+  RIS, is added behind the `mrt` feature flag. Both the 'dump' and the 'updates'
+  files are supported, though not all exotic message types might be recognized,
+  and the API will likely change.
+  
 
 Other changes
 
