@@ -137,15 +137,15 @@ where
     {
         // XXX there should be a HopPath::compose_len really, instead of
         // relying on .to_as_path() first.
-        if let Ok(wireformat) = aspath.to_as_path::<Vec<u8>>() {
-            if wireformat.compose_len() > u16::MAX.into() {
-                return Err(ComposeError::AttributeTooLarge(
-                     PathAttributeType::AsPath,
-                     wireformat.compose_len()
-                ));
-            }
-        } else {
-            return Err(ComposeError::InvalidAttribute)
+        let wireformat = octseq::builder::infallible(
+            aspath.to_as_path::<Vec<u8>>()
+        );
+
+        if wireformat.compose_len() > u16::MAX.into() {
+            return Err(ComposeError::AttributeTooLarge(
+                    PathAttributeType::AsPath,
+                    wireformat.compose_len()
+            ));
         }
 
         self.attributes.set(aspath);
