@@ -66,7 +66,7 @@ pub fn parse_prefix_for_len<R: Octets>(
     Ok(res)
 }
 
-pub(super) fn parse_v4_prefix<R: Octets>(parser: &mut Parser<'_, R>)
+pub(crate) fn parse_v4_prefix<R: Octets>(parser: &mut Parser<'_, R>)
     -> Result<Prefix, ParseError>
 {
     let prefix_bits = parser.parse_u8()?;
@@ -89,7 +89,7 @@ pub(super) fn parse_v4_prefix_for_len<R: Octets>(
     )
 }
 
-pub(super) fn parse_v6_prefix<R: Octets>(parser: &mut Parser<'_, R>)
+pub(crate) fn parse_v6_prefix<R: Octets>(parser: &mut Parser<'_, R>)
     -> Result<Prefix, ParseError>
 {
     let prefix_bits = parser.parse_u8()?;
