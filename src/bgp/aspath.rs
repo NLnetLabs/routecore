@@ -551,6 +551,20 @@ impl<Octs: AsRef<[u8]>> AsPath<Octs> {
             len + 3
         }
     }
+
+    /// Returns true if this AsPath consists of a single AS_SEQUENCE.
+    /// 
+    /// If the AS_PATH is empty, returns false.
+    pub fn is_single_sequence(&self) -> bool {
+        if self.octets.as_ref().len() < 2 {
+            return false
+        }
+        self.octets.as_ref()[0] == 2 &&
+            self.octets.as_ref().len() == match self.four_byte_asns {
+                true  => 2 + usize::from(self.octets.as_ref()[1]) * 4,
+                false => 2 + usize::from(self.octets.as_ref()[1]) * 2,
+        }
+    }
 }
 
 impl AsPath<Vec<u8>> {
@@ -638,6 +652,20 @@ impl<Octs: Octets> AsPath<Octs> {
         HopPath { hops: self.hops().map(OctetsInto::octets_into).collect() }
     }
 
+    /// Optionally returns an iterator over [`Asn`]s.
+    ///
+    /// If this AsPath consists of a single `AS_SEQUENCE` segment, this
+    /// returns an iterator over those ASNs directly, otherwise returns an
+    /// error.
+    pub fn try_single_sequence_iter(&self) -> Result<Asns<Octs>, &str> {
+        if self.is_single_sequence() {
+            let mut parser = Parser::from_ref(&self.octets);
+            parser.advance(2).unwrap();
+            Ok(Asns::new(parser, self.four_byte_asns))
+        } else {
+            Err("not a single AS_SEQUENCE")
+        }
+    }
 }
 
 //--- PartialEq
@@ -1656,5 +1684,35 @@ mod tests {
 
         asp.prepend_confed_sequence([1000,1001].map(Asn::from_u32));
         assert_eq!(asp.hop_count_path_selection(), 4);
+    }
+
+    #[test]
+    fn single_sequence_aspath() {
+        let raw_single = vec![
+            0x02, 0x04, 0x00, 0x00, 0x07, 0xeb, 0x00, 0x00,
+            0x89, 0xd0, 0x00, 0x04, 0x06, 0xdf, 0x00, 0x04,
+            0x24, 0x0d
+        ];
+        let aspath_single = AsPath::new(raw_single, true).unwrap();
+
+        let raw = vec![
+            0x02, 0x05, 0x00, 0x00,
+            0x19, 0x2f, 0x00, 0x00, 0x97, 0xe0, 0x00, 0x00,
+            0x23, 0x2a, 0x00, 0x00, 0x32, 0x9c, 0x00, 0x00,
+            0x59, 0x8f, 0x01, 0x04, 0x00, 0x00, 0xcc, 0x8f,
+            0x00, 0x04, 0x00, 0x1f, 0x00, 0x04, 0x0a, 0x6a,
+            0x00, 0x04, 0x16, 0x0a
+        ];
+        let aspath_multiple = AsPath::new(raw, true).unwrap();
+
+        assert!(aspath_single.is_single_sequence());
+        assert!(
+            aspath_single.try_single_sequence_iter().unwrap().eq(
+                [2027, 35280, 263903, 271373].map(Asn::from_u32)
+            )
+        );
+        assert!(!aspath_multiple.is_single_sequence());
+        assert!(aspath_multiple.try_single_sequence_iter().is_err());
+
     }
 }
