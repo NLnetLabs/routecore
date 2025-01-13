@@ -759,8 +759,8 @@ impl<Octs: Octets> UpdateMessage<Octs> {
     /// Returns an iterator over Standard Communities (RFC1997), if any.
     pub fn communities(&self) 
         -> Result<
-            Option<CommunityIter<Octs::Range<'_>, crate::bgp::communities::Community>>, ParseError> {
-        self._communities::<crate::bgp::communities::Community>()
+            Option<CommunityIter<Octs::Range<'_>, crate::bgp::communities::StandardCommunity>>, ParseError> {
+        self._communities::<crate::bgp::communities::StandardCommunity>()
     }
 
     /// Returns an iterator over Standard Communities (RFC1997), if any. The
