@@ -3,8 +3,16 @@
 
 Breaking changes
 
+Bug fixes
+
+* The `communities()` method on a BGP `UpdateMessage` now returns an iterator
+  yielding `StandardCommunity` instead of the enum `Community`. This way it is
+  consistent with the other methods for the other flavours of communities.
 
 New
+
+* Introduce methods on `AsPath` to more ergonomically use paths comprised of a
+  single 'AS_SEQUENCE'.
 
 
 Other changes
