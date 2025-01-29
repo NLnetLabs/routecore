@@ -512,6 +512,10 @@ impl<C: BgpConfig + Send> Session<C> {
         use Event as E;
         use State as S;
         match (self.state(), &event) {
+            (S::Unimplemented(_), _ ) => {
+                error!("Unimplemented state, resetting to Idle");
+                self.set_state(State::Idle);
+            }
             //--- Idle -------------------------------------------------------
             (S::Idle, E::ManualStart | E::AutomaticStart) => {
 

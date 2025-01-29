@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 use octseq::{Octets, OctetsFrom, Parser};
+use crate::bgp::fsm::state_machine::State;
 use crate::bgp::nlri::common::{parse_v4_prefix, parse_v6_prefix};
 use crate::bgp::types::AfiSafiType;
 use crate::bgp::ParseError;
@@ -551,8 +552,8 @@ pub struct StateChange {
     afi: Afi,
     peer_addr: IpAddr,
     local_addr: IpAddr,
-    old_state: u16, //crate::bgp::fsm::state_machine::State,
-    new_state: u16, //crate::bgp::fsm::state_machine::State,
+    old_state: State,
+    new_state: State,
 }
 
 impl StateChange {
@@ -579,8 +580,8 @@ impl StateChange {
                 );
             }
         };
-        let old_state = parser.parse_u16_be()?;
-        let new_state = parser.parse_u16_be()?;
+        let old_state = parser.parse_u16_be()?.into();
+        let new_state = parser.parse_u16_be()?.into();
 
         Ok(
             StateChange {
@@ -606,8 +607,8 @@ pub struct StateChangeAs4 {
     afi: Afi,
     peer_addr: IpAddr,
     local_addr: IpAddr,
-    old_state: u16, //crate::bgp::fsm::state_machine::State,
-    new_state: u16, //crate::bgp::fsm::state_machine::State,
+    old_state: State,
+    new_state: State,
 }
 
 impl StateChangeAs4 {
@@ -634,8 +635,8 @@ impl StateChangeAs4 {
                 );
             }
         };
-        let old_state = parser.parse_u16_be()?;
-        let new_state = parser.parse_u16_be()?;
+        let old_state = parser.parse_u16_be()?.into();
+        let new_state = parser.parse_u16_be()?.into();
 
         Ok(
             StateChangeAs4 {

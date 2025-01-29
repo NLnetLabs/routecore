@@ -1,9 +1,12 @@
-use crate::bgp::message::OpenMessage;
+use crate::{bgp::message::OpenMessage, typeenum};
 use bytes::Bytes;
 use log::debug;
 use std::time::Instant;
 
 use super::session::BasicConfig;
+
+#[cfg(feature = "serde")]
+use serde::{Serialize, Deserialize};
 
 // The SessionAttributes struct keeps track of all the
 // parameters/counters/values as described in RFC4271. Fields that we
@@ -158,15 +161,16 @@ impl Default for SessionAttributes {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum State {
-    Idle,
-    Connect,
-    Active,
-    OpenSent,
-    OpenConfirm,
-    Established,
-}
+typeenum!(State, u16,
+    {
+    1 => Idle,
+    2 => Connect,
+    3 => Active,
+    4 => OpenSent,
+    5 => OpenConfirm,
+    6 => Established,
+    }
+);
 
 #[derive(Clone, Debug)]
 pub enum Event {
