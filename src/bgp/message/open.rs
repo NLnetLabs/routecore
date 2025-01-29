@@ -497,6 +497,12 @@ impl<Octs: Octets> Capability<Octs> {
                 parser.advance(domain_len)?;
             },
             CapabilityType::SoftwareVersion => {
+                // As long as this Capability is not stable, jump over it
+                let len = parser.parse_u8()? as usize;
+                parser.advance(len)?;
+            },
+            CapabilityType::PathsLimit => {
+                // As long as this Capability is not stable, jump over it
                 let len = parser.parse_u8()? as usize;
                 parser.advance(len)?;
             },
@@ -713,6 +719,7 @@ typeenum!(
         71 => LongLivedGracefulRestart,
         73 => FQDN,
         75 => SoftwareVersion,
+        76 => PathsLimit,
         128 => PrestandardRouteRefresh,
         130 => PrestandardOutboundRouteFiltering,
         131 => PrestandardMultisession,
