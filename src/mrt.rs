@@ -1,9 +1,10 @@
 #![allow(dead_code)]
 use octseq::{Octets, OctetsFrom, Parser};
 use crate::bgp::fsm::state_machine::State;
+use crate::bgp::message::SessionConfig;
 use crate::bgp::nlri::common::{parse_v4_prefix, parse_v6_prefix};
 use crate::bgp::types::AfiSafiType;
-use crate::bgp::ParseError;
+use crate::bgp::{message::Message as BgpMsg, ParseError};
 use crate::util::parser::{parse_ipv4addr, parse_ipv6addr};
 use crate::{bgp::types::Afi, typeenum};
 use inetnum::{addr::Prefix, asn::Asn};
@@ -36,6 +37,7 @@ pub struct CommonHeader<'a, Octs> {
     msg_type: MessageType,
     msg_subtype: MessageSubType,
     length: u32,
+    timestamp_mus: u32, // only set in Extended Timestamp message types (_ET)
     message: Parser<'a, Octs>
 }
 impl<Octs: Octets> CommonHeader<'_, Octs> {
@@ -60,7 +62,7 @@ impl<'a, Octs: Octets> CommonHeader<'a, Octs> {
                     parser.parse_u16_be()?.into()
                 )
             }
-            MessageType::Bgp4Mp => {
+            MessageType::Bgp4Mp | MessageType::Bgp4MpEt => {
                 MessageSubType::Bgp4MpSubType(
                     parser.parse_u16_be()?.into()
                 )
@@ -72,6 +74,15 @@ impl<'a, Octs: Octets> CommonHeader<'a, Octs> {
         };
 
         let length = parser.parse_u32_be()?;
+        let (timestamp_mus, length) = match msg_type {
+            MessageType::Bgp4MpEt
+                | MessageType::IsisEt
+                | MessageType::Ospfv3Et => {
+                    (parser.parse_u32_be()?, length - 4 )
+                }
+                _ => (0, length)
+        };
+
         let message = parser.parse_parser(length as usize)?;
 
         Ok( CommonHeader {
@@ -79,7 +90,8 @@ impl<'a, Octs: Octets> CommonHeader<'a, Octs> {
                 msg_type,
                 msg_subtype,
                 length,
-                message
+                message,
+                timestamp_mus,
         })
     }
 }
@@ -592,11 +604,19 @@ impl StateChange {
                 peer_addr,
                 local_addr,
                 old_state,
-                new_state
+                new_state,
             }
         )
-
     }
+
+    pub fn peer_asn(&self) -> Asn { self.peer_asn }
+    pub fn local_asn(&self) -> Asn { self.local_asn }
+    pub fn interface(&self) -> u16 { self.interface }
+    pub fn afi(&self) -> Afi { self.afi }
+    pub fn peer_addr(&self) -> IpAddr { self.peer_addr }
+    pub fn local_addr(&self) -> IpAddr { self.local_addr }
+    pub fn old_state(&self) -> State { self.old_state }
+    pub fn new_state(&self) -> State { self.new_state }
 }
 
 #[derive(Debug)]
@@ -650,7 +670,30 @@ impl StateChangeAs4 {
                 new_state
             }
         )
+    }
 
+    pub fn peer_asn(&self) -> Asn { self.peer_asn }
+    pub fn local_asn(&self) -> Asn { self.local_asn }
+    pub fn interface(&self) -> u16 { self.interface }
+    pub fn afi(&self) -> Afi { self.afi }
+    pub fn peer_addr(&self) -> IpAddr { self.peer_addr }
+    pub fn local_addr(&self) -> IpAddr { self.local_addr }
+    pub fn old_state(&self) -> State { self.old_state }
+    pub fn new_state(&self) -> State { self.new_state }
+}
+
+impl From<StateChange> for StateChangeAs4 {
+    fn from(value: StateChange) -> Self {
+        Self {
+            peer_asn: value.peer_asn,
+            local_asn: value.local_asn,
+            interface: value.interface,
+            afi: value.afi,
+            peer_addr: value.peer_addr,
+            local_addr: value.local_addr,
+            old_state: value.old_state,
+            new_state: value.new_state
+        }
     }
 }
 
@@ -752,10 +795,35 @@ impl<'a, Octs: Octets> MessageAs4<'a, Octs> {
         )
 
     }
+
+    pub fn bgp_msg(&self) -> Result<BgpMsg<&[u8]>, ParseError> {
+        BgpMsg::from_octets(
+            self.bgp_msg.peek_all(),
+            Some(&SessionConfig::modern())
+        )
+    }
+
+    pub fn peer_asn(&self) -> Asn { self.peer_asn }
+    pub fn local_asn(&self) -> Asn { self.local_asn }
+    pub fn interface(&self) -> u16 { self.interface }
+    pub fn afi(&self) -> Afi { self.afi }
+    pub fn peer_addr(&self) -> IpAddr { self.peer_addr }
+    pub fn local_addr(&self) -> IpAddr { self.local_addr }
 }
 
-
-
+impl<'a, Octs> From<Message<'a, Octs>> for MessageAs4<'a, Octs> {
+    fn from(value: Message<'a, Octs>) -> Self {
+        Self {
+            peer_asn: value.peer_asn,
+            local_asn: value.local_asn,
+            interface: value.interface,
+            afi: value.afi,
+            peer_addr: value.peer_addr,
+            local_addr: value.local_addr,
+            bgp_msg: value.bgp_msg
+        }
+    }
+}
 
 /// Iterator over BGP4MP_MESSAGE_AS4 entries
 pub struct UpdateIterator<'a, Octs> {
@@ -766,29 +834,25 @@ impl<'a, Octs: Octets> Iterator for UpdateIterator<'a, Octs> {
     type Item = Bgp4Mp<'a, Octs>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.parser.remaining() == 0 {
-            return None;
-        }
         loop {
+            if self.parser.remaining() == 0 {
+                return None;
+            }
             let mut m = CommonHeader::parse(&mut self.parser)
                 .inspect_err(|e| eprintln!(
                     "failed to parse CommonHeader, fusing iterator: {e}"
                 )).ok()?;
-            if m.msg_type != MessageType::Bgp4Mp {
-                eprintln!("not MessageAs4 but {:?}::{:?}, advancing",
-                    m.msg_type,
-                    m.msg_subtype
-                    );
-                continue;
+
+            match m.msg_type {
+                MessageType::Bgp4Mp | MessageType::Bgp4MpEt => { }
+                _ =>  {
+                    continue;
+                }
             }
 
             let subtype = if let MessageSubType::Bgp4MpSubType(subtype) = m.msg_subtype {
                 subtype
             } else {
-                eprintln!("not MessageAs4 but {:?}::{:?}, advancing",
-                    m.msg_type,
-                    m.msg_subtype
-                    );
                 continue;
             };
             let res = match subtype {
