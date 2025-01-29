@@ -1,3 +1,22 @@
+## Unreleased new version
+
+
+Breaking changes
+
+
+Bug fixes
+
+
+New
+
+
+Other Changes
+
+
+Known limitations
+
+
+
 ## 0.5.1
 
 Released 2025-01-29.
