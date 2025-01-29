@@ -1,7 +1,6 @@
-## Unreleased new version
+## 0.5.1
 
-
-Breaking changes
+Released 2025-01-29.
 
 Bug fixes
 
@@ -12,13 +11,18 @@ Bug fixes
 New
 
 * Introduce methods on `AsPath` to more ergonomically use paths comprised of a
-  single 'AS_SEQUENCE'.
+  single _AS_SEQUENCE_.
+* The MRT reader, still gated with the feature flag, now supports reading from
+  `.bz2` directly (in addition to `.gz`). Support for the _ExtendedTime_ message
+  types is added as well. This means we can process files from the RouteViews
+  archives.
 
 
 Other changes
 
-
-Known limitations/issues
+* The hashing of, and comparison between, BMP _PerPeerHeaders_ now includes
+  the _PeerFlags_. This way, the `RibType` is part of what defines a
+  `PerPeerHeader` to be unique.
 
 
 
