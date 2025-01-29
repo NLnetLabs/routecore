@@ -373,7 +373,7 @@ impl<Octs: Octets> PerPeerHeader<Octs> {
         -> Result<(), ParseError>
     {
         let peer_type = parser.parse_u8()?;
-        if peer_type > 2 {
+        if peer_type > 3 {
             return Err(ParseError::form_error("Unknown peer type in PPH"));
         }
         parser.advance(41)?;
@@ -433,6 +433,13 @@ impl<Octets: AsRef<[u8]>> PerPeerHeader<Octets> {
         match self.flags() & 0x10 == 0x10 {
             false => RibType::AdjRibIn,
             true => RibType::AdjRibOut
+        }
+    }
+    pub fn rib_type(&self) -> RibType {
+        if self.peer_type() == PeerType::LocalRibInstance {
+            RibType::LocRib
+        } else {
+            self.adj_rib_type()
         }
     }
 
@@ -499,7 +506,7 @@ impl<Octets: AsRef<[u8]>> Display for PerPeerHeader<Octets> {
 impl<Octets: AsRef<[u8]>> Hash for PerPeerHeader<Octets> {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.peer_type().hash(state);
-        //self.flags().hash(state);
+        self.flags().hash(state);
         self.distinguisher().hash(state);
         self.address().hash(state);
         self.asn().hash(state);
@@ -510,7 +517,7 @@ impl<Octets: AsRef<[u8]>> Hash for PerPeerHeader<Octets> {
 impl<Octets: AsRef<[u8]>> PartialEq for PerPeerHeader<Octets> {
     fn eq(&self, other: &Self) -> bool {
         self.peer_type() == other.peer_type()
-            //&& self.flags() == other.flags()
+            && self.flags() == other.flags()
             && self.distinguisher() == other.distinguisher()
             && self.address() == other.address()
             && self.asn() == other.asn()
@@ -536,14 +543,14 @@ typeenum!(
 );
 
 
-typeenum!(
-    /// Specify which RIB the contents of a message originated from.
-    RibType, u8,
-    {
-        0 => AdjRibIn,
-        1 => AdjRibOut
-    }
-);
+/// Specify which RIB the contents of a message originated from.
+#[derive(Clone, Copy, Debug, Hash, Eq, Ord, PartialEq, PartialOrd)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+pub enum RibType {
+    AdjRibIn,
+    AdjRibOut,
+    LocRib,
+}
 
 
 //--- Specific Message types -------------------------------------------------
