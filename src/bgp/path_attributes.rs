@@ -859,7 +859,7 @@ pub struct UnimplementedWireformat<'a, Octs: Octets> {
     value: Parser<'a, Octs>,
 }
 
-impl<'a, Octs: Octets> fmt::Debug for UnimplementedWireformat<'a, Octs> {
+impl<Octs: Octets> fmt::Debug for UnimplementedWireformat<'_, Octs> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{:08b} {} {:02x?}",
            u8::from(self.flags()), self.type_code(), self.value()
@@ -965,13 +965,13 @@ pub struct PathAttributes<'a, Octs> {
     pub pdu_parse_info: PduParseInfo,
 }
 
-impl<'a, Octs> Clone for PathAttributes<'a, Octs> {
+impl<Octs> Clone for PathAttributes<'_, Octs> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<'a, Octs> Copy for PathAttributes<'a, Octs> { }
+impl<Octs> Copy for PathAttributes<'_, Octs> { }
 
 impl<'a, Octs: Octets> PathAttributes<'a, Octs> {
     pub fn new(parser: Parser<'_, Octs>, pdu_parse_info: PduParseInfo)

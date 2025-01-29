@@ -533,13 +533,13 @@ pub enum Bgp4Mp<'a, Octs> {
     //MessageAs4Local(MessageAs4Local),
 }
 
-impl<'a, Octs> From<StateChange> for Bgp4Mp<'a, Octs> {
+impl<Octs> From<StateChange> for Bgp4Mp<'_, Octs> {
     fn from(msg: StateChange) -> Self {
         Self::StateChange(msg)
     }
 }
 
-impl<'a, Octs> From<StateChangeAs4> for Bgp4Mp<'a, Octs> {
+impl<Octs> From<StateChangeAs4> for Bgp4Mp<'_, Octs> {
     fn from(msg: StateChangeAs4) -> Self {
         Self::StateChangeAs4(msg)
     }

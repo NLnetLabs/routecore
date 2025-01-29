@@ -267,7 +267,7 @@ pub struct LabelsIterator<'a, Octs> {
 /// Iterate over MPLS labels as they occur in BGP NLRI.
 ///
 /// These are the 3 byte, no-TTL style labels.
-impl<'a, O: AsRef<[u8]>> Iterator for LabelsIterator<'a, O> {
+impl<O: AsRef<[u8]>> Iterator for LabelsIterator<'_, O> {
     type Item = Label;
 
     fn next(&mut self) -> Option<Self::Item> {

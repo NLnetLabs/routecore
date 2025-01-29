@@ -137,7 +137,7 @@ impl<Octets: AsRef<[u8]>> AsRef<[u8]> for RouteMirroring<Octets> {
 
 //--- Parsing and impl of the Message enum wrapper ---------------------------
 
-impl<'a, Octs: Octets + 'a> Message<Octs> {
+impl<Octs: Octets> Message<Octs> {
     pub fn from_octets(octets: Octs) -> Result<Self, ParseError> {
         let msg_type = {
             let mut parser = Parser::from_ref(&octets);
@@ -1180,7 +1180,7 @@ impl<'a> InformationTlv<'a> {
     }
 }
 
-impl<'a> Display for InformationTlv<'a> {
+impl Display for InformationTlv<'_> {
     fn fmt(&self, f: &mut Formatter) -> FmtResult {
         match self.typ() {
             InformationTlvType::String
@@ -1406,7 +1406,7 @@ impl <'a>StatIter<'a> {
         }
     }
 }
-impl <'a>Iterator for StatIter<'a> {
+impl Iterator for StatIter<'_> {
     type Item = Stat;
     fn next(&mut self) -> Option<Self::Item> {
         if self.left > 0 {

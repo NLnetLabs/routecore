@@ -25,7 +25,7 @@ pub struct OrdRoute<'a, OS> {
     _strategy: std::marker::PhantomData<OS>,
 }
 
-impl<'a, OS> OrdRoute<'a, OS> {
+impl<OS> OrdRoute<'_, OS> {
     /// Check if all required path attributes are present and valid.
     ///
     /// This checks that:
@@ -201,7 +201,7 @@ impl OrdStrat for SkipMed {
     }
 }
 
-impl<'a, OS: OrdStrat> PartialOrd for OrdRoute<'a, OS> {
+impl<OS: OrdStrat> PartialOrd for OrdRoute<'_, OS> {
     fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
         Some(self.cmp(other))
     }
@@ -216,7 +216,7 @@ impl<'a, OS: OrdStrat> PartialOrd for OrdRoute<'a, OS> {
 /// **NB**: for a route to be an actual candidate in the path selection
 /// process, additional checks need to be performed beforehand. Refer to
 /// [`eligible`] for the specific checks.
-impl<'a, OS: OrdStrat> Ord for OrdRoute<'a, OS> {
+impl<OS: OrdStrat> Ord for OrdRoute<'_, OS> {
     fn cmp(&self, other: &Self) -> cmp::Ordering {
         // Degree of preference
         // The DoP is taken from LOCAL_PREF in case of IBGP, or when that's
@@ -387,9 +387,9 @@ impl<'a, OS: OrdStrat> Ord for OrdRoute<'a, OS> {
     }
 }
 
-impl<'a, OS: OrdStrat> Eq for OrdRoute<'a, OS> {}
+impl<OS: OrdStrat> Eq for OrdRoute<'_, OS> {}
 
-impl<'a, OS: OrdStrat> PartialEq for OrdRoute<'a, OS> {
+impl<OS: OrdStrat> PartialEq for OrdRoute<'_, OS> {
     fn eq(&self, other: &Self) -> bool {
         self.cmp(other).is_eq()
     }

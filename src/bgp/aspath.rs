@@ -1237,7 +1237,7 @@ impl<'a, Octs> Asns<'a, Octs> {
     }
 }
 
-impl<'a, Octs: Octets> Iterator for Asns<'a, Octs> {
+impl<Octs: Octets> Iterator for Asns<'_, Octs> {
     type Item = Asn;
     // NB: if the underlying octets are not a multiple of four (or two, in
     // case of legacy ASNs), the iterator will yield None for that last

@@ -683,7 +683,7 @@ pub struct PduIterator<'a, Target, A> {
     session_config: &'a SessionConfig,
 }
 
-impl<'a, Target, A> Iterator for PduIterator<'a, Target, A>
+impl<Target, A> Iterator for PduIterator<'_, Target, A>
 where
     A: AfiSafiNlri + NlriCompose + Clone,
     Target: Clone + OctetsBuilder + FreezeBuilder + AsMut<[u8]> + octseq::Truncate,
