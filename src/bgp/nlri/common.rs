@@ -112,8 +112,13 @@ pub(super) fn parse_v6_prefix_for_len<R: Octets>(
     )
 }
 
+#[allow(clippy::manual_div_ceil)]
 pub(crate) const fn prefix_bits_to_bytes(bits: u8) -> usize {
+    // The div_ceil implemenation has an if statement and thus might introduce
+    // branching. As this is super hot code, we do not like that.
+    //(bits as usize).div_ceil(8)
     ((bits as usize) + 8 - 1) / 8
+
 }
 
 pub(super) fn compose_len_prefix(prefix: Prefix) -> usize {

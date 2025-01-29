@@ -1853,8 +1853,8 @@ pub struct Connection {
 }
 
 impl Connection {
-    /// Construct a `Connection` for a `TcpStream`.
     /*
+    /// Construct a `Connection` for a `TcpStream`.
      pub fn for_stream(stream: TcpStream) -> Connection {
         Connection {
             remote_addr: stream.peer_addr().unwrap(),

@@ -123,16 +123,6 @@ impl<Octs: Octets> AsRef<[u8]> for UpdateMessage<Octs> {
 //  +-----------------------------------------------------+
 //  |   Network Layer Reachability Information (variable) |
 //  +-----------------------------------------------------+
-
-impl<Octs: Octets> UpdateMessage<Octs> {
-    //pub fn for_slice_old(s: Octs, config: SessionConfig) -> Self {
-    //    Self {
-    //        octets: s,
-    //        session_config: config
-    //    }
-    //}
-}
-
 impl<Octs: Octets> UpdateMessage<Octs> {
     /// Print the UpdateMessage in a `text2pcap` compatible way.
     pub fn print_pcap(&self) {
