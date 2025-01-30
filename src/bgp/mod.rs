@@ -15,3 +15,6 @@ pub mod workshop;
 pub mod fsm;
 
 pub use crate::util::parser::ParseError;
+
+
+mod path_attributes_ng;
