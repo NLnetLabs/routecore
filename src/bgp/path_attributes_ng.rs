@@ -1,27 +1,96 @@
+//! Path Attributes, revised, once again
+//!
+//! Yet another attempt at doing Path Attributes in a nice way. This attempt
+//! is designed around the following requirements, observations and lessons
+//! learned:
+//! - we want typed getters, a la attributes.get::<Communities>() 
+//! - all attribute types have an immutable, non-allocating wireformat version
+//! - and, a mutable, possibly allocating associated type
+//! - perhaps for some, it makes sense to introduce Cow variants at some point
+//! - everything is based on a PathAttributes blob, implementating Iterator,
+//!   yielding `RawAttribute`s. For attribute types we support,
+//!   TryFrom<RawAttribute> is implemented and serves as the 'parser'.
+//! - we do not want Cow on the immutable vs mutable level, because that
+//!   introduces an enum match for every single action while we probably do
+//!   99% read actions on immutable attributes.
+//! - maybe we want to multiple types of getters:
+//!     - one returning Option<T> 
+//!     - one returning Option<Result<T, RawAttribute<_>>
+//!       the first one returns None in case of a parse fail, the latter
+//!       returns the raw attribute that apparently had the typecode of the
+//!       requested thing, but is somehow considered invalid. the caller can
+//!       then decide what to do with it. And we can make a 'verify all
+//!       attributes' method based on it.
+//! 
+//! Open issues:
+//! - we need to pass 'PduParseInfo' kind of stuff around, e.g. 2 vs 4 byte
+//!   ASNs
+//! - similarly, we want to pass a 'StrictnessLevel' around
+//!     - should this be on the PathAttributes (iterator) level, or on an
+//!       individual level?
+//! - perhaps on the iterator level it allows for more flexible recovery, i.e.
+//!   one can attempt to iterate again with a different level / ppi
+//! - similar to the Cow enum, maybe we want to make the StrictnessLevel a
+//!   full type instead of matching on it in runtime
+//!
+//!
 #![allow(dead_code)]
+
+#[cfg(feature = "serde")]
+use serde::{Serialize, Deserialize};
+use crate::typeenum;
+
+use super::message::PduParseInfo;
+
+
+//#[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
+//pub enum PathAttributeType {
+//    Origin = 1,
+//    Communities = 8,
+//}
+
+typeenum!(
+    PathAttributeType, u8,
+    {
+        1 => Origin,
+        2 => AsPath,
+        8 => Communities,
+    }
+);
 
 #[derive(Debug, PartialEq)]
 pub struct Origin(pub u8);
 
+#[derive(Debug)]
+pub struct AsPath<T: AsRef<[u8]>> {
+    four_byte_asns: bool,
+    pub raw: T
+}
+
+
 #[derive(Debug, PartialEq)]
 pub struct Communities<T: AsRef<[u8]>>(pub T);
 
-pub struct Community(u8);
+#[derive(Copy, Clone, Debug)]
+pub struct Community(u32);
+
+#[derive(Clone, Debug)]
 pub struct OwnedCommunities(pub Vec<Community>);
 
-//pub enum PathAttribute {
-//    Origin(Origin),
-//    Communities(Communities),
-//}
-
-
-
-pub struct Attributes<T: AsRef<[u8]>>{
-    pub raw: T,
+impl OwnedCommunities {
+    pub fn foo(&mut self) -> usize {
+        self.0.push(Community(12));
+        12
+    }
 }
 
-pub struct AttributesIter<'a, T: 'a + AsRef<[u8]>> {
-    raw_attributes: &'a Attributes<T>,
+pub struct PathAttributes<T: AsRef<[u8]>>{
+    ppi: PduParseInfo,
+    raw: T,
+}
+
+pub struct PathAttributesIter<'a, T: 'a + AsRef<[u8]>> {
+    raw_attributes: &'a PathAttributes<T>,
     idx: usize,
 }
 
@@ -34,8 +103,8 @@ impl<T: AsRef<[u8]>> RawAttribute<T> {
     pub fn flags(&self) -> u8 {
         self.raw.as_ref()[0]
     }
-    pub fn type_code(&self) -> u8 {
-        self.raw.as_ref()[1]
+    pub fn type_code(&self) -> PathAttributeType {
+        self.raw.as_ref()[1].into()
     }
     pub fn length(&self) -> usize {
         usize::from(self.raw.as_ref()[2])
@@ -52,7 +121,7 @@ impl<'a> RawAttribute<&'a [u8]> {
     }
 }
 
-impl<'a, T: 'a + AsRef<[u8]>> Iterator for AttributesIter<'a, T> {
+impl<'a, T: 'a + AsRef<[u8]>> Iterator for PathAttributesIter<'a, T> {
     type Item = RawAttribute<&'a [u8]>;
     fn next(&mut self) -> Option<Self::Item> {
         if self.idx == self.raw_attributes.raw.as_ref().len() {
@@ -69,40 +138,71 @@ impl<'a, T: 'a + AsRef<[u8]>> Iterator for AttributesIter<'a, T> {
     }    
 }
 
-impl<'a, T: 'a + AsRef<[u8]>> Attributes<T> {
+impl<'a, T: 'a + AsRef<[u8]>> PathAttributes<T> {
     
-    //pub fn get<T>(&self) -> Option<T> {
-    //    self.iter().find(|a|
-    //        a.
-    //}
+    pub fn new(raw: T) -> Self {
+        Self {
+            ppi: PduParseInfo::modern(),
+            raw
+        }
+        
+    }
     
     pub fn get<PA: 'a + Wireformat<'a>>(&'a self) -> Option<PA> {
         self.get_by_type_code(PA::TYPECODE).and_then(|raw|
-            //PA::parse(raw.value()).unwrap()
             PA::try_from(raw).ok()
         )
     }
+
+    pub fn get_or_raw<PA: 'a + Wireformat<'a>>(&'a self) -> Option<Result<PA, PA::Error>> {
+        self.get_by_type_code(PA::TYPECODE).map(|raw|
+            PA::try_from(raw)
+        )
+    }
     
-    pub fn get_by_type_code(&'a self, type_code: u8) -> Option<RawAttribute<&'a [u8]>> {
+    pub fn get_by_type_code(&'a self, type_code: impl Into<PathAttributeType>) -> Option<RawAttribute<&'a [u8]>> {
+        let type_code = type_code.into();
         self.iter().find(|raw| raw.type_code() == type_code) 
     }
 
-    pub fn iter(&self) -> AttributesIter<T> {
-        AttributesIter {
+    pub fn iter(&self) -> PathAttributesIter<T> {
+        PathAttributesIter {
             raw_attributes: self,
             idx: 0
         }
     }
+
+    pub fn validate(&self) -> bool {
+        self.iter().all(|raw|{
+            match raw.type_code() {
+                PathAttributeType::Origin => Origin::try_from(raw).is_ok(),
+                PathAttributeType::AsPath => AsPath::try_from(raw).is_ok(),
+                PathAttributeType::Communities => Communities::try_from(raw).is_ok(),
+                PathAttributeType::Unimplemented(_) => false, // TODO maybe
+                                                              // true
+                                                              // depending on
+                                                              // strictnesslevel
+            }
+        })
+    }
 }
 
-impl TryFrom<RawAttribute<&[u8]>> for Origin {
-    type Error = &'static str;
+impl<'a> TryFrom<RawAttribute<&'a[u8]>> for Origin {
+    type Error = (RawAttribute<&'a[u8]>, &'static str);
 
-    fn try_from(raw: RawAttribute<&[u8]>) -> Result<Self, Self::Error> {
+    fn try_from(raw: RawAttribute<&'a[u8]>) -> Result<Self, Self::Error> {
         if raw.length() != 1 {
-            return Err("wrong length for Origin");
+            return Err((raw, "wrong length for Origin"));
         }
         Ok(Origin(raw.value()[0]))
+    }
+}
+
+impl<'a> TryFrom<RawAttribute<&'a[u8]>> for AsPath<&'a [u8]> {
+    type Error = (RawAttribute<&'a[u8]>, &'static str);
+
+    fn try_from(raw: RawAttribute<&'a[u8]>) -> Result<Self, Self::Error> {
+        Ok(AsPath{four_byte_asns: true, raw: raw.into_value()})
     }
 }
 
@@ -113,14 +213,13 @@ impl<'a> TryFrom<RawAttribute<&'a [u8]>> for Communities<&'a [u8]> {
         if raw.length() % 4 != 0 {
             return Err("invalid length for Communities");
         }
-        //Ok(Communities(&raw.into_value()[3..]))
         Ok(Communities(raw.into_value()))
     }
 }
 
 
 pub trait Wireformat<'a> : TryFrom<RawAttribute<&'a [u8]>> {
-    const TYPECODE: u8;
+    const TYPECODE: u8; // or PathAttributeType ?
     //const FLAGS;
     type Owned;
     
@@ -216,14 +315,15 @@ impl<'a> Wireformat<'a> for Communities<&'a [u8]> {
         //todo!()
     }
     
-    fn parse_owned(p: impl AsRef<[u8]>) -> Result<Self::Owned, MyError> {
-        Ok(
-            OwnedCommunities(
-                p.as_ref()[0..4].iter()
-                .map(|b| Community(*b))
-                .collect::<Vec<_>>()
-            )
-        )
+    fn parse_owned(_p: impl AsRef<[u8]>) -> Result<Self::Owned, MyError> {
+        todo!()
+        //Ok(
+        //    OwnedCommunities(
+        //        p.as_ref()[0..4].iter()
+        //        .map(|b| Community(*b))
+        //        .collect::<Vec<_>>()
+        //    )
+        //)
     }
 }
 
@@ -287,16 +387,16 @@ mod tests {
             0,8,4,  1,2,3,4 // Communities
         ];
 
-        let attributes = Attributes{raw: &raw};
+        let attributes = PathAttributes::new(&raw);
         assert_eq!(attributes.iter().count(), 2);
 
-        let attributes = Attributes{raw: &raw[..]};
+        let attributes = PathAttributes::new(&raw[..]);
         assert_eq!(attributes.iter().count(), 2);
 
-        let attributes = Attributes{raw: bytes::Bytes::copy_from_slice(&raw[..])};
+        let attributes = PathAttributes::new(bytes::Bytes::copy_from_slice(&raw[..]));
         assert_eq!(attributes.iter().count(), 2);
 
-        let attributes = Attributes{raw};
+        let attributes = PathAttributes::new(raw);
         assert_eq!(attributes.iter().count(), 2);
 
         assert_eq!(attributes.get::<Origin>(), Some(Origin(1)));
@@ -307,13 +407,20 @@ mod tests {
     fn parse_origin() {
         let raw = vec![0, 1, 1, 1];
         let raw_attr = RawAttribute{raw: &raw};
-        assert_eq!(raw_attr.type_code(), Origin::TYPECODE);
+        assert_eq!(raw_attr.type_code(), Origin::TYPECODE.into());
         let origin = Origin::parse(raw_attr.value()).unwrap();
         assert_eq!(origin, Origin(1));
     }
 
     #[test]
-    fn cow() {
-        //let raw = Attributes
+    fn origin_invalid_length() {
+        let raw = vec![0, 1, 2, 1, 2]; // Origin with length 2 is invalid
+        let pas = PathAttributes::new(&raw);
+        if let Some(Err((_attr, _e))) = pas.get_or_raw::<Origin>() {
+
+        } else {
+            panic!()
+        }
     }
+
 }
