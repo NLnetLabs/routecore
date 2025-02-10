@@ -55,7 +55,7 @@ typeenum!(
     }
 );
 
-#[derive(Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Origin(pub u8);
 
 #[derive(Debug)]
@@ -168,7 +168,7 @@ impl<T: AsRef<[u8]>> PathAttributes<TwoByteAsns, T> {
     }
 }
 
-impl<'a, PPI,  T: 'a + AsRef<[u8]>> PathAttributes<PPI, T> {
+impl<'a, PPI, T: 'a + AsRef<[u8]>> PathAttributes<PPI, T> {
     pub fn iter(&self) -> PathAttributesIter<PPI, T> {
         PathAttributesIter {
             raw_attributes: self,
@@ -194,19 +194,6 @@ impl<'a, PPI: PduParseInfo, T: 'a + AsRef<[u8]>> PathAttributes<PPI, T> {
             PA::try_from(raw)
         )
     }
-    
-    //pub fn get_by_type_code(&'a self, type_code: impl Into<PathAttributeType>) -> Option<RawAttribute<PPI, &'a [u8]>> {
-    //    let type_code = type_code.into();
-    //    self.iter().find(|raw| raw.type_code() == type_code) 
-    //}
-
-    //pub fn iter(&self) -> PathAttributesIter<PPI, T> {
-    //    PathAttributesIter {
-    //        raw_attributes: self,
-    //        idx: 0
-    //    }
-    //}
-
 }
 
 
@@ -237,6 +224,8 @@ impl<'a, PPI: PduParseInfo> TryFrom<RawAttribute<PPI, &'a[u8]>> for Origin {
         Ok(Origin(raw.value()[0]))
     }
 }
+
+
 
 impl<'a> TryFrom<RawAttribute<TwoByteAsns, &'a[u8]>> for AsPath<&'a [u8]> {
     type Error = (RawAttribute<TwoByteAsns, &'a[u8]>, &'static str);
@@ -272,11 +261,60 @@ pub trait Wireformat<'a> {
     //const FLAGS;
     type Owned;
     
-    //fn parse<T: AsRef<[u8]>>(p: T) -> Result<Self, MyError> where Self:  Sized;
-    fn parse(p: &'a [u8]) -> Result<Self, MyError> where Self:  'a + Sized;
-    
-    fn parse_owned(p: impl AsRef<[u8]>) -> Result<Self::Owned, MyError>;
+    fn owned(&self) -> Self::Owned;
 
+    //fn parse<T: 'a + AsRef<[u8]>>(p: T) -> Result<Self, MyError> where Self:  Sized;
+    //fn parse(p: &'a [u8]) -> Result<Self, MyError> where Self:  'a + Sized;
+
+}
+
+impl Wireformat<'_> for Origin {
+    const TYPECODE: u8 = 1;
+    type Owned = Self;
+    
+    ////fn parse(p: &[u8]) -> Result<Self, MyError> {
+    //fn parse<T: '_ + AsRef<[u8]>>(p: T) -> Result<Self, MyError> {
+    //    Ok(Self(*p.as_ref().get(0).unwrap()))
+    //}
+
+    fn owned(&self) -> Self::Owned {
+        *self
+    }
+}
+
+impl<'a> Wireformat<'a> for AsPath<&'a [u8]> {
+    const TYPECODE: u8 = 2;
+    type Owned = super::aspath::HopPath;
+
+    // TODO
+    fn owned(&self) -> Self::Owned {
+        if self.four_byte_asns {
+            super::aspath::HopPath::new()
+        } else {
+            dbg!("TODO");
+            super::aspath::HopPath::new()
+        }
+
+    }
+
+}
+
+impl<'a> Wireformat<'a> for Communities<&'a [u8]> {
+    const TYPECODE: u8 = 8;
+    type Owned = OwnedCommunities;
+    
+    //fn parse<T: 'a + AsRef<[u8]>>(p: T) -> Result<Communities<&'a [u8]>, MyError> {
+    //    if p.as_ref().len() % 4 != 0 {
+    //        return Err(MyError);
+    //    }
+    //    //Ok(Communities(p.as_ref()[..]))
+    //    todo!()
+    //}
+    
+
+    fn owned(&self) -> Self::Owned {
+        todo!()
+    }
 }
 
 trait ComposeAttribute {
@@ -306,6 +344,7 @@ trait ComposeAttribute {
         self.compose_header(target)?;
         self.compose_value(target)
     }
+
     
     fn compose_header<Target: OctetsBuilder>(&self, target: &mut Target)
         -> Result<(), Target::AppendError>
@@ -331,49 +370,6 @@ trait ComposeAttribute {
     fn compose_value<Target: OctetsBuilder>(&self, target: &mut Target)
         -> Result<(), Target::AppendError>;
     */
-}
-
-impl Wireformat<'_> for Origin {
-    const TYPECODE: u8 = 1;
-    type Owned = Self;
-    
-    fn parse(p: &[u8]) -> Result<Self, MyError> {
-        Ok(Self(*p.as_ref().get(0).unwrap()))
-    }
-
-    fn parse_owned(_p: impl AsRef<[u8]>) -> Result<Self::Owned, MyError> {
-        todo!()
-    }
-    
-    //fn parse_owned(p: impl AsRef<[u8]>) -> Result<Self::Owned, MyError> {
-    //    Self::parse(p)
-    //}
-}
-
-
-impl<'a> Wireformat<'a> for Communities<&'a [u8]> {
-    const TYPECODE: u8 = 8;
-    type Owned = OwnedCommunities;
-    
-    fn parse(p: &'a [u8]) -> Result<Communities<&'a [u8]>, MyError> {
-        if p.as_ref().len() % 4 != 0 {
-            return Err(MyError);
-        }
-        Ok(Communities(p))
-        //Ok(Communities(p))
-        //todo!()
-    }
-    
-    fn parse_owned(_p: impl AsRef<[u8]>) -> Result<Self::Owned, MyError> {
-        todo!()
-        //Ok(
-        //    OwnedCommunities(
-        //        p.as_ref()[0..4].iter()
-        //        .map(|b| Community(*b))
-        //        .collect::<Vec<_>>()
-        //    )
-        //)
-    }
 }
 
 
@@ -449,17 +445,17 @@ mod tests {
         assert_eq!(attributes.iter().count(), 2);
 
         assert_eq!(attributes.get::<Origin>(), Some(Origin(1)));
-        //assert_eq!(attributes.get::<Communities>(), Some(TODO));
+        assert!(attributes.get::<Communities<_>>().is_some());
     }
 
-    #[test]
-    fn parse_origin() {
-        let raw = vec![0, 1, 1, 1];
-        let raw_attr = RawAttribute::<(), _>{ppi: std::marker::PhantomData, raw: &raw};
-        assert_eq!(raw_attr.type_code(), Origin::TYPECODE.into());
-        let origin = Origin::parse(raw_attr.value()).unwrap();
-        assert_eq!(origin, Origin(1));
-    }
+    //#[test]
+    //fn parse_origin() {
+    //    let raw = vec![0, 1, 1, 1];
+    //    let raw_attr = RawAttribute::<(), _>{ppi: std::marker::PhantomData, raw: &raw};
+    //    assert_eq!(raw_attr.type_code(), Origin::TYPECODE.into());
+    //    let origin = Origin::parse(raw_attr.value()).unwrap();
+    //    assert_eq!(origin, Origin(1));
+    //}
 
     #[test]
     fn origin_invalid_length() {
@@ -470,6 +466,20 @@ mod tests {
         } else {
             panic!()
         }
+    }
+
+
+    #[test]
+    fn aspath() {
+        //single SEQUENCE
+        let raw = vec![
+            0, 2, 18,
+        0x02, 0x04, 0x00, 0x00, 0x07, 0xeb, 0x00, 0x00,
+        0x89, 0xd0, 0x00, 0x04, 0x06, 0xdf, 0x00, 0x04,
+        0x24, 0x0d
+        ];
+        let attrs = PathAttributes::new(&raw);
+        let asp = attrs.get::<AsPath<_>>().unwrap();
     }
 
 }
