@@ -40,9 +40,6 @@
 use serde::{Serialize, Deserialize};
 use crate::typeenum;
 
-use super::message::PduParseInfo;
-
-
 //#[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
 //pub enum PathAttributeType {
 //    Origin = 1,
@@ -84,22 +81,36 @@ impl OwnedCommunities {
     }
 }
 
-pub struct PathAttributes<T: AsRef<[u8]>>{
-    ppi: PduParseInfo,
+pub struct PathAttributes<PPI, T: AsRef<[u8]>>{
+    ppi: std::marker::PhantomData::<PPI>,
     raw: T,
 }
 
-pub struct PathAttributesIter<'a, T: 'a + AsRef<[u8]>> {
-    raw_attributes: &'a PathAttributes<T>,
+/// Marker trait for stateful parsing
+pub trait PduParseInfo { }
+
+/// PPI marker type for 32bit ASNs;
+struct FourByteAsns;
+impl PduParseInfo for FourByteAsns { }
+
+/// PPI marker type for 16bit ASNs;
+struct TwoByteAsns;
+impl PduParseInfo for TwoByteAsns { }
+
+impl PduParseInfo for () {}
+
+pub struct PathAttributesIter<'a, PPI, T: 'a + AsRef<[u8]>> {
+    raw_attributes: &'a PathAttributes<PPI, T>,
     idx: usize,
 }
 
 #[derive(Copy, Clone, Debug)]
-pub struct RawAttribute<T: AsRef<[u8]>> {
+pub struct RawAttribute<PPI, T: AsRef<[u8]>> {
+    ppi: std::marker::PhantomData::<PPI>,
     raw: T
 }
 
-impl<T: AsRef<[u8]>> RawAttribute<T> {
+impl<PPI: PduParseInfo, T: AsRef<[u8]>> RawAttribute<PPI, T> {
     pub fn flags(&self) -> u8 {
         self.raw.as_ref()[0]
     }
@@ -115,14 +126,14 @@ impl<T: AsRef<[u8]>> RawAttribute<T> {
     }
 }
 
-impl<'a> RawAttribute<&'a [u8]> {
+impl<'a, PPI: PduParseInfo> RawAttribute<PPI, &'a [u8]> {
     pub fn into_value(self) -> &'a [u8] {
         &self.raw[3..]
     }
 }
 
-impl<'a, T: 'a + AsRef<[u8]>> Iterator for PathAttributesIter<'a, T> {
-    type Item = RawAttribute<&'a [u8]>;
+impl<'a, PPI: PduParseInfo, T: 'a + AsRef<[u8]>> Iterator for PathAttributesIter<'a, PPI, T> {
+    type Item = RawAttribute<PPI, &'a [u8]>;
     fn next(&mut self) -> Option<Self::Item> {
         if self.idx == self.raw_attributes.raw.as_ref().len() {
             return None
@@ -134,44 +145,59 @@ impl<'a, T: 'a + AsRef<[u8]>> Iterator for PathAttributesIter<'a, T> {
         let len: usize = raw[2].into();
         let res = &raw[..3+len];
         self.idx += 3 + len;
-        Some(RawAttribute{raw: res})
+        Some(RawAttribute{ppi: std::marker::PhantomData, raw: res})
     }    
 }
 
-impl<'a, T: 'a + AsRef<[u8]>> PathAttributes<T> {
-    
+impl<T: AsRef<[u8]>> PathAttributes<FourByteAsns, T> {
     pub fn new(raw: T) -> Self {
         Self {
-            ppi: PduParseInfo::modern(),
+            ppi: std::marker::PhantomData,
             raw
         }
         
     }
-    
-    pub fn get<PA: 'a + Wireformat<'a>>(&'a self) -> Option<PA> {
+}
+impl<T: AsRef<[u8]>> PathAttributes<TwoByteAsns, T> {
+    pub fn legacy(raw: T) -> Self {
+        Self {
+            ppi: std::marker::PhantomData,
+            raw
+        }
+        
+    }
+}
+impl<'a, PPI: PduParseInfo, T: 'a + AsRef<[u8]>> PathAttributes<PPI, T> {
+    //pub fn get<PA: 'a + Wireformat<'a, PPI>>(&'a self) -> Option<PA> {
+    pub fn get<PA: 'a + Wireformat<'a> + TryFrom<RawAttribute<PPI, &'a[u8]>>>(&'a self) -> Option<PA> {
         self.get_by_type_code(PA::TYPECODE).and_then(|raw|
             PA::try_from(raw).ok()
         )
     }
 
-    pub fn get_or_raw<PA: 'a + Wireformat<'a>>(&'a self) -> Option<Result<PA, PA::Error>> {
+    //pub fn get_or_raw<PA: 'a + Wireformat<'a, PPI>>(&'a self) -> Option<Result<PA, PA::Error>> {
+    pub fn get_or_raw<PA: 'a + Wireformat<'a> + TryFrom<RawAttribute<PPI, &'a[u8]>>>(&'a self) -> Option<Result<PA, PA::Error>> {
         self.get_by_type_code(PA::TYPECODE).map(|raw|
             PA::try_from(raw)
         )
     }
     
-    pub fn get_by_type_code(&'a self, type_code: impl Into<PathAttributeType>) -> Option<RawAttribute<&'a [u8]>> {
+    pub fn get_by_type_code(&'a self, type_code: impl Into<PathAttributeType>) -> Option<RawAttribute<PPI, &'a [u8]>> {
         let type_code = type_code.into();
         self.iter().find(|raw| raw.type_code() == type_code) 
     }
 
-    pub fn iter(&self) -> PathAttributesIter<T> {
+    pub fn iter(&self) -> PathAttributesIter<PPI, T> {
         PathAttributesIter {
             raw_attributes: self,
             idx: 0
         }
     }
 
+}
+
+
+impl<'a, T: 'a + AsRef<[u8]>> PathAttributes<FourByteAsns, T> {
     pub fn validate(&self) -> bool {
         self.iter().all(|raw|{
             match raw.type_code() {
@@ -187,10 +213,11 @@ impl<'a, T: 'a + AsRef<[u8]>> PathAttributes<T> {
     }
 }
 
-impl<'a> TryFrom<RawAttribute<&'a[u8]>> for Origin {
-    type Error = (RawAttribute<&'a[u8]>, &'static str);
 
-    fn try_from(raw: RawAttribute<&'a[u8]>) -> Result<Self, Self::Error> {
+impl<'a, PPI: PduParseInfo> TryFrom<RawAttribute<PPI, &'a[u8]>> for Origin {
+    type Error = (RawAttribute<PPI, &'a[u8]>, &'static str);
+
+    fn try_from(raw: RawAttribute<PPI, &'a[u8]>) -> Result<Self, Self::Error> {
         if raw.length() != 1 {
             return Err((raw, "wrong length for Origin"));
         }
@@ -198,18 +225,18 @@ impl<'a> TryFrom<RawAttribute<&'a[u8]>> for Origin {
     }
 }
 
-impl<'a> TryFrom<RawAttribute<&'a[u8]>> for AsPath<&'a [u8]> {
-    type Error = (RawAttribute<&'a[u8]>, &'static str);
+impl<'a> TryFrom<RawAttribute<FourByteAsns, &'a[u8]>> for AsPath<&'a [u8]> {
+    type Error = (RawAttribute<FourByteAsns, &'a[u8]>, &'static str);
 
-    fn try_from(raw: RawAttribute<&'a[u8]>) -> Result<Self, Self::Error> {
+    fn try_from(raw: RawAttribute<FourByteAsns, &'a[u8]>) -> Result<Self, Self::Error> {
         Ok(AsPath{four_byte_asns: true, raw: raw.into_value()})
     }
 }
 
-impl<'a> TryFrom<RawAttribute<&'a [u8]>> for Communities<&'a [u8]> {
+impl<'a, PPI: PduParseInfo> TryFrom<RawAttribute<PPI, &'a [u8]>> for Communities<&'a [u8]> {
     type Error = &'static str;
 
-    fn try_from(raw: RawAttribute<&'a [u8]>) -> Result<Self, Self::Error> {
+    fn try_from(raw: RawAttribute<PPI, &'a [u8]>) -> Result<Self, Self::Error> {
         if raw.length() % 4 != 0 {
             return Err("invalid length for Communities");
         }
@@ -218,7 +245,8 @@ impl<'a> TryFrom<RawAttribute<&'a [u8]>> for Communities<&'a [u8]> {
 }
 
 
-pub trait Wireformat<'a> : TryFrom<RawAttribute<&'a [u8]>> {
+//pub trait Wireformat<'a, PPI: PduParseInfo> : TryFrom<RawAttribute<PPI, &'a [u8]>> {
+pub trait Wireformat<'a> {
     const TYPECODE: u8; // or PathAttributeType ?
     //const FLAGS;
     type Owned;
@@ -406,7 +434,7 @@ mod tests {
     #[test]
     fn parse_origin() {
         let raw = vec![0, 1, 1, 1];
-        let raw_attr = RawAttribute{raw: &raw};
+        let raw_attr = RawAttribute::<(), _>{ppi: std::marker::PhantomData, raw: &raw};
         assert_eq!(raw_attr.type_code(), Origin::TYPECODE.into());
         let origin = Origin::parse(raw_attr.value()).unwrap();
         assert_eq!(origin, Origin(1));
