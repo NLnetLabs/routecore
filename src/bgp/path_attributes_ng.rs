@@ -110,7 +110,7 @@ pub struct RawAttribute<PPI, T: AsRef<[u8]>> {
     raw: T
 }
 
-impl<PPI: PduParseInfo, T: AsRef<[u8]>> RawAttribute<PPI, T> {
+impl<PPI, T: AsRef<[u8]>> RawAttribute<PPI, T> {
     pub fn flags(&self) -> u8 {
         self.raw.as_ref()[0]
     }
@@ -126,13 +126,13 @@ impl<PPI: PduParseInfo, T: AsRef<[u8]>> RawAttribute<PPI, T> {
     }
 }
 
-impl<'a, PPI: PduParseInfo> RawAttribute<PPI, &'a [u8]> {
+impl<'a, PPI> RawAttribute<PPI, &'a [u8]> {
     pub fn into_value(self) -> &'a [u8] {
         &self.raw[3..]
     }
 }
 
-impl<'a, PPI: PduParseInfo, T: 'a + AsRef<[u8]>> Iterator for PathAttributesIter<'a, PPI, T> {
+impl<'a, PPI, T: 'a + AsRef<[u8]>> Iterator for PathAttributesIter<'a, PPI, T> {
     type Item = RawAttribute<PPI, &'a [u8]>;
     fn next(&mut self) -> Option<Self::Item> {
         if self.idx == self.raw_attributes.raw.as_ref().len() {
@@ -167,6 +167,19 @@ impl<T: AsRef<[u8]>> PathAttributes<TwoByteAsns, T> {
         
     }
 }
+
+impl<'a, PPI,  T: 'a + AsRef<[u8]>> PathAttributes<PPI, T> {
+    pub fn iter(&self) -> PathAttributesIter<PPI, T> {
+        PathAttributesIter {
+            raw_attributes: self,
+            idx: 0
+        }
+    }
+    pub fn get_by_type_code(&'a self, type_code: impl Into<PathAttributeType>) -> Option<RawAttribute<PPI, &'a [u8]>> {
+        let type_code = type_code.into();
+        self.iter().find(|raw| raw.type_code() == type_code) 
+    }
+}
 impl<'a, PPI: PduParseInfo, T: 'a + AsRef<[u8]>> PathAttributes<PPI, T> {
     //pub fn get<PA: 'a + Wireformat<'a, PPI>>(&'a self) -> Option<PA> {
     pub fn get<PA: 'a + Wireformat<'a> + TryFrom<RawAttribute<PPI, &'a[u8]>>>(&'a self) -> Option<PA> {
@@ -182,17 +195,17 @@ impl<'a, PPI: PduParseInfo, T: 'a + AsRef<[u8]>> PathAttributes<PPI, T> {
         )
     }
     
-    pub fn get_by_type_code(&'a self, type_code: impl Into<PathAttributeType>) -> Option<RawAttribute<PPI, &'a [u8]>> {
-        let type_code = type_code.into();
-        self.iter().find(|raw| raw.type_code() == type_code) 
-    }
+    //pub fn get_by_type_code(&'a self, type_code: impl Into<PathAttributeType>) -> Option<RawAttribute<PPI, &'a [u8]>> {
+    //    let type_code = type_code.into();
+    //    self.iter().find(|raw| raw.type_code() == type_code) 
+    //}
 
-    pub fn iter(&self) -> PathAttributesIter<PPI, T> {
-        PathAttributesIter {
-            raw_attributes: self,
-            idx: 0
-        }
-    }
+    //pub fn iter(&self) -> PathAttributesIter<PPI, T> {
+    //    PathAttributesIter {
+    //        raw_attributes: self,
+    //        idx: 0
+    //    }
+    //}
 
 }
 
@@ -222,6 +235,14 @@ impl<'a, PPI: PduParseInfo> TryFrom<RawAttribute<PPI, &'a[u8]>> for Origin {
             return Err((raw, "wrong length for Origin"));
         }
         Ok(Origin(raw.value()[0]))
+    }
+}
+
+impl<'a> TryFrom<RawAttribute<TwoByteAsns, &'a[u8]>> for AsPath<&'a [u8]> {
+    type Error = (RawAttribute<TwoByteAsns, &'a[u8]>, &'static str);
+
+    fn try_from(raw: RawAttribute<TwoByteAsns, &'a[u8]>) -> Result<Self, Self::Error> {
+        Ok(AsPath{four_byte_asns: false, raw: raw.into_value()})
     }
 }
 
