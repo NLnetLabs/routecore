@@ -75,12 +75,6 @@ use crate::typeenum;
 
 use super::message::SessionConfig;
 
-//#[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
-//pub enum PathAttributeType {
-//    Origin = 1,
-//    Communities = 8,
-//}
-
 typeenum!(
     PathAttributeType, u8,
     {
@@ -95,11 +89,12 @@ typeenum!(
 /// XXX is this helpful or just cumbersome? We need multiple markings for e.g.
 /// AsPath, as that has two possible ASLs
 //pub trait PathAttribute<'a, ASL>: Wireformat<'a> + TryFromRaw<'a, ASL> + Validate { }
+//impl<'a, ASL> PathAttribute<'a, ASL> for Origin { }
+//impl<'a> PathAttribute<'a, FourByteAsns> for AsPath<&'a [u8]> { }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Origin(pub u8);
 
-//impl<'a, ASL> PathAttribute<'a, ASL> for Origin { }
 
 #[derive(Debug)]
 pub struct AsPath<ASL, T: AsRef<[u8]>> {
@@ -107,7 +102,13 @@ pub struct AsPath<ASL, T: AsRef<[u8]>> {
     pub raw: T
 }
 
-//impl<'a> PathAttribute<'a, FourByteAsns> for AsPath<&'a [u8]> { }
+/// ASL marker type for 32bit ASNs;
+struct FourByteAsns;
+
+/// ASL marker type for 16bit ASNs;
+struct TwoByteAsns;
+
+
 
 #[derive(Debug, PartialEq)]
 pub struct Communities<T: AsRef<[u8]>>(pub T);
@@ -158,17 +159,6 @@ impl<'sc, ASL, T: AsRef<[u8]>> PathAttributes<'sc, ASL, T> {
     }
 
 }
-
-/// Marker trait to conduct stateful parsing based on AsnLength (ASL).
-//pub trait AsnLength { }
-
-/// ASL marker type for 32bit ASNs;
-struct FourByteAsns;
-//impl AsnLength for FourByteAsns { }
-
-/// ASL marker type for 16bit ASNs;
-struct TwoByteAsns;
-//impl AsnLength for TwoByteAsns { }
 
 
 pub struct PathAttributesIter<'a, 'sc, ASL, T: 'a + AsRef<[u8]>> {
@@ -281,7 +271,6 @@ impl<'a, T: 'a + AsRef<[u8]>> PathAttributes<'_, FourByteAsns, T> {
 
 impl<'a, ASL, T: 'a + AsRef<[u8]>> PathAttributes<'_, ASL, T> {
     /// Returns `Some(PA)` if it exists and is valid, otherwise returns None.
-    //pub fn get_lossy<PA: 'a + Wireformat<'a> + TryFrom<RawAttribute<ASL, &'a[u8]>>>(&'a self) -> Option<PA> {
     pub fn get_lossy<PA: 'a + Wireformat<'a> + TryFromRaw<'a>>(&'a self) -> Option<PA> {
         self.get_by_type_code(PA::TYPECODE).and_then(|raw|
             PA::try_from_raw(raw).ok()
@@ -351,15 +340,16 @@ macro_rules! validate_for_asl {
 validate_for_asl!(TwoByteAsns);
 validate_for_asl!(FourByteAsns);
 
-pub type RawError<'a> = (RawAttribute<&'a[u8]>, &'static str);
+pub type RawError<'a> = (RawAttribute<&'a[u8]>, std::borrow::Cow<'a, str>);
+
 pub trait TryFromRaw<'a> : Sized {
     fn try_from_raw(raw: RawAttribute<&'a [u8]>) -> Result<Self, RawError<'a>>;
 }
 
 impl<'a> TryFromRaw<'a> for Origin {
-    fn try_from_raw(raw: RawAttribute<&'a[u8]>) -> Result<Self, (RawAttribute<&'a[u8]>, &'static str)> {
+    fn try_from_raw(raw: RawAttribute<&'a[u8]>) -> Result<Self, RawError<'a>> {
         if raw.length() != 1 {
-            return Err((raw, "wrong length for Origin"));
+            return Err((raw, "wrong length for Origin".into()));
         }
 
         Ok(Origin(raw.value()[0]))
@@ -368,12 +358,12 @@ impl<'a> TryFromRaw<'a> for Origin {
 
 
 impl<'a> TryFromRaw<'a> for AsPath<TwoByteAsns, &'a [u8]> {
-    fn try_from_raw(raw: RawAttribute<&'a [u8]>) -> Result<Self, (RawAttribute<&'a [u8]>, &'static str)> {
+    fn try_from_raw(raw: RawAttribute<&'a [u8]>) -> Result<Self, RawError<'a>> {
         Ok(Self{asn_length: std::marker::PhantomData, raw: raw.into_value()})
     }
 }
 impl<'a> TryFromRaw<'a> for AsPath<FourByteAsns, &'a [u8]> {
-    fn try_from_raw(raw: RawAttribute<&'a [u8]>) -> Result<Self, (RawAttribute<&'a [u8]>, &'static str)> {
+    fn try_from_raw(raw: RawAttribute<&'a [u8]>) -> Result<Self, RawError<'a>> {
         Ok(Self{asn_length: std::marker::PhantomData, raw: raw.into_value()})
     }
 }
@@ -381,9 +371,7 @@ impl<'a> TryFromRaw<'a> for AsPath<FourByteAsns, &'a [u8]> {
 impl<'a> TryFromRaw<'a> for Communities<&'a [u8]> {
     fn try_from_raw(raw: RawAttribute<&'a [u8]>) -> Result<Self, RawError<'a>> {
         if raw.length() % 4 != 0 {
-            //return Err("invalid length for Communities");
-            todo!()
-            // "invalid bla".into() TODO
+            Err((raw, format!("invalid length {} for Communities", raw.length()).into()))?;
         }
         Ok(Communities(raw.into_value()))
     }
@@ -391,6 +379,11 @@ impl<'a> TryFromRaw<'a> for Communities<&'a [u8]> {
 
 impl<'a> TryFromRaw<'a> for MpReachNlri<&'a [u8]> {
     fn try_from_raw(raw: RawAttribute<&'a [u8]>) -> Result<Self, RawError<'a>> {
+        // Expected at least: afi + safi + nh len + v4-or-larger + rsvd byte
+        if raw.length() < 2 + 1 + 1 + 4 + 1 {
+
+        }
+
         todo!()
     }
 }
