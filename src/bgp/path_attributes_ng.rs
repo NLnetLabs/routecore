@@ -69,6 +69,8 @@
 //!
 #![allow(dead_code)]
 
+use std::borrow::Cow;
+
 #[cfg(feature = "serde")]
 use serde::{Serialize, Deserialize};
 use crate::typeenum;
@@ -296,7 +298,7 @@ impl <'a, 'sc, ASL, T: AsRef<[u8]>> UpdateMsg<'a, 'sc, ASL, T> {
         &self.path_attributes
     }
 
-    pub fn mp_reach(&self) -> Option<Result<MpReachNlri<&[u8]>, &str>> {
+    pub fn mp_reach(&self) -> Option<Result<MpReachNlri<&[u8]>, Cow<'_, str>>> {
         self.path_attributes.get_lossy::<MpReachNlri<_>>().map(|mp|{
             mp.validate_with_session_config(
                 ValidationLevel::Medium,
@@ -340,7 +342,7 @@ macro_rules! validate_for_asl {
 validate_for_asl!(TwoByteAsns);
 validate_for_asl!(FourByteAsns);
 
-pub type RawError<'a> = (RawAttribute<&'a[u8]>, std::borrow::Cow<'a, str>);
+pub type RawError<'a> = (RawAttribute<&'a[u8]>, Cow<'static, str>);
 
 pub trait TryFromRaw<'a> : Sized {
     fn try_from_raw(raw: RawAttribute<&'a [u8]>) -> Result<Self, RawError<'a>>;
@@ -409,13 +411,13 @@ pub trait Validate: Sized {
     type Validated;
 
     fn validate(self, level: ValidationLevel)
-        -> Result<Self::Validated, (Self, &'static str)>;
+        -> Result<Self::Validated, (Self, Cow<'static, str>)>;
 
     fn validate_with_session_config(
         self,
         level: ValidationLevel,
         _sc: &SessionConfig
-    ) -> Result<Self::Validated, (Self, &'static str)> {
+    ) -> Result<Self::Validated, (Self, Cow<'static, str>)> {
             self.validate(level)
     }
 }
@@ -434,9 +436,9 @@ impl Wireformat<'_> for Origin {
 impl Validate for Origin {
     type Validated = Self;
 
-    fn validate(self, _level: ValidationLevel) -> Result<Self::Validated, (Self, &'static str)> {
+    fn validate(self, _level: ValidationLevel) -> Result<Self::Validated, (Self, Cow<'static, str>)> {
         if self.0 > 2 {
-            return Err((self, "wrong value for Origin"));
+            return Err((self, "wrong value for Origin".into()));
         }
         Ok(self)
     }
@@ -463,18 +465,20 @@ impl<'a> Validate for AsPath<TwoByteAsns, &'a[u8]> {
     type Validated = Self;
 
     fn validate(self, level: ValidationLevel)
-        -> Result<Self::Validated, (Self, &'static str)> {
+        -> Result<Self::Validated, (Self, Cow<'static, str>)> {
         todo!()
     }
+
 }
 
 impl<'a> Validate for AsPath<FourByteAsns, &'a[u8]> {
     type Validated = Self;
 
     fn validate(self, level: ValidationLevel)
-        -> Result<Self::Validated, (Self, &'static str)> {
+        -> Result<Self::Validated, (Self, Cow<'static, str>)> {
         todo!()
     }
+
 }
 
 impl<'a> Wireformat<'a> for Communities<&'a [u8]> {
@@ -490,9 +494,11 @@ impl<'a> Validate for Communities<&'a[u8]> {
     type Validated = Self;
 
     fn validate(self, level: ValidationLevel)
-        -> Result<Self::Validated, (Self, &'static str)> {
+        -> Result<Self::Validated, (Self, Cow<'static, str>)> {
         todo!()
     }
+
+    
 }
 
 impl<'a> Wireformat<'a> for MpReachNlri<&'a [u8]> {
@@ -508,9 +514,10 @@ impl<T: AsRef<[u8]>> Validate for MpReachNlri<T> {
     type Validated = Self;
 
     fn validate(self, level: ValidationLevel)
-        -> Result<Self::Validated, (Self, &'static str)> {
+        -> Result<Self::Validated, (Self, Cow<'static, str>)> {
         todo!()
     }
+
 }
 
 //-----------------------------------------------------------------------------
