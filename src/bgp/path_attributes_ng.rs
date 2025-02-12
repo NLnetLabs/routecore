@@ -148,20 +148,57 @@ pub struct PathAttributes<'sc, ASL, T: AsRef<[u8]>>{
     //   at hand anyway, including session info.
     // - if we really want a stand alone owned version of things, a classic
     //   PduParseInfo (Copy) should suffice
-    session_config: &'sc SessionConfig,
+    session_config: Cow<'sc, SessionConfig>,
     raw: T,
 }
 
 
 impl<'sc, ASL, T: AsRef<[u8]>> PathAttributes<'sc, ASL, T> {
-    pub fn as_vec(&self) -> PathAttributes<'sc, ASL, Vec<u8>> {
+    pub fn owned(&self) -> PathAttributes<'sc, ASL, Vec<u8>> {
         PathAttributes {
             asl: std::marker::PhantomData::<ASL>,
-            session_config: self.session_config,
+            session_config: self.session_config.to_owned(),
             raw: self.raw.as_ref().to_vec()
         }
     }
+}
+//impl<'sc, ASL, T: AsRef<[u8]>> Into<Vec<u8>> for PathAttributes<'sc, ASL, T> {
+//    fn into(self) -> Vec<u8> {
+//        self.raw.as_ref().to_vec()
+//    }
+//}
 
+impl<'sc, ASL, T: AsRef<[u8]>> From<PathAttributes<'sc, ASL, T>> for Vec<u8> {
+    fn from(pas: PathAttributes<'sc, ASL, T>) -> Self {
+        pas.raw.as_ref().to_vec()
+    }
+}
+impl<'sc, ASL> From<Vec<u8>> for PathAttributes<'sc, ASL, Vec<u8>> {
+    fn from(raw: Vec<u8>) -> Self {
+        PathAttributes {
+            asl: std::marker::PhantomData::<ASL>,
+            session_config: Cow::Owned(SessionConfig::modern()),
+            raw
+        }
+    }
+}
+
+impl<'sc> PathAttributes<'sc, FourByteAsns, Vec<u8>> {
+
+    pub fn modern() -> Self {
+        PathAttributes {
+            asl: std::marker::PhantomData::<FourByteAsns>,
+            session_config: Cow::Owned(SessionConfig::modern()),
+            raw: Vec::new()
+        }
+    }
+}
+
+impl<'sc, ASL> PathAttributes<'sc, ASL, Vec<u8>> {
+
+    pub fn append<PA: ToWireformat>(&mut self, pa: PA) {
+        pa.write(&mut self.raw);
+    }
 }
 
 
@@ -247,7 +284,7 @@ impl<'a, T: AsRef<[u8]>> PathAttributes<'a, FourByteAsns, T> {
     pub fn new(raw: T, session_config: &'a SessionConfig) -> Self {
         Self {
             asl: std::marker::PhantomData,
-            session_config,
+            session_config: Cow::Borrowed(session_config),
             raw
         }
         
@@ -257,7 +294,7 @@ impl<'a, T: AsRef<[u8]>> PathAttributes<'a, TwoByteAsns, T> {
     pub fn legacy(raw: T, session_config: &'a SessionConfig) -> Self {
         Self {
             asl: std::marker::PhantomData,
-            session_config,
+            session_config: Cow::Borrowed(session_config),
             raw
         }
         
@@ -293,7 +330,7 @@ impl<'a, 'sc, ASL, T: 'a + AsRef<[u8]>> PathAttributes<'sc, ASL, T> {
         }
         Some(PathAttributes {
             asl: std::marker::PhantomData,
-            session_config: self.session_config,
+            session_config: self.session_config.clone(),
             raw: res
         })
     }
@@ -800,10 +837,31 @@ mod tests {
         ];
 
         let pas2 = PathAttributes::new(&wireformat, &sc);
-        assert_eq!(pas.as_vec(), pas2.as_vec());
+        assert_eq!(pas.owned(), pas2.owned());
 
         let comms2 = pas2.get_lossy::<Communities<_>>().unwrap();
         assert_eq!(comms, comms2);
+
+
+        let owned_pas = pas2.owned();
+        assert_eq!(owned_pas.iter().count(), 1);
     }
+
+
+    #[test]
+    fn from_into_vec_u8() {
+        let mut pas = PathAttributes::modern();
+        let comms = OwnedCommunities(
+            vec![Community(1), Community(2), Community(3)]
+        );
+        pas.append(comms);
+
+        let raw = Vec::<u8>::from(pas.clone());
+
+        let pas_again = PathAttributes::<'_, FourByteAsns, _>::from(raw);
+        assert_eq!(pas.owned(), pas_again.owned());
+
+    }
+
 
 }
