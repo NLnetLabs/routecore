@@ -91,8 +91,15 @@ typeenum!(
     }
 );
 
+/// Marker trait to ensure nothing is missing at compile time
+/// XXX is this helpful or just cumbersome? We need multiple markings for e.g.
+/// AsPath, as that has two possible ASLs
+//pub trait PathAttribute<'a, ASL>: Wireformat<'a> + TryFromRaw<'a, ASL> + Validate { }
+
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Origin(pub u8);
+
+//impl<'a, ASL> PathAttribute<'a, ASL> for Origin { }
 
 #[derive(Debug)]
 pub struct AsPath<T: AsRef<[u8]>> {
@@ -100,6 +107,7 @@ pub struct AsPath<T: AsRef<[u8]>> {
     pub raw: T
 }
 
+//impl<'a> PathAttribute<'a, FourByteAsns> for AsPath<&'a [u8]> { }
 
 #[derive(Debug, PartialEq)]
 pub struct Communities<T: AsRef<[u8]>>(pub T);
@@ -264,18 +272,19 @@ impl<'a, 'sc, ASL, T: 'a + AsRef<[u8]>> PathAttributes<'sc, ASL, T> {
     }
 }
 
-impl<'a, ASL: AsnLength, T: 'a + AsRef<[u8]>> PathAttributes<'_, ASL, T> {
+impl<'a, ASL, T: 'a + AsRef<[u8]>> PathAttributes<'_, ASL, T> {
     /// Returns `Some(PA)` if it exists and is valid, otherwise returns None.
-    pub fn get_lossy<PA: 'a + Wireformat<'a> + TryFrom<RawAttribute<ASL, &'a[u8]>>>(&'a self) -> Option<PA> {
+    //pub fn get_lossy<PA: 'a + Wireformat<'a> + TryFrom<RawAttribute<ASL, &'a[u8]>>>(&'a self) -> Option<PA> {
+    pub fn get_lossy<PA: 'a + Wireformat<'a> + TryFromRaw<'a, ASL>>(&'a self) -> Option<PA> {
         self.get_by_type_code(PA::TYPECODE).and_then(|raw|
-            PA::try_from(raw).ok()
+            PA::try_from_raw(raw).ok()
         )
     }
 
     /// Returns the (possibly invalid) PA, if it exists.
-    pub fn get<PA: 'a + Wireformat<'a> + TryFrom<RawAttribute<ASL, &'a[u8]>>>(&'a self) -> Option<Result<PA, PA::Error>> {
+    pub fn get<PA: 'a + Wireformat<'a> + TryFromRaw<'a, ASL>>(&'a self) -> Option<Result<PA, RawError<'a, ASL>>> {
         self.get_by_type_code(PA::TYPECODE).map(|raw|
-            PA::try_from(raw)
+            PA::try_from_raw(raw)
         )
     }
 }
@@ -287,7 +296,7 @@ struct UpdateMsg<'a, 'sc, ASL, T: 'a + AsRef<[u8]>> {
     session_config: &'sc SessionConfig,
 }
 
-impl <'a, 'sc, ASL: AsnLength, T: AsRef<[u8]>> UpdateMsg<'a, 'sc, ASL, T> {
+impl <'a, 'sc, ASL, T: AsRef<[u8]>> UpdateMsg<'a, 'sc, ASL, T> {
     pub fn path_attributes(&self) -> &PathAttributes<'a, ASL, T> {
         &self.path_attributes
     }
@@ -310,27 +319,34 @@ impl <'a, 'sc, ASL: AsnLength, T: AsRef<[u8]>> UpdateMsg<'a, 'sc, ASL, T> {
 // the exhaustiveness check.
 macro_rules! validate_match {
     ($raw:ident, $level:ident, $name:ident) => {
-        $name::try_from($raw).map(|a| a.validate($level)).is_ok()
+        $name::try_from_raw($raw).map(|a| a.validate($level)).is_ok()
     }
 }
 
-impl<'a, T: 'a + AsRef<[u8]>> PathAttributes<'_, FourByteAsns, T> {
+// XXX so this is now 'hardcoded' over FourByteAsns, not nice
+impl<'a, T: 'a + AsRef<[u8]>> PathAttributes<'a, FourByteAsns, T> {
     pub fn validate(&self, level: ValidationLevel) -> bool {
         use PathAttributeType as PAT;
         self.iter().all(|raw|{
             match raw.type_code() {
                 PAT::Origin => validate_match!(raw, level, Origin),
-                PAT::AsPath => todo!(),
-                PAT::Communities => todo!(),
-                PAT::MpReachNlri => todo!(),
+                PAT::AsPath => validate_match!(raw, level, AsPath),
+                PAT::Communities => validate_match!(raw, level, Communities),
+                PAT::MpReachNlri => validate_match!(raw, level, MpReachNlri),
                 PAT::Unimplemented(_) => todo!(),
             }
         })
     }
 }
 
+
+//TODO: AsPath generic maken over ASL, en ASL zoveel mogelijk uit traits
+//weglaten. Vervolgens TryFromRaw en Validate etc 2x impl'en voor
+//AsPath<TwoByteAsns> en AsPath<FourByteAsns>.
+
+pub type RawError<'a, ASL> = (RawAttribute<ASL, &'a[u8]>, &'static str);
 pub trait TryFromRaw<'a, ASL> : Sized {
-    fn try_from_raw(raw: RawAttribute<ASL, &'a [u8]>) -> Result<Self, (RawAttribute<ASL, &'a [u8]>, &'static str)>;
+    fn try_from_raw(raw: RawAttribute<ASL, &'a [u8]>) -> Result<Self, RawError<'a, ASL>>;
 }
 
 impl<'a, ASL> TryFromRaw<'a, ASL> for Origin {
@@ -366,12 +382,6 @@ impl<'a> TryFrom<RawAttribute<TwoByteAsns, &'a[u8]>> for AsPath<&'a [u8]> {
     }
 }
 
-impl<'a> TryFromRaw<'a, FourByteAsns> for AsPath<&'a [u8]> {
-    fn try_from_raw(raw: RawAttribute<FourByteAsns, &'a [u8]>) -> Result<Self, (RawAttribute<FourByteAsns, &'a [u8]>, &'static str)> {
-        Ok(AsPath{four_byte_asns: true, raw: raw.into_value()})
-    }
-}
-
 impl<'a> TryFrom<RawAttribute<FourByteAsns, &'a[u8]>> for AsPath<&'a [u8]> {
     type Error = (RawAttribute<FourByteAsns, &'a[u8]>, &'static str);
 
@@ -380,10 +390,22 @@ impl<'a> TryFrom<RawAttribute<FourByteAsns, &'a[u8]>> for AsPath<&'a [u8]> {
     }
 }
 
+impl<'a> TryFromRaw<'a, TwoByteAsns> for AsPath<&'a [u8]> {
+    fn try_from_raw(raw: RawAttribute<TwoByteAsns, &'a [u8]>) -> Result<Self, (RawAttribute<TwoByteAsns, &'a [u8]>, &'static str)> {
+        Ok(AsPath{four_byte_asns: false, raw: raw.into_value()})
+    }
+}
+impl<'a> TryFromRaw<'a, FourByteAsns> for AsPath<&'a [u8]> {
+    fn try_from_raw(raw: RawAttribute<FourByteAsns, &'a [u8]>) -> Result<Self, (RawAttribute<FourByteAsns, &'a [u8]>, &'static str)> {
+        Ok(AsPath{four_byte_asns: true, raw: raw.into_value()})
+    }
+}
 
 
 
-impl<'a, ASL: AsnLength> TryFrom<RawAttribute<ASL, &'a [u8]>> for Communities<&'a [u8]> {
+
+
+impl<'a, ASL> TryFrom<RawAttribute<ASL, &'a [u8]>> for Communities<&'a [u8]> {
     type Error = &'static str;
 
     fn try_from(raw: RawAttribute<ASL, &'a [u8]>) -> Result<Self, Self::Error> {
@@ -394,7 +416,18 @@ impl<'a, ASL: AsnLength> TryFrom<RawAttribute<ASL, &'a [u8]>> for Communities<&'
     }
 }
 
-impl<'a, ASL: AsnLength> TryFrom<RawAttribute<ASL, &'a [u8]>> for MpReachNlri<&'a [u8]> {
+impl<'a, ASL> TryFromRaw<'a, ASL> for Communities<&'a [u8]> {
+    fn try_from_raw(raw: RawAttribute<ASL, &'a [u8]>) -> Result<Self, RawError<'a, ASL>> {
+        if raw.length() % 4 != 0 {
+            //return Err("invalid length for Communities");
+            todo!()
+            // "invalid bla".into() TODO
+        }
+        Ok(Communities(raw.into_value()))
+    }
+}
+
+impl<'a, ASL> TryFrom<RawAttribute<ASL, &'a [u8]>> for MpReachNlri<&'a [u8]> {
     type Error = &'static str;
 
     fn try_from(raw: RawAttribute<ASL, &'a [u8]>) -> Result<Self, Self::Error> {
@@ -412,6 +445,12 @@ impl<'a, ASL: AsnLength> TryFrom<RawAttribute<ASL, &'a [u8]>> for MpReachNlri<&'
         //already. Perhaps we need to check the multilabel stuff.
 
         Ok(MpReachNlri{raw: raw.into_value()})
+    }
+}
+
+impl<'a, ASL> TryFromRaw<'a, ASL> for MpReachNlri<&'a [u8]> {
+    fn try_from_raw(raw: RawAttribute<ASL, &'a [u8]>) -> Result<Self, RawError<'a, ASL>> {
+        todo!()
     }
 }
 
@@ -496,11 +535,29 @@ impl<'a> Wireformat<'a> for AsPath<&'a [u8]> {
     }
 }
 
+impl<'a> Validate for AsPath<&'a[u8]> {
+    type Validated = Self;
+
+    fn validate(self, level: ValidationLevel)
+        -> Result<Self::Validated, (Self, &'static str)> {
+        todo!()
+    }
+}
+
 impl<'a> Wireformat<'a> for Communities<&'a [u8]> {
     const TYPECODE: u8 = 8;
     type Owned = OwnedCommunities;
 
     fn owned(&self) -> Self::Owned {
+        todo!()
+    }
+}
+
+impl<'a> Validate for Communities<&'a[u8]> {
+    type Validated = Self;
+
+    fn validate(self, level: ValidationLevel)
+        -> Result<Self::Validated, (Self, &'static str)> {
         todo!()
     }
 }
