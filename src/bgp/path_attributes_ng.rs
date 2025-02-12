@@ -174,24 +174,41 @@ pub struct RawAttribute<T: AsRef<[u8]>> {
 }
 
 impl<T: AsRef<[u8]>> RawAttribute<T> {
-    pub fn flags(&self) -> u8 {
-        self.raw.as_ref()[0]
+    pub fn flags(&self) -> super::path_attributes::Flags {
+        self.raw.as_ref()[0].into()
     }
     pub fn type_code(&self) -> PathAttributeType {
         self.raw.as_ref()[1].into()
     }
+
     pub fn length(&self) -> usize {
-        usize::from(self.raw.as_ref()[2])
+        if self.flags().is_extended_length() {
+            usize::from(
+                u16::from_be_bytes(
+                    [self.raw.as_ref()[2], self.raw.as_ref()[3]]
+                )
+            )
+        } else {
+            usize::from(self.raw.as_ref()[2])
+        }
     }
 
     pub fn value(&self) -> &[u8] {
-        &self.raw.as_ref()[3..] // FIXME shortcut, len can be 2 bytes
+        if self.flags().is_extended_length() {
+            &self.raw.as_ref()[4..] 
+        } else {
+            &self.raw.as_ref()[3..] 
+        }
     }
 }
 
 impl<'a> RawAttribute<&'a [u8]> {
     pub fn into_value(self) -> &'a [u8] {
-        &self.raw[3..]
+        if self.flags().is_extended_length() {
+            &self.raw[4..] 
+        } else {
+            &self.raw[3..] 
+        }
     }
 }
 
@@ -201,13 +218,25 @@ impl<'a, 'sc, ASL, T: 'a + AsRef<[u8]>> Iterator for PathAttributesIter<'a, 'sc,
         if self.idx == self.raw_attributes.raw.as_ref().len() {
             return None
         }
+        if self.idx + 3 > self.raw_attributes.raw.as_ref().len() {
+            // XXX: incomplete path attribute. fuse and, somehow, error?
+            return None
+        }
         let raw = &self.raw_attributes.raw.as_ref()[self.idx..];
-        let _flags = raw[0];
-        // TODO get actual len, might be 2 bytes
-        let _type_code = raw[1];
-        let len: usize = raw[2].into();
-        let res = &raw[..3+len];
-        self.idx += 3 + len;
+
+        let flags = super::path_attributes::Flags::from(raw[0]);
+        //let _type_code = raw[1];
+
+        let (len, offset): (usize, usize) = if flags.is_extended_length() {
+            if raw.len() < 4 {
+                return None; // XXX same as above
+            }
+            (u16::from_be_bytes([raw[2], raw[3]]).into(), 4)
+        } else {
+            (raw[2].into(), 3)
+        };
+        let res = &raw[..offset+len];
+        self.idx += offset + len;
         Some(RawAttribute{raw: res})
     }    
 }
@@ -381,12 +410,17 @@ impl<'a> TryFromRaw<'a> for Communities<&'a [u8]> {
 
 impl<'a> TryFromRaw<'a> for MpReachNlri<&'a [u8]> {
     fn try_from_raw(raw: RawAttribute<&'a [u8]>) -> Result<Self, RawError<'a>> {
-        // Expected at least: afi + safi + nh len + v4-or-larger + rsvd byte
-        if raw.length() < 2 + 1 + 1 + 4 + 1 {
-
+        // Expected at least:
+        // afi + safi == 2 + 1
+        // nh len + v4 addr (or larger) == 1 + 4 
+        // rsvd byte == 1
+        // ---------------
+        //              == 9
+        if raw.length() < 9 {
+            return Err((raw, "".into()));
         }
 
-        todo!()
+        Ok(MpReachNlri{raw: raw.into_value()})
     }
 }
 
@@ -521,6 +555,10 @@ impl<T: AsRef<[u8]>> Validate for MpReachNlri<T> {
 }
 
 //-----------------------------------------------------------------------------
+
+
+
+
 
 trait ComposeAttribute {
     fn compose_len(&self) -> usize {
