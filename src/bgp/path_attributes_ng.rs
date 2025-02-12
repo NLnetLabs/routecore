@@ -105,9 +105,11 @@ pub struct AsPath<ASL, T: AsRef<[u8]>> {
 }
 
 /// ASL marker type for 32bit ASNs;
+#[derive(Copy, Clone, Debug, Hash, PartialEq)]
 struct FourByteAsns;
 
 /// ASL marker type for 16bit ASNs;
+#[derive(Copy, Clone, Debug, Hash, PartialEq)]
 struct TwoByteAsns;
 
 
@@ -115,10 +117,10 @@ struct TwoByteAsns;
 #[derive(Debug, PartialEq)]
 pub struct Communities<T: AsRef<[u8]>>(pub T);
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub struct Community(u32);
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OwnedCommunities(pub Vec<Community>);
 
 impl OwnedCommunities {
@@ -135,7 +137,7 @@ pub struct MpReachNlri<T: AsRef<[u8]>> {
 }
 
 
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct PathAttributes<'sc, ASL, T: AsRef<[u8]>>{
     asl: std::marker::PhantomData::<ASL>,
     // XXX perhaps session_config should not live here
@@ -274,6 +276,11 @@ impl<'a, 'sc, ASL, T: 'a + AsRef<[u8]>> PathAttributes<'sc, ASL, T> {
         self.iter().find(|raw| raw.type_code() == type_code) 
     }
 
+    // XXX can we return a PathAttributes<Cow<[u8]>> here?
+    // that way, multiple calls to this method are cheap / no-op.
+    // Not sure whether that's actually worth it...
+    //
+    // And ideally, we can specify an order, e.g. by typecode.
     pub fn pure_mp_attributes(&self) -> Option<PathAttributes<'sc, ASL, Vec<u8>>> {
         self.get_by_type_code(MpReachNlri::TYPECODE)?;
         
@@ -427,7 +434,7 @@ impl<'a> TryFromRaw<'a> for MpReachNlri<&'a [u8]> {
 
 pub trait Wireformat<'a> {
     const TYPECODE: u8; // or PathAttributeType ?
-    //const FLAGS;
+    const FLAGS: u8;
     type Owned;
     
     fn owned(&self) -> Self::Owned;
@@ -459,6 +466,7 @@ pub trait Validate: Sized {
 
 impl Wireformat<'_> for Origin {
     const TYPECODE: u8 = 1;
+    const FLAGS: u8 = super::path_attributes::Flags::WELLKNOWN;
     type Owned = Self;
 
     fn owned(&self) -> Self::Owned {
@@ -480,6 +488,8 @@ impl Validate for Origin {
 
 impl<'a> Wireformat<'a> for AsPath<TwoByteAsns, &'a [u8]> {
     const TYPECODE: u8 = 2;
+    const FLAGS: u8 = super::path_attributes::Flags::WELLKNOWN;
+
     type Owned = super::aspath::HopPath;
 
     fn owned(&self) -> Self::Owned {
@@ -488,6 +498,8 @@ impl<'a> Wireformat<'a> for AsPath<TwoByteAsns, &'a [u8]> {
 }
 impl<'a> Wireformat<'a> for AsPath<FourByteAsns, &'a [u8]> {
     const TYPECODE: u8 = 2;
+    const FLAGS: u8 = super::path_attributes::Flags::WELLKNOWN;
+
     type Owned = super::aspath::HopPath;
 
     fn owned(&self) -> Self::Owned {
@@ -515,12 +527,19 @@ impl<'a> Validate for AsPath<FourByteAsns, &'a[u8]> {
 
 }
 
-impl<'a> Wireformat<'a> for Communities<&'a [u8]> {
+impl<'a, T: 'a + AsRef<[u8]>> Wireformat<'a> for Communities<T> {
     const TYPECODE: u8 = 8;
+    const FLAGS: u8 = super::path_attributes::Flags::OPT_TRANS;
+
     type Owned = OwnedCommunities;
 
     fn owned(&self) -> Self::Owned {
-        todo!()
+        OwnedCommunities(
+            self.0.as_ref()
+                .chunks_exact(4)
+                .map(|c| Community(u32::from_be_bytes([c[0], c[1], c[2], c[3]])))
+                .collect::<Vec<_>>()
+        )
     }
 }
 
@@ -537,6 +556,8 @@ impl<'a> Validate for Communities<&'a[u8]> {
 
 impl<'a> Wireformat<'a> for MpReachNlri<&'a [u8]> {
     const TYPECODE: u8 = 14;
+    const FLAGS: u8 = super::path_attributes::Flags::OPT_NON_TRANS;
+
     type Owned = bool; //super::message::update_builder::MpReachNlriBuilder;
 
     fn owned(&self) -> Self::Owned {
@@ -557,63 +578,94 @@ impl<T: AsRef<[u8]>> Validate for MpReachNlri<T> {
 //-----------------------------------------------------------------------------
 
 
-
-
-
-trait ComposeAttribute {
-    fn compose_len(&self) -> usize {
-        self.header_len() + self.value_len()
-    }
-    
-    fn is_extended(&self) -> bool {
-        self.value_len() > 255
-    }
-    
-    fn header_len(&self) -> usize {
-        if self.is_extended() {
-            4
-        } else {
-            3
-        }
-    }
-    
-    fn value_len(&self) -> usize;
-    fn compose(&self, target: &mut Vec<u8>) -> Result<(), MyError>;
-    
-    /*
-    fn compose<Target: OctetsBuilder>(&self, target: &mut Target)
-        -> Result<(), Target::AppendError>
-    {
-        self.compose_header(target)?;
-        self.compose_value(target)
-    }
-
-    
-    fn compose_header<Target: OctetsBuilder>(&self, target: &mut Target)
-        -> Result<(), Target::AppendError>
-    {
-        if self.is_extended() {
-            target.append_slice(&[
-                Self::FLAGS | Flags::EXTENDED_LEN,
-                Self::TYPE_CODE,
-            ])?;
-            target.append_slice(
-                &u16::try_from(self.value_len()).unwrap_or(u16::MAX)
-                .to_be_bytes()
-            )
-        } else {
-            target.append_slice(&[
-                Self::FLAGS,
-                Self::TYPE_CODE,
-                u8::try_from(self.value_len()).unwrap_or(u8::MAX)
-            ])
-        }
-    }
-    
-    fn compose_value<Target: OctetsBuilder>(&self, target: &mut Target)
-        -> Result<(), Target::AppendError>;
-    */
+pub trait ToWireformat {
+    fn write(&self, dst: &mut Vec<u8>);
 }
+
+impl ToWireformat for Origin {
+    fn write(&self, dst: &mut Vec<u8>) {
+        dst.extend_from_slice(&[Self::FLAGS, Self::TYPECODE, 1, self.0]);
+    }
+}
+
+//impl ToWireformat for Communities<&[u8]> {
+//    fn write(&self, dst: &mut Vec<u8>) {
+//        dst.extend_from_slice(&[Self::FLAGS, Self::TYPECODE, u8::try_from(self.0.len()).unwrap_or(u8::MAX)]);
+//        dst.extend_from_slice(self.0);
+//    }
+//}
+
+impl<T: AsRef<[u8]>> ToWireformat for Communities<T> {
+    fn write(&self, dst: &mut Vec<u8>) {
+        dst.extend_from_slice(&[Self::FLAGS, Self::TYPECODE, u8::try_from(self.0.as_ref().len()).unwrap_or(u8::MAX)]);
+        dst.extend_from_slice(self.0.as_ref());
+    }
+}
+
+impl ToWireformat for OwnedCommunities {
+    fn write(&self, dst: &mut Vec<u8>) {
+        let len = u8::try_from(self.0.len() * 4).unwrap_or(u8::MAX);
+        dst.extend_from_slice(&[Communities::<&[u8]>::FLAGS, Communities::<&[u8]>::TYPECODE, len]);
+        for c in &self.0 {
+            dst.extend_from_slice(&c.0.to_be_bytes());
+        }
+    }
+}
+
+//trait ComposeAttribute {
+//    fn compose_len(&self) -> usize {
+//        self.header_len() + self.value_len()
+//    }
+//    
+//    fn is_extended(&self) -> bool {
+//        self.value_len() > 255
+//    }
+//    
+//    fn header_len(&self) -> usize {
+//        if self.is_extended() {
+//            4
+//        } else {
+//            3
+//        }
+//    }
+//    
+//    fn value_len(&self) -> usize;
+//    fn compose(&self, target: &mut Vec<u8>) -> Result<(), MyError>;
+//    
+//    /*
+//    fn compose<Target: OctetsBuilder>(&self, target: &mut Target)
+//        -> Result<(), Target::AppendError>
+//    {
+//        self.compose_header(target)?;
+//        self.compose_value(target)
+//    }
+//
+//    
+//    fn compose_header<Target: OctetsBuilder>(&self, target: &mut Target)
+//        -> Result<(), Target::AppendError>
+//    {
+//        if self.is_extended() {
+//            target.append_slice(&[
+//                Self::FLAGS | Flags::EXTENDED_LEN,
+//                Self::TYPE_CODE,
+//            ])?;
+//            target.append_slice(
+//                &u16::try_from(self.value_len()).unwrap_or(u16::MAX)
+//                .to_be_bytes()
+//            )
+//        } else {
+//            target.append_slice(&[
+//                Self::FLAGS,
+//                Self::TYPE_CODE,
+//                u8::try_from(self.value_len()).unwrap_or(u8::MAX)
+//            ])
+//        }
+//    }
+//    
+//    fn compose_value<Target: OctetsBuilder>(&self, target: &mut Target)
+//        -> Result<(), Target::AppendError>;
+//    */
+//}
 
 
 /*
@@ -720,6 +772,38 @@ mod tests {
         let attrs = PathAttributes::new(&raw, &sc);
         //let _asp = attrs.get_lossy::<AsPath>().unwrap();
         let _asp = attrs.get_aspath().unwrap();
+    }
+
+    #[test]
+    fn full_cycle_wireformat() {
+        let owned = OwnedCommunities(
+            vec![Community(1), Community(2), Community(3)]
+        );
+
+        let mut raw = Vec::new();
+        owned.write(&mut raw);
+
+        let sc = SessionConfig::modern();
+        let pas = PathAttributes::new(&raw, &sc);
+        dbg!(&pas);
+        assert_eq!(pas.iter().count(), 1);
+        let comms = pas.get_lossy::<Communities<_>>().unwrap();
+        let owned2 = comms.owned();
+        assert_eq!(owned, owned2);
+
+
+        let wireformat = &[
+            0b1100_0000, 8, 12,
+            0, 0, 0, 1,
+            0, 0, 0, 2,
+            0, 0, 0, 3,
+        ];
+
+        let pas2 = PathAttributes::new(&wireformat, &sc);
+        assert_eq!(pas.as_vec(), pas2.as_vec());
+
+        let comms2 = pas2.get_lossy::<Communities<_>>().unwrap();
+        assert_eq!(comms, comms2);
     }
 
 }
