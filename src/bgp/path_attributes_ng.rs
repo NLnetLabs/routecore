@@ -102,7 +102,7 @@ pub struct Origin(pub u8);
 //impl<'a, ASL> PathAttribute<'a, ASL> for Origin { }
 
 #[derive(Debug)]
-pub struct AsPath<ASL: AsnLength, T: AsRef<[u8]>> {
+pub struct AsPath<ASL, T: AsRef<[u8]>> {
     asn_length: std::marker::PhantomData<ASL>,
     pub raw: T
 }
@@ -133,7 +133,7 @@ pub struct MpReachNlri<T: AsRef<[u8]>> {
 
 
 #[derive(Clone)]
-pub struct PathAttributes<'sc, ASL: AsnLength, T: AsRef<[u8]>>{
+pub struct PathAttributes<'sc, ASL, T: AsRef<[u8]>>{
     asl: std::marker::PhantomData::<ASL>,
     // XXX perhaps session_config should not live here
     // - 'stand alone path attributes' (i.e., stored in the store or on disk)
@@ -148,7 +148,7 @@ pub struct PathAttributes<'sc, ASL: AsnLength, T: AsRef<[u8]>>{
 }
 
 
-impl<'sc, ASL: AsnLength, T: AsRef<[u8]>> PathAttributes<'sc, ASL, T> {
+impl<'sc, ASL, T: AsRef<[u8]>> PathAttributes<'sc, ASL, T> {
     pub fn as_vec(&self) -> PathAttributes<'sc, ASL, Vec<u8>> {
         PathAttributes {
             asl: std::marker::PhantomData::<ASL>,
@@ -160,18 +160,18 @@ impl<'sc, ASL: AsnLength, T: AsRef<[u8]>> PathAttributes<'sc, ASL, T> {
 }
 
 /// Marker trait to conduct stateful parsing based on AsnLength (ASL).
-pub trait AsnLength { }
+//pub trait AsnLength { }
 
 /// ASL marker type for 32bit ASNs;
 struct FourByteAsns;
-impl AsnLength for FourByteAsns { }
+//impl AsnLength for FourByteAsns { }
 
 /// ASL marker type for 16bit ASNs;
 struct TwoByteAsns;
-impl AsnLength for TwoByteAsns { }
+//impl AsnLength for TwoByteAsns { }
 
 
-pub struct PathAttributesIter<'a, 'sc, ASL: AsnLength, T: 'a + AsRef<[u8]>> {
+pub struct PathAttributesIter<'a, 'sc, ASL, T: 'a + AsRef<[u8]>> {
     raw_attributes: &'a PathAttributes<'sc, ASL, T>,
     idx: usize,
 }
@@ -203,7 +203,7 @@ impl<'a> RawAttribute<&'a [u8]> {
     }
 }
 
-impl<'a, 'sc, ASL: AsnLength, T: 'a + AsRef<[u8]>> Iterator for PathAttributesIter<'a, 'sc, ASL, T> {
+impl<'a, 'sc, ASL, T: 'a + AsRef<[u8]>> Iterator for PathAttributesIter<'a, 'sc, ASL, T> {
     type Item = RawAttribute<&'a [u8]>;
     fn next(&mut self) -> Option<Self::Item> {
         if self.idx == self.raw_attributes.raw.as_ref().len() {
@@ -241,7 +241,7 @@ impl<'a, T: AsRef<[u8]>> PathAttributes<'a, TwoByteAsns, T> {
     }
 }
 
-impl<'a, 'sc, ASL: AsnLength, T: 'a + AsRef<[u8]>> PathAttributes<'sc, ASL, T> {
+impl<'a, 'sc, ASL, T: 'a + AsRef<[u8]>> PathAttributes<'sc, ASL, T> {
     pub fn iter(&self) -> PathAttributesIter<ASL, T> {
         PathAttributesIter {
             raw_attributes: self,
@@ -279,7 +279,7 @@ impl<'a, T: 'a + AsRef<[u8]>> PathAttributes<'_, FourByteAsns, T> {
     }
 }
 
-impl<'a, ASL: AsnLength, T: 'a + AsRef<[u8]>> PathAttributes<'_, ASL, T> {
+impl<'a, ASL, T: 'a + AsRef<[u8]>> PathAttributes<'_, ASL, T> {
     /// Returns `Some(PA)` if it exists and is valid, otherwise returns None.
     //pub fn get_lossy<PA: 'a + Wireformat<'a> + TryFrom<RawAttribute<ASL, &'a[u8]>>>(&'a self) -> Option<PA> {
     pub fn get_lossy<PA: 'a + Wireformat<'a> + TryFromRaw<'a>>(&'a self) -> Option<PA> {
@@ -297,12 +297,12 @@ impl<'a, ASL: AsnLength, T: 'a + AsRef<[u8]>> PathAttributes<'_, ASL, T> {
 
 //------------ Test with fake Update msg --------------------------------------
 
-struct UpdateMsg<'a, 'sc, ASL: AsnLength, T: 'a + AsRef<[u8]>> {
+struct UpdateMsg<'a, 'sc, ASL, T: 'a + AsRef<[u8]>> {
     path_attributes: PathAttributes<'a, ASL, T>,
     session_config: &'sc SessionConfig,
 }
 
-impl <'a, 'sc, ASL: AsnLength, T: AsRef<[u8]>> UpdateMsg<'a, 'sc, ASL, T> {
+impl <'a, 'sc, ASL, T: AsRef<[u8]>> UpdateMsg<'a, 'sc, ASL, T> {
     pub fn path_attributes(&self) -> &PathAttributes<'a, ASL, T> {
         &self.path_attributes
     }
