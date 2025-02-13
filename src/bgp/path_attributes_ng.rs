@@ -69,6 +69,7 @@
 //!
 #![allow(dead_code)]
 
+use core::ops::Range;
 use std::borrow::Cow;
 
 #[cfg(feature = "serde")]
@@ -152,6 +153,53 @@ pub struct PathAttributes<'sc, ASL, T: AsRef<[u8]>>{
     raw: T,
 }
 
+/// Overlay/cache over immutable PathAttributes
+///
+/// Allows for quick access without repetitively iterating over the entire
+/// underlying blob of bytes.
+///
+/// TODO make sure PathAttributesOverlay can only be constructed over a
+/// checked blob so we can safely unwrap based on the stored ranges.
+///
+/// XXX: Option<Range<usize>> vs Option<RawAttribute> vs Option<ProperType> ?
+/// Perhaps this thing can double as a builder if we go Option<Cow<_>> ?
+pub struct PathAttributesOverlay<'sc, ASL, T: AsRef<[u8]>> {
+    path_attributes: PathAttributes<'sc, ASL, T>,
+    origin: Option<Range<usize>>,
+    as_path: Option<Range<usize>>,
+    //...
+    //...
+    //...
+    //...
+    communities: Option<Range<usize>>,
+}
+
+impl<'sc, ASL, T: AsRef<[u8]>> PathAttributesOverlay<'sc, ASL, T> {
+    fn raw(&self) -> &[u8] {
+        self.path_attributes.raw.as_ref()
+    }
+    pub fn get<'a, PA: 'a + Wireformat<'a> + TryFromRaw<'a>>(&'a self) -> Option<PA> {
+        match PathAttributeType::from(PA::TYPECODE) {
+            PathAttributeType::Origin => self.origin.as_ref().map(|r| PA::try_from_raw(RawAttribute{raw: &self.raw()[r.start..r.end]}).unwrap()),
+            PathAttributeType::AsPath => todo!(),
+            PathAttributeType::Communities => todo!(),
+            PathAttributeType::MpReachNlri => todo!(),
+            PathAttributeType::Unimplemented(_) => todo!(),
+        }
+    }
+    //pub fn get<Origin>(&self) -> Option<Origin> {
+    //    None
+    //}
+    //pub fn get<AsPath>(&self) -> Option<AsPath> {
+    //    None
+    //}
+}
+
+impl<'sc, ASL, T: AsRef<[u8]>> PathAttributesOverlay<'sc, ASL, T> {
+    //pub fn get<AsPath>(&self) -> Option<AsPath> {
+    //    None
+    //}
+}
 
 impl<'sc, ASL, T: AsRef<[u8]>> PathAttributes<'sc, ASL, T> {
     pub fn owned(&self) -> PathAttributes<'sc, ASL, Vec<u8>> {
@@ -162,11 +210,6 @@ impl<'sc, ASL, T: AsRef<[u8]>> PathAttributes<'sc, ASL, T> {
         }
     }
 }
-//impl<'sc, ASL, T: AsRef<[u8]>> Into<Vec<u8>> for PathAttributes<'sc, ASL, T> {
-//    fn into(self) -> Vec<u8> {
-//        self.raw.as_ref().to_vec()
-//    }
-//}
 
 impl<'sc, ASL, T: AsRef<[u8]>> From<PathAttributes<'sc, ASL, T>> for Vec<u8> {
     fn from(pas: PathAttributes<'sc, ASL, T>) -> Self {
