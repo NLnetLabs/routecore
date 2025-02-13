@@ -70,7 +70,7 @@
 #![allow(dead_code)]
 
 use core::ops::Range;
-use std::borrow::Cow;
+use std::borrow::{BorrowMut, Cow};
 
 #[cfg(feature = "serde")]
 use serde::{Serialize, Deserialize};
@@ -163,54 +163,131 @@ pub struct PathAttributes<'sc, ASL, T: AsRef<[u8]>>{
 ///
 /// XXX: Option<Range<usize>> vs Option<RawAttribute> vs Option<ProperType> ?
 /// Perhaps this thing can double as a builder if we go Option<Cow<_>> ?
-pub struct PathAttributesOverlay<'sc, ASL, T: AsRef<[u8]>> {
-    path_attributes: PathAttributes<'sc, ASL, T>,
-    origin: Option<Range<usize>>,
-    as_path: Option<Range<usize>>,
+#[derive(Debug)]
+pub struct PathAttributesOverlay<'pa, 'sc, ASL, T: AsRef<[u8]>> {
+    path_attributes: &'pa PathAttributes<'sc, ASL, T>,
+    updated: bool,
+    //origin: Option<Range<usize>>,
+    origin: Option<Cow<'pa, [u8]>>,
+    communities: Option<Cow<'pa, [u8]>>,
+    //as_path: Option<Range<usize>>,
     //...
     //...
     //...
     //...
-    communities: Option<Range<usize>>,
+    //communities: Option<Range<usize>>,
 }
 
-impl<'sc, ASL, T: AsRef<[u8]>> PathAttributesOverlay<'sc, ASL, T> {
+impl<'pa, 'sc, ASL, T: AsRef<[u8]>> PathAttributesOverlay<'pa, 'sc, ASL, T> {
+    pub fn for_unchecked(path_attributes: &'pa PathAttributes<'sc, ASL, T>) -> Self {
+        let mut origin = None;
+        let mut communities = None;
+        for raw in path_attributes.iter() {
+            match raw.type_code() {
+                PathAttributeType::Origin => origin = Some(raw.raw.into()),
+                PathAttributeType::AsPath => todo!(),
+                PathAttributeType::Communities => communities = Some(raw.raw.into()),
+                PathAttributeType::MpReachNlri => todo!(),
+                PathAttributeType::Unimplemented(_) => todo!(),
+            }
+        }
+        Self {
+            path_attributes,
+            updated: false,
+            origin,
+            communities,
+        }
+    }
+
     fn raw(&self) -> &[u8] {
         self.path_attributes.raw.as_ref()
     }
     pub fn get<'a, PA: 'a + Wireformat<'a> + TryFromRaw<'a>>(&'a self) -> Option<PA> {
         match PathAttributeType::from(PA::TYPECODE) {
-            PathAttributeType::Origin => self.origin.as_ref().map(|r| PA::try_from_raw(RawAttribute{raw: &self.raw()[r.start..r.end]}).unwrap()),
+            //PathAttributeType::Origin => self.origin.as_ref().map(|r| PA::try_from_raw(RawAttribute{raw: &self.raw()[r.start..r.end]}).unwrap()),
+            PathAttributeType::Origin => self.origin.as_ref().map(|r| PA::try_from_raw(RawAttribute{raw: r}).unwrap()),
+            PathAttributeType::AsPath => todo!(),
+            PathAttributeType::Communities => self.communities.as_ref().map(|r| PA::try_from_raw(RawAttribute{raw: r}).unwrap()),
+            PathAttributeType::MpReachNlri => todo!(),
+            PathAttributeType::Unimplemented(_) => todo!(),
+        }
+    }
+
+    // XXX do we want dedicated methods for each path attribute?
+    // saves on the match in the generic .get::<PA> above
+    pub fn get_origin(&self) -> Option<Origin> {
+        self.origin.as_ref().map(|r| Origin::try_from_raw(RawAttribute{raw: r}).unwrap())
+    }
+
+    pub fn upsert<PA: ToWireformat>(&mut self, pa: PA) {
+        self.updated = true;
+        match PathAttributeType::from(PA::typecode()) {
+            PathAttributeType::Origin => {
+                self.origin = {
+                    let mut dst = Vec::new();
+                    pa.write(&mut dst);
+                    Some(dst.into())
+                };
+            }
             PathAttributeType::AsPath => todo!(),
             PathAttributeType::Communities => todo!(),
             PathAttributeType::MpReachNlri => todo!(),
             PathAttributeType::Unimplemented(_) => todo!(),
         }
     }
-    //pub fn get<Origin>(&self) -> Option<Origin> {
-    //    None
-    //}
-    //pub fn get<AsPath>(&self) -> Option<AsPath> {
-    //    None
-    //}
+
+    pub fn owned(&self) -> PathAttributes<'sc, ASL, Vec<u8>> {
+        let v = Vec::<u8>::from(self);
+        PathAttributes {
+            asl: std::marker::PhantomData::<ASL>,
+            session_config: self.path_attributes.session_config.clone(),
+            raw: v
+        }
+    }
 }
 
-impl<'sc, ASL, T: AsRef<[u8]>> PathAttributesOverlay<'sc, ASL, T> {
-    //pub fn get<AsPath>(&self) -> Option<AsPath> {
-    //    None
-    //}
+impl<'pa, 'sc, ASL, T: AsRef<[u8]>> From<&PathAttributesOverlay<'pa, 'sc, ASL, T>> for Vec<u8> {
+    fn from(pao: &PathAttributesOverlay<'pa, 'sc, ASL, T>) -> Self {
+        if !pao.updated {
+            return Vec::<u8>::from(pao.path_attributes);
+        }
+        let mut res = Vec::new();
+        if let Some(raw) = pao.origin.as_ref() {
+            res.extend_from_slice(raw.as_ref());
+        }
+
+        if let Some(raw) = pao.communities.as_ref() {
+            res.extend_from_slice(raw.as_ref());
+        }
+
+        res
+        
+    }
 }
+
+impl<'pa, 'sc, ASL, T: AsRef<[u8]>> From<PathAttributesOverlay<'pa, 'sc, ASL, T>> for Vec<u8> {
+    fn from(pao: PathAttributesOverlay<'pa, 'sc, ASL, T>) -> Self {
+        (&pao).into()
+    }
+}
+
+
 
 impl<'sc, ASL, T: AsRef<[u8]>> PathAttributes<'sc, ASL, T> {
     pub fn owned(&self) -> PathAttributes<'sc, ASL, Vec<u8>> {
         PathAttributes {
             asl: std::marker::PhantomData::<ASL>,
-            session_config: self.session_config.to_owned(),
+            session_config: self.session_config.clone(),
             raw: self.raw.as_ref().to_vec()
         }
     }
 }
 
+impl<'sc, ASL, T: AsRef<[u8]>> From<&PathAttributes<'sc, ASL, T>> for Vec<u8> {
+    fn from(pas: &PathAttributes<'sc, ASL, T>) -> Self {
+        pas.raw.as_ref().to_vec()
+    }
+}
 impl<'sc, ASL, T: AsRef<[u8]>> From<PathAttributes<'sc, ASL, T>> for Vec<u8> {
     fn from(pas: PathAttributes<'sc, ASL, T>) -> Self {
         pas.raw.as_ref().to_vec()
@@ -658,11 +735,18 @@ impl<T: AsRef<[u8]>> Validate for MpReachNlri<T> {
 //-----------------------------------------------------------------------------
 
 
+// TODO try the super trait way, it's a bit cleaner perhaps?
+// though, for some T: ToWireformat it might not make sense to impl Wireformat 
+//pub trait ToWireformat: for<'a> Wireformat<'a> {
 pub trait ToWireformat {
+
+    fn typecode() -> u8;
     fn write(&self, dst: &mut Vec<u8>);
 }
 
 impl ToWireformat for Origin {
+    fn typecode() -> u8 { Origin::TYPECODE }
+
     fn write(&self, dst: &mut Vec<u8>) {
         dst.extend_from_slice(&[Self::FLAGS, Self::TYPECODE, 1, self.0]);
     }
@@ -676,6 +760,7 @@ impl ToWireformat for Origin {
 //}
 
 impl<T: AsRef<[u8]>> ToWireformat for Communities<T> {
+    fn typecode() -> u8 { Communities::<T>::TYPECODE }
     fn write(&self, dst: &mut Vec<u8>) {
         dst.extend_from_slice(&[Self::FLAGS, Self::TYPECODE, u8::try_from(self.0.as_ref().len()).unwrap_or(u8::MAX)]);
         dst.extend_from_slice(self.0.as_ref());
@@ -683,6 +768,7 @@ impl<T: AsRef<[u8]>> ToWireformat for Communities<T> {
 }
 
 impl ToWireformat for OwnedCommunities {
+    fn typecode() -> u8 { Communities::<&[u8]>::TYPECODE }
     fn write(&self, dst: &mut Vec<u8>) {
         let len = u8::try_from(self.0.len() * 4).unwrap_or(u8::MAX);
         dst.extend_from_slice(&[Communities::<&[u8]>::FLAGS, Communities::<&[u8]>::TYPECODE, len]);
@@ -690,6 +776,10 @@ impl ToWireformat for OwnedCommunities {
             dst.extend_from_slice(&c.0.to_be_bytes());
         }
     }
+}
+impl OwnedCommunities {
+    const TYPECODE: u8 = Communities::<&[u8]>::TYPECODE;
+    const FLAGS: u8 = Communities::<&[u8]>::FLAGS;
 }
 
 //trait ComposeAttribute {
@@ -906,5 +996,39 @@ mod tests {
 
     }
 
+    #[test]
+    fn cow_attributes() {
+        let mut pas = PathAttributes::modern();
+        pas.append(Origin(1));
+        pas.append(OwnedCommunities(vec![Community(10), Community(11)]));
+        let raw = Vec::<u8>::from(pas.clone());
+        // TODO impl From<&pas> for Vec<u8>>  let raw = Vec::<u8>::from(&pas);
+        let pas2 = PathAttributes::<'_, FourByteAsns, _>::from(raw);
+        let mut overlay = PathAttributesOverlay::for_unchecked(&pas2);
+
+        // Everything is the same
+        assert_eq!(pas.get_lossy::<Origin>(), Some(Origin(1)));
+        assert_eq!(pas2.get_lossy::<Origin>(), Some(Origin(1)));
+        assert_eq!(overlay.get::<Origin>(), Some(Origin(1)));
+        assert_eq!(overlay.get::<Communities<_>>(), pas.get_lossy::<Communities::<_>>());
+
+        assert_eq!(Vec::<u8>::from(&overlay), Vec::<u8>::from(&pas));
+
+        // Now overwrite the Origin in the CoW overlay and check again
+        assert!(!overlay.updated);
+        overlay.upsert(Origin(2));
+        assert!(overlay.updated);
+        assert_eq!(pas.get_lossy::<Origin>(), Some(Origin(1)));
+        assert_eq!(pas2.get_lossy::<Origin>(), Some(Origin(1)));
+        assert_eq!(overlay.get::<Origin>(), Some(Origin(2)));
+        assert_eq!(overlay.get::<Origin>(), overlay.get_origin());
+        assert_eq!(overlay.get::<Communities<_>>(), pas.get_lossy::<Communities::<_>>());
+        // But Origin should be different in the overlay now:
+        assert_ne!(overlay.get::<Origin>(), pas.get_lossy::<Origin>());
+
+
+
+        
+    }
 
 }
