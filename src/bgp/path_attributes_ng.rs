@@ -246,6 +246,9 @@ impl<'pa, 'sc, ASL, T: AsRef<[u8]>> PathAttributesOverlay<'pa, 'sc, ASL, T> {
     }
 }
 
+// XXX here, we lack compile time checks of whether all fields in the overlay
+// are actually checked and written to the returned Vec.
+// declarative macros are not going to save us, I suppose.
 impl<'pa, 'sc, ASL, T: AsRef<[u8]>> From<&PathAttributesOverlay<'pa, 'sc, ASL, T>> for Vec<u8> {
     fn from(pao: &PathAttributesOverlay<'pa, 'sc, ASL, T>) -> Self {
         if !pao.updated {
@@ -316,7 +319,7 @@ impl<'sc> PathAttributes<'sc, FourByteAsns, Vec<u8>> {
 
 impl<'sc, ASL> PathAttributes<'sc, ASL, Vec<u8>> {
 
-    pub fn append<PA: ToWireformat>(&mut self, pa: PA) {
+    pub fn append_unchecked<PA: ToWireformat>(&mut self, pa: PA) {
         pa.write(&mut self.raw);
     }
 }
@@ -987,7 +990,7 @@ mod tests {
         let comms = OwnedCommunities(
             vec![Community(1), Community(2), Community(3)]
         );
-        pas.append(comms);
+        pas.append_unchecked(comms);
 
         let raw = Vec::<u8>::from(pas.clone());
 
@@ -999,8 +1002,8 @@ mod tests {
     #[test]
     fn cow_attributes() {
         let mut pas = PathAttributes::modern();
-        pas.append(Origin(1));
-        pas.append(OwnedCommunities(vec![Community(10), Community(11)]));
+        pas.append_unchecked(Origin(1));
+        pas.append_unchecked(OwnedCommunities(vec![Community(10), Community(11)]));
         let raw = Vec::<u8>::from(pas.clone());
         // TODO impl From<&pas> for Vec<u8>>  let raw = Vec::<u8>::from(&pas);
         let pas2 = PathAttributes::<'_, FourByteAsns, _>::from(raw);
@@ -1025,10 +1028,6 @@ mod tests {
         assert_eq!(overlay.get::<Communities<_>>(), pas.get_lossy::<Communities::<_>>());
         // But Origin should be different in the overlay now:
         assert_ne!(overlay.get::<Origin>(), pas.get_lossy::<Origin>());
-
-
-
-        
     }
 
 }
