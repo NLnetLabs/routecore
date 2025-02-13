@@ -137,8 +137,8 @@ pub struct MpReachNlri<T: AsRef<[u8]>> {
 }
 
 
-#[derive(Clone, Debug, PartialEq)]
-pub struct PathAttributes<'sc, ASL, T: AsRef<[u8]>>{
+#[derive(Clone, PartialEq)]
+pub struct PathAttributes<'pa, 'sc, ASL>{
     asl: std::marker::PhantomData::<ASL>,
     // XXX perhaps session_config should not live here
     // - 'stand alone path attributes' (i.e., stored in the store or on disk)
@@ -149,7 +149,15 @@ pub struct PathAttributes<'sc, ASL, T: AsRef<[u8]>>{
     // - if we really want a stand alone owned version of things, a classic
     //   PduParseInfo (Copy) should suffice
     session_config: Cow<'sc, SessionConfig>,
-    raw: T,
+    raw: Cow<'pa, [u8]>,
+}
+impl<'pa, 'sc, ASL> std::fmt::Debug for PathAttributes<'pa, 'sc, ASL> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.raw {
+            Cow::Borrowed(_) => f.write_str("borrowed"),
+            Cow::Owned(_) => f.write_str("owned"),
+        }
+    }
 }
 
 /// Overlay/cache over immutable PathAttributes
@@ -163,39 +171,18 @@ pub struct PathAttributes<'sc, ASL, T: AsRef<[u8]>>{
 /// XXX: Option<Range<usize>> vs Option<RawAttribute> vs Option<ProperType> ?
 /// Perhaps this thing can double as a builder if we go Option<Cow<_>> ?
 #[derive(Debug)]
-pub struct PathAttributesOverlay<'pa, 'sc, ASL, T: AsRef<[u8]>> {
-    //path_attributes: &'pa PathAttributes<'sc, ASL, T>,
-    pao_cow: PaoCow<'pa, 'sc, ASL, T>, // XXX maybe make PathAttributes itself
-                                       // carry a Cow for its .raw?
-    //updated: bool,
-    //origin: Option<Range<usize>>,
+pub struct PathAttributesOverlay<'pa, 'sc, ASL> {
+    path_attributes: &'pa PathAttributes<'pa, 'sc, ASL>,
+    updated: bool,
     origin: Option<Cow<'pa, [u8]>>,
     communities: Option<Cow<'pa, [u8]>>,
-    //as_path: Option<Range<usize>>,
+    //... etc
     //...
     //...
     //...
-    //...
-    //communities: Option<Range<usize>>,
 }
-
-#[derive(Debug)]
-enum PaoCow<'pa, 'sc, ASL, T: AsRef<[u8]>> {
-    Ref{path_attributes: &'pa PathAttributes<'sc, ASL, T>, updated: bool},
-    Owned{raw: Vec<u8>, session_config: Cow<'sc, SessionConfig>},
-}
-
-impl<'pa, 'sc, ASL, T: AsRef<[u8]>> PaoCow<'pa, 'sc, ASL, T> {
-    fn updated(&self) -> bool {
-        match self {
-            PaoCow::Ref{updated, ..} => *updated,
-            PaoCow::Owned{..} => true,
-        }
-    }
-}
-
-impl<'pa, 'sc, ASL, T: AsRef<[u8]>> PathAttributesOverlay<'pa, 'sc, ASL, T> {
-    pub fn for_unchecked(path_attributes: &'pa PathAttributes<'sc, ASL, T>) -> Self {
+impl<'pa, 'sc: 'pa, ASL: 'pa> PathAttributesOverlay<'pa, 'sc, ASL> {
+    pub fn for_unchecked(path_attributes: &'pa PathAttributes<'pa, 'sc, ASL>) -> Self {
         let mut origin = None;
         let mut communities = None;
         for raw in path_attributes.iter() {
@@ -207,44 +194,24 @@ impl<'pa, 'sc, ASL, T: AsRef<[u8]>> PathAttributesOverlay<'pa, 'sc, ASL, T> {
                 PathAttributeType::Unimplemented(_) => todo!(),
             }
         }
+
         Self {
-            pao_cow: PaoCow::Ref{path_attributes, updated: false},
-            //updated: false,
+            path_attributes,
+            updated: false,
             origin,
             communities,
         }
     }
 
-    fn updated(&self) -> bool {
-        match self.pao_cow {
-            PaoCow::Ref {updated, .. } => updated,
-            PaoCow::Owned {..} => true
-        }
-    }
-    fn mark_as_updated(&mut self) {
-        match self.pao_cow {
-            PaoCow::Ref {ref mut updated, .. } => *updated = true,
-            PaoCow::Owned {..} => { }
-        }
-
-    }
-
     fn raw(&self) -> &[u8] {
-        match &self.pao_cow {
-            PaoCow::Ref { path_attributes, .. } => path_attributes.raw.as_ref(),
-            PaoCow::Owned { raw, .. } => raw.as_ref(),
-        }
+        self.path_attributes.raw.as_ref()
     }
     fn session_config(&self) -> &Cow<'sc, SessionConfig> {
-        match &self.pao_cow {
-            PaoCow::Ref { path_attributes, .. } => &path_attributes.session_config,
-            PaoCow::Owned { session_config, .. } => session_config,
-        }
+        &self.path_attributes.session_config
     }
 
     pub fn get<'a, PA: 'a + Wireformat<'a> + TryFromRaw<'a>>(&'a self) -> Option<PA> {
         match PathAttributeType::from(PA::TYPECODE) {
-            //PathAttributeType::Origin => self.origin.as_ref().map(|r| PA::try_from_raw(RawAttribute{raw: &self.raw()[r.start..r.end]}).unwrap()),
             PathAttributeType::Origin => self.origin.as_ref().map(|r| PA::try_from_raw(RawAttribute{raw: r}).unwrap()),
             PathAttributeType::AsPath => todo!(),
             PathAttributeType::Communities => self.communities.as_ref().map(|r| PA::try_from_raw(RawAttribute{raw: r}).unwrap()),
@@ -260,7 +227,7 @@ impl<'pa, 'sc, ASL, T: AsRef<[u8]>> PathAttributesOverlay<'pa, 'sc, ASL, T> {
     }
 
     pub fn upsert<PA: ToWireformat>(&mut self, pa: PA) {
-        self.mark_as_updated();
+        self.updated = true;
         match PathAttributeType::from(PA::typecode()) {
             PathAttributeType::Origin => {
                 self.origin = {
@@ -276,125 +243,107 @@ impl<'pa, 'sc, ASL, T: AsRef<[u8]>> PathAttributesOverlay<'pa, 'sc, ASL, T> {
         }
     }
 
-    pub fn owned(&self) -> PathAttributes<'sc, ASL, Vec<u8>> {
-        let v = Vec::<u8>::from(self);
-        PathAttributes {
-            asl: std::marker::PhantomData::<ASL>,
-            session_config: self.session_config().clone(),
-            raw: v
-        }
+    pub fn owned(&self) -> PathAttributes<'pa, 'sc, ASL> {
+        self.path_attributes.owned()
     }
 }
 
-impl<'pa, 'sc> PathAttributesOverlay<'pa, 'sc, FourByteAsns, Vec<u8>> {
-    pub fn modern() -> PathAttributesOverlay<'pa, 'sc, FourByteAsns, Vec<u8>> {
-        PathAttributesOverlay {
-            pao_cow: PaoCow::Owned{
-                raw: Vec::new(),
-                session_config: Cow::Owned(SessionConfig::modern()),
-            },
-            //updated: false,
-            origin: None,
-            communities: None,
-        }
-    }
-}
+// This will not work: the Overlay holds a ref to a PathAttributes, 
+// because the overlay wants to keeps Cow refs for every attribute type (for
+// optimizing the read case). As such, the PathAttributes has to live
+// somewhere on its own, for the Overlay to ref to.
+//impl<'pa, 'sc> PathAttributesOverlay<'pa, 'sc, FourByteAsns> {
+//    pub fn modern() -> PathAttributesOverlay<'pa, 'sc, FourByteAsns> {
+//        PathAttributesOverlay {
+//            path_attributes: PathAttributes::modern(),
+//            updated: false,
+//            origin: None,
+//            communities: None,
+//        }
+//    }
+//}
 
 // XXX here, we lack compile time checks of whether all fields in the overlay
 // are actually checked and written to the returned Vec.
 // declarative macros are not going to save us, I suppose.
-impl<'pa, 'sc, ASL, T: AsRef<[u8]>> From<&PathAttributesOverlay<'pa, 'sc, ASL, T>> for Vec<u8> {
-    fn from(pao: &PathAttributesOverlay<'pa, 'sc, ASL, T>) -> Self {
-        match &pao.pao_cow {
-            PaoCow::Owned { raw, session_config: _sc } => {
-                // XXX: do we want to return the session_config in some way?
-                raw.clone()
-            }
-            PaoCow::Ref { path_attributes, updated } => {
-                if *updated {
-                    let mut res = Vec::new();
-                    if let Some(raw) = pao.origin.as_ref() {
-                        res.extend_from_slice(raw.as_ref());
-                    }
-
-                    if let Some(raw) = pao.communities.as_ref() {
-                        res.extend_from_slice(raw.as_ref());
-                    }
-
-                    res
-                } else {
-                    Vec::<u8>::from(*path_attributes)
-                }
-            }
+impl<'pa, 'sc, ASL> From<&PathAttributesOverlay<'pa, 'sc, ASL>> for Vec<u8> {
+    fn from(pao: &PathAttributesOverlay<'pa, 'sc, ASL>) -> Self {
+        if !pao.updated {
+            return pao.path_attributes.raw.to_vec();
         }
+        let mut res = Vec::new();
+        if let Some(raw) = pao.origin.as_ref() {
+            res.extend_from_slice(raw.as_ref());
+        }
+
+        if let Some(raw) = pao.communities.as_ref() {
+            res.extend_from_slice(raw.as_ref());
+        }
+
+        res
         
     }
 }
 
-impl<'pa, 'sc, ASL, T: AsRef<[u8]>> From<PathAttributesOverlay<'pa, 'sc, ASL, T>> for Vec<u8> {
-    fn from(pao: PathAttributesOverlay<'pa, 'sc, ASL, T>) -> Self {
-        match pao.pao_cow {
-            PaoCow::Owned { raw, session_config: _sc } => {
-                raw
-            }
-            PaoCow::Ref {..} => (&pao).into()
-        }
+impl<'pa, 'sc, ASL> From<PathAttributesOverlay<'pa, 'sc, ASL>> for Vec<u8> {
+    fn from(pao: PathAttributesOverlay<'pa, 'sc, ASL>) -> Self {
+        (&pao).into()
     }
 }
 
 
 
-impl<'sc, ASL, T: AsRef<[u8]>> PathAttributes<'sc, ASL, T> {
-    pub fn owned(&self) -> PathAttributes<'sc, ASL, Vec<u8>> {
+impl<'pa, 'sc, ASL> PathAttributes<'pa, 'sc, ASL> {
+    pub fn owned(&self) -> PathAttributes<'pa, 'sc, ASL> {
         PathAttributes {
             asl: std::marker::PhantomData::<ASL>,
             session_config: self.session_config.clone(),
-            raw: self.raw.as_ref().to_vec()
+            raw: self.raw.clone(),
         }
     }
 }
 
-impl<'sc, ASL, T: AsRef<[u8]>> From<&PathAttributes<'sc, ASL, T>> for Vec<u8> {
-    fn from(pas: &PathAttributes<'sc, ASL, T>) -> Self {
-        pas.raw.as_ref().to_vec()
+impl<'pa, 'sc, ASL> From<&PathAttributes<'pa, 'sc, ASL >> for Vec<u8> {
+    fn from(pas: &PathAttributes<'pa, 'sc, ASL>) -> Self {
+        pas.raw.to_vec()
     }
 }
-impl<'sc, ASL, T: AsRef<[u8]>> From<PathAttributes<'sc, ASL, T>> for Vec<u8> {
-    fn from(pas: PathAttributes<'sc, ASL, T>) -> Self {
-        pas.raw.as_ref().to_vec()
+impl<'pa, 'sc, ASL> From<PathAttributes<'pa, 'sc, ASL>> for Vec<u8> {
+    fn from(pas: PathAttributes<'pa, 'sc, ASL>) -> Self {
+        pas.raw.to_vec()
     }
 }
-impl<'sc, ASL> From<Vec<u8>> for PathAttributes<'sc, ASL, Vec<u8>> {
+impl<'pa, 'sc, ASL> From<Vec<u8>> for PathAttributes<'pa, 'sc, ASL> {
     fn from(raw: Vec<u8>) -> Self {
         PathAttributes {
             asl: std::marker::PhantomData::<ASL>,
             session_config: Cow::Owned(SessionConfig::modern()),
-            raw
+            raw: Cow::Owned(raw),
         }
     }
 }
 
-impl<'sc> PathAttributes<'sc, FourByteAsns, Vec<u8>> {
+impl<'pa, 'sc> PathAttributes<'pa, 'sc, FourByteAsns> {
 
     pub fn modern() -> Self {
         PathAttributes {
             asl: std::marker::PhantomData::<FourByteAsns>,
             session_config: Cow::Owned(SessionConfig::modern()),
-            raw: Vec::new()
+            raw: Cow::Owned(Vec::new())
         }
     }
 }
 
-impl<'sc, ASL> PathAttributes<'sc, ASL, Vec<u8>> {
+impl<'pa, 'sc, ASL> PathAttributes<'pa, 'sc, ASL> {
 
     pub fn append_unchecked<PA: ToWireformat>(&mut self, pa: PA) {
-        pa.write(&mut self.raw);
+        pa.write(self.raw.to_mut());
     }
 }
 
 
-pub struct PathAttributesIter<'a, 'sc, ASL, T: 'a + AsRef<[u8]>> {
-    raw_attributes: &'a PathAttributes<'sc, ASL, T>,
+pub struct PathAttributesIter<'pa, 'sc, ASL> {
+    raw_attributes: &'pa PathAttributes<'pa, 'sc, ASL>,
     idx: usize,
 }
 
@@ -442,8 +391,8 @@ impl<'a> RawAttribute<&'a [u8]> {
     }
 }
 
-impl<'a, 'sc, ASL, T: 'a + AsRef<[u8]>> Iterator for PathAttributesIter<'a, 'sc, ASL, T> {
-    type Item = RawAttribute<&'a [u8]>;
+impl<'pa, 'sc, ASL> Iterator for PathAttributesIter<'pa, 'sc, ASL> {
+    type Item = RawAttribute<&'pa [u8]>;
     fn next(&mut self) -> Option<Self::Item> {
         if self.idx == self.raw_attributes.raw.as_ref().len() {
             return None
@@ -471,35 +420,35 @@ impl<'a, 'sc, ASL, T: 'a + AsRef<[u8]>> Iterator for PathAttributesIter<'a, 'sc,
     }    
 }
 
-impl<'a, T: AsRef<[u8]>> PathAttributes<'a, FourByteAsns, T> {
-    pub fn new(raw: T, session_config: &'a SessionConfig) -> Self {
+impl<'pa, 'sc> PathAttributes<'pa, 'sc, FourByteAsns> {
+    pub fn new(raw: impl Into<Cow<'pa, [u8]>> , session_config: &'sc SessionConfig) -> Self {
         Self {
             asl: std::marker::PhantomData,
             session_config: Cow::Borrowed(session_config),
-            raw
+            raw: raw.into()
         }
         
     }
 }
-impl<'a, T: AsRef<[u8]>> PathAttributes<'a, TwoByteAsns, T> {
-    pub fn legacy(raw: T, session_config: &'a SessionConfig) -> Self {
+impl<'pa, 'sc> PathAttributes<'pa, 'sc, TwoByteAsns> {
+    pub fn legacy(raw: impl Into<Cow<'pa, [u8]>>, session_config: &'sc SessionConfig) -> Self {
         Self {
             asl: std::marker::PhantomData,
             session_config: Cow::Borrowed(session_config),
-            raw
+            raw: raw.into()
         }
         
     }
 }
 
-impl<'a, 'sc, ASL, T: 'a + AsRef<[u8]>> PathAttributes<'sc, ASL, T> {
-    pub fn iter(&self) -> PathAttributesIter<ASL, T> {
+impl<'pa, 'sc, ASL> PathAttributes<'pa, 'sc, ASL> {
+    pub fn iter(&self) -> PathAttributesIter<ASL> {
         PathAttributesIter {
             raw_attributes: self,
             idx: 0
         }
     }
-    pub fn get_by_type_code(&'a self, type_code: impl Into<PathAttributeType>) -> Option<RawAttribute<&'a [u8]>> {
+    pub fn get_by_type_code(&'pa self, type_code: impl Into<PathAttributeType>) -> Option<RawAttribute<&'pa [u8]>> {
         let type_code = type_code.into();
         self.iter().find(|raw| raw.type_code() == type_code) 
     }
@@ -509,7 +458,7 @@ impl<'a, 'sc, ASL, T: 'a + AsRef<[u8]>> PathAttributes<'sc, ASL, T> {
     // Not sure whether that's actually worth it...
     //
     // And ideally, we can specify an order, e.g. by typecode.
-    pub fn pure_mp_attributes(&self) -> Option<PathAttributes<'sc, ASL, Vec<u8>>> {
+    pub fn pure_mp_attributes(&self) -> Option<PathAttributes<'pa, 'sc, ASL>> {
         self.get_by_type_code(MpReachNlri::TYPECODE)?;
         
         let mut res = Vec::with_capacity(self.raw.as_ref().len());
@@ -522,28 +471,28 @@ impl<'a, 'sc, ASL, T: 'a + AsRef<[u8]>> PathAttributes<'sc, ASL, T> {
         Some(PathAttributes {
             asl: std::marker::PhantomData,
             session_config: self.session_config.clone(),
-            raw: res
+            raw: res.into()
         })
     }
 }
 
-impl<'a, T: 'a + AsRef<[u8]>> PathAttributes<'_, FourByteAsns, T> {
-    pub fn get_aspath(&'a self) -> Option<AsPath<FourByteAsns, &'a [u8]>> {
+impl<'pa, 'sc> PathAttributes<'pa, 'sc, FourByteAsns> {
+    pub fn get_aspath(&'pa self) -> Option<AsPath<FourByteAsns, &'pa [u8]>> {
         self.get_by_type_code(PathAttributeType::AsPath).and_then(|raw|
             AsPath::<FourByteAsns, &[u8]>::try_from_raw(raw).ok()
         )
     }
 }
 
-impl<'a, ASL, T: 'a + AsRef<[u8]>> PathAttributes<'_, ASL, T> {
+impl<'pa, 'sc, ASL> PathAttributes<'pa, 'sc, ASL> {
     /// Returns `Some(PA)` if it exists and is valid, otherwise returns None.
-    pub fn get_lossy<PA: 'a + Wireformat<'a> + TryFromRaw<'a>>(&'a self) -> Option<PA> {
+    pub fn get_lossy<PA: 'pa + Wireformat<'pa> + TryFromRaw<'pa>>(&'pa self) -> Option<PA> {
         self.get_by_type_code(PA::TYPECODE).and_then(|raw|
             PA::try_from_raw(raw).ok()
         )
     }
     /// Returns the (possibly invalid) PA, if it exists.
-    pub fn get<PA: 'a + Wireformat<'a> + TryFromRaw<'a>>(&'a self) -> Option<Result<PA, RawError<'a>>> {
+    pub fn get<PA: 'pa + Wireformat<'pa> + TryFromRaw<'pa>>(&'pa self) -> Option<Result<PA, RawError<'pa>>> {
         self.get_by_type_code(PA::TYPECODE).map(|raw|
             PA::try_from_raw(raw)
         )
@@ -552,13 +501,13 @@ impl<'a, ASL, T: 'a + AsRef<[u8]>> PathAttributes<'_, ASL, T> {
 
 //------------ Test with fake Update msg --------------------------------------
 
-struct UpdateMsg<'a, 'sc, ASL, T: 'a + AsRef<[u8]>> {
-    path_attributes: PathAttributes<'a, ASL, T>,
+struct UpdateMsg<'pa, 'sc, ASL> {
+    path_attributes: PathAttributes<'pa, 'sc, ASL>,
     session_config: &'sc SessionConfig,
 }
 
-impl <'a, 'sc, ASL, T: AsRef<[u8]>> UpdateMsg<'a, 'sc, ASL, T> {
-    pub fn path_attributes(&self) -> &PathAttributes<'a, ASL, T> {
+impl <'pa, 'sc, ASL> UpdateMsg<'pa, 'sc, ASL> {
+    pub fn path_attributes(&self) -> &PathAttributes<'pa, 'sc, ASL> {
         &self.path_attributes
     }
 
@@ -586,7 +535,7 @@ macro_rules! validate_match {
 
 macro_rules! validate_for_asl {
     ($asl:ident) => {
-    impl<'a, T: 'a + AsRef<[u8]>> PathAttributes<'a, $asl, T> {
+    impl<'pa, 'sc> PathAttributes<'pa, 'sc, $asl> {
         pub fn validate(&self, level: ValidationLevel) -> bool {
             use PathAttributeType as PAT;
             self.iter().all(|raw|{
@@ -977,7 +926,8 @@ mod tests {
         let attributes = PathAttributes::new(&raw[..], &sc);
         assert_eq!(attributes.iter().count(), 2);
 
-        let attributes = PathAttributes::new(bytes::Bytes::copy_from_slice(&raw[..]), &sc);
+        let b = bytes::Bytes::copy_from_slice(&raw[..]);
+        let attributes = PathAttributes::new(b.as_ref(), &sc);
         assert_eq!(attributes.iter().count(), 2);
 
         let attributes = PathAttributes::new(raw, &sc);
@@ -1034,18 +984,22 @@ mod tests {
 
 
         let wireformat = &[
-            0b1100_0000, 8, 12,
+            0b1100_0000_u8, 8, 12,
             0, 0, 0, 1,
             0, 0, 0, 2,
             0, 0, 0, 3,
         ];
 
-        let pas2 = PathAttributes::new(&wireformat, &sc);
+        let pas2 = PathAttributes::new(wireformat, &sc);
         assert_eq!(pas.owned(), pas2.owned());
 
         let comms2 = pas2.get_lossy::<Communities<_>>().unwrap();
         assert_eq!(comms, comms2);
 
+
+        let overlay = PathAttributesOverlay::for_unchecked(&pas2);
+        dbg!(&pas2);
+        dbg!(&overlay);
 
         let owned_pas = pas2.owned();
         assert_eq!(owned_pas.iter().count(), 1);
@@ -1062,7 +1016,7 @@ mod tests {
 
         let raw = Vec::<u8>::from(pas.clone());
 
-        let pas_again = PathAttributes::<'_, FourByteAsns, _>::from(raw);
+        let pas_again = PathAttributes::<FourByteAsns>::from(raw);
         assert_eq!(pas.owned(), pas_again.owned());
 
     }
@@ -1074,7 +1028,7 @@ mod tests {
         pas.append_unchecked(OwnedCommunities(vec![Community(10), Community(11)]));
         let raw = Vec::<u8>::from(pas.clone());
         // TODO impl From<&pas> for Vec<u8>>  let raw = Vec::<u8>::from(&pas);
-        let pas2 = PathAttributes::<'_, FourByteAsns, _>::from(raw);
+        let pas2 = PathAttributes::<FourByteAsns>::from(raw);
         let mut overlay = PathAttributesOverlay::for_unchecked(&pas2);
 
         // Everything is the same
@@ -1087,9 +1041,9 @@ mod tests {
 
         // Now overwrite the Origin in the CoW overlay and check again
         dbg!(&overlay);
-        assert!(!overlay.updated());
+        assert!(!overlay.updated);
         overlay.upsert(Origin(2));
-        assert!(overlay.updated());
+        assert!(overlay.updated);
         assert_eq!(pas.get_lossy::<Origin>(), Some(Origin(1)));
         assert_eq!(pas2.get_lossy::<Origin>(), Some(Origin(1)));
         assert_eq!(overlay.get::<Origin>(), Some(Origin(2)));
@@ -1102,8 +1056,10 @@ mod tests {
 
     #[test]
     fn from_scratch() {
-        let mut builder = PathAttributesOverlay::modern();
-        builder.upsert(Origin(1));
+        let mut pa = PathAttributes::modern();
+        pa.append_unchecked(Origin(1));
+        let mut builder = PathAttributesOverlay::for_unchecked(&pa);
+        builder.upsert(Origin(2));
         dbg!(&builder);
         dbg!(Vec::<u8>::from(builder));
 
