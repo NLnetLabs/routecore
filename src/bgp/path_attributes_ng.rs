@@ -69,8 +69,7 @@
 //!
 #![allow(dead_code)]
 
-use core::ops::Range;
-use std::borrow::{BorrowMut, Cow};
+use std::borrow::Cow;
 
 #[cfg(feature = "serde")]
 use serde::{Serialize, Deserialize};
@@ -165,8 +164,10 @@ pub struct PathAttributes<'sc, ASL, T: AsRef<[u8]>>{
 /// Perhaps this thing can double as a builder if we go Option<Cow<_>> ?
 #[derive(Debug)]
 pub struct PathAttributesOverlay<'pa, 'sc, ASL, T: AsRef<[u8]>> {
-    path_attributes: &'pa PathAttributes<'sc, ASL, T>,
-    updated: bool,
+    //path_attributes: &'pa PathAttributes<'sc, ASL, T>,
+    pao_cow: PaoCow<'pa, 'sc, ASL, T>, // XXX maybe make PathAttributes itself
+                                       // carry a Cow for its .raw?
+    //updated: bool,
     //origin: Option<Range<usize>>,
     origin: Option<Cow<'pa, [u8]>>,
     communities: Option<Cow<'pa, [u8]>>,
@@ -176,6 +177,21 @@ pub struct PathAttributesOverlay<'pa, 'sc, ASL, T: AsRef<[u8]>> {
     //...
     //...
     //communities: Option<Range<usize>>,
+}
+
+#[derive(Debug)]
+enum PaoCow<'pa, 'sc, ASL, T: AsRef<[u8]>> {
+    Ref{path_attributes: &'pa PathAttributes<'sc, ASL, T>, updated: bool},
+    Owned{raw: Vec<u8>, session_config: Cow<'sc, SessionConfig>},
+}
+
+impl<'pa, 'sc, ASL, T: AsRef<[u8]>> PaoCow<'pa, 'sc, ASL, T> {
+    fn updated(&self) -> bool {
+        match self {
+            PaoCow::Ref{updated, ..} => *updated,
+            PaoCow::Owned{..} => true,
+        }
+    }
 }
 
 impl<'pa, 'sc, ASL, T: AsRef<[u8]>> PathAttributesOverlay<'pa, 'sc, ASL, T> {
@@ -192,16 +208,40 @@ impl<'pa, 'sc, ASL, T: AsRef<[u8]>> PathAttributesOverlay<'pa, 'sc, ASL, T> {
             }
         }
         Self {
-            path_attributes,
-            updated: false,
+            pao_cow: PaoCow::Ref{path_attributes, updated: false},
+            //updated: false,
             origin,
             communities,
         }
     }
 
-    fn raw(&self) -> &[u8] {
-        self.path_attributes.raw.as_ref()
+    fn updated(&self) -> bool {
+        match self.pao_cow {
+            PaoCow::Ref {updated, .. } => updated,
+            PaoCow::Owned {..} => true
+        }
     }
+    fn mark_as_updated(&mut self) {
+        match self.pao_cow {
+            PaoCow::Ref {ref mut updated, .. } => *updated = true,
+            PaoCow::Owned {..} => { }
+        }
+
+    }
+
+    fn raw(&self) -> &[u8] {
+        match &self.pao_cow {
+            PaoCow::Ref { path_attributes, .. } => path_attributes.raw.as_ref(),
+            PaoCow::Owned { raw, .. } => raw.as_ref(),
+        }
+    }
+    fn session_config(&self) -> &Cow<'sc, SessionConfig> {
+        match &self.pao_cow {
+            PaoCow::Ref { path_attributes, .. } => &path_attributes.session_config,
+            PaoCow::Owned { session_config, .. } => session_config,
+        }
+    }
+
     pub fn get<'a, PA: 'a + Wireformat<'a> + TryFromRaw<'a>>(&'a self) -> Option<PA> {
         match PathAttributeType::from(PA::TYPECODE) {
             //PathAttributeType::Origin => self.origin.as_ref().map(|r| PA::try_from_raw(RawAttribute{raw: &self.raw()[r.start..r.end]}).unwrap()),
@@ -220,7 +260,7 @@ impl<'pa, 'sc, ASL, T: AsRef<[u8]>> PathAttributesOverlay<'pa, 'sc, ASL, T> {
     }
 
     pub fn upsert<PA: ToWireformat>(&mut self, pa: PA) {
-        self.updated = true;
+        self.mark_as_updated();
         match PathAttributeType::from(PA::typecode()) {
             PathAttributeType::Origin => {
                 self.origin = {
@@ -240,8 +280,22 @@ impl<'pa, 'sc, ASL, T: AsRef<[u8]>> PathAttributesOverlay<'pa, 'sc, ASL, T> {
         let v = Vec::<u8>::from(self);
         PathAttributes {
             asl: std::marker::PhantomData::<ASL>,
-            session_config: self.path_attributes.session_config.clone(),
+            session_config: self.session_config().clone(),
             raw: v
+        }
+    }
+}
+
+impl<'pa, 'sc> PathAttributesOverlay<'pa, 'sc, FourByteAsns, Vec<u8>> {
+    pub fn modern() -> PathAttributesOverlay<'pa, 'sc, FourByteAsns, Vec<u8>> {
+        PathAttributesOverlay {
+            pao_cow: PaoCow::Owned{
+                raw: Vec::new(),
+                session_config: Cow::Owned(SessionConfig::modern()),
+            },
+            //updated: false,
+            origin: None,
+            communities: None,
         }
     }
 }
@@ -251,26 +305,40 @@ impl<'pa, 'sc, ASL, T: AsRef<[u8]>> PathAttributesOverlay<'pa, 'sc, ASL, T> {
 // declarative macros are not going to save us, I suppose.
 impl<'pa, 'sc, ASL, T: AsRef<[u8]>> From<&PathAttributesOverlay<'pa, 'sc, ASL, T>> for Vec<u8> {
     fn from(pao: &PathAttributesOverlay<'pa, 'sc, ASL, T>) -> Self {
-        if !pao.updated {
-            return Vec::<u8>::from(pao.path_attributes);
-        }
-        let mut res = Vec::new();
-        if let Some(raw) = pao.origin.as_ref() {
-            res.extend_from_slice(raw.as_ref());
-        }
+        match &pao.pao_cow {
+            PaoCow::Owned { raw, session_config: _sc } => {
+                // XXX: do we want to return the session_config in some way?
+                raw.clone()
+            }
+            PaoCow::Ref { path_attributes, updated } => {
+                if *updated {
+                    let mut res = Vec::new();
+                    if let Some(raw) = pao.origin.as_ref() {
+                        res.extend_from_slice(raw.as_ref());
+                    }
 
-        if let Some(raw) = pao.communities.as_ref() {
-            res.extend_from_slice(raw.as_ref());
-        }
+                    if let Some(raw) = pao.communities.as_ref() {
+                        res.extend_from_slice(raw.as_ref());
+                    }
 
-        res
+                    res
+                } else {
+                    Vec::<u8>::from(*path_attributes)
+                }
+            }
+        }
         
     }
 }
 
 impl<'pa, 'sc, ASL, T: AsRef<[u8]>> From<PathAttributesOverlay<'pa, 'sc, ASL, T>> for Vec<u8> {
     fn from(pao: PathAttributesOverlay<'pa, 'sc, ASL, T>) -> Self {
-        (&pao).into()
+        match pao.pao_cow {
+            PaoCow::Owned { raw, session_config: _sc } => {
+                raw
+            }
+            PaoCow::Ref {..} => (&pao).into()
+        }
     }
 }
 
@@ -1018,9 +1086,10 @@ mod tests {
         assert_eq!(Vec::<u8>::from(&overlay), Vec::<u8>::from(&pas));
 
         // Now overwrite the Origin in the CoW overlay and check again
-        assert!(!overlay.updated);
+        dbg!(&overlay);
+        assert!(!overlay.updated());
         overlay.upsert(Origin(2));
-        assert!(overlay.updated);
+        assert!(overlay.updated());
         assert_eq!(pas.get_lossy::<Origin>(), Some(Origin(1)));
         assert_eq!(pas2.get_lossy::<Origin>(), Some(Origin(1)));
         assert_eq!(overlay.get::<Origin>(), Some(Origin(2)));
@@ -1030,4 +1099,13 @@ mod tests {
         assert_ne!(overlay.get::<Origin>(), pas.get_lossy::<Origin>());
     }
 
+
+    #[test]
+    fn from_scratch() {
+        let mut builder = PathAttributesOverlay::modern();
+        builder.upsert(Origin(1));
+        dbg!(&builder);
+        dbg!(Vec::<u8>::from(builder));
+
+    }
 }
