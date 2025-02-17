@@ -106,11 +106,11 @@ pub struct AsPath<ASL, T: AsRef<[u8]>> {
 
 /// ASL marker type for 32bit ASNs;
 #[derive(Copy, Clone, Debug, Hash, PartialEq)]
-struct FourByteAsns;
+pub struct FourByteAsns;
 
 /// ASL marker type for 16bit ASNs;
 #[derive(Copy, Clone, Debug, Hash, PartialEq)]
-struct TwoByteAsns;
+pub struct TwoByteAsns;
 
 
 
@@ -301,6 +301,12 @@ impl<'sc, ASL, T: AsRef<[u8]>> PathAttributes<'sc, ASL, T> {
             session_config: self.session_config.clone(),
             raw: self.raw.as_ref().to_vec()
         }
+    }
+}
+
+impl<'sc, ASL, T: AsRef<[u8]>> AsRef<[u8]> for PathAttributes<'sc, ASL, T> {
+    fn as_ref(&self) -> &[u8] {
+        self.raw.as_ref()
     }
 }
 
