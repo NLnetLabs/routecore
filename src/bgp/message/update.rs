@@ -8,6 +8,7 @@ use std::net::Ipv4Addr;
 use octseq::{Octets, Parser};
 
 use crate::bgp::message::Header;
+use crate::bgp::path_attributes_ng as Pang;
 
 use inetnum::asn::Asn;
 use crate::bgp::aspath::AsPath;
@@ -339,6 +340,17 @@ impl<Octs: Octets> UpdateMessage<Octs> {
         let pp = Parser::with_range(self.octets(), self.attributes.clone());
 
         Ok(PathAttributes::new(pp, self.pdu_parse_info))
+    }
+
+    // XXX temporary helper to test new PathAttributesNg
+    pub fn path_attributes_ng<'sc>(
+        &self,
+        session_config: &'sc SessionConfig
+    ) -> Pang::PathAttributes<'sc, Pang::FourByteAsns, &[u8]> {
+        Pang::PathAttributes::new(
+            &self.octets().as_ref()[self.attributes.clone()],
+            session_config
+        )
     }
 
     fn unchecked_path_attributes(&self) -> UncheckedPathAttributes<Octs> {
@@ -2724,5 +2736,55 @@ mod tests {
         let pdu = UpdateMessage::from_octets(&raw, &SessionConfig::modern())
             .unwrap();
         assert_eq!(pdu.announcement_fams().count(), 2);
+    }
+
+    // Temporary, test new PathAttributesNg method on UpdateMessage
+    #[test]
+    fn pang() {
+        let buf = vec![
+            // BGP UPDATE, single conventional announcement, MultiExitDisc
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x37, 0x02,
+            0x00, 0x00, 0x00, 0x1b, 0x40, 0x01, 0x01, 0x00, 0x40, 0x02,
+            0x06, 0x02, 0x01, 0x00, 0x01, 0x00, 0x00, 0x40, 0x03, 0x04,
+            0x0a, 0xff, 0x00, 0x65, 0x80, 0x04, 0x04, 0x00, 0x00, 0x00,
+            0x01, 0x20, 0x0a, 0x0a, 0x0a, 0x02
+        ];
+
+        //let update: UpdateMessage<_> = parse_msg(&buf);
+        let bytes = Bytes::from(buf);
+        let update: UpdateMessage<_> = Message::from_octets(
+            bytes,
+            Some(&SessionConfig::modern())
+            ).unwrap().try_into().unwrap();
+
+        let sc = SessionConfig::modern();
+        let pas = update.path_attributes_ng(&sc);
+
+        
+        assert!(pas.get_lossy::<Pang::Origin>().is_some());
+
+
+        // create a PathAttributesNg over Vec<u8>
+        let v = pas.owned();
+        assert_eq!(v.as_ref(), pas.as_ref());
+
+        // create raw Vec<u8> from ref
+        let raw = Vec::<u8>::from(&pas);
+        assert_eq!(<Vec<u8> as AsRef<[u8]>>::as_ref(&raw), pas.as_ref());
+
+        // or create raw Vec<u8> by moving
+        //let raw = Vec::<u8>::from(pas);
+
+        // and create PathAttributes<T> again:
+        // over &[u8}
+        let pas2 = Pang::PathAttributes::new(&raw[..], &sc);
+        // or over &Vec<u8>
+        //let pas3 = Pang::PathAttributes::new(&raw, &sc);
+        // or over Vec<u8>
+        //let pas4 = Pang::PathAttributes::new(raw, &sc);
+
+        assert_eq!(pas2.iter().count(), pas.iter().count());
+
     }
 }
