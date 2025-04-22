@@ -50,9 +50,9 @@ impl Flags {
     // 2: partial 
     // 3: extended length (0 -> 1 byte length, 1 -> 2 byte length)
     // 4-7: MUST be 0 when sent, ignored when received
-    const OPT_NON_TRANS: u8 = 0b1000_0000;
-    const OPT_TRANS: u8     = 0b1100_0000;
-    const WELLKNOWN: u8     = 0b0100_0000;
+    pub const OPT_NON_TRANS: u8 = 0b1000_0000;
+    pub const OPT_TRANS: u8     = 0b1100_0000;
+    pub const WELLKNOWN: u8     = 0b0100_0000;
 
     const EXTENDED_LEN: u8  = 0b0001_0000;
     #[allow(dead_code)]
@@ -162,7 +162,11 @@ impl From<(PduParseInfo, Vec<u8>)> for OwnedPathAttributes {
     }
 }
 
-
+impl AsRef<[u8]> for OwnedPathAttributes {
+    fn as_ref(&self) -> &[u8] {
+        &self.raw
+    }
+}
 
 //------------ PathAttributesBuilder -----------------------------------------
 
