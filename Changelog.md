@@ -16,6 +16,16 @@ Other Changes
 Known limitations
 
 
+## 0.5.2
+
+
+Released 2025-04-22.
+
+New
+
+* `AsRef<u8>` impl for `OwnedPathAttributes`. This enables `rotonda-store` to
+  store these values in a RIB.
+
 
 ## 0.5.1
 
