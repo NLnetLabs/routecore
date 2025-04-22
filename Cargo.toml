@@ -7,7 +7,7 @@ description = "A Library with Building Blocks for BGP Routing"
 documentation = "https://docs.rs/routecore/"
 repository = "https://github.com/NLnetLabs/routecore"
 edition = "2021"
-rust-version = "1.76"
+rust-version = "1.77"
 keywords = ["routing", "bgp"]
 license = "BSD-3-Clause"
 
