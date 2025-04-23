@@ -1,20 +1,16 @@
-## Unreleased new version
+## 0.5.2
 
-
-Breaking changes
-
-
-Bug fixes
-
+Released 2025-04-23.
 
 New
 
+* `AsRef<u8>` impl for `OwnedPathAttributes`. This enables `rotonda-store` to
+  store these values in a RIB.
 
-Other Changes
+Other changes
 
-
-Known limitations
-
+* Be more forgiving when parsing BGP Open Capabilities, specifically empty
+  `AddPath` capabilities.
 
 
 ## 0.5.1
