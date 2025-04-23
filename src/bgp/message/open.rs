@@ -464,13 +464,17 @@ impl<Octs: Octets> Capability<Octs> {
                 }
             },
             CapabilityType::AddPath => {
-                let _afi = parser.parse_u16_be()?;
-                let _safi = parser.parse_u8()?;
-                let send_receive = parser.parse_u8()?;
-                if send_receive > 3 {
-                    return Err(ParseError::form_error(
-                            "Capability AddPath send/receive not 1,2 or 3"
-                    ))
+                if len == 0 {
+                    warn!("AddPath but empty value");
+                } else {
+                    let _afi = parser.parse_u16_be()?;
+                    let _safi = parser.parse_u8()?;
+                    let send_receive = parser.parse_u8()?;
+                    if send_receive > 3 {
+                        return Err(ParseError::form_error(
+                                "Capability AddPath send/receive not 1,2 or 3"
+                        ))
+                    }
                 }
             },
             CapabilityType::EnhancedRouteRefresh => {
@@ -498,12 +502,10 @@ impl<Octs: Octets> Capability<Octs> {
             },
             CapabilityType::SoftwareVersion => {
                 // As long as this Capability is not stable, jump over it
-                let len = parser.parse_u8()? as usize;
                 parser.advance(len)?;
             },
             CapabilityType::PathsLimit => {
                 // As long as this Capability is not stable, jump over it
-                let len = parser.parse_u8()? as usize;
                 parser.advance(len)?;
             },
             CapabilityType::PrestandardRouteRefresh => {
