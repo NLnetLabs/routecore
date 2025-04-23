@@ -1,25 +1,6 @@
-## Unreleased new version
-
-
-Breaking changes
-
-
-Bug fixes
-
-
-New
-
-
-Other Changes
-
-
-Known limitations
-
-
 ## 0.5.2
 
-
-Released 2025-04-22.
+Released 2025-04-23.
 
 New
 
@@ -29,7 +10,8 @@ New
 Other changes
 
 * Be more forgiving when parsing BGP Open Capabilities, specifically empty
-  AddPath capabilities.
+  `AddPath` capabilities.
+
 
 ## 0.5.1
 
