@@ -26,6 +26,10 @@ New
 * `AsRef<u8>` impl for `OwnedPathAttributes`. This enables `rotonda-store` to
   store these values in a RIB.
 
+Other changes
+
+* Be more forgiving when parsing BGP Open Capabilities, specifically empty
+  AddPath capabilities.
 
 ## 0.5.1
 
