@@ -465,7 +465,7 @@ impl<Octs: Octets> Capability<Octs> {
             },
             CapabilityType::AddPath => {
                 if len == 0 {
-                    warn!("AddPath but empty value");
+                    warn!("AddPath Capability but empty value");
                 } else {
                     let _afi = parser.parse_u16_be()?;
                     let _safi = parser.parse_u8()?;
