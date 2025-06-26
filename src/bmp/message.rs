@@ -982,7 +982,9 @@ impl<Octs: Octets> PeerUpNotification<Octs> {
     // XXX: 
     pub fn information_tlvs(&self) -> InformationTlvIter {
         let mut parser = Parser::from_ref(&self.octets);
-        parser.advance(6+42).expect("parsed before");
+        //Jump over the common header (6), the per peer header (42) and the
+        //local address and local+remote ports (20)
+        parser.advance(6+42+20).expect("parsed before");
         BgpOpen::parse(&mut parser).expect("parsed before");
         BgpOpen::parse(&mut parser).expect("parsed before");
 
@@ -1011,8 +1013,11 @@ impl<Octs: Octets> PeerUpNotification<Octs> {
         if parser.remaining() > 0 { 
             // Information TLVs of type 0 (String)
             let info_type = parser.parse_u16_be()?;
-            if info_type != 0 {
-                warn!("TLV in PeerUpNotification of type other than 0");
+            match info_type {
+                0|3|4 => { },
+                u => {
+                    warn!("Unknown TLV type {u} in PeerUpNotification");
+                }
             }
             let info_len = parser.parse_u16_be()?;
             parser.advance(info_len.into())?;
