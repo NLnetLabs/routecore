@@ -10,7 +10,11 @@ New
 
 Bug fixes
 
+* Fix TLV iterator on BMP PeerUpNotification messages
+
 Other changes
+
+* Fine-tuned the warnings for unknown TLV types on BMP PeerUpNotifications
 
 Known limitations
 
