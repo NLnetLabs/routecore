@@ -557,7 +557,6 @@ pub enum RibType {
 
 
 /// Route Monitoring message.
-
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RouteMonitoring<Octets: AsRef<[u8]>>
