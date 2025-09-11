@@ -381,6 +381,12 @@ impl<Octs: Octets> PerPeerHeader<Octs> {
     }
 }
 
+impl<Octs: Octets> AsRef<[u8]> for PerPeerHeader<Octs> {
+    fn as_ref(&self) -> &[u8] {
+        self.octets.as_ref()
+    }
+}
+
 impl<Octets: AsRef<[u8]>> PerPeerHeader<Octets> {
     /// Returns the peer type as defined in
     /// [RFC7854](https://datatracker.ietf.org/doc/html/rfc7854#section-10.2).
