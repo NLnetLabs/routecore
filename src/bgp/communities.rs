@@ -483,7 +483,7 @@ wellknown!(Wellknown,
 /// Conventional, RFC1997 4-byte community.
 #[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "serde", derive(serde_with::SerializeDisplay))]
 pub struct StandardCommunity(pub(crate) [u8; 4]);
 
 impl StandardCommunity {
@@ -1441,7 +1441,7 @@ impl Display for Ipv6ExtendedCommunity {
 /// Large Community as defined in RFC8092.
 #[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "serde", derive(serde_with::SerializeDisplay))]
 pub struct LargeCommunity([u8; 12]);
 
 impl LargeCommunity {
