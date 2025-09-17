@@ -2064,6 +2064,7 @@ use crate::bgp::communities::LargeCommunity;
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "serde", serde(transparent))]
 pub struct LargeCommunitiesList {
     communities: Vec<LargeCommunity>
 }
