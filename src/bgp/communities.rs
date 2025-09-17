@@ -753,7 +753,7 @@ impl Display for Tag {
 /// Extended Community as defined in RFC4360.
 #[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "serde", derive(serde_with::SerializeDisplay))]
 pub struct ExtendedCommunity([u8; 8]);
 
 impl ExtendedCommunity {
@@ -1312,7 +1312,7 @@ impl SerializeForOperators for ExtendedCommunity {
 /// IPv6 Extended Community as defined in RFC5701.
 #[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "serde", derive(serde_with::SerializeDisplay))]
 pub struct Ipv6ExtendedCommunity([u8; 20]);
 
 
