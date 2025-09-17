@@ -597,12 +597,12 @@ impl AsPath<()> {
 
 impl<Octs: Octets> AsPath<Octs> {
     /// Returns a [`PathHops`] iterator for this path.
-    pub fn hops(&self) -> PathHops<Octs> {
+    pub fn hops(&self) -> PathHops<'_, Octs> {
         PathHops::new(&self.octets, self.four_byte_asns)
     }
     
     /// Returns a [`PathSegments`] iterator for this path.
-    pub fn segments(&self) -> PathSegments<Octs> {
+    pub fn segments(&self) -> PathSegments<'_, Octs> {
         PathSegments::new(&self.octets, self.four_byte_asns)
     }
 
@@ -657,7 +657,7 @@ impl<Octs: Octets> AsPath<Octs> {
     /// If this AsPath consists of a single `AS_SEQUENCE` segment, this
     /// returns an iterator over those ASNs directly, otherwise returns an
     /// error.
-    pub fn try_single_sequence_iter(&self) -> Result<Asns<Octs>, &str> {
+    pub fn try_single_sequence_iter(&self) -> Result<Asns<'_, Octs>, &str> {
         if self.is_single_sequence() {
             let mut parser = Parser::from_ref(&self.octets);
             parser.advance(2).unwrap();
@@ -892,7 +892,7 @@ impl Segment<Vec<u8>> {
 
 impl<Octs: AsRef<[u8]>> Segment<Octs> {
     /// Returns an iterator over the [`Asn`]s in this Segment.
-    pub fn asns(&self) -> Asns<Octs> {
+    pub fn asns(&self) -> Asns<'_, Octs> {
         Asns::new(Parser::from_ref(&self.octets), self.four_byte_asns)
     }
 

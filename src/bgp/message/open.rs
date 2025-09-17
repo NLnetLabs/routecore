@@ -124,11 +124,11 @@ impl<Octs: Octets> OpenMessage<Octs> {
     }
 
     /// Returns an iterator over the Optional Parameters.
-    pub fn parameters(&self) -> ParametersParser<Octs> {
+    pub fn parameters(&self) -> ParametersParser<'_, Octs> {
         self.parameters_iter()
     }
 
-    fn parameters_iter(&self) -> ParametersParser<Octs> {
+    fn parameters_iter(&self) -> ParametersParser<'_, Octs> {
         let mut p = Parser::from_ref(&self.octets); 
         p.advance(COFF+10).unwrap();
 

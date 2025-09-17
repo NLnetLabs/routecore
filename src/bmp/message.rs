@@ -640,7 +640,7 @@ impl<Octs: Octets> StatisticsReport<Octs> {
     }
 
     /// Return an iterator over the statistics.
-    pub fn stats(&self) -> StatIter {
+    pub fn stats(&self) -> StatIter<'_> {
         StatIter::new(&self.octets.as_ref()[COFF+4..], self.stats_count())
     }
 
@@ -985,7 +985,7 @@ impl<Octs: Octets> PeerUpNotification<Octs> {
 
 
     // XXX: 
-    pub fn information_tlvs(&self) -> InformationTlvIter {
+    pub fn information_tlvs(&self) -> InformationTlvIter<'_> {
         let mut parser = Parser::from_ref(&self.octets);
         //Jump over the common header (6), the per peer header (42) and the
         //local address and local+remote ports (20)
@@ -1047,7 +1047,7 @@ impl<Octs: Octets> InitiationMessage<Octs> {
     }
 
     /// Return an iterator over the Information TLVs.
-    pub fn information_tlvs(&self) -> InformationTlvIter {
+    pub fn information_tlvs(&self) -> InformationTlvIter<'_> {
         InformationTlvIter::new(&self.as_ref()[
             6
             ..
@@ -1089,7 +1089,7 @@ impl<Octs: Octets> TerminationMessage<Octs> {
 
     /// Return an iterator over the Information TLVs.
     // XXX D-R-Y with TLVs from InitiationMessage
-    pub fn information(&self) -> InformationIter {
+    pub fn information(&self) -> InformationIter<'_> {
         InformationIter::new(
             &self.octets.as_ref()[6..],
             self.common_header().length() as usize - 6

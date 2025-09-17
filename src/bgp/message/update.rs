@@ -334,14 +334,14 @@ impl<Octs: Octets> UpdateMessage<Octs> {
     }
 
     pub fn path_attributes(&self)
-        -> Result<PathAttributes<Octs>, ParseError>
+        -> Result<PathAttributes<'_, Octs>, ParseError>
     {
         let pp = Parser::with_range(self.octets(), self.attributes.clone());
 
         Ok(PathAttributes::new(pp, self.pdu_parse_info))
     }
 
-    fn unchecked_path_attributes(&self) -> UncheckedPathAttributes<Octs> {
+    fn unchecked_path_attributes(&self) -> UncheckedPathAttributes<'_, Octs> {
         let pp = Parser::with_range(self.octets(), self.attributes.clone());
         UncheckedPathAttributes::from_parser(pp)
     }

@@ -117,7 +117,7 @@ impl OwnedPathAttributes {
     }
 
     /// Returns a [`PathAttributes`] iterator.
-    pub fn iter(&self) -> PathAttributes<Vec<u8>> {
+    pub fn iter(&self) -> PathAttributes<'_, Vec<u8>> {
         let parser = Parser::from_ref(&self.raw);
         PathAttributes::new(parser, self.ppi)
     }
