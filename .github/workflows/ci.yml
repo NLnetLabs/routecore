@@ -28,26 +28,26 @@ jobs:
           rustup component add clippy
           cargo clippy --all --all-features -- -D warnings -W clippy::cargo
 
-      - if: matrix.rust == 'beta'
-        run: rustup component add clippy
+      #- if: matrix.rust == 'beta'
+      #  run: rustup component add clippy
 
-      # For beta, turn warnings into GitHub annotations.
-      - if: matrix.rust == 'beta'
-        uses: mathiasvr/command-output@v2.0.0
-        id: clippy_beta
-        with:
-          run: |
-            # We can warn on additional lints. cargo::nursery might make sense.
-            # XXX currently this only shows the first line of output. Also see
-            # https://github.com/actions/toolkit/issues/193
-            # Replacing '\n' with "%0A" might be a workaround.
-            cargo clippy --all --all-features -q --message-format short -- \
-            -W clippy::cargo # -W clippy::nursery
+      ## For beta, turn warnings into GitHub annotations.
+      #- if: matrix.rust == 'beta'
+      #  uses: mathiasvr/command-output@v2.0.0
+      #  id: clippy_beta
+      #  with:
+      #    run: |
+      #      # We can warn on additional lints. cargo::nursery might make sense.
+      #      # XXX currently this only shows the first line of output. Also see
+      #      # https://github.com/actions/toolkit/issues/193
+      #      # Replacing '\n' with "%0A" might be a workaround.
+      #      cargo clippy --all --all-features -q --message-format short -- \
+      #      -W clippy::cargo # -W clippy::nursery
 
-      - if: ${{ steps.clippy_beta.outputs.stderr }}
-        env:
-          clippy_warnings: ${{ steps.clippy_beta.outputs.stderr }}
-        run: echo "::warning ::$clippy_warnings"
+      #- if: ${{ steps.clippy_beta.outputs.stderr }}
+      #  env:
+      #    clippy_warnings: ${{ steps.clippy_beta.outputs.stderr }}
+      #  run: echo "::warning ::$clippy_warnings"
 
 
       # Because of all the features, we run build and test twice -- once with
