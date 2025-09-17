@@ -6,6 +6,11 @@ Release yyyy-mm-yy.
 
 Breaking changes
 
+* MSRV bumped to 1.81
+
+* Serialisation of the different community types (BGP path attributes) now uses
+  their Display` implementations
+
 New
 
 Bug fixes
