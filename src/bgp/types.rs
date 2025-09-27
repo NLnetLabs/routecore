@@ -203,7 +203,8 @@ pub struct AtomicAggregate;
 /// Wrapper for the 4 byte OnlyToCustomer (Otc) value in path attributes.
 #[derive(Debug, Eq, PartialEq, Clone, Copy, Hash)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde", derive(Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde_with::SerializeDisplay))]
 pub struct Otc(pub Asn);
 
 impl From<Otc> for u32 {
