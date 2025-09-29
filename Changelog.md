@@ -1,5 +1,25 @@
 # Changelog
 
+## Unreleased version
+
+Released yyyy-mm-dd.
+
+Breaking changes
+
+
+New
+
+
+Bug fixes
+
+
+Other changes
+
+
+Known issues
+
+
+
 ## 0.6.0
 
 Released 2025-09-29.
