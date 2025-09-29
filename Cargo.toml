@@ -7,7 +7,7 @@ description = "A Library with Building Blocks for BGP Routing"
 documentation = "https://docs.rs/routecore/"
 repository = "https://github.com/NLnetLabs/routecore"
 edition = "2021"
-rust-version = "1.77"
+rust-version = "1.81"
 keywords = ["routing", "bgp"]
 license = "BSD-3-Clause"
 
@@ -23,6 +23,7 @@ paste       = { version = "1" }
 serde       = { version = "1.0.165", optional = true, features = ["derive"] }
 tokio       = { version = ">=1.24.2", optional = true, features = ["io-util", "macros", "net", "sync", "rt-multi-thread", "time"] }
 rayon       = { version = "1.10", optional = true }
+serde_with = "3.14.0"
 
 [dev-dependencies]
 memmap2         = "0.9"

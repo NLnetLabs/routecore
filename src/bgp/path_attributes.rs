@@ -117,7 +117,7 @@ impl OwnedPathAttributes {
     }
 
     /// Returns a [`PathAttributes`] iterator.
-    pub fn iter(&self) -> PathAttributes<Vec<u8>> {
+    pub fn iter(&self) -> PathAttributes<'_, Vec<u8>> {
         let parser = Parser::from_ref(&self.raw);
         PathAttributes::new(parser, self.ppi)
     }
@@ -1770,6 +1770,7 @@ use crate::bgp::communities::ExtendedCommunity;
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "serde", serde(transparent))]
 pub struct ExtendedCommunitiesList {
     communities: Vec<ExtendedCommunity>
 }
@@ -1993,6 +1994,7 @@ use crate::bgp::communities::Ipv6ExtendedCommunity;
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "serde", serde(transparent))]
 pub struct Ipv6ExtendedCommunitiesList {
     communities: Vec<Ipv6ExtendedCommunity>
 }
@@ -2064,6 +2066,7 @@ use crate::bgp::communities::LargeCommunity;
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "serde", serde(transparent))]
 pub struct LargeCommunitiesList {
     communities: Vec<LargeCommunity>
 }

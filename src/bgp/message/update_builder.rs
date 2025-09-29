@@ -13,6 +13,7 @@ use crate::bgp::path_attributes::{Attribute, PaMap, PathAttributeType};
 use crate::bgp::types::{AfiSafiType, NextHop};
 use crate::util::parser::ParseError;
 
+
 //------------ UpdateBuilder -------------------------------------------------
 #[derive(Debug)]
 pub struct UpdateBuilder<Target, A> {
@@ -1201,9 +1202,12 @@ impl<A: NlriCompose> MpUnreachNlriBuilder<A> {
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "serde", serde(transparent))]
 pub struct StandardCommunitiesList {
     communities: Vec<StandardCommunity>,
+    #[cfg_attr(feature = "serde", serde(skip))]
     len: usize, // size of value, excluding path attribute flags+type_code+len
+    #[cfg_attr(feature = "serde", serde(skip))]
     extended: bool,
 }
 
