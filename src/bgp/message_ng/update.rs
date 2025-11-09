@@ -6,17 +6,6 @@ use zerocopy::{byteorder, FromBytes, Immutable, IntoBytes, KnownLayout, NetworkE
 #[derive(IntoBytes, FromBytes, KnownLayout, Immutable)]
 #[derive(Eq, PartialEq)]
 #[repr(C, packed)]
-pub struct MessageType(pub u8);
-
-#[allow(dead_code)]
-impl MessageType {
-    pub const OPEN: Self = Self(1);
-    pub const UPDATE: Self = Self(2);
-}
-
-#[derive(IntoBytes, FromBytes, KnownLayout, Immutable)]
-#[derive(Eq, PartialEq)]
-#[repr(C, packed)]
 pub struct PathAttributeType(pub u8);
 impl PathAttributeType {
     pub const NEXT_HOP: Self = Self(3);
@@ -50,15 +39,6 @@ fn hexprint(buf: impl AsRef<[u8]>) {
 
 #[derive(IntoBytes, TryFromBytes, KnownLayout, Immutable)]
 #[repr(C, packed)]
-pub struct Header {
-    marker: [u8; 16],
-    pub length: byteorder::U16<NetworkEndian>,
-    pub msg_type: MessageType,
-}
-
-
-#[derive(IntoBytes, TryFromBytes, KnownLayout, Immutable)]
-#[repr(C, packed)]
 pub struct UncheckedUpdate {
     contents: [u8],
     //withdrawn: Withdrawn,
@@ -69,7 +49,7 @@ impl UncheckedUpdate {
 
     // `raw` should be the message content after the header
     // so, 19 bytes after the start of the full PDU
-    fn from_minimal_length(raw: &[u8]) -> Result<&Self, Cow<'static, str>> {
+    pub(crate) fn from_minimal_length(raw: &[u8]) -> Result<&Self, Cow<'static, str>> {
         // The smallest UPDATE has
         // - two bytes withdraw len
         // - two bytes total path attributes len
@@ -125,7 +105,7 @@ impl UncheckedUpdate {
         ]
     }
 
-    fn into_checked_parts(&self) -> (Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>) {
+    pub(crate) fn into_checked_parts(&self) -> (Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>) {
 
         // first check whether there are conv nlri
         // chances of mixed mp+conv are low so only fill up one vec
@@ -462,6 +442,8 @@ impl<'a> Iterator for UncheckedPathAttributesIter<'a> {
 mod tests{
 
     use std::{fs::File, io::{BufReader, Read}};
+
+    use crate::bgp::message_ng::common::{Header, MessageType};
 
     use super::*;
 
