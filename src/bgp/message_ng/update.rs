@@ -5,16 +5,18 @@ use zerocopy::{byteorder, FromBytes, Immutable, IntoBytes, KnownLayout, NetworkE
 
 use crate::bgp::message_ng::common::{SessionConfig, SEGMENT_TYPE_SEQUENCE};
 
-pub const HINT_4BYTE_ASNS: u8 = 0b0000_0001;
-pub const HINT_SINGLE_SEQ: u8 = 0b0000_0010;
-pub const HINT_ADDPATH: u8 = 0b0000_0100;
-pub const HINT_MULTILABEL: u8 = 0b0000_1000;
-pub const HINT_MALFORMED: u8 = 0b0001_0000;
+#[allow(dead_code)] // false positive
+pub(crate) const HINT_4BYTE_ASNS: u8 = 0b0000_0001;
+#[allow(dead_code)] // false positive
+pub(crate) const HINT_SINGLE_SEQ: u8 = 0b0000_0010;
+pub(crate) const HINT_ADDPATH: u8 = 0b0000_0100;
+pub(crate) const HINT_MULTILABEL: u8 = 0b0000_1000;
+pub(crate) const HINT_MALFORMED: u8 = 0b0001_0000;
 
 #[derive(IntoBytes, FromBytes, KnownLayout, Immutable)]
 #[derive(Eq, PartialEq)]
 #[repr(C, packed)]
-pub struct PathAttributeType(pub u8);
+pub struct PathAttributeType(u8);
 impl PathAttributeType {
     pub const AS_PATH: Self = Self(2);
     pub const NEXT_HOP: Self = Self(3);
@@ -36,6 +38,7 @@ impl fmt::Display for PathAttributeType {
     }
 }
 
+#[allow(dead_code)] // just a helper for now
 fn hexprint(buf: impl AsRef<[u8]>) {
     for c in buf.as_ref().chunks(16) {
         for b in c {
@@ -174,7 +177,6 @@ impl Update {
 
         let mut iter = self.path_attributes().iter();
 
-        let mut seen: u8 = 0;
         let mut origin_as: byteorder::U32<NetworkEndian> = 0.into();
 
 
@@ -246,18 +248,15 @@ impl Update {
                                 // clone whatever we already collected for conventional into mp
                                 eprintln!("also_mp, extending from slice");
                                 mp_attributes.extend_from_slice(&conventional_attributes[..]);
-                                seen |= 0x1;
                             }
                             PathAttributeType::MP_UNREACH_NLRI => {
                                 //checked_size -= pa.raw_len();
                                 mp_unreach.extend_from_slice(pa.as_bytes());
-                                seen |= 0x2;
                             }
                             PathAttributeType::NEXT_HOP => {
                                 //checked_size -= pa.raw_len();
                                 conventional_attributes.extend_from_slice(pa.as_bytes());
                                 //dbg!("Unexpected NEXT_HOP in MP UPDATE");
-                                seen |= 0x4;
                             }
                             PathAttributeType::AS_PATH => {
                                 _attr_as_path(pa, session_config, &mut pa_hints, &mut origin_as);
@@ -314,12 +313,10 @@ impl Update {
                                 //checked_size -= pa.raw_len();
                                 //pa.write_to(&mut mp_reach).unwrap();
                                 mp_reach.extend_from_slice(pa.as_bytes());
-                                seen |= 0x1;
                             }
                             PathAttributeType::MP_UNREACH_NLRI => {
                                 //checked_size -= pa.raw_len();
                                 mp_unreach.extend_from_slice(pa.as_bytes());
-                                seen |= 0x2;
                             }
                             PathAttributeType::NEXT_HOP => {
                                 //checked_size -= pa.raw_len();
@@ -328,7 +325,6 @@ impl Update {
                                 //dbg!(self.conventional_nlri());
                                 //hexprint(&self.contents);
                                 //panic!();
-                                seen |= 0x4;
                             }
                             PathAttributeType::AS_PATH => {
                                 _attr_as_path(pa, session_config, &mut pa_hints, &mut origin_as);
@@ -402,9 +398,10 @@ pub struct RawPathAttribute {
 }
 
 impl RawPathAttribute {
-    fn raw_len(&self) -> usize {
-        2 + self.length_and_value.len()
-    }
+    // Do we need such a thing?
+    //fn raw_len(&self) -> usize {
+    //    2 + self.length_and_value.len()
+    //}
 
     fn value(&self) -> &[u8] {
         if self.flags & EXTENDED_LEN == EXTENDED_LEN {
@@ -421,73 +418,73 @@ impl UncheckedPathAttributes {
         UncheckedPathAttributesIter { raw: &self.path_attributes }
     }
 
-    // return checked, mp_reach, mp_unreach, checked_conventional, malformed
-    fn into_checked(&self) -> (Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>) {
+    //// return checked, mp_reach, mp_unreach, checked_conventional, malformed
+    //fn into_checked(&self) -> (Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>) {
 
-        let mut checked = vec![];
-        let mut mp_reach = vec![];
-        let mut mp_unreach = vec![];
-        let mut checked_conventional = vec![];
-        let mut malformed = vec![];
+    //    let mut checked = vec![];
+    //    let mut mp_reach = vec![];
+    //    let mut mp_unreach = vec![];
+    //    let mut checked_conventional = vec![];
+    //    let mut malformed = vec![];
 
 
-        let mut iter = self.iter();
-        let mut seen: u8 = 0;
-        
-        //let mut checked_size = self.path_attributes.len();
-        
+    //    let mut iter = self.iter();
+    //    let mut seen: u8 = 0;
+    //    
+    //    //let mut checked_size = self.path_attributes.len();
+    //    
 
-        while let Some(r) = iter.next() {
-            match r {
-                Ok(pa) => { 
-                    //dbg!(pa);
-                    match pa.pa_type {
-                        PathAttributeType::MP_REACH_NLRI => {
-                            //checked_size -= pa.raw_len();
-                            //pa.write_to(&mut mp_reach).unwrap();
-                            mp_reach.extend_from_slice(pa.as_bytes());
-                            seen |= 0x1;
-                        }
-                        PathAttributeType::MP_UNREACH_NLRI => {
-                            //checked_size -= pa.raw_len();
-                            mp_unreach.extend_from_slice(pa.as_bytes());
-                            seen |= 0x2;
-                        }
-                        PathAttributeType::NEXT_HOP => {
-                            //checked_size -= pa.raw_len();
-                            checked_conventional.extend_from_slice(pa.as_bytes());
-                            seen |= 0x4;
-                        }
-                        _ => {
-                            checked.extend_from_slice(pa.as_bytes());
-                            checked_conventional.extend_from_slice(pa.as_bytes());
-                        }
-                    }
-                }                   
-                Err(e) => {
-                    dbg!("malformed");
-                    malformed = e.as_bytes().into();
-                    break;
-                }
+    //    while let Some(r) = iter.next() {
+    //        match r {
+    //            Ok(pa) => { 
+    //                //dbg!(pa);
+    //                match pa.pa_type {
+    //                    PathAttributeType::MP_REACH_NLRI => {
+    //                        //checked_size -= pa.raw_len();
+    //                        //pa.write_to(&mut mp_reach).unwrap();
+    //                        mp_reach.extend_from_slice(pa.as_bytes());
+    //                        seen |= 0x1;
+    //                    }
+    //                    PathAttributeType::MP_UNREACH_NLRI => {
+    //                        //checked_size -= pa.raw_len();
+    //                        mp_unreach.extend_from_slice(pa.as_bytes());
+    //                        seen |= 0x2;
+    //                    }
+    //                    PathAttributeType::NEXT_HOP => {
+    //                        //checked_size -= pa.raw_len();
+    //                        checked_conventional.extend_from_slice(pa.as_bytes());
+    //                        seen |= 0x4;
+    //                    }
+    //                    _ => {
+    //                        checked.extend_from_slice(pa.as_bytes());
+    //                        checked_conventional.extend_from_slice(pa.as_bytes());
+    //                    }
+    //                }
+    //            }                   
+    //            Err(e) => {
+    //                dbg!("malformed");
+    //                malformed = e.as_bytes().into();
+    //                break;
+    //            }
 
-            }
-        }
-        //if seen.count_ones() > 1 {
-        //    eprintln!("{seen:0X}");
-        //}
-        //if !mp_unreach.is_empty() {
-        //    eprint!("U");
-        //} else {
-        //    eprint!(".");
-        //}
-        //if checked_conventional.is_empty() {
-        //    eprint!("_");
-        //} else {
-        //    eprint!("X");
-        //}
+    //        }
+    //    }
+    //    //if seen.count_ones() > 1 {
+    //    //    eprintln!("{seen:0X}");
+    //    //}
+    //    //if !mp_unreach.is_empty() {
+    //    //    eprint!("U");
+    //    //} else {
+    //    //    eprint!(".");
+    //    //}
+    //    //if checked_conventional.is_empty() {
+    //    //    eprint!("_");
+    //    //} else {
+    //    //    eprint!("X");
+    //    //}
 
-        (checked, mp_reach, mp_unreach, checked_conventional, malformed)
-    }
+    //    (checked, mp_reach, mp_unreach, checked_conventional, malformed)
+    //}
 
     //fn check(&self) -> &CheckedPathAttributes {
     //    transmute_ref!(self)
@@ -673,9 +670,9 @@ mod tests{
         };
         
         let unchecked = update.path_attributes();
-        let (checked, mp_reach, mp_unreach, checked_conventional, malformed) = unchecked.into_checked();
+        //let (checked, mp_reach, mp_unreach, checked_conventional, malformed) = unchecked.into_checked();
         
-        dbg!((checked, mp_reach, mp_unreach, checked_conventional, malformed));
+        //dbg!((checked, mp_reach, mp_unreach, checked_conventional, malformed));
 
     }
 

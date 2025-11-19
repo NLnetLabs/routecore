@@ -1,6 +1,6 @@
-mod update;
-mod io;
-mod common;
+pub mod update;
+pub mod io;
+pub mod common;
 
-// TODO eventually:
-//pub use update::CheckedUpdate as Update;
+pub use update::Update as Update;
+

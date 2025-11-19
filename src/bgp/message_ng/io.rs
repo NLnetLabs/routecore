@@ -12,17 +12,6 @@ struct MessageIter<R: Read, const B: usize> {
     buf_end: usize,
 }
 
-//impl<R: Read> MessageIter<R, {2<<20}> {
-//    pub fn new(reader: R) -> Self {
-//        Self {
-//            reader,
-//            buf: [0u8; 2<<20],
-//            buf_cursor: 0,
-//            buf_end: 0,
-//        }
-//    }
-//}
-
 impl<R: Read, const B: usize, > MessageIter<R, B> {
     pub fn new(reader: R) -> Self {
         Self {
@@ -85,6 +74,7 @@ static CNT_TOTAL: AtomicUsize = AtomicUsize::new(0);
 static CNT_COMBINED: AtomicUsize = AtomicUsize::new(0);
 static CNT_MP_R_U: AtomicUsize = AtomicUsize::new(0);
 static CNT_NOT_SINGLE_SEQ: AtomicUsize = AtomicUsize::new(0);
+static CNT_MALFORMED: AtomicUsize = AtomicUsize::new(0);
 
 impl Pool {
     pub fn start_processing(self) -> Arc<RwLock<VecDeque<Vec<u8>>>> {
@@ -119,6 +109,9 @@ impl Pool {
                                 }
                                 if !mpr.is_empty() && !mpu.is_empty() {
                                     CNT_MP_R_U.fetch_add(1, Ordering::Relaxed);
+                                }
+                                if !m.is_empty() {
+                                    CNT_MALFORMED.fetch_add(1, Ordering::Relaxed);
                                 }
                                 if pa_hints & HINT_SINGLE_SEQ == HINT_SINGLE_SEQ {
                                     // then we should have a non-zero ASN:
@@ -174,6 +167,7 @@ mod tests {
             COMBINED: {CNT_COMBINED:?}, \
             MP_R_U: {CNT_MP_R_U:?}, \
             NOT_SINGLE_SEQ: {CNT_NOT_SINGLE_SEQ:?}, \
+            MALFORMED: {CNT_MALFORMED:?}, \
             ");
     }
 }
