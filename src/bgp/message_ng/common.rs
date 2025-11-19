@@ -1,6 +1,7 @@
 use zerocopy::{byteorder, FromBytes, Immutable, IntoBytes, KnownLayout, NetworkEndian, TryFromBytes};
 
 pub const MIN_MSG_SIZE: usize = 19;
+pub const SEGMENT_TYPE_SEQUENCE: u8 = 2;
 
 #[derive(IntoBytes, TryFromBytes, KnownLayout, Immutable)]
 #[repr(C, packed)]
@@ -30,3 +31,21 @@ impl MessageType {
     pub const UPDATE: Self = Self(2);
 }
 
+
+pub struct SessionConfig {
+    four_octet_asns: bool,
+    //addpath_families: TODO
+    //max_pdu_size: TODO
+}
+impl Default for SessionConfig {
+    fn default() -> Self {
+        Self {
+            four_octet_asns: true,
+        }
+    }
+}
+impl SessionConfig {
+    pub fn four_octet_asns(&self) -> bool {
+        self.four_octet_asns
+    }
+}

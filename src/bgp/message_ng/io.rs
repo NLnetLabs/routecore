@@ -2,7 +2,7 @@ use std::{borrow::Cow, collections::VecDeque, io::Read, sync::{atomic::{AtomicUs
 
 use zerocopy::TryFromBytes;
 
-use crate::bgp::message_ng::{common::{Header, MessageType, MIN_MSG_SIZE}, update::UncheckedUpdate};
+use crate::bgp::message_ng::{common::{Header, MessageType, SessionConfig, MIN_MSG_SIZE}, update::{Update, HINT_SINGLE_SEQ}};
 
 
 struct MessageIter<R: Read, const B: usize> {
@@ -81,15 +81,20 @@ pub struct Pool {
     queue: Arc<RwLock<VecDeque<Vec<u8>>>>,
 }
 
-static CNT: AtomicUsize = AtomicUsize::new(0);
+static CNT_TOTAL: AtomicUsize = AtomicUsize::new(0);
+static CNT_COMBINED: AtomicUsize = AtomicUsize::new(0);
+static CNT_MP_R_U: AtomicUsize = AtomicUsize::new(0);
+static CNT_NOT_SINGLE_SEQ: AtomicUsize = AtomicUsize::new(0);
 
 impl Pool {
     pub fn start_processing(self) -> Arc<RwLock<VecDeque<Vec<u8>>>> {
         let pool = rayon::ThreadPoolBuilder::new().num_threads(6).build().unwrap();
         let queue = self.queue.clone();
-        for n in 0..dbg!(pool.current_num_threads()) {
+        let sc = Arc::new(SessionConfig::default());
+        for _ in 0..dbg!(pool.current_num_threads()) {
             //s.spawn(|_s2| {
             let queue = queue.clone();
+            let sc = sc.clone();
             pool.spawn(move || {
                 eprintln!("[{:?}] spawned", thread::current().id());
                 loop {
@@ -106,9 +111,22 @@ impl Pool {
                         let msg = &buf[buf_cursor+19..buf_cursor+len];
                         match header.msg_type {
                             MessageType::UPDATE => {
-                                let update = UncheckedUpdate::from_minimal_length(msg).unwrap();
-                                let (c, mpr, mpu, c_c, m) = update.into_checked_parts();
-                                CNT.fetch_add(1, Ordering::Relaxed);
+                                let update = Update::try_from_raw(msg).unwrap();
+                                let (pa_hints, origin_as, c, mpr, mpu, c_c, m) = update.into_checked_parts(&sc);
+                                CNT_TOTAL.fetch_add(1, Ordering::Relaxed);
+                                if !c.is_empty() && !c_c.is_empty() {
+                                    CNT_COMBINED.fetch_add(1, Ordering::Relaxed);
+                                }
+                                if !mpr.is_empty() && !mpu.is_empty() {
+                                    CNT_MP_R_U.fetch_add(1, Ordering::Relaxed);
+                                }
+                                if pa_hints & HINT_SINGLE_SEQ == HINT_SINGLE_SEQ {
+                                    // then we should have a non-zero ASN:
+                                    assert!(origin_as != 0);
+                                } else {
+                                    CNT_NOT_SINGLE_SEQ.fetch_add(1, Ordering::Relaxed);
+                                    assert!(origin_as == 0);
+                                }
                             },
                             MessageType::OPEN => { },
                             _ => { }
@@ -152,7 +170,10 @@ mod tests {
             //std::hint::spin_loop();
             thread::sleep(Duration::from_millis(100));
         }
-        thread::sleep(Duration::from_millis(1000));
-        eprintln!("Done, CNT: {CNT:?}");
+        eprintln!("Done, CNT: {CNT_TOTAL:?}, \
+            COMBINED: {CNT_COMBINED:?}, \
+            MP_R_U: {CNT_MP_R_U:?}, \
+            NOT_SINGLE_SEQ: {CNT_NOT_SINGLE_SEQ:?}, \
+            ");
     }
 }

@@ -3,11 +3,20 @@ use std::borrow::Cow;
 
 use zerocopy::{byteorder, FromBytes, Immutable, IntoBytes, KnownLayout, NetworkEndian, TryFromBytes};
 
+use crate::bgp::message_ng::common::{SessionConfig, SEGMENT_TYPE_SEQUENCE};
+
+pub const HINT_4BYTE_ASNS: u8 = 0b0000_0001;
+pub const HINT_SINGLE_SEQ: u8 = 0b0000_0010;
+pub const HINT_ADDPATH: u8 = 0b0000_0100;
+pub const HINT_MULTILABEL: u8 = 0b0000_1000;
+pub const HINT_MALFORMED: u8 = 0b0001_0000;
+
 #[derive(IntoBytes, FromBytes, KnownLayout, Immutable)]
 #[derive(Eq, PartialEq)]
 #[repr(C, packed)]
 pub struct PathAttributeType(pub u8);
 impl PathAttributeType {
+    pub const AS_PATH: Self = Self(2);
     pub const NEXT_HOP: Self = Self(3);
     pub const MP_REACH_NLRI: Self = Self(14);
     pub const MP_UNREACH_NLRI: Self = Self(15);
@@ -36,41 +45,61 @@ fn hexprint(buf: impl AsRef<[u8]>) {
     }
 }
 
-
+/// Unchecked Update message without BGP header
+///
+/// There is no guarantee for this type other than that the length of the withdrawn routes and the
+/// total path attributes length fit inside the PDU.
+// TODO make generic over 2 vs 4 byte ASNs? and ADDPATH stuff?
+// those characteristics should then end up in the byte with flags, to come out of
+// fn into_checked_parts(...)
 #[derive(IntoBytes, TryFromBytes, KnownLayout, Immutable)]
 #[repr(C, packed)]
-pub struct UncheckedUpdate {
+pub struct Update {
     contents: [u8],
-    //withdrawn: Withdrawn,
-    //path_attributes: PathAttributes,
 }
-impl UncheckedUpdate {
+
+impl Update {
 
 
     // `raw` should be the message content after the header
     // so, 19 bytes after the start of the full PDU
-    pub(crate) fn from_minimal_length(raw: &[u8]) -> Result<&Self, Cow<'static, str>> {
+    // TODO pass in session config to properly set const usize A
+    pub(crate) fn try_from_raw(raw: &[u8]) -> Result<&Update, Cow<'static, str>> {
         // The smallest UPDATE has
         // - two bytes withdraw len
         // - two bytes total path attributes len
         if raw.len() < 4 {
-            Err("minimal size of UPDATE is 19+4".into())
-        } else {
-            UncheckedUpdate::try_ref_from_bytes(raw)
-                .map_err(|e| e.to_string().into())
+            return Err("minimal size of UPDATE is 19+4".into());
         }
+
+        let withdrawn_routes_len: usize = u16::from_be_bytes([raw[0], raw[1]])
+            .into();
+
+        if 2 + withdrawn_routes_len > raw.len() {
+            return Err("withdrawn routes length exceeds PDU length".into());
+        }
+        if 4 + withdrawn_routes_len + usize::from(u16::from_be_bytes([
+                raw[2+withdrawn_routes_len],
+                raw[3+withdrawn_routes_len]
+            ])) > raw.len() {
+                return Err("total path attributes length exceeds PDU length".into());
+        }
+
+        Update::try_ref_from_bytes(raw)
+            .map_err(|e| e.to_string().into())
+    }
+
+    fn withdrawn_routes_len(&self) -> usize {
+        // indexing is safe because of the checks in Self::try_from_raw(..)
+        u16::from_be_bytes([
+            self.contents[0], self.contents[1]
+        ]).into()
     }
 
     fn withdrawn(&self) -> &Withdrawn {
         todo!()
     }
 
-    fn withdrawn_routes_len(&self) -> usize {
-        // indexing is safe, as we always have at least 4 bytes
-        u16::from_be_bytes([
-            self.contents[0], self.contents[1]
-        ]).into()
-    }
 
     fn total_path_attributes_len(&self) -> usize {
         let withdrawn_routes_len = self.withdrawn_routes_len();
@@ -82,11 +111,6 @@ impl UncheckedUpdate {
     }
 
     fn path_attributes(&self) -> &UncheckedPathAttributes {
-        //let withdrawn_routes_len: usize = u16::from_be_bytes([
-        //    self.contents[0], self.contents[1]
-        //]).into();
-        ////dbg!(withdrawn_routes_len);
-
         let withdrawn_routes_len = self.withdrawn_routes_len();
         
         let total_path_attributes_len: usize = u16::from_be_bytes([
@@ -94,6 +118,7 @@ impl UncheckedUpdate {
             self.contents[3+withdrawn_routes_len]
         ]).into();
         //dbg!(total_path_attributes_len);
+
         UncheckedPathAttributes::try_ref_from_bytes(
             &self.contents[4+withdrawn_routes_len..4+withdrawn_routes_len+total_path_attributes_len]
         ).unwrap()
@@ -105,25 +130,101 @@ impl UncheckedUpdate {
         ]
     }
 
-    pub(crate) fn into_checked_parts(&self) -> (Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>) {
+    pub(crate) fn into_checked_parts(&self, session_config: &SessionConfig) -> (u8, byteorder::U32<NetworkEndian>, Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>) {
 
         // first check whether there are conv nlri
         // chances of mixed mp+conv are low so only fill up one vec
         // based on tpal and conv nlri we can guess whether we are dealing with MP
         // we have to move this method up onto the Update msg itself though
         //
+        //
+        //TODO also extract and add info a la
+        //- origin AS
+        //- is AS_PATH a 32bit single_seq
+        //- flag byte prepended to attributes:
+        //  - 32bit ASNs
+        //  - ADD_PATH
+        //  - single_seq ASN yes/no
+        //  - contains malformed blob yes/no
+        //    - if so, use field for origin AS and put in index of where the malformed part starts?
+        //
+        //    flag byte: ( for now called pa_hints)
+        //
+        //    7 6 5 4 3 2 1 0
+        //    _ _ _ _ _ _ _ A: ASNs, 1 => 32bits, 0 => 16 bits
+        //    _ _ _ _ _ _ S -: single seq non_empty AS_PATH,1 => yes, 0 => no
+        //    _ _ _ _ _ P - -: ADDPATH PathIds ,0 => no, 1 => yes
+        //    _ _ _ _ L - - -: Multi label => TODO this needs a max value or something?
+        //    _ _ _ M - - - -: Malformed blob: 0=> no, 1 => yes
+        //
+        //    NB A, P and L flags are session based info
+
+        let mut pa_hints: u8 = 0b0000_0000; 
+        if session_config.four_octet_asns(){
+            pa_hints |= HINT_4BYTE_ASNS;
+        }
 
         let conventional_nlri = !self.conventional_nlri().is_empty();
         
-        let mut checked = vec![];
+        let mut mp_attributes = vec![];
         let mut mp_reach = vec![];
         let mut mp_unreach = vec![];
-        let mut checked_conventional = vec![];
-        let mut malformed = vec![];
+        let mut conventional_attributes = vec![];
+        let mut malformed_attributes = vec![];
 
         let mut iter = self.path_attributes().iter();
 
         let mut seen: u8 = 0;
+        let mut origin_as: byteorder::U32<NetworkEndian> = 0.into();
+
+
+        #[inline(always)]
+        fn _attr_as_path(
+            pa: &RawPathAttribute,
+            session_config: &SessionConfig,
+            pa_hints: &mut u8,
+            origin_as: &mut byteorder::U32<NetworkEndian>,
+        ) {
+            let value_len = pa.value().len();
+
+            // Check whether we have at least a segment with one 16 bit ASN,
+            // which would be represented by 1 byte segment type, 1 byte number of ASNs, and two
+            // bytes for the single ASN.
+            // We leverage the check for 4 bytes while setting the origin as.
+            // Also, check if this segment is of type AS_SEQUENCE.
+            if value_len >= 4 && pa.value()[0] == SEGMENT_TYPE_SEQUENCE {
+                let num_asns = pa.value()[1];
+                let segment_size = if session_config.four_octet_asns() {
+                    4
+                } else {
+                    2
+                } * num_asns as usize;
+
+                // if this segment is the entire value, this AS_PATH is just a single AS_SEQUENCE
+                if 2 + segment_size == value_len {
+                    *pa_hints |= HINT_SINGLE_SEQ;
+                    // XXX can/should we make this faster? we know we have 4 bytes at least, and
+                    // we're indexing already anyway.
+                    if session_config.four_octet_asns() {
+                        *origin_as = byteorder::U32::from_bytes([
+                            pa.value()[value_len-4],
+                            pa.value()[value_len-3],
+                            pa.value()[value_len-2],
+                            pa.value()[value_len-1],
+                        ]);
+                    } else {
+                        *origin_as = byteorder::U32::from_bytes([
+                            0,
+                            0,
+                            pa.value()[value_len-2],
+                            pa.value()[value_len-1],
+                        ]);
+                    }
+                }
+            }
+        }
+
+
         if conventional_nlri {
             // in this case, the PDU might still be mixed.
             // i.e. there can be MP_ attrs
@@ -138,13 +239,13 @@ impl UncheckedUpdate {
                         //dbg!(pa);
                         match pa.pa_type {
                             PathAttributeType::MP_REACH_NLRI => {
-                                //checked_size -= pa.raw_len();
-                                //pa.write_to(&mut mp_reach).unwrap();
+                                // TODO add check whether MP_REACH_NLRI is the first path
+                                // attribute, if not, mark in pa_hints
                                 mp_reach.extend_from_slice(pa.as_bytes());
                                 also_mp = true;
                                 // clone whatever we already collected for conventional into mp
                                 eprintln!("also_mp, extending from slice");
-                                checked.extend_from_slice(&checked_conventional[..]);
+                                mp_attributes.extend_from_slice(&conventional_attributes[..]);
                                 seen |= 0x1;
                             }
                             PathAttributeType::MP_UNREACH_NLRI => {
@@ -154,22 +255,44 @@ impl UncheckedUpdate {
                             }
                             PathAttributeType::NEXT_HOP => {
                                 //checked_size -= pa.raw_len();
-                                checked_conventional.extend_from_slice(pa.as_bytes());
+                                conventional_attributes.extend_from_slice(pa.as_bytes());
                                 //dbg!("Unexpected NEXT_HOP in MP UPDATE");
                                 seen |= 0x4;
                             }
+                            PathAttributeType::AS_PATH => {
+                                _attr_as_path(pa, session_config, &mut pa_hints, &mut origin_as);
+                                //// check single seq? set flag accordingly
+                                //// extract origin AS, set
+                                //
+                                //// check for sequence
+                                //let value_len = pa.value().len();
+                                //if value_len > 2 && pa.value()[0] == 2 {
+                                //    let num_asns = pa.value()[1];
+                                //    let asns_size = if session_config.four_octet_asns() {
+                                //        4
+                                //    } else {
+                                //        2
+                                //    } * num_asns as usize;
+
+                                //    // check number of ASNs in sequence fills up entire PA
+                                //    if 2 + asns_size != value_len {
+                                //        pa_hints |= HINT_NOT_SINGLE_SEQ;
+                                //    }
+                                //} else {
+                                //    pa_hints |= HINT_NOT_SINGLE_SEQ;
+                                //}
+                            }
                             _ => {
-                                //checked.extend_from_slice(pa.as_bytes());
-                                checked_conventional.extend_from_slice(pa.as_bytes());
+                                conventional_attributes.extend_from_slice(pa.as_bytes());
                                 if also_mp {
-                                    checked.extend_from_slice(pa.as_bytes());
+                                    mp_attributes.extend_from_slice(pa.as_bytes());
                                 }
                             }
                         }
                     }                   
                     Err(e) => {
                         dbg!("malformed");
-                        malformed = e.as_bytes().into();
+                        malformed_attributes = e.as_bytes().into();
                         break;
                     }
 
@@ -207,22 +330,25 @@ impl UncheckedUpdate {
                                 //panic!();
                                 seen |= 0x4;
                             }
+                            PathAttributeType::AS_PATH => {
+                                _attr_as_path(pa, session_config, &mut pa_hints, &mut origin_as);
+                            }
                             _ => {
-                                checked.extend_from_slice(pa.as_bytes());
+                                mp_attributes.extend_from_slice(pa.as_bytes());
                                 //checked_conventional.extend_from_slice(pa.as_bytes());
                             }
                         }
                     }                   
                     Err(e) => {
                         dbg!("malformed");
-                        malformed = e.as_bytes().into();
+                        malformed_attributes = e.as_bytes().into();
                         break;
                     }
 
                 }
             }
         }
-        (checked, mp_reach, mp_unreach, checked_conventional, malformed)
+        (pa_hints, origin_as, mp_attributes, mp_reach, mp_unreach, conventional_attributes, malformed_attributes)
     }
 
 }
@@ -278,6 +404,14 @@ pub struct RawPathAttribute {
 impl RawPathAttribute {
     fn raw_len(&self) -> usize {
         2 + self.length_and_value.len()
+    }
+
+    fn value(&self) -> &[u8] {
+        if self.flags & EXTENDED_LEN == EXTENDED_LEN {
+            &self.length_and_value[2..]
+        } else {
+            &self.length_and_value[1..]
+        }
     }
 
 }
@@ -533,7 +667,7 @@ mod tests{
         let (header, _) = Header::try_ref_from_prefix(&raw).unwrap();
 
         let update = if header.msg_type == MessageType::UPDATE {
-            UncheckedUpdate::try_ref_from_bytes(&raw[19..usize::from(header.length)]).unwrap()
+            Update::try_ref_from_bytes(&raw[19..usize::from(header.length)]).unwrap()
         } else {
             panic!("not an update");
         };
@@ -555,6 +689,7 @@ mod tests{
         let mut buf_cursor = 0;
         let mut buf_end = 0;
         let mut cnt = 0;
+        let sc = SessionConfig::default();
         'foo: loop {
             match reader.read(&mut buf[buf_end..]) {
                 Ok(0) => {
@@ -586,10 +721,8 @@ mod tests{
 
                         match header.msg_type {
                             MessageType::UPDATE => {
-                                //let update = UncheckedUpdate::try_ref_from_bytes(msg).unwrap();
-                                let update = UncheckedUpdate::from_minimal_length(msg).unwrap();
-                                //let (c, mpr, mpu, c_c, m) = update.path_attributes().into_checked();
-                                let (c, mpr, mpu, c_c, m) = update.into_checked_parts();
+                                let update = Update::try_from_raw(msg).unwrap();
+                                let (..) = update.into_checked_parts(&sc);
                             },
                             MessageType::OPEN => { },
                             _ => { }
