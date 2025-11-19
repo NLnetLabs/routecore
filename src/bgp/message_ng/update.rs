@@ -92,19 +92,19 @@ impl Update {
             .map_err(|e| e.to_string().into())
     }
 
-    fn withdrawn_routes_len(&self) -> usize {
+    pub fn withdrawn_routes_len(&self) -> usize {
         // indexing is safe because of the checks in Self::try_from_raw(..)
         u16::from_be_bytes([
             self.contents[0], self.contents[1]
         ]).into()
     }
 
-    fn withdrawn(&self) -> &Withdrawn {
+    pub fn withdrawn(&self) -> &Withdrawn {
         todo!()
     }
 
 
-    fn total_path_attributes_len(&self) -> usize {
+    pub fn total_path_attributes_len(&self) -> usize {
         let withdrawn_routes_len = self.withdrawn_routes_len();
         
         u16::from_be_bytes([
@@ -113,7 +113,7 @@ impl Update {
         ]).into()
     }
 
-    fn path_attributes(&self) -> &UncheckedPathAttributes {
+    pub fn path_attributes(&self) -> &UncheckedPathAttributes {
         let withdrawn_routes_len = self.withdrawn_routes_len();
         
         let total_path_attributes_len: usize = u16::from_be_bytes([
@@ -127,7 +127,7 @@ impl Update {
         ).unwrap()
     }
 
-    fn conventional_nlri(&self) -> &[u8] {
+    pub fn conventional_nlri(&self) -> &[u8] {
         &self.contents[
             4 + self.withdrawn_routes_len() + self.total_path_attributes_len()..
         ]
@@ -625,18 +625,6 @@ mod tests{
         dbg!(&(m.unwrap().path_attributes));
     }
 
-    //#[test]
-    //fn transmute() {
-    //    let raw = vec![
-    //        0x40, 0x01, 0x01, 0x00, // ORIGIN
-    //        0x40, 0x03, 0x04, 0x01, 0x02, 0x03, 0x04, // NEXTHOP
-    //        0x80 | EXTENDED_LEN, 0x04, 0x04, 0x00, 0x00, 0x00, 0xff // MED 
-    //    ];
-
-    //    let unchecked = UncheckedPathAttributes::try_ref_from_bytes(&raw).unwrap();
-    //    let checked = unchecked.check();
-
-    //}
     #[test]
     fn raw_into_family_specific() {
         // BGP UPDATE message containing MP_REACH_NLRI path attribute,
@@ -676,79 +664,13 @@ mod tests{
 
     }
 
-    #[test]
-    fn read_from_file() {
-        const FILENAME: &str = "/home/luuk/code/routecore.bak/examples/raw_bgp_updates";
-        const MIN_MSG_SIZE: usize = 19;
-        let f = File::open(FILENAME).unwrap();
-        let mut reader = BufReader::new(f);
-        let mut buf = [0u8; 2_usize.pow(20)];
-        let mut buf_cursor = 0;
-        let mut buf_end = 0;
-        let mut cnt = 0;
-        let sc = SessionConfig::default();
-        'foo: loop {
-            match reader.read(&mut buf[buf_end..]) {
-                Ok(0) => {
-                    eprintln!("EOF");
-                    break 'foo;
-                }
-                Err(e) => panic!("{}", e.to_string()),
-                Ok(n)  => {
-                    //eprintln!("read {n} bytes into buf");
-                    buf_end += n;
 
-                    while buf_end-buf_cursor >= MIN_MSG_SIZE {
-                        // parse header
-                        //eprintln!("cur cursor: {buf_cursor}");
-                        let (header, _) = Header::try_ref_from_prefix(&buf[buf_cursor..]).unwrap();
-                        //hexprint(header.as_bytes());
-                        if header.marker != [0xff; 16] {
-                            panic!()
-                        }
-
-                        let len: usize = header.length.into();
-                        if buf_end-buf_cursor-19 < len {
-                            //eprintln!("breaking because len={len}");
-                            break;
-                        }
-                        let msg = &buf[buf_cursor+19..buf_cursor+len];
-                        //hexprint(msg);
-                        buf_cursor += len;
-
-                        match header.msg_type {
-                            MessageType::UPDATE => {
-                                let update = Update::try_from_raw(msg).unwrap();
-                                let (..) = update.into_checked_parts(&sc);
-                            },
-                            MessageType::OPEN => { },
-                            _ => { }
-                        }
-                        //eprintln!("19 + {len}");
-                        //eprint!(".");
-                        cnt += 1;
-                        if cnt % 1000_000 == 0 {
-                            eprint!("\r{cnt}");
-                        }
-                    }
-                    //eprintln!("post while, buf_cursor/buf_end {buf_cursor}/{buf_end}");
-                    //eprintln!("---- pre copy_within ----");
-                    // move remainder to start of buf
-                    //let (a,b) = buf.split_at_mut(buf_cursor);
-                    //&a[0..buf_end-buf_cursor].copy_within(…)() &b[buf_cursor..buf_end];
-                    //eprintln!("about to copy_within, buf.len {}", buf.len());
-                    //hexprint(&buf[buf_cursor..buf_end]);
-                    //eprintln!("current contents of buf on that range:");
-                    //hexprint(&buf[0..buf_end - buf_cursor]);
-                    buf.copy_within(buf_cursor..buf_end, 0);
-                    buf_end = buf_end - buf_cursor;
-                    buf_cursor = 0;
-                    //eprintln!("cursor/end {buf_cursor}/{buf_end}");
-                    //eprintln!("---- pre read ----");
-                }
-            }
-        }
-
-    }
-
+    // TODO add tests for
+    // - illegal withdrawn length
+    // - illegal tpal
+    // - malformed attributes
+    // - mixed MP+conventional
+    // - only MP
+    // - only conventional
+    // - 
 }

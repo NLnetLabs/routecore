@@ -89,7 +89,7 @@ impl Pool {
                 eprintln!("[{:?}] spawned", thread::current().id());
                 loop {
                     let Some(buf) = queue.write().unwrap().pop_front() else {
-                        thread::park_timeout(Duration::from_millis(100));
+                        thread::park_timeout(Duration::from_millis(1));
                         //hint::spin_loop();
                         continue;
                     };
@@ -102,9 +102,9 @@ impl Pool {
                         match header.msg_type {
                             MessageType::UPDATE => {
                                 let update = Update::try_from_raw(msg).unwrap();
-                                let (pa_hints, origin_as, c, mpr, mpu, c_c, m) = update.into_checked_parts(&sc);
+                                let (pa_hints, origin_as, mp_attr, mpr, mpu, conv_attr, m) = update.into_checked_parts(&sc);
                                 CNT_TOTAL.fetch_add(1, Ordering::Relaxed);
-                                if !c.is_empty() && !c_c.is_empty() {
+                                if !mp_attr.is_empty() && !conv_attr.is_empty() {
                                     CNT_COMBINED.fetch_add(1, Ordering::Relaxed);
                                 }
                                 if !mpr.is_empty() && !mpu.is_empty() {
@@ -112,6 +112,11 @@ impl Pool {
                                 }
                                 if !m.is_empty() {
                                     CNT_MALFORMED.fetch_add(1, Ordering::Relaxed);
+                                }
+                                if !conv_attr.is_empty() {
+                                    assert!(!update.conventional_nlri().is_empty());
+                                } else {
+                                    assert!(update.conventional_nlri().is_empty());
                                 }
                                 if pa_hints & HINT_SINGLE_SEQ == HINT_SINGLE_SEQ {
                                     // then we should have a non-zero ASN:
