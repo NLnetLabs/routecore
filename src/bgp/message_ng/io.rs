@@ -65,9 +65,14 @@ impl<R: Read, const B: usize, > MessageIter<R, B> {
     }
 }
 
-#[derive(Default)]
+//#[derive(Default)]
 pub struct Pool {
     queue: Arc<RwLock<VecDeque<Vec<u8>>>>,
+}
+impl Default for Pool {
+    fn default() -> Self {
+        Self { queue: Arc::new(RwLock::new(Vec::with_capacity(1024).into()))  }
+    }
 }
 
 static CNT_TOTAL: AtomicUsize = AtomicUsize::new(0);
@@ -153,11 +158,17 @@ mod tests {
         let pool = Pool::default();
         let queue = pool.start_processing();
 
-        let mut iter = MessageIter::<_, {2<<16}>::new(reader);
+        let mut iter = MessageIter::<_, {2<<18}>::new(reader);
+        let mut _last_capacity = queue.read().unwrap().capacity();
         loop {
             if let Ok(Some(_)) = iter.read_into_buf() {
                 if let Ok(msgs) = iter.get_many() {
                     queue.write().unwrap().push_back(msgs);
+                    //let current_cap = queue.read().unwrap().capacity();
+                    //if current_cap != last_capacity {
+                    //    eprintln!("new cap {current_cap}");
+                    //    last_capacity = current_cap;
+                    //}
                 }
             } else {
                 break
