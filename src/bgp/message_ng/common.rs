@@ -1,3 +1,5 @@
+use std::fmt;
+
 use zerocopy::{byteorder, FromBytes, Immutable, IntoBytes, KnownLayout, NetworkEndian, TryFromBytes};
 
 pub const MIN_MSG_SIZE: usize = 19;
@@ -12,6 +14,16 @@ pub struct Header {
 }
 
 
+#[cfg(feature = "arbitrary")]
+impl<'a> arbitrary::Arbitrary<'a> for Header {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        Ok(Header {
+            marker: <[u8; 16]>::arbitrary(u)?,
+            length: <[u8;2]>::arbitrary(u)?.into(),
+            msg_type: MessageType::arbitrary(u)?,
+        })
+    }
+}
 
 #[derive(IntoBytes, TryFromBytes, KnownLayout, Immutable)]
 #[repr(C, packed)]
@@ -22,6 +34,7 @@ pub struct UncheckedMessage {
 
 #[derive(IntoBytes, FromBytes, KnownLayout, Immutable)]
 #[derive(Eq, PartialEq)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[repr(C, packed)]
 pub struct MessageType(pub u8);
 
@@ -29,6 +42,12 @@ pub struct MessageType(pub u8);
 impl MessageType {
     pub const OPEN: Self = Self(1);
     pub const UPDATE: Self = Self(2);
+}
+
+impl fmt::Debug for MessageType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("MessageType").field(&self.0).finish()
+    }
 }
 
 

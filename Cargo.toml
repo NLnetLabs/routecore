@@ -24,6 +24,7 @@ serde       = { version = "1.0.165", optional = true, features = ["derive"] }
 tokio       = { version = ">=1.24.2", optional = true, features = ["io-util", "macros", "net", "sync", "rt-multi-thread", "time"] }
 rayon       = { version = "1.10", optional = true }
 serde_with = "3.14.0"
+zerocopy    = { version = "0.8.23", features = ["derive"] }
 
 [dev-dependencies]
 memmap2         = "0.9"

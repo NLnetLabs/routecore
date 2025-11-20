@@ -112,8 +112,21 @@ impl fmt::Debug for Update {
 impl Update {
 
 
-    pub(crate) fn try_from_full_pdu(raw: &[u8]) -> Result<&Update, Cow<'static, str>> {
-        let (header, _) = Header::try_ref_from_prefix(&raw.as_ref()).unwrap();
+    pub fn try_from_full_pdu(raw: &[u8]) -> Result<&Update, Cow<'static, str>> {
+        if raw.len() < 23 {
+            return Err("minimal size of UPDATE PDU is 23 bytes".into());
+        }
+        let Ok((header, _)) = Header::try_ref_from_prefix(&raw.as_ref()) else {
+            return Err("invalid header".into());
+        };
+
+        if header.marker != [0xff; 16] {
+            return Err("invalid marker".into());
+        }
+
+        if usize::from(header.length) != raw.len() {
+            return Err("length mismatches number of bytes in PDU".into());
+        }
 
         if header.msg_type == MessageType::UPDATE {
             Update::try_from_raw(&raw[19..usize::from(header.length)])
@@ -141,7 +154,7 @@ impl Update {
         }
         if 4 + withdrawn_routes_len + usize::from(u16::from_be_bytes([
                 raw[2+withdrawn_routes_len],
-                raw[3+withdrawn_routes_len]
+                raw[3+withdrawn_routes_len] //FIXME fuzz fail
             ])) > raw.len() {
                 return Err("total path attributes length exceeds PDU length".into());
         }

@@ -9,10 +9,11 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.4"
+zerocopy = "0.8"
 
 [dependencies.routecore]
 path = ".."
-features = [ "arbitrary", "bmp" ]
+features = [ "arbitrary", "bmp", "rayon" ]
 
 # Prevent this from interfering with workspaces
 [workspace]
@@ -55,5 +56,11 @@ doc = false
 [[bin]]
 name = "path_selection"
 path = "fuzz_targets/path_selection.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "new_update_parser"
+path = "fuzz_targets/new_update_parser.rs"
 test = false
 doc = false
