@@ -1,4 +1,4 @@
-use core::fmt;
+use std::fmt;
 use std::borrow::Cow;
 
 use zerocopy::{byteorder, FromBytes, Immutable, IntoBytes, KnownLayout, NetworkEndian, TryFromBytes};
@@ -18,6 +18,7 @@ pub(crate) const HINT_MALFORMED: u8 = 0b0001_0000;
 #[repr(C, packed)]
 pub struct PathAttributeType(u8);
 impl PathAttributeType {
+    pub const ORIGIN: Self = Self(1);
     pub const AS_PATH: Self = Self(2);
     pub const NEXT_HOP: Self = Self(3);
     pub const MP_REACH_NLRI: Self = Self(14);
@@ -25,16 +26,28 @@ impl PathAttributeType {
 }
 
 impl fmt::Display for PathAttributeType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         
         f.write_str(
             match *self {
+                PathAttributeType::ORIGIN => "origin",
+                PathAttributeType::AS_PATH => "as_path",
                 PathAttributeType::NEXT_HOP => "next_hop",
                 PathAttributeType::MP_REACH_NLRI => "mp_reach_nlri",
                 PathAttributeType::MP_UNREACH_NLRI => "mp_unreach_nlri",
                 _ => "unrecognized path attribute"
             }
         )
+    }
+}
+
+impl fmt::Debug for PathAttributeType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if f.alternate() {
+            fmt::Display::fmt(&self, f)
+        } else {
+            write!(f, "{}", self.0)
+        }
     }
 }
 
@@ -62,9 +75,8 @@ pub struct Update {
 }
 
 impl fmt::Debug for Update {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "UPDATE ({})", self.contents.len())
-        //f.debug_struct("Update").field("contents", *self.contents.as_ref()).finish()
     }
 }
 
@@ -150,10 +162,6 @@ impl Update {
         ]
     }
 
-    //struct CheckedParts {
-    //}
-
-    //pub(crate) fn into_checked_parts(&self, session_config: &SessionConfig) -> (u8, byteorder::U32<NetworkEndian>, Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>) {
     pub(crate) fn into_checked_parts(&self, session_config: &SessionConfig) -> CheckedParts {
 
         // first check whether there are conv nlri
@@ -195,8 +203,6 @@ impl Update {
         let mut mp_unreach = vec![];
         let mut conventional_attributes = vec![];
         let mut malformed_attributes = vec![];
-
-        let mut iter = self.path_attributes().iter();
 
         let mut origin_as: byteorder::U32<NetworkEndian> = 0.into();
 
@@ -247,6 +253,8 @@ impl Update {
             }
         }
 
+        let mut iter = self.path_attributes().iter();
+
 
         if conventional_nlri {
             // in this case, the PDU might still be mixed.
@@ -281,6 +289,7 @@ impl Update {
                             }
                             PathAttributeType::AS_PATH => {
                                 _attr_as_path(pa, session_config, &mut pa_hints, &mut origin_as);
+                                mp_attributes.extend_from_slice(pa.as_bytes());
                                 //// check single seq? set flag accordingly
                                 //// extract origin AS, set
                                 //
@@ -349,6 +358,7 @@ impl Update {
                             }
                             PathAttributeType::AS_PATH => {
                                 _attr_as_path(pa, session_config, &mut pa_hints, &mut origin_as);
+                                mp_attributes.extend_from_slice(pa.as_bytes());
                             }
                             _ => {
                                 mp_attributes.extend_from_slice(pa.as_bytes());
@@ -365,7 +375,6 @@ impl Update {
                 }
             }
         }
-        //(pa_hints, origin_as, mp_attributes, mp_reach, mp_unreach, conventional_attributes, malformed_attributes)
         CheckedParts {
             pa_hints: pa_hints.into(),
             origin_as,
@@ -380,6 +389,7 @@ impl Update {
 
 }
 
+#[derive(IntoBytes, FromBytes, KnownLayout, Immutable)]
 #[derive(Debug, Eq, Hash, PartialEq)]
 pub(crate) struct PathAttributeHints(u8);
 impl From<u8> for PathAttributeHints {
@@ -417,6 +427,26 @@ pub(crate) struct CheckedParts {
     pub(crate) malformed_attributes: Vec<u8>,
 }
 
+
+// XXX TMP, to become the Rotonda 'Meta' type (i.e. the stored value)
+#[derive(IntoBytes, TryFromBytes, KnownLayout, Immutable)]
+#[repr(C, packed)]
+struct RouteDbValue {
+    rpki_info: u8,
+    path_attributes_hints: PathAttributeHints,
+    path_attributes: UncheckedPathAttributes,
+}
+
+impl fmt::Debug for RouteDbValue {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("RouteDbValue")
+            .field("rpki_info", &self.rpki_info)
+            .field("path_attributes_hints", &self.path_attributes_hints)
+            .field("path_attributes", &&self.path_attributes)
+            .finish()
+    }
+}
+
 #[derive(IntoBytes, TryFromBytes, KnownLayout, Immutable)]
 #[repr(C, packed)]
 pub struct Withdrawn {
@@ -437,6 +467,27 @@ pub struct Withdrawn {
 #[repr(C, packed)]
 pub struct UncheckedPathAttributes {
     path_attributes: [u8],
+}
+
+
+impl fmt::Debug for UncheckedPathAttributes {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        //f.debug_struct("UncheckedPathAttributes").field("path_attributes", &self.path_attributes).finish()
+        let mut l = f.debug_list();
+        for pa in self.iter() {
+            //dbg!(&pa);
+            match pa {
+                Ok(pa) => {
+                    l.entry(&pa.pa_type);
+                }
+                Err(_) => {
+                    l.entry(&"MALFORMED");
+                    return l.finish_non_exhaustive()
+                }
+            }
+        }
+        l.finish()
+    }
 }
 
 // Checked stuff
@@ -469,6 +520,10 @@ impl RawPathAttribute {
     // Do we need such a thing?
     //fn raw_len(&self) -> usize {
     //    2 + self.length_and_value.len()
+    //}
+
+    //fn pa_type(&self) -> PathAttributeType {
+    //    self.pa_type
     //}
 
     fn value(&self) -> &[u8] {
@@ -576,7 +631,7 @@ impl UncheckedPathAttributes {
 }
 
 impl fmt::Debug for RawPathAttribute {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}: ", self.pa_type)?;
         for b in &self.length_and_value {
             write!(f, "{:0x} ", b)?;
@@ -887,4 +942,53 @@ mod tests{
     // - only MP
     // - only conventional
     // - 
+    //
+    //
+
+
+
+
+    #[test]
+    fn into_routedb_values() {
+        // BGP UPDATE with ORIGIN, AS_PATH, MP_REACH (with ::/0)
+        let raw: [u8; _] = [
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0x00, 0x43, 0x02, 0x00, 0x00, 0x00, 0x2c, 0x40,
+            0x01, 0x01, 0x00, 0x50, 0x02, 0x00, 0x0a, 0x02,
+            0x02, 0x00, 0x00, 0x19, 0x2f, 0x00, 0x00, 0x46,
+            0xba, 0x90, 0x0e, 0x00, 0x16, 0x00, 0x02, 0x01,
+            0x10, 0x20, 0x01, 0x0d, 0x98, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x19, 0x00, 0x00
+        ];
+
+        let update = Update::try_from_full_pdu(&raw).unwrap();
+        let sc = SessionConfig::default();
+        let CheckedParts {
+            pa_hints,
+            mp_reach,
+            mp_unreach,
+            mut mp_attributes,
+            malformed_attributes,
+            conventional_attributes,
+            origin_as,
+            ..
+        } = update.into_checked_parts(&sc);
+
+        let pas = UncheckedPathAttributes::try_ref_from_bytes(&mp_attributes).unwrap();
+        assert_eq!(
+            pas.iter().map(|pa| pa.unwrap().pa_type.0).collect::<Vec<_>>(),
+            vec![1,2]
+        );
+
+        let mut rpki_and_hints = vec![1,2];
+
+        rpki_and_hints.append(&mut mp_attributes);
+        let routedb_val = RouteDbValue::try_ref_from_bytes(&rpki_and_hints);
+
+        //eprintln!("{}", &routedb_val);
+        eprintln!("{:?}", &routedb_val);
+        eprintln!("{:#?}", &routedb_val);
+    }
 }
