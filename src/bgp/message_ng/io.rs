@@ -2,7 +2,7 @@ use std::{borrow::Cow, collections::VecDeque, io::Read, sync::{atomic::{AtomicUs
 
 use zerocopy::TryFromBytes;
 
-use crate::bgp::message_ng::{common::{Header, MessageType, SessionConfig, MIN_MSG_SIZE}, update::{CheckedParts, Update, HINT_SINGLE_SEQ}};
+use crate::bgp::message_ng::{common::{Header, MessageType, SessionConfig, MIN_MSG_SIZE}, update::{CheckedParts, CheckedParts2, Update, HINT_MALFORMED, HINT_SINGLE_SEQ}};
 
 
 struct MessageIter<R: Read, const B: usize> {
@@ -107,30 +107,71 @@ impl Pool {
                         match header.msg_type {
                             MessageType::UPDATE => {
                                 let update = Update::try_from_raw(msg).unwrap();
-                                //let (pa_hints, origin_as, mp_attr, mp_reach, mp_unreach, conv_attr, m) = update.into_checked_parts(&sc);
-                                let CheckedParts{pa_hints, origin_as, mp_attributes, mp_reach, mp_unreach, conventional_attributes, malformed_attributes} = update.into_checked_parts(&sc);
+                                //let CheckedParts{pa_hints, origin_as, mp_attributes, mp_reach, mp_unreach, conventional_attributes, malformed_attributes} = update.into_checked_parts(&sc);
+                                //CNT_TOTAL.fetch_add(1, Ordering::Relaxed);
+                                //if !mp_attributes.is_empty() && !conventional_attributes.is_empty() {
+                                //    CNT_COMBINED.fetch_add(1, Ordering::Relaxed);
+                                //}
+                                //if !mp_reach.is_empty() && !mp_unreach.is_empty() {
+                                //    CNT_MP_R_U.fetch_add(1, Ordering::Relaxed);
+                                //}
+                                //if !malformed_attributes.is_empty() {
+                                //    CNT_MALFORMED.fetch_add(1, Ordering::Relaxed);
+                                //}
+                                //if !conventional_attributes.is_empty() {
+                                //    assert!(!update.conventional_nlri().is_empty());
+                                //} else {
+                                //    assert!(update.conventional_nlri().is_empty());
+                                //}
+                                //if pa_hints & HINT_SINGLE_SEQ == HINT_SINGLE_SEQ {
+                                //    // then we should have a non-zero ASN:
+                                //    assert!(origin_as != 0);
+                                //} else {
+                                //    if !mp_attributes.is_empty() || !conventional_attributes.is_empty() {
+                                //        CNT_NOT_SINGLE_SEQ.fetch_add(1, Ordering::Relaxed);
+                                //    }
+                                //    assert!(origin_as == 0);
+                                //    //dbg!(&update);
+                                //    //panic!();
+                                //}
+
+                                let CheckedParts2 {
+                                    checked_mp_attributes,
+                                    checked_conv_attributes,
+                                    mp_reach,
+                                    mp_unreach
+                                } = update.into_checked_parts_2(&sc);
+
                                 CNT_TOTAL.fetch_add(1, Ordering::Relaxed);
-                                if !mp_attributes.is_empty() && !conventional_attributes.is_empty() {
+                                if !checked_mp_attributes.is_none() && !checked_conv_attributes.is_none() {
                                     CNT_COMBINED.fetch_add(1, Ordering::Relaxed);
                                 }
                                 if !mp_reach.is_empty() && !mp_unreach.is_empty() {
                                     CNT_MP_R_U.fetch_add(1, Ordering::Relaxed);
                                 }
-                                if !malformed_attributes.is_empty() {
-                                    CNT_MALFORMED.fetch_add(1, Ordering::Relaxed);
-                                }
-                                if !conventional_attributes.is_empty() {
+                                if let Some(pas) = checked_conv_attributes.as_ref() {
                                     assert!(!update.conventional_nlri().is_empty());
+                                    if pas.as_ref().header.pa_hints & HINT_MALFORMED == HINT_MALFORMED {
+                                        CNT_MALFORMED.fetch_add(1, Ordering::Relaxed);
+                                    }
+                                    if pas.as_ref().header.pa_hints & HINT_SINGLE_SEQ == HINT_SINGLE_SEQ {
+                                        assert!(pas.as_ref().header.origin_as != 0);
+                                    } else {
+                                        CNT_NOT_SINGLE_SEQ.fetch_add(1, Ordering::Relaxed);
+                                    }
                                 } else {
                                     assert!(update.conventional_nlri().is_empty());
+
+                                    if let Some(pas) = checked_mp_attributes.as_ref() {
+                                        if pas.as_ref().header.pa_hints & HINT_SINGLE_SEQ == HINT_SINGLE_SEQ {
+                                            assert!(pas.as_ref().header.origin_as != 0);
+                                        } else {
+                                            CNT_NOT_SINGLE_SEQ.fetch_add(1, Ordering::Relaxed);
+                                            //dbg!(&update);
+                                        }
+                                    }
                                 }
-                                if pa_hints & HINT_SINGLE_SEQ == HINT_SINGLE_SEQ {
-                                    // then we should have a non-zero ASN:
-                                    assert!(origin_as != 0);
-                                } else {
-                                    CNT_NOT_SINGLE_SEQ.fetch_add(1, Ordering::Relaxed);
-                                    assert!(origin_as == 0);
-                                }
+
                             },
                             MessageType::OPEN => { },
                             _ => { }
@@ -151,16 +192,20 @@ mod tests {
 
     use super::*;
 
+    use std::time::Instant;
+
     #[test]
     fn read_file_with_pool() {
         const FILENAME: &str = "/home/luuk/code/routecore.bak/examples/raw_bgp_updates";
         let f = File::open(FILENAME).unwrap();
+        let total_size = f.metadata().unwrap().len();
         let reader = BufReader::new(f);
         let pool = Pool::default();
         let queue = pool.start_processing();
 
         let mut iter = MessageIter::<_, {2<<18}>::new(reader);
         let mut _last_capacity = queue.read().unwrap().capacity();
+        let t0 = Instant::now();
         loop {
             if let Ok(Some(_)) = iter.read_into_buf() {
                 if let Ok(msgs) = iter.get_many() {
@@ -186,5 +231,10 @@ mod tests {
             NOT_SINGLE_SEQ: {CNT_NOT_SINGLE_SEQ:?}, \
             MALFORMED: {CNT_MALFORMED:?}, \
             ");
+        eprintln!("{:.1}GiB in {:.2}s -> {:.2}GiB/s",
+            total_size as f64 / 2_f64.powf(30.0),
+            Instant::now().duration_since(t0).as_secs_f64(),
+            total_size as f64 / 2_f64.powf(30.0) / Instant::now().duration_since(t0).as_secs_f64(),
+        );
     }
 }

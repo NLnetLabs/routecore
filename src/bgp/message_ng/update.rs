@@ -27,7 +27,6 @@ impl PathAttributeType {
 
 impl fmt::Display for PathAttributeType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        
         f.write_str(
             match *self {
                 PathAttributeType::ORIGIN => "origin",
@@ -61,6 +60,20 @@ fn hexprint(buf: impl AsRef<[u8]>) {
     }
 }
 
+struct HexFormatted<'a>(pub &'a[u8]);
+impl fmt::Debug for HexFormatted<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for c in self.0.chunks(16) {
+            for b in c {
+                write!(f, "{:02X} ", b)?;
+            }
+            writeln!(f)?;
+        }
+        Ok(())
+    }
+}
+
+
 /// Unchecked Update message without BGP header
 ///
 /// There is no guarantee for this type other than that the length of the withdrawn routes and the
@@ -76,7 +89,23 @@ pub struct Update {
 
 impl fmt::Debug for Update {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "UPDATE ({})", self.contents.len())
+        if f.alternate() {
+            write!(f,
+                "UPDATE ({}) withdrawn ({}) tpal ({}) attributes {:#?}",
+                self.contents.len(),
+                self.withdrawn_routes_len(),
+                self.total_path_attributes_len(),
+                self.path_attributes()
+            )
+        } else {
+            write!(f,
+                "UPDATE ({}) withdrawn ({}) tpal ({}) attributes {:?}",
+                self.contents.len(),
+                self.withdrawn_routes_len(),
+                self.total_path_attributes_len(),
+                self.path_attributes()
+            )
+        }
     }
 }
 
@@ -162,6 +191,234 @@ impl Update {
         ]
     }
 
+    // used in the into_checked_parts methods below
+    #[inline(always)]
+    fn _attr_as_path(
+        pa: &RawPathAttribute,
+        session_config: &SessionConfig,
+        pa_hints: &mut u8,
+        origin_as: &mut byteorder::U32<NetworkEndian>,
+    ) {
+        let value_len = pa.value().len();
+
+        // Check whether we have at least a segment with one 16 bit ASN,
+        // which would be represented by 1 byte segment type, 1 byte number of ASNs, and two
+        // bytes for the single ASN.
+        // We leverage the check for 4 bytes while setting the origin as.
+        // Also, check if this segment is of type AS_SEQUENCE.
+        if value_len >= 4 && pa.value()[0] == SEGMENT_TYPE_SEQUENCE {
+            let num_asns = pa.value()[1];
+            let segment_size = if session_config.four_octet_asns() {
+                4
+            } else {
+                2
+            } * num_asns as usize;
+
+            // if this segment is the entire value, this AS_PATH is just a single AS_SEQUENCE
+            if 2 + segment_size == value_len {
+                *pa_hints |= HINT_SINGLE_SEQ;
+                // XXX can/should we make this faster? we know we have 4 bytes at least, and
+                // we're indexing already anyway.
+                if session_config.four_octet_asns() {
+                    *origin_as = byteorder::U32::from_bytes([
+                        pa.value()[value_len-4],
+                        pa.value()[value_len-3],
+                        pa.value()[value_len-2],
+                        pa.value()[value_len-1],
+                    ]);
+                } else {
+                    *origin_as = byteorder::U32::from_bytes([
+                        0,
+                        0,
+                        pa.value()[value_len-2],
+                        pa.value()[value_len-1],
+                    ]);
+                }
+            }
+        }
+    }
+
+    #[inline(always)]
+    fn _attr_as_path2(
+        pa: &RawPathAttribute,
+        session_config: &SessionConfig,
+        builder: &mut PreppedAttributesBuilder,
+        //pa_hints: &mut u8,
+        //origin_as: &mut byteorder::U32<NetworkEndian>,
+    ) {
+        let value_len = pa.value().len();
+
+        // Check whether we have at least a segment with one 16 bit ASN,
+        // which would be represented by 1 byte segment type, 1 byte number of ASNs, and two
+        // bytes for the single ASN.
+        // We leverage the check for 4 bytes while setting the origin as.
+        // Also, check if this segment is of type AS_SEQUENCE.
+        if value_len >= 4 && pa.value()[0] == SEGMENT_TYPE_SEQUENCE {
+            let num_asns = pa.value()[1];
+            let segment_size = if session_config.four_octet_asns() {
+                4
+            } else {
+                2
+            } * num_asns as usize;
+
+            // if this segment is the entire value, this AS_PATH is just a single AS_SEQUENCE
+            if 2 + segment_size == value_len {
+                builder.mark_hint(HINT_SINGLE_SEQ);
+                // XXX can/should we make this faster? we know we have 4 bytes at least, and
+                // we're indexing already anyway.
+                if session_config.four_octet_asns() {
+                    builder.set_origin_as(byteorder::U32::from_bytes([
+                        pa.value()[value_len-4],
+                        pa.value()[value_len-3],
+                        pa.value()[value_len-2],
+                        pa.value()[value_len-1],
+                    ]));
+                } else {
+                    builder.set_origin_as(byteorder::U32::from_bytes([
+                        0,
+                        0,
+                        pa.value()[value_len-2],
+                        pa.value()[value_len-1],
+                    ]));
+                }
+            }
+        }
+    }
+
+
+
+
+    pub(crate) fn into_checked_parts_2(&self, session_config: &SessionConfig) -> CheckedParts2 {
+
+        let mut pab_mp: Option<PreppedAttributesBuilder> = None;
+        let mut pab_conv: Option<PreppedAttributesBuilder> = None; 
+
+        let mut mp_reach = Vec::new();
+        let mut mp_unreach = Vec::new();
+        // TODO also return withdrawn and conv nlri here?
+
+
+        let conventional_nlri = !self.conventional_nlri().is_empty();
+        let mut iter = self.path_attributes().iter();
+
+
+        if conventional_nlri {
+            // in this case, the PDU might still be mixed.
+            // i.e. there can be MP_ attrs
+            //
+            // fill up checked_conventional
+            // strip out MP_ attrs into mp_*
+            // keep NEXT_HOP
+            let mut also_mp = false;
+            while let Some(r) = iter.next() {
+                match r {
+                    Ok(pa) => { 
+                        //dbg!(pa);
+                        match pa.pa_type {
+                            PathAttributeType::MP_REACH_NLRI => {
+                                // TODO add check whether MP_REACH_NLRI is the first path
+                                // attribute, if not, mark in pa_hints
+                                mp_reach.extend_from_slice(pa.as_bytes());
+                                also_mp = true;
+                                // clone whatever we already collected for conventional into mp
+                                eprintln!("also_mp, extending from slice");
+                                pab_mp.get_or_insert_default().append(
+                                    &pab_conv.get_or_insert_default().path_attributes()
+                                );
+                            }
+                            PathAttributeType::MP_UNREACH_NLRI => {
+                                mp_unreach.extend_from_slice(pa.as_bytes());
+                            }
+                            PathAttributeType::NEXT_HOP => {
+                                pab_conv.get_or_insert_default().append(pa.as_bytes());
+                            }
+                            PathAttributeType::AS_PATH => {
+                                Self::_attr_as_path2(pa, session_config, pab_conv.get_or_insert_default());
+                                pab_conv.get_or_insert_default().append(pa.as_bytes());
+                                if also_mp {
+                                    Self::_attr_as_path2(pa, session_config, pab_mp.get_or_insert_default());
+                                    pab_mp.get_or_insert_default().append(pa.as_bytes());
+                                }
+                            }
+                            _ => {
+                                pab_conv.get_or_insert_default().append(pa.as_bytes());
+                                if also_mp {
+                                    pab_mp.get_or_insert_default().append(pa.as_bytes());
+                                }
+                            }
+                        }
+                    }                   
+                    Err(e) => {
+                        //dbg!("malformed");
+                        //malformed_attributes = e.as_bytes().into();
+
+                        dbg!("malformed");
+                        pab_conv.get_or_insert_default().append(e.as_bytes());
+                        pab_conv.as_mut().unwrap().mark_malformed();
+                        if also_mp {
+                            pab_mp.get_or_insert_default().append(e.as_bytes());
+                            pab_mp.as_mut().unwrap().mark_malformed();
+                        }
+
+                        break;
+                    }
+
+                }
+            }
+        } else {
+            // in this case, there are no attrs to go in checked_conventional
+            // there still can be conventional withdrawals but those don't carry attrs
+            //
+            // so, we only fill up checked
+            // strip out MP_ attrs into mp_*
+            // strip NEXT_HOP
+            while let Some(r) = iter.next() {
+                match r {
+                    Ok(pa) => { 
+                        //dbg!(pa);
+                        match pa.pa_type {
+                            PathAttributeType::MP_REACH_NLRI => {
+                                mp_reach.extend_from_slice(pa.as_bytes());
+                            }
+                            PathAttributeType::MP_UNREACH_NLRI => {
+                                mp_unreach.extend_from_slice(pa.as_bytes());
+                            }
+                            PathAttributeType::NEXT_HOP => {
+                                dbg!("Unexpected NEXT_HOP in MP UPDATE");
+                                //dbg!(self.conventional_nlri());
+                                //hexprint(&self.contents);
+                                //panic!();
+                            }
+                            PathAttributeType::AS_PATH => {
+                                Self::_attr_as_path2(pa, session_config, pab_mp.get_or_insert_default());
+                                pab_mp.get_or_insert_default().append(pa.as_bytes());
+                            }
+                            _ => {
+                                pab_mp.get_or_insert_default().append(pa.as_bytes());
+                            }
+                        }
+                    }                   
+                    Err(e) => {
+                        dbg!("malformed");
+                        pab_mp.get_or_insert_default().append(e.as_bytes());
+                        pab_mp.as_mut().unwrap().mark_malformed();
+                        break;
+                    }
+
+                }
+            }
+        }
+
+
+
+        CheckedParts2 {
+            checked_mp_attributes: pab_mp,
+            checked_conv_attributes: pab_conv,
+            mp_reach,
+            mp_unreach,
+        }
+    }
+
     pub(crate) fn into_checked_parts(&self, session_config: &SessionConfig) -> CheckedParts {
 
         // first check whether there are conv nlri
@@ -207,51 +464,6 @@ impl Update {
         let mut origin_as: byteorder::U32<NetworkEndian> = 0.into();
 
 
-        #[inline(always)]
-        fn _attr_as_path(
-            pa: &RawPathAttribute,
-            session_config: &SessionConfig,
-            pa_hints: &mut u8,
-            origin_as: &mut byteorder::U32<NetworkEndian>,
-        ) {
-            let value_len = pa.value().len();
-
-            // Check whether we have at least a segment with one 16 bit ASN,
-            // which would be represented by 1 byte segment type, 1 byte number of ASNs, and two
-            // bytes for the single ASN.
-            // We leverage the check for 4 bytes while setting the origin as.
-            // Also, check if this segment is of type AS_SEQUENCE.
-            if value_len >= 4 && pa.value()[0] == SEGMENT_TYPE_SEQUENCE {
-                let num_asns = pa.value()[1];
-                let segment_size = if session_config.four_octet_asns() {
-                    4
-                } else {
-                    2
-                } * num_asns as usize;
-
-                // if this segment is the entire value, this AS_PATH is just a single AS_SEQUENCE
-                if 2 + segment_size == value_len {
-                    *pa_hints |= HINT_SINGLE_SEQ;
-                    // XXX can/should we make this faster? we know we have 4 bytes at least, and
-                    // we're indexing already anyway.
-                    if session_config.four_octet_asns() {
-                        *origin_as = byteorder::U32::from_bytes([
-                            pa.value()[value_len-4],
-                            pa.value()[value_len-3],
-                            pa.value()[value_len-2],
-                            pa.value()[value_len-1],
-                        ]);
-                    } else {
-                        *origin_as = byteorder::U32::from_bytes([
-                            0,
-                            0,
-                            pa.value()[value_len-2],
-                            pa.value()[value_len-1],
-                        ]);
-                    }
-                }
-            }
-        }
 
         let mut iter = self.path_attributes().iter();
 
@@ -288,8 +500,8 @@ impl Update {
                                 //dbg!("Unexpected NEXT_HOP in MP UPDATE");
                             }
                             PathAttributeType::AS_PATH => {
-                                _attr_as_path(pa, session_config, &mut pa_hints, &mut origin_as);
-                                mp_attributes.extend_from_slice(pa.as_bytes());
+                                Self::_attr_as_path(pa, session_config, &mut pa_hints, &mut origin_as);
+                                conventional_attributes.extend_from_slice(pa.as_bytes());
                                 //// check single seq? set flag accordingly
                                 //// extract origin AS, set
                                 //
@@ -357,7 +569,7 @@ impl Update {
                                 //panic!();
                             }
                             PathAttributeType::AS_PATH => {
-                                _attr_as_path(pa, session_config, &mut pa_hints, &mut origin_as);
+                                Self::_attr_as_path(pa, session_config, &mut pa_hints, &mut origin_as);
                                 mp_attributes.extend_from_slice(pa.as_bytes());
                             }
                             _ => {
@@ -390,7 +602,16 @@ impl Update {
 }
 
 #[derive(IntoBytes, FromBytes, KnownLayout, Immutable)]
-#[derive(Debug, Eq, Hash, PartialEq)]
+#[derive(Debug, Default, Eq, Hash, PartialEq)]
+pub(crate) struct RpkiInfo(u8);
+impl From<u8> for RpkiInfo {
+    fn from(value: u8) -> Self {
+        Self(value)
+    }
+}
+
+#[derive(IntoBytes, FromBytes, KnownLayout, Immutable)]
+#[derive(Copy, Clone, Debug, Default, Eq, Hash, PartialEq)]
 pub(crate) struct PathAttributeHints(u8);
 impl From<u8> for PathAttributeHints {
     fn from(value: u8) -> Self {
@@ -409,6 +630,11 @@ impl std::ops::BitOr<u8> for PathAttributeHints {
         Self(self.0 | rhs)
     }
 }
+impl std::ops::BitOrAssign<u8> for PathAttributeHints {
+    fn bitor_assign(&mut self, rhs: u8) {
+        self.0 |= rhs
+    }
+}
 impl std::ops::BitAnd<u8> for PathAttributeHints {
     type Output = Self;
 
@@ -425,6 +651,103 @@ pub(crate) struct CheckedParts {
     pub(crate) mp_unreach: Vec<u8>,
     pub(crate) conventional_attributes: Vec<u8>,
     pub(crate) malformed_attributes: Vec<u8>,
+}
+
+#[derive(IntoBytes, TryFromBytes, KnownLayout, Immutable)]
+#[repr(C, packed)]
+pub(crate) struct PreppedAttributes {
+    //rpki_info: u8,
+    //pa_hints: PathAttributeHints,
+    //origin_as: byteorder::U32<NetworkEndian>,
+    pub header: PreppedAttributesHeader,
+    path_attributes: UncheckedPathAttributes,
+}
+
+impl PreppedAttributes {
+    fn iter(&self) -> UncheckedPathAttributesIter<'_> {
+        self.path_attributes.iter()
+    }
+}
+
+#[derive(IntoBytes, FromBytes, KnownLayout, Immutable)]
+#[derive(Default)]
+#[repr(C, packed)]
+pub(crate) struct PreppedAttributesHeader {
+    pub(crate) rpki_info: RpkiInfo,
+    pub(crate) pa_hints: PathAttributeHints,
+    pub(crate) origin_as: byteorder::U32<NetworkEndian>,
+}
+
+pub(crate) struct PreppedAttributesBuilder {
+    buf: Vec<u8>,
+}
+
+impl Default for PreppedAttributesBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[allow(unused)]
+impl PreppedAttributesBuilder {
+    fn new() -> Self {
+        let buf = Vec::from(PreppedAttributesHeader::default().as_bytes());
+        assert_eq!(buf.len(), std::mem::size_of::<PreppedAttributesHeader>());
+        Self {
+            buf,
+        }
+    }
+    fn append(&mut self, bytes: &[u8]) {
+        // XXX at some point, measure how often buf needs to grow (thus causing allocations)
+        // and figure out whether there is a sane, safe with_capacity we could use in new() to
+        // prevent those allocations
+        self.buf.extend_from_slice(bytes);
+    }
+
+    fn set_rpki_info(&mut self, rpki_info: RpkiInfo) {
+        let (h, _) = PreppedAttributesHeader::mut_from_prefix(self.buf.as_mut()).unwrap();
+        h.rpki_info = rpki_info;
+    }
+
+    fn set_pa_hints(&mut self, pa_hints: PathAttributeHints) {
+        let (h, _) = PreppedAttributesHeader::mut_from_prefix(self.buf.as_mut()).unwrap();
+        h.pa_hints = pa_hints;
+    }
+
+    fn mark_hint(&mut self, hint: u8) {
+        let (h, _) = PreppedAttributesHeader::mut_from_prefix(self.buf.as_mut()).unwrap();
+        h.pa_hints |= hint;
+    }
+
+    fn mark_malformed(&mut self) {
+        let (h, _) = PreppedAttributesHeader::mut_from_prefix(self.buf.as_mut()).unwrap();
+        h.pa_hints |= HINT_MALFORMED;;
+    }
+
+    fn set_origin_as(&mut self, origin_as: byteorder::U32<NetworkEndian>) {
+        let (h, _) = PreppedAttributesHeader::mut_from_prefix(self.buf.as_mut()).unwrap();
+        h.origin_as = origin_as;
+    }
+    fn into_vec(self) -> Vec<u8> {
+        self.buf
+    }
+    fn path_attributes(&self) -> &[u8] {
+        &self.buf[std::mem::size_of::<PreppedAttributesHeader>()..]
+    }
+}
+
+impl AsRef<PreppedAttributes> for PreppedAttributesBuilder {
+    fn as_ref(&self) -> &PreppedAttributes {
+        PreppedAttributes::try_ref_from_bytes(&self.buf[..]).unwrap()
+    }
+}
+
+
+pub(crate) struct CheckedParts2 {
+    pub(crate) checked_mp_attributes: Option<PreppedAttributesBuilder>,
+    pub(crate) checked_conv_attributes: Option<PreppedAttributesBuilder>,
+    pub(crate) mp_reach: Vec<u8>,
+    pub(crate) mp_unreach: Vec<u8>,
 }
 
 
@@ -473,12 +796,17 @@ pub struct UncheckedPathAttributes {
 impl fmt::Debug for UncheckedPathAttributes {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         //f.debug_struct("UncheckedPathAttributes").field("path_attributes", &self.path_attributes).finish()
+        let alternate = f.alternate();
         let mut l = f.debug_list();
         for pa in self.iter() {
             //dbg!(&pa);
             match pa {
                 Ok(pa) => {
-                    l.entry(&pa.pa_type);
+                    if alternate {
+                        l.entry(&format!("{:#?}: {:?}", &pa.pa_type, HexFormatted(&pa.value())));
+                    } else {
+                        l.entry(&pa.pa_type);
+                    }
                 }
                 Err(_) => {
                     l.entry(&"MALFORMED");
@@ -966,13 +1294,7 @@ mod tests{
         let update = Update::try_from_full_pdu(&raw).unwrap();
         let sc = SessionConfig::default();
         let CheckedParts {
-            pa_hints,
-            mp_reach,
-            mp_unreach,
             mut mp_attributes,
-            malformed_attributes,
-            conventional_attributes,
-            origin_as,
             ..
         } = update.into_checked_parts(&sc);
 
@@ -991,4 +1313,57 @@ mod tests{
         eprintln!("{:?}", &routedb_val);
         eprintln!("{:#?}", &routedb_val);
     }
+
+
+    #[test]
+    fn prepped_attributes_builder() {
+        let mut b = PreppedAttributesBuilder::new();
+        b.set_rpki_info(RpkiInfo(3));
+        b.set_origin_as(6447.into());
+        b.append(&[0x40,1,1,0]);
+
+        let p = b.into_vec();
+        assert_eq!(p, [3,0,0,0,0x19,0x2f,0x40,1,1,0]);
+
+        let prepped = PreppedAttributes::try_ref_from_bytes(&p).unwrap();
+
+        assert_eq!(prepped.header.rpki_info, RpkiInfo(3));
+        assert_eq!(prepped.header.origin_as, byteorder::U32::<NetworkEndian>::from(6447));
+        assert!(prepped.path_attributes.iter().next().unwrap().unwrap().pa_type == PathAttributeType::ORIGIN);
+    }
+
+    #[test]
+    fn into_prepped_attributes() {
+        // BGP UPDATE with ORIGIN, AS_PATH, MP_REACH (with ::/0)
+        let raw: [u8; _] = [
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0x00, 0x43, 0x02, 0x00, 0x00, 0x00, 0x2c, 0x40,
+            0x01, 0x01, 0x00, 0x50, 0x02, 0x00, 0x0a, 0x02,
+            0x02, 0x00, 0x00, 0x19, 0x2f, 0x00, 0x00, 0x46,
+            0xba, 0x90, 0x0e, 0x00, 0x16, 0x00, 0x02, 0x01,
+            0x10, 0x20, 0x01, 0x0d, 0x98, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x19, 0x00, 0x00
+        ];
+
+        let update = Update::try_from_full_pdu(&raw).unwrap();
+        let sc = SessionConfig::default();
+        let CheckedParts2 {
+            checked_mp_attributes,
+            ..
+        } = update.into_checked_parts_2(&sc);
+
+        let owned = checked_mp_attributes.unwrap().into_vec();
+        let zc = PreppedAttributes::try_ref_from_bytes(&owned[..]).unwrap();
+
+        assert_eq!(
+            zc.iter().map(|pa| pa.unwrap().pa_type.0).collect::<Vec<_>>(),
+            vec![1,2]
+        );
+
+        //eprintln!("{:?}", &routedb_val);
+        //eprintln!("{:#?}", &routedb_val);
+    }
 }
+
