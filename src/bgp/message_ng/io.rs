@@ -2,7 +2,7 @@ use std::{borrow::Cow, collections::VecDeque, io::Read, sync::{atomic::{AtomicUs
 
 use zerocopy::TryFromBytes;
 
-use crate::bgp::message_ng::{common::{Header, MessageType, SessionConfig, MIN_MSG_SIZE}, update::{Update, HINT_SINGLE_SEQ}};
+use crate::bgp::message_ng::{common::{Header, MessageType, SessionConfig, MIN_MSG_SIZE}, update::{CheckedParts, Update, HINT_SINGLE_SEQ}};
 
 
 struct MessageIter<R: Read, const B: usize> {
@@ -107,18 +107,19 @@ impl Pool {
                         match header.msg_type {
                             MessageType::UPDATE => {
                                 let update = Update::try_from_raw(msg).unwrap();
-                                let (pa_hints, origin_as, mp_attr, mpr, mpu, conv_attr, m) = update.into_checked_parts(&sc);
+                                //let (pa_hints, origin_as, mp_attr, mp_reach, mp_unreach, conv_attr, m) = update.into_checked_parts(&sc);
+                                let CheckedParts{pa_hints, origin_as, mp_attributes, mp_reach, mp_unreach, conventional_attributes, malformed_attributes} = update.into_checked_parts(&sc);
                                 CNT_TOTAL.fetch_add(1, Ordering::Relaxed);
-                                if !mp_attr.is_empty() && !conv_attr.is_empty() {
+                                if !mp_attributes.is_empty() && !conventional_attributes.is_empty() {
                                     CNT_COMBINED.fetch_add(1, Ordering::Relaxed);
                                 }
-                                if !mpr.is_empty() && !mpu.is_empty() {
+                                if !mp_reach.is_empty() && !mp_unreach.is_empty() {
                                     CNT_MP_R_U.fetch_add(1, Ordering::Relaxed);
                                 }
-                                if !m.is_empty() {
+                                if !malformed_attributes.is_empty() {
                                     CNT_MALFORMED.fetch_add(1, Ordering::Relaxed);
                                 }
-                                if !conv_attr.is_empty() {
+                                if !conventional_attributes.is_empty() {
                                     assert!(!update.conventional_nlri().is_empty());
                                 } else {
                                     assert!(update.conventional_nlri().is_empty());

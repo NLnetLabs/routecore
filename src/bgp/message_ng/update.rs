@@ -3,7 +3,7 @@ use std::borrow::Cow;
 
 use zerocopy::{byteorder, FromBytes, Immutable, IntoBytes, KnownLayout, NetworkEndian, TryFromBytes};
 
-use crate::bgp::message_ng::common::{SessionConfig, SEGMENT_TYPE_SEQUENCE};
+use crate::bgp::message_ng::common::{Header, MessageType, SessionConfig, SEGMENT_TYPE_SEQUENCE};
 
 #[allow(dead_code)] // false positive
 pub(crate) const HINT_4BYTE_ASNS: u8 = 0b0000_0001;
@@ -61,8 +61,25 @@ pub struct Update {
     contents: [u8],
 }
 
+impl fmt::Debug for Update {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "UPDATE ({})", self.contents.len())
+        //f.debug_struct("Update").field("contents", *self.contents.as_ref()).finish()
+    }
+}
+
 impl Update {
 
+
+    pub(crate) fn try_from_full_pdu(raw: &[u8]) -> Result<&Update, Cow<'static, str>> {
+        let (header, _) = Header::try_ref_from_prefix(&raw.as_ref()).unwrap();
+
+        if header.msg_type == MessageType::UPDATE {
+            Update::try_from_raw(&raw[19..usize::from(header.length)])
+        } else {
+            Err("not an update".into())
+        }
+    }
 
     // `raw` should be the message content after the header
     // so, 19 bytes after the start of the full PDU
@@ -133,7 +150,11 @@ impl Update {
         ]
     }
 
-    pub(crate) fn into_checked_parts(&self, session_config: &SessionConfig) -> (u8, byteorder::U32<NetworkEndian>, Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>) {
+    //struct CheckedParts {
+    //}
+
+    //pub(crate) fn into_checked_parts(&self, session_config: &SessionConfig) -> (u8, byteorder::U32<NetworkEndian>, Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>) {
+    pub(crate) fn into_checked_parts(&self, session_config: &SessionConfig) -> CheckedParts {
 
         // first check whether there are conv nlri
         // chances of mixed mp+conv are low so only fill up one vec
@@ -344,9 +365,56 @@ impl Update {
                 }
             }
         }
-        (pa_hints, origin_as, mp_attributes, mp_reach, mp_unreach, conventional_attributes, malformed_attributes)
+        //(pa_hints, origin_as, mp_attributes, mp_reach, mp_unreach, conventional_attributes, malformed_attributes)
+        CheckedParts {
+            pa_hints: pa_hints.into(),
+            origin_as,
+            mp_attributes,
+            mp_reach,
+            mp_unreach,
+            conventional_attributes,
+            malformed_attributes
+        }
+
     }
 
+}
+
+#[derive(Debug, Eq, Hash, PartialEq)]
+pub(crate) struct PathAttributeHints(u8);
+impl From<u8> for PathAttributeHints {
+    fn from(value: u8) -> Self {
+        Self(value)
+    }
+}
+impl PartialEq<u8> for PathAttributeHints {
+    fn eq(&self, other: &u8) -> bool {
+        self.0 == *other
+    }
+}
+impl std::ops::BitOr<u8> for PathAttributeHints {
+    type Output = Self;
+
+    fn bitor(self, rhs: u8) -> Self::Output {
+        Self(self.0 | rhs)
+    }
+}
+impl std::ops::BitAnd<u8> for PathAttributeHints {
+    type Output = Self;
+
+    fn bitand(self, rhs: u8) -> Self::Output {
+        Self(self.0 & rhs)
+    }
+}
+
+pub(crate) struct CheckedParts {
+    pub(crate) pa_hints: PathAttributeHints,
+    pub(crate) origin_as: byteorder::U32<NetworkEndian>,
+    pub(crate) mp_attributes: Vec<u8>,
+    pub(crate) mp_reach: Vec<u8>,
+    pub(crate) mp_unreach: Vec<u8>,
+    pub(crate) conventional_attributes: Vec<u8>,
+    pub(crate) malformed_attributes: Vec<u8>,
 }
 
 #[derive(IntoBytes, TryFromBytes, KnownLayout, Immutable)]
@@ -571,11 +639,6 @@ impl<'a> Iterator for UncheckedPathAttributesIter<'a> {
 
 #[cfg(test)]
 mod tests{
-
-    use std::{fs::File, io::{BufReader, Read}};
-
-    use crate::bgp::message_ng::common::{Header, MessageType};
-
     use super::*;
 
     #[test]
@@ -626,47 +689,198 @@ mod tests{
     }
 
     #[test]
-    fn raw_into_family_specific() {
-        // BGP UPDATE message containing MP_REACH_NLRI path attribute,
-        // comprising 5 IPv6 NLRIs
-        let raw = vec![
+    fn valid_conventional() {
+        // BGP UPDATE with one conventional NLRI (1.0.0.0/24)
+        let raw: [u8; _] = [
             0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
             0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-            0x00, 0x88, 0x02, 0x00, 0x00, 0x00, 0x71, 0x80,
-            0x0e, 0x5a, 0x00, 0x02, 0x01, 0x20, 0xfc, 0x00,
-            0x00, 0x10, 0x00, 0x01, 0x00, 0x10, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0xfe, 0x80,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x80,
-            0xfc, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10,
-            0x40, 0x20, 0x01, 0x0d, 0xb8, 0xff, 0xff, 0x00,
-            0x00, 0x40, 0x20, 0x01, 0x0d, 0xb8, 0xff, 0xff,
-            0x00, 0x01, 0x40, 0x20, 0x01, 0x0d, 0xb8, 0xff,
-            0xff, 0x00, 0x02, 0x40, 0x20, 0x01, 0x0d, 0xb8,
-            0xff, 0xff, 0x00, 0x03, 0x40, 0x01, 0x01, 0x00,
-            0x40, 0x02, 0x06, 0x02, 0x01, 0x00, 0x00, 0x00,
-            0xc8, 0x80, 0x04, 0x04, 0x00, 0x00, 0x00, 0x00
+            0x00, 0x5a, 0x02, 0x00, 0x00, 0x00, 0x3f, 0x40,
+            0x01, 0x01, 0x00, 0x50, 0x02, 0x00, 0x0e, 0x02,
+            0x03, 0x00, 0x00, 0x19, 0x2f, 0x00, 0x00, 0x58,
+            0x7c, 0x00, 0x00, 0x34, 0x17, 0x40, 0x03, 0x04,
+            0x2d, 0x3d, 0x00, 0x55, 0xc0, 0x07, 0x08, 0x00,
+            0x00, 0x34, 0x17, 0xa2, 0x9e, 0x7c, 0x01, 0xc0,
+            0x08, 0x14, 0x34, 0x17, 0x27, 0x56, 0x34, 0x17,
+            0x4a, 0x38, 0x34, 0x17, 0x4e, 0x52, 0x34, 0x17,
+            0x50, 0x14, 0x34, 0x17, 0x50, 0x32, 0x18, 0x01,
+            0x00, 0x00
         ];
 
-        let (header, _) = Header::try_ref_from_prefix(&raw).unwrap();
+        let update = Update::try_from_full_pdu(&raw).unwrap();
+        let sc = SessionConfig::default();
+        let CheckedParts {
+            mp_reach,
+            mp_unreach,
+            malformed_attributes,
+            conventional_attributes,
+            origin_as,
+            ..
+        } = update.into_checked_parts(&sc);
+        assert!(malformed_attributes.is_empty());
+        assert!(mp_reach.is_empty());
+        assert!(mp_unreach.is_empty());
+        assert!(!conventional_attributes.is_empty());
+        assert_eq!(origin_as, byteorder::U32::<NetworkEndian>::new(13335));
 
-        let update = if header.msg_type == MessageType::UPDATE {
-            Update::try_ref_from_bytes(&raw[19..usize::from(header.length)]).unwrap()
-        } else {
-            panic!("not an update");
-        };
-        
-        let unchecked = update.path_attributes();
-        //let (checked, mp_reach, mp_unreach, checked_conventional, malformed) = unchecked.into_checked();
-        
-        //dbg!((checked, mp_reach, mp_unreach, checked_conventional, malformed));
+    }
 
+    #[test]
+    fn valid_mp() {
+        // BGP UPDATE with ORIGIN, AS_PATH, MP_REACH (with ::/0)
+        // we toggle the Extended Len bit on the ORIGIN attribute
+        // without actually making the path attribute length 2 bytes
+        let raw: [u8; _] = [
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0x00, 0x43, 0x02, 0x00, 0x00, 0x00, 0x2c, 0x40,
+            0x01, 0x01, 0x00, 0x50, 0x02, 0x00, 0x0a, 0x02,
+            0x02, 0x00, 0x00, 0x19, 0x2f, 0x00, 0x00, 0x46,
+            0xba, 0x90, 0x0e, 0x00, 0x16, 0x00, 0x02, 0x01,
+            0x10, 0x20, 0x01, 0x0d, 0x98, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x19, 0x00, 0x00
+        ];
+
+        let update = Update::try_from_full_pdu(&raw).unwrap();
+        let sc = SessionConfig::default();
+        let CheckedParts {
+            mp_reach,
+            mp_unreach,
+            malformed_attributes,
+            conventional_attributes,
+            origin_as,
+            ..
+        } = update.into_checked_parts(&sc);
+        assert!(malformed_attributes.is_empty());
+        assert!(!mp_reach.is_empty());
+        assert!(mp_unreach.is_empty());
+        assert!(conventional_attributes.is_empty());
+        assert_eq!(origin_as, byteorder::U32::<NetworkEndian>::new(18106));
+
+    }
+
+    #[test]
+    fn malformed_attributes() {
+        // BGP UPDATE with ORIGIN, AS_PATH, MP_REACH (with ::/0)
+        // we toggle the Extended Len bit on the ORIGIN attribute
+        // without actually making the path attribute length 2 bytes
+        let raw: [u8; _] = [
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0x00, 0x43, 0x02, 0x00, 0x00, 0x00, 0x2c, 0x40 | EXTENDED_LEN,
+            0x01, 0x01, 0x00, 0x50, 0x02, 0x00, 0x0a, 0x02,
+            0x02, 0x00, 0x00, 0x19, 0x2f, 0x00, 0x00, 0x46,
+            0xba, 0x90, 0x0e, 0x00, 0x16, 0x00, 0x02, 0x01,
+            0x10, 0x20, 0x01, 0x0d, 0x98, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x19, 0x00, 0x00
+        ];
+
+        let update = Update::try_from_full_pdu(&raw).unwrap();
+        dbg!(&update);
+        let sc = SessionConfig::default();
+        let CheckedParts {
+            mp_reach,
+            malformed_attributes,
+            origin_as,
+            ..
+        } = update.into_checked_parts(&sc);
+        assert!(!malformed_attributes.is_empty());
+        // Because MP_REACH came after the violating path attribute, it must be empty
+        assert!(mp_reach.is_empty());
+        assert_eq!(origin_as, byteorder::U32::<NetworkEndian>::new(0));
+
+    }
+
+    #[test]
+    fn illegal_withdrawn_len_outside_pdu() {
+        // BGP UPDATE with ORIGIN, AS_PATH, MP_REACH (with ::/0)
+        // we toggle the Extended Len bit on the ORIGIN attribute
+        // without actually making the path attribute length 2 bytes
+        let raw: [u8; _] = [
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0x00, 0x43, 0x02,
+            0x00 + 0xff, 0x00 + 0xff,
+            0x00, 0x2c, 0x40,
+            0x01, 0x01, 0x00, 0x50, 0x02, 0x00, 0x0a, 0x02,
+            0x02, 0x00, 0x00, 0x19, 0x2f, 0x00, 0x00, 0x46,
+            0xba, 0x90, 0x0e, 0x00, 0x16, 0x00, 0x02, 0x01,
+            0x10, 0x20, 0x01, 0x0d, 0x98, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x19, 0x00, 0x00
+        ];
+
+        Update::try_from_full_pdu(&raw).unwrap_err();
+    }
+
+    #[test]
+    fn illegal_withdrawn_len_inside_pdu() {
+        // BGP UPDATE with ORIGIN, AS_PATH, MP_REACH (with ::/0)
+        // we toggle the Extended Len bit on the ORIGIN attribute
+        // without actually making the path attribute length 2 bytes
+        let raw: [u8; _] = [
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0x00, 0x43, 0x02,
+            0x00 + 0x00, 0x00 + 0x0a,
+            0x00, 0x2c, 0x40,
+            0x01, 0x01, 0x00, 0x50, 0x02, 0x00, 0x0a, 0x02,
+            0x02, 0x00, 0x00, 0x19, 0x2f, 0x00, 0x00, 0x46,
+            0xba, 0x90, 0x0e, 0x00, 0x16, 0x00, 0x02, 0x01,
+            0x10, 0x20, 0x01, 0x0d, 0x98, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x19, 0x00, 0x00
+        ];
+        Update::try_from_full_pdu(&raw).unwrap_err();
+    }
+
+    #[test]
+    fn illegal_total_path_attributes_len_outside_pdu() {
+        // BGP UPDATE with ORIGIN, AS_PATH, MP_REACH (with ::/0)
+        // we toggle the Extended Len bit on the ORIGIN attribute
+        // without actually making the path attribute length 2 bytes
+        let raw: [u8; _] = [
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0x00, 0x43, 0x02, 0x00, 0x00,
+            0x00 + 0xff, 0x2c,
+            0x40,
+            0x01, 0x01, 0x00, 0x50, 0x02, 0x00, 0x0a, 0x02,
+            0x02, 0x00, 0x00, 0x19, 0x2f, 0x00, 0x00, 0x46,
+            0xba, 0x90, 0x0e, 0x00, 0x16, 0x00, 0x02, 0x01,
+            0x10, 0x20, 0x01, 0x0d, 0x98, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x19, 0x00, 0x00
+        ];
+        Update::try_from_full_pdu(&raw).unwrap_err();
+    }
+
+    #[test]
+    fn illegal_total_path_attributes_len_inside_pdu() {
+        // BGP UPDATE with one conventional NLRI (1.0.0.0/24)
+        let raw: [u8; _] = [
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0x00, 0x5a, 0x02, 0x00, 0x00,
+            0x00, 0x3f + 0x0a,
+            0x40,
+            0x01, 0x01, 0x00, 0x50, 0x02, 0x00, 0x0e, 0x02,
+            0x03, 0x00, 0x00, 0x19, 0x2f, 0x00, 0x00, 0x58,
+            0x7c, 0x00, 0x00, 0x34, 0x17, 0x40, 0x03, 0x04,
+            0x2d, 0x3d, 0x00, 0x55, 0xc0, 0x07, 0x08, 0x00,
+            0x00, 0x34, 0x17, 0xa2, 0x9e, 0x7c, 0x01, 0xc0,
+            0x08, 0x14, 0x34, 0x17, 0x27, 0x56, 0x34, 0x17,
+            0x4a, 0x38, 0x34, 0x17, 0x4e, 0x52, 0x34, 0x17,
+            0x50, 0x14, 0x34, 0x17, 0x50, 0x32, 0x18, 0x01,
+            0x00, 0x00
+        ];
+
+        Update::try_from_full_pdu(&raw).unwrap_err();
     }
 
 
     // TODO add tests for
-    // - illegal withdrawn length
     // - illegal tpal
     // - malformed attributes
     // - mixed MP+conventional
