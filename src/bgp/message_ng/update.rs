@@ -152,9 +152,12 @@ impl Update {
         if 2 + withdrawn_routes_len > raw.len() {
             return Err("withdrawn routes length exceeds PDU length".into());
         }
+        if 2 + withdrawn_routes_len + 2 > raw.len() {
+            return Err("PDU too short, expected two bytes for total path attributes length".into());
+        }
         if 4 + withdrawn_routes_len + usize::from(u16::from_be_bytes([
                 raw[2+withdrawn_routes_len],
-                raw[3+withdrawn_routes_len] //FIXME fuzz fail
+                raw[3+withdrawn_routes_len],
             ])) > raw.len() {
                 return Err("total path attributes length exceeds PDU length".into());
         }
@@ -301,7 +304,7 @@ impl Update {
 
 
 
-    pub(crate) fn into_checked_parts_2(&self, session_config: &SessionConfig) -> CheckedParts2 {
+    pub fn into_checked_parts_2(&self, session_config: &SessionConfig) -> CheckedParts2 {
 
         let mut pab_mp: Option<PreppedAttributesBuilder> = None;
         let mut pab_conv: Option<PreppedAttributesBuilder> = None; 
@@ -365,7 +368,7 @@ impl Update {
                         //dbg!("malformed");
                         //malformed_attributes = e.as_bytes().into();
 
-                        dbg!("malformed");
+                        //dbg!("malformed");
                         pab_conv.get_or_insert_default().append(e.as_bytes());
                         pab_conv.as_mut().unwrap().mark_malformed();
                         if also_mp {
@@ -397,7 +400,7 @@ impl Update {
                                 mp_unreach.extend_from_slice(pa.as_bytes());
                             }
                             PathAttributeType::NEXT_HOP => {
-                                dbg!("Unexpected NEXT_HOP in MP UPDATE");
+                                //dbg!("Unexpected NEXT_HOP in MP UPDATE");
                                 //dbg!(self.conventional_nlri());
                                 //hexprint(&self.contents);
                                 //panic!();
@@ -412,7 +415,7 @@ impl Update {
                         }
                     }                   
                     Err(e) => {
-                        dbg!("malformed");
+                        //dbg!("malformed");
                         pab_mp.get_or_insert_default().append(e.as_bytes());
                         pab_mp.as_mut().unwrap().mark_malformed();
                         break;
@@ -545,7 +548,7 @@ impl Update {
                         }
                     }                   
                     Err(e) => {
-                        dbg!("malformed");
+                        //dbg!("malformed");
                         malformed_attributes = e.as_bytes().into();
                         break;
                     }
@@ -576,7 +579,7 @@ impl Update {
                             PathAttributeType::NEXT_HOP => {
                                 //checked_size -= pa.raw_len();
                                 //checked_conventional.extend_from_slice(pa.as_bytes());
-                                dbg!("Unexpected NEXT_HOP in MP UPDATE");
+                                //debug!("Unexpected NEXT_HOP in MP UPDATE");
                                 //dbg!(self.conventional_nlri());
                                 //hexprint(&self.contents);
                                 //panic!();
@@ -668,7 +671,7 @@ pub(crate) struct CheckedParts {
 
 #[derive(IntoBytes, TryFromBytes, KnownLayout, Immutable)]
 #[repr(C, packed)]
-pub(crate) struct PreppedAttributes {
+pub struct PreppedAttributes {
     //rpki_info: u8,
     //pa_hints: PathAttributeHints,
     //origin_as: byteorder::U32<NetworkEndian>,
@@ -677,7 +680,7 @@ pub(crate) struct PreppedAttributes {
 }
 
 impl PreppedAttributes {
-    fn iter(&self) -> UncheckedPathAttributesIter<'_> {
+    pub fn iter(&self) -> UncheckedPathAttributesIter<'_> {
         self.path_attributes.iter()
     }
 }
@@ -685,13 +688,13 @@ impl PreppedAttributes {
 #[derive(IntoBytes, FromBytes, KnownLayout, Immutable)]
 #[derive(Default)]
 #[repr(C, packed)]
-pub(crate) struct PreppedAttributesHeader {
+pub struct PreppedAttributesHeader {
     pub(crate) rpki_info: RpkiInfo,
     pub(crate) pa_hints: PathAttributeHints,
     pub(crate) origin_as: byteorder::U32<NetworkEndian>,
 }
 
-pub(crate) struct PreppedAttributesBuilder {
+pub struct PreppedAttributesBuilder {
     buf: Vec<u8>,
 }
 
@@ -756,11 +759,11 @@ impl AsRef<PreppedAttributes> for PreppedAttributesBuilder {
 }
 
 
-pub(crate) struct CheckedParts2 {
-    pub(crate) checked_mp_attributes: Option<PreppedAttributesBuilder>,
-    pub(crate) checked_conv_attributes: Option<PreppedAttributesBuilder>,
-    pub(crate) mp_reach: Vec<u8>,
-    pub(crate) mp_unreach: Vec<u8>,
+pub struct CheckedParts2 {
+    pub checked_mp_attributes: Option<PreppedAttributesBuilder>,
+    pub checked_conv_attributes: Option<PreppedAttributesBuilder>,
+    pub mp_reach: Vec<u8>,
+    pub mp_unreach: Vec<u8>,
 }
 
 
@@ -878,7 +881,7 @@ impl RawPathAttribute {
 }
 
 impl UncheckedPathAttributes {
-    fn iter(&self) -> UncheckedPathAttributesIter<'_> {
+    pub fn iter(&self) -> UncheckedPathAttributesIter<'_> {
         UncheckedPathAttributesIter { raw: &self.path_attributes }
     }
 
@@ -982,7 +985,7 @@ impl fmt::Debug for RawPathAttribute {
 }
 
 #[repr(C, packed)]
-struct UncheckedPathAttributesIter<'a> {
+pub struct UncheckedPathAttributesIter<'a> {
     raw: &'a [u8],
 }
 

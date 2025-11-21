@@ -1,7 +1,7 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use routecore::bgp::message_ng::{common::{Header, MessageType}, Update};
+use routecore::bgp::message_ng::{common::{Header, MessageType, SessionConfig}, update::CheckedParts2, Update};
 use zerocopy::TryFromBytes;
 
 fuzz_target!(|data: &[u8]| {
@@ -11,6 +11,36 @@ fuzz_target!(|data: &[u8]| {
             let (h,_) = Header::try_ref_from_prefix(&data).unwrap();
             assert_eq!(h.msg_type, MessageType::UPDATE);
             assert_eq!(usize::from(h.length), data.len());
+
+            let sc = SessionConfig::default();
+            let CheckedParts2 {
+                checked_mp_attributes,
+                checked_conv_attributes,
+                mp_reach,
+                mp_unreach
+            } = update.into_checked_parts_2(&sc);
+
+            if let Some(pab) = checked_mp_attributes {
+                for pa in pab.as_ref().iter() {
+                    match pa {
+                        Ok(_rpa) => { /* TODO */ } 
+                        Err(_e) => { }
+                    }
+                }
+            }
+            if let Some(pab) = checked_conv_attributes {
+                for pa in pab.as_ref().iter() {
+                    match pa {
+                        Ok(_rpa) => { /* TODO */ } 
+                        Err(_e) => { }
+                    }
+                }
+            }
+
+            // TODO iterate mp_reach
+
+            // TODO iterate mp_unreach
+
         }
         Err(_) => { }
     }
