@@ -64,3 +64,9 @@ name = "new_update_parser"
 path = "fuzz_targets/new_update_parser.rs"
 test = false
 doc = false
+
+[[bin]]
+name = "new_open_parser"
+path = "fuzz_targets/new_open_parser.rs"
+test = false
+doc = false
