@@ -95,4 +95,15 @@ impl fmt::Debug for HexFormatted<'_> {
 }
 
 
+// XXX this might have to go somewhere else eventually
+// Also, this is really just a placeholder for the time being
+#[derive(IntoBytes, FromBytes, KnownLayout, Immutable)]
+#[derive(Debug, Default, Eq, Hash, PartialEq)]
+pub(crate) struct RpkiInfo(pub u8);
+impl From<u8> for RpkiInfo {
+    fn from(value: u8) -> Self {
+        Self(value)
+    }
+}
+
 

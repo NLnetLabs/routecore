@@ -2,7 +2,7 @@ use std::{borrow::Cow, collections::VecDeque, io::Read, sync::{atomic::{AtomicUs
 
 use zerocopy::TryFromBytes;
 
-use crate::bgp::message_ng::{common::{Header, MessageType, SessionConfig, MIN_MSG_SIZE}, update::{CheckedParts, CheckedParts2, Update, HINT_MALFORMED, HINT_SINGLE_SEQ}};
+use crate::bgp::message_ng::{common::{Header, MessageType, SessionConfig, MIN_MSG_SIZE}, path_attributes::common::{HINT_MALFORMED, HINT_SINGLE_SEQ}, update::{CheckedParts2, Update}};
 
 
 struct MessageIter<R: Read, const B: usize> {
