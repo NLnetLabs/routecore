@@ -3,7 +3,7 @@ use std::borrow::Cow;
 
 use zerocopy::{byteorder, FromBytes, Immutable, IntoBytes, KnownLayout, NetworkEndian, TryFromBytes};
 
-use crate::bgp::message_ng::common::{Header, MessageType, SessionConfig, SEGMENT_TYPE_SEQUENCE};
+use crate::bgp::message_ng::common::{Header, HexFormatted, MessageType, SessionConfig, SEGMENT_TYPE_SEQUENCE};
 
 #[allow(dead_code)] // false positive
 pub(crate) const HINT_4BYTE_ASNS: u8 = 0b0000_0001;
@@ -50,30 +50,6 @@ impl fmt::Debug for PathAttributeType {
     }
 }
 
-#[allow(dead_code)] // just a helper for now
-fn hexprint(buf: impl AsRef<[u8]>) {
-    for c in buf.as_ref().chunks(16) {
-        for b in c {
-            print!("{:02X} ", b);
-        }
-        println!();
-    }
-}
-
-struct HexFormatted<'a>(pub &'a[u8]);
-impl fmt::Debug for HexFormatted<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        for c in self.0.chunks(16) {
-            for b in c {
-                write!(f, "{:02X} ", b)?;
-            }
-            writeln!(f)?;
-        }
-        Ok(())
-    }
-}
-
-
 /// Unchecked Update message without BGP header
 ///
 /// There is no guarantee for this type other than that the length of the withdrawn routes and the
@@ -110,8 +86,6 @@ impl fmt::Debug for Update {
 }
 
 impl Update {
-
-
     pub fn try_from_full_pdu(raw: &[u8]) -> Result<&Update, Cow<'static, str>> {
         if raw.len() < 23 {
             return Err("minimal size of UPDATE PDU is 23 bytes".into());
@@ -603,6 +577,7 @@ impl Update {
                 }
             }
         }
+
         CheckedParts {
             pa_hints: pa_hints.into(),
             origin_as,
@@ -672,9 +647,6 @@ pub(crate) struct CheckedParts {
 #[derive(IntoBytes, TryFromBytes, KnownLayout, Immutable)]
 #[repr(C, packed)]
 pub struct PreppedAttributes {
-    //rpki_info: u8,
-    //pa_hints: PathAttributeHints,
-    //origin_as: byteorder::U32<NetworkEndian>,
     pub header: PreppedAttributesHeader,
     path_attributes: UncheckedPathAttributes,
 }
@@ -792,16 +764,7 @@ pub struct Withdrawn {
     withdrawn_length: byteorder::U16<NetworkEndian>,
     withdrawn: [u8],
 }
-//
-//
-//#[derive(IntoBytes, TryFromBytes, KnownLayout, Immutable)]
-//#[repr(C, packed)]
-//pub struct PathAttributes {
-//    total_path_attributes_len: byteorder::U16<NetworkEndian>,
-//    path_attributes: [u8],
-//}
 
-// Unchecked stuff
 #[derive(IntoBytes, TryFromBytes, KnownLayout, Immutable)]
 #[repr(C, packed)]
 pub struct UncheckedPathAttributes {
@@ -811,11 +774,9 @@ pub struct UncheckedPathAttributes {
 
 impl fmt::Debug for UncheckedPathAttributes {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        //f.debug_struct("UncheckedPathAttributes").field("path_attributes", &self.path_attributes).finish()
         let alternate = f.alternate();
         let mut l = f.debug_list();
         for pa in self.iter() {
-            //dbg!(&pa);
             match pa {
                 Ok(pa) => {
                     if alternate {
@@ -884,94 +845,6 @@ impl UncheckedPathAttributes {
     pub fn iter(&self) -> UncheckedPathAttributesIter<'_> {
         UncheckedPathAttributesIter { raw: &self.path_attributes }
     }
-
-    //// return checked, mp_reach, mp_unreach, checked_conventional, malformed
-    //fn into_checked(&self) -> (Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>) {
-
-    //    let mut checked = vec![];
-    //    let mut mp_reach = vec![];
-    //    let mut mp_unreach = vec![];
-    //    let mut checked_conventional = vec![];
-    //    let mut malformed = vec![];
-
-
-    //    let mut iter = self.iter();
-    //    let mut seen: u8 = 0;
-    //    
-    //    //let mut checked_size = self.path_attributes.len();
-    //    
-
-    //    while let Some(r) = iter.next() {
-    //        match r {
-    //            Ok(pa) => { 
-    //                //dbg!(pa);
-    //                match pa.pa_type {
-    //                    PathAttributeType::MP_REACH_NLRI => {
-    //                        //checked_size -= pa.raw_len();
-    //                        //pa.write_to(&mut mp_reach).unwrap();
-    //                        mp_reach.extend_from_slice(pa.as_bytes());
-    //                        seen |= 0x1;
-    //                    }
-    //                    PathAttributeType::MP_UNREACH_NLRI => {
-    //                        //checked_size -= pa.raw_len();
-    //                        mp_unreach.extend_from_slice(pa.as_bytes());
-    //                        seen |= 0x2;
-    //                    }
-    //                    PathAttributeType::NEXT_HOP => {
-    //                        //checked_size -= pa.raw_len();
-    //                        checked_conventional.extend_from_slice(pa.as_bytes());
-    //                        seen |= 0x4;
-    //                    }
-    //                    _ => {
-    //                        checked.extend_from_slice(pa.as_bytes());
-    //                        checked_conventional.extend_from_slice(pa.as_bytes());
-    //                    }
-    //                }
-    //            }                   
-    //            Err(e) => {
-    //                dbg!("malformed");
-    //                malformed = e.as_bytes().into();
-    //                break;
-    //            }
-
-    //        }
-    //    }
-    //    //if seen.count_ones() > 1 {
-    //    //    eprintln!("{seen:0X}");
-    //    //}
-    //    //if !mp_unreach.is_empty() {
-    //    //    eprint!("U");
-    //    //} else {
-    //    //    eprint!(".");
-    //    //}
-    //    //if checked_conventional.is_empty() {
-    //    //    eprint!("_");
-    //    //} else {
-    //    //    eprint!("X");
-    //    //}
-
-    //    (checked, mp_reach, mp_unreach, checked_conventional, malformed)
-    //}
-
-    //fn check(&self) -> &CheckedPathAttributes {
-    //    transmute_ref!(self)
-    //}
-
-    //fn check(&self) -> Result<CheckedPathAttributes, (CheckedPathAttributes, MalformedPathAttributes)>  {
-    //    let mut iter = self.iter();
-    //    while let Some(r) = iter.next() {
-    //        match r {
-    //            Ok(pa) => {  }
-    //            Err(e) => { 
-    //                //dbg!("error: {}", e); break
-    //                let checked = CheckedPathAttributes { path_attributes: self.path_attributes[..self.path_attributes.len() - e.len()] };
-    //                let malformed = MalformedPathAttributes { path_attributes: e };
-    //                return Err((&checked, &malformed));
-    //            }
-    //        }
-    //    }
-    //    Ok(CheckedPathAttributes { path_attributes: self.path_attributes })
-    //}
 }
 
 impl fmt::Debug for RawPathAttribute {

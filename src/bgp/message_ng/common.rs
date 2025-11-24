@@ -68,3 +68,31 @@ impl SessionConfig {
         self.four_octet_asns
     }
 }
+
+
+
+#[allow(dead_code)] // just a helper for now
+pub fn hexprint(buf: impl AsRef<[u8]>) {
+    for c in buf.as_ref().chunks(16) {
+        for b in c {
+            print!("{:02X} ", b);
+        }
+        println!();
+    }
+}
+
+pub struct HexFormatted<'a>(pub &'a[u8]);
+impl fmt::Debug for HexFormatted<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for c in self.0.chunks(16) {
+            for b in c {
+                write!(f, "{:02X} ", b)?;
+            }
+            writeln!(f)?;
+        }
+        Ok(())
+    }
+}
+
+
+
