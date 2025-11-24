@@ -18,15 +18,6 @@ impl PathAttributeType {
 
 pub(crate) const EXTENDED_LEN: u8  = 0b0001_0000;
 
-#[allow(dead_code)] // false positive
-pub(crate) const HINT_4BYTE_ASNS: u8 = 0b0000_0001;
-#[allow(dead_code)] // false positive
-pub(crate) const HINT_SINGLE_SEQ: u8 = 0b0000_0010;
-pub(crate) const HINT_ADDPATH: u8 = 0b0000_0100;
-pub(crate) const HINT_MULTILABEL: u8 = 0b0000_1000;
-pub(crate) const HINT_MALFORMED: u8 = 0b0001_0000;
-
-
 impl fmt::Display for PathAttributeType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(
@@ -55,6 +46,36 @@ impl fmt::Debug for PathAttributeType {
 #[derive(IntoBytes, FromBytes, KnownLayout, Immutable)]
 #[derive(Copy, Clone, Debug, Default, Eq, Hash, PartialEq)]
 pub struct PathAttributeHints(u8);
+
+impl PathAttributeHints {
+    const HINT_4BYTE_ASNS:  u8 = 0b0000_0001;
+    const HINT_SINGLE_SEQ:  u8 = 0b0000_0010;
+    const HINT_ADDPATH:     u8 = 0b0000_0100;
+    const HINT_MULTILABEL:  u8 = 0b0000_1000;
+    const HINT_MALFORMED:   u8 = 0b0001_0000;
+
+    pub fn is_4byte_asns(&self) -> bool {
+        self.0 & Self::HINT_4BYTE_ASNS == Self::HINT_4BYTE_ASNS
+    }
+
+    pub fn is_single_seq(&self) -> bool {
+        self.0 & Self::HINT_SINGLE_SEQ == Self::HINT_SINGLE_SEQ
+    }
+
+    pub fn is_addpath(&self) -> bool {
+        self.0 & Self::HINT_ADDPATH == Self::HINT_ADDPATH
+    }
+
+    pub fn is_multilabel(&self) -> bool {
+        self.0 & Self::HINT_MULTILABEL == Self::HINT_MULTILABEL
+    }
+
+    pub fn is_malformed(&self) -> bool {
+        self.0 & Self::HINT_MALFORMED == Self::HINT_MALFORMED
+    }
+}
+
+
 impl From<u8> for PathAttributeHints {
     fn from(value: u8) -> Self {
         Self(value)
@@ -106,19 +127,22 @@ impl PreppedAttributesBuilder {
         h.rpki_info = rpki_info;
     }
 
-    pub(crate) fn set_pa_hints(&mut self, pa_hints: PathAttributeHints) {
-        let (h, _) = PreppedAttributesHeader::mut_from_prefix(self.buf.as_mut()).unwrap();
-        h.pa_hints = pa_hints;
-    }
+    //pub(crate) fn set_pa_hints(&mut self, pa_hints: PathAttributeHints) {
+    //    let (h, _) = PreppedAttributesHeader::mut_from_prefix(self.buf.as_mut()).unwrap();
+    //    h.pa_hints = pa_hints;
+    //}
 
-    pub(crate) fn mark_hint(&mut self, hint: u8) {
+    fn mark_hint(&mut self, hint: u8) {
         let (h, _) = PreppedAttributesHeader::mut_from_prefix(self.buf.as_mut()).unwrap();
         h.pa_hints |= hint;
     }
 
     pub(crate) fn mark_malformed(&mut self) {
-        let (h, _) = PreppedAttributesHeader::mut_from_prefix(self.buf.as_mut()).unwrap();
-        h.pa_hints |= HINT_MALFORMED;;
+        self.mark_hint(PathAttributeHints::HINT_MALFORMED);
+    }
+
+    pub(crate) fn mark_single_seq(&mut self) {
+        self.mark_hint(PathAttributeHints::HINT_SINGLE_SEQ);
     }
 
     pub(crate) fn set_origin_as(&mut self, origin_as: byteorder::U32<NetworkEndian>) {
@@ -247,6 +271,18 @@ pub struct PreppedAttributes {
 impl PreppedAttributes {
     pub fn iter(&self) -> UncheckedPathAttributesIter<'_> {
         self.path_attributes.iter()
+    }
+
+    pub fn is_malformed(&self) -> bool {
+        self.header.pa_hints.is_malformed()
+    }
+
+    pub fn is_single_seq(&self) -> bool {
+        self.header.pa_hints.is_single_seq()
+    }
+
+    pub fn origin_as(&self) -> byteorder::U32<NetworkEndian> {
+        self.header.origin_as
     }
 }
 

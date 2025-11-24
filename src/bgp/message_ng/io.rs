@@ -2,7 +2,7 @@ use std::{borrow::Cow, collections::VecDeque, io::Read, sync::{atomic::{AtomicUs
 
 use zerocopy::TryFromBytes;
 
-use crate::bgp::message_ng::{common::{Header, MessageType, SessionConfig, MIN_MSG_SIZE}, path_attributes::common::{HINT_MALFORMED, HINT_SINGLE_SEQ}, update::{CheckedParts2, Update}};
+use crate::bgp::message_ng::{common::{Header, MessageType, SessionConfig, MIN_MSG_SIZE}, update::{CheckedParts, Update}};
 
 
 struct MessageIter<R: Read, const B: usize> {
@@ -135,12 +135,12 @@ impl Pool {
                                 //    //panic!();
                                 //}
 
-                                let CheckedParts2 {
+                                let CheckedParts {
                                     checked_mp_attributes,
                                     checked_conv_attributes,
                                     mp_reach,
                                     mp_unreach
-                                } = update.into_checked_parts_2(&sc);
+                                } = update.into_checked_parts(&sc);
 
                                 CNT_TOTAL.fetch_add(1, Ordering::Relaxed);
                                 if !checked_mp_attributes.is_none() && !checked_conv_attributes.is_none() {
@@ -151,10 +151,10 @@ impl Pool {
                                 }
                                 if let Some(pas) = checked_conv_attributes.as_ref() {
                                     assert!(!update.conventional_nlri().is_empty());
-                                    if pas.as_ref().header.pa_hints & HINT_MALFORMED == HINT_MALFORMED {
+                                    if pas.as_ref().is_malformed() {
                                         CNT_MALFORMED.fetch_add(1, Ordering::Relaxed);
                                     }
-                                    if pas.as_ref().header.pa_hints & HINT_SINGLE_SEQ == HINT_SINGLE_SEQ {
+                                    if pas.as_ref().is_single_seq() {
                                         assert!(pas.as_ref().header.origin_as != 0);
                                     } else {
                                         CNT_NOT_SINGLE_SEQ.fetch_add(1, Ordering::Relaxed);
@@ -163,7 +163,7 @@ impl Pool {
                                     assert!(update.conventional_nlri().is_empty());
 
                                     if let Some(pas) = checked_mp_attributes.as_ref() {
-                                        if pas.as_ref().header.pa_hints & HINT_SINGLE_SEQ == HINT_SINGLE_SEQ {
+                                        if pas.as_ref().is_single_seq() {
                                             assert!(pas.as_ref().header.origin_as != 0);
                                         } else {
                                             CNT_NOT_SINGLE_SEQ.fetch_add(1, Ordering::Relaxed);
