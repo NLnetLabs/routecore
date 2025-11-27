@@ -70,6 +70,7 @@ impl<'a> Iterator for NlriIter<'a> {
         let len_bytes = bits_to_bytes(self.raw[0]);
         if self.raw.len() < 1 + len_bytes {
             // TODO error
+            return None;
         }
 
         let res = Some(&self.raw[..1+len_bytes]);

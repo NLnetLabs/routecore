@@ -184,6 +184,8 @@ impl Update {
 
     fn _attr_mp_reach<'a>(
         pa: &'a RawPathAttribute,
+        session_config: &SessionConfig,
+        mp_nlri_hints: &mut NlriHints,
         mp_reach_afisafi: &mut AfiSafiType,
         mp_nexthop: &mut &'a [u8],
         mp_reach: &mut &'a [u8],
@@ -211,6 +213,10 @@ impl Update {
             *mp_nexthop = &value[4..4+nhlen+1];
             *mp_reach = &value[4+nhlen+1..];
         }
+        if session_config.addpath_rx(AfiSafiType::from(*mp_reach_afisafi)) {
+            mp_nlri_hints.set(NlriHints::ADDPATH);
+        }
+
         Ok(())
     }
 
@@ -285,6 +291,8 @@ impl Update {
                                 
                                 if let Err(e) = Self::_attr_mp_reach(
                                     pa,
+                                    session_config,
+                                    &mut mp_nlri_hints,
                                     &mut mp_reach_afisafi,
                                     &mut mp_nexthop,
                                     &mut mp_reach
@@ -292,20 +300,13 @@ impl Update {
                                     eprintln!("{e}\n{:#?}", &self);
                                 }
 
-                                //mp_reach.extend_from_slice(pa.as_bytes());
-
                                 also_mp = true;
+
                                 // clone whatever we already collected for conventional into mp
                                 eprintln!("also_mp, extending from slice");
                                 pab_mp.get_or_insert_default().append(
                                     &pab_conv.get_or_insert_default().path_attributes()
                                 );
-
-                                // TODO impl From<[u8; 3]> on AfiSafiType
-                                // 
-                                //if session_config.rx_addpath(AfiSafiType::from(mp_reach_afisafi)) {
-                                //    mp_nlri_hints.set(NlriHints::ADDPATH);
-                                //}
                             }
                             PathAttributeType::MP_UNREACH_NLRI => {
                                 Self::_attr_mp_unreach(pa, &mut mp_unreach_afisafi, &mut mp_unreach);
@@ -368,6 +369,8 @@ impl Update {
                                 //Self::_attr_mp_reach(pa, &mut mp_reach_afisafi, &mut mp_nexthop, &mut mp_reach);
                                 if let Err(e) = Self::_attr_mp_reach(
                                     pa,
+                                    session_config,
+                                    &mut mp_nlri_hints,
                                     &mut mp_reach_afisafi,
                                     &mut mp_nexthop,
                                     &mut mp_reach
@@ -448,14 +451,22 @@ impl CheckedParts<'_> {
     // TODO somewhere (here or in NlriIter) we also need to have a path to get an iterator for
     // afisafis where the nlri length is in bytes as opposed to bits (e.g. flowspec)
     pub fn mp_reach_iter_raw(&self) -> impl Iterator<Item = (Option<PathId>, &[u8])> {
-        if self.mp_nlri_hints.get(NlriHints::ADDPATH) {
-            //NlriAddPathIter(self.mp_reach_afisafi, self.mp_reach)
-
-            todo!()
+        let ap_iter = if self.mp_nlri_hints.get(NlriHints::ADDPATH) {
+            NlriAddPathIter::new(self.mp_reach_afisafi, self.mp_reach)
         } else {
-            NlriIter::new(self.mp_reach_afisafi, &self.mp_reach)
-                .map(|nlri| (None, nlri))
-        }
+            NlriAddPathIter::empty()
+        }.map(|(path_id, nlri)| (Some(path_id), nlri));
+
+        let normal_iter = if !self.mp_nlri_hints.get(NlriHints::ADDPATH) {
+            NlriIter::new(self.mp_reach_afisafi, self.mp_reach)
+        } else {
+            NlriIter::empty()
+
+        }.map(|nlri| (None, nlri));
+
+        ap_iter.chain(normal_iter)
+
+
     }
     // TODO do we also want special raw iters for nlri with RDs?
    
@@ -490,24 +501,37 @@ impl CheckedParts<'_> {
     }
 
     pub fn mp_unreach_iter_raw(&self) -> impl Iterator<Item = (Option<PathId>, &[u8])> {
-        if self.mp_nlri_hints.get(NlriHints::ADDPATH) {
-            //NlriAddPathIter(self.mp_reach_afisafi, self.mp_reach)
-
-            todo!()
+        let ap_iter = if self.mp_nlri_hints.get(NlriHints::ADDPATH) {
+            NlriAddPathIter::new(self.mp_unreach_afisafi, self.mp_unreach)
         } else {
-            NlriIter::new(self.mp_unreach_afisafi, &self.mp_unreach)
-                .map(|nlri| (None, nlri))
-        }
+            NlriAddPathIter::empty()
+        }.map(|(path_id, nlri)| (Some(path_id), nlri));
+
+        let normal_iter = if !self.mp_nlri_hints.get(NlriHints::ADDPATH) {
+            NlriIter::new(self.mp_unreach_afisafi, self.mp_unreach)
+        } else {
+            NlriIter::empty()
+
+        }.map(|nlri| (None, nlri));
+
+        ap_iter.chain(normal_iter)
     }
 
     pub fn conv_unreach_iter_raw(&self) -> impl Iterator<Item = (Option<PathId>, &[u8])> {
-        if self.conv_nlri_hints.get(NlriHints::ADDPATH) {
-            todo!() // see above
+        let ap_iter = if self.conv_nlri_hints.get(NlriHints::ADDPATH) {
+            NlriAddPathIter::new(AfiSafiType::IPV4UNICAST, self.conv_unreach)
         } else {
-            // hardcoded Ipv4Unicast 
+            NlriAddPathIter::empty()
+        }.map(|(path_id, nlri)| (Some(path_id), nlri));
+
+        let normal_iter = if !self.conv_nlri_hints.get(NlriHints::ADDPATH) {
             NlriIter::new(AfiSafiType::IPV4UNICAST, self.conv_unreach)
-                .map(|nlri| (None, nlri))
-        }
+        } else {
+            NlriIter::empty()
+
+        }.map(|nlri| (None, nlri));
+
+        ap_iter.chain(normal_iter)
     }
 
 
@@ -1005,6 +1029,40 @@ mod tests{
             eprintln!("[{:?}] {:?}", path_id, HexFormatted(nlri));
         }
     }
+
+    #[test]
+    fn mp_reach_addpath() {
+        let raw: [u8; _] = [
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0x00, 0x57, 0x02, 0x00, 0x00, 0x00, 0x40, 0x40,
+            0x01, 0x01, 0x00, 0x40, 0x02, 0x06, 0x02, 0x01,
+            0x00, 0x00, 0xff, 0x34, 0x40, 0x05, 0x04, 0x00,
+            0x00, 0x03, 0xe7, 0xc0, 0x08, 0x08, 0xff, 0x34,
+            0x03, 0x78, 0xff, 0xff, 0xff, 0x01, 0x90, 0x0e,
+            0x00, 0x1d, 0x00, 0x02, 0x01, 0x10, 0x01, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x14, 0x00, 0x64, 0xe0
+        ];
+
+        let update = Update::try_from_full_pdu(&raw).unwrap();
+        let mut sc = SessionConfig::default();
+        sc.set_addpath_rx(AfiSafiType::IPV6UNICAST);
+
+        let update = update.into_checked_parts(&sc);
+        assert_eq!(update.mp_reach_afisafi, AfiSafiType::IPV6UNICAST);
+        
+        for (path_id, nlri) in update.mp_reach_iter_raw() {
+            eprintln!("[{:?}] {:?}", path_id, HexFormatted(nlri));
+        }
+
+        assert_eq!(update.mp_reach_iter_raw().count(), 1);
+
+    }
+
+
+
 
 }
 
