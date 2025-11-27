@@ -8,6 +8,7 @@ use crate::bgp::message_ng::common::{HexFormatted, RpkiInfo};
 #[derive(Copy, Clone, Eq, PartialEq)]
 #[repr(C, packed)]
 pub struct PathAttributeType(u8);
+
 impl PathAttributeType {
     pub const ORIGIN: Self = Self(1);
     pub const AS_PATH: Self = Self(2);
@@ -53,6 +54,8 @@ impl PathAttributeHints {
     const HINT_ADDPATH:     u8 = 0b0000_0100;
     const HINT_MULTILABEL:  u8 = 0b0000_1000;
     const HINT_MALFORMED:   u8 = 0b0001_0000;
+    const HINT_UNRECOGNIZED:u8 = 0b0010_0000; // TODO for unknown/unimplemented path attribute
+                                              // types
 
     pub fn is_4byte_asns(&self) -> bool {
         self.0 & Self::HINT_4BYTE_ASNS == Self::HINT_4BYTE_ASNS
@@ -126,11 +129,6 @@ impl PreppedAttributesBuilder {
         let (h, _) = PreppedAttributesHeader::mut_from_prefix(self.buf.as_mut()).unwrap();
         h.rpki_info = rpki_info;
     }
-
-    //pub(crate) fn set_pa_hints(&mut self, pa_hints: PathAttributeHints) {
-    //    let (h, _) = PreppedAttributesHeader::mut_from_prefix(self.buf.as_mut()).unwrap();
-    //    h.pa_hints = pa_hints;
-    //}
 
     fn mark_hint(&mut self, hint: u8) {
         let (h, _) = PreppedAttributesHeader::mut_from_prefix(self.buf.as_mut()).unwrap();

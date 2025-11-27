@@ -3,7 +3,7 @@ use std::borrow::Cow;
 
 use zerocopy::{byteorder, FromBytes, Immutable, IntoBytes, KnownLayout, NetworkEndian, TryFromBytes};
 
-use crate::bgp::message_ng::{common::{Header, MessageType, SessionConfig, SEGMENT_TYPE_SEQUENCE}, path_attributes::common::{PathAttributeType, PreppedAttributesBuilder, RawPathAttribute, UncheckedPathAttributes}};
+use crate::bgp::{message_ng::{common::{Header, HexFormatted, MessageType, SessionConfig, SEGMENT_TYPE_SEQUENCE}, nlri::NlriHints, path_attributes::common::{PathAttributeType, PreppedAttributesBuilder, RawPathAttribute, UncheckedPathAttributes}}, types::AfiSafiType};
 
 /// Unchecked Update message without BGP header
 ///
@@ -60,7 +60,7 @@ impl Update {
         if header.msg_type == MessageType::UPDATE {
             Update::try_from_raw(&raw[19..usize::from(header.length)])
         } else {
-            Err("not an update".into())
+            Err("not an UPDATE".into())
         }
     }
 
@@ -182,6 +182,56 @@ impl Update {
     }
 
 
+    fn _attr_mp_reach(
+        pa: &RawPathAttribute,
+        mp_reach_afisafi: &mut [u8; 3],
+        mp_nexthop: &mut Vec<u8>,
+        mp_reach: &mut Vec<u8>,
+    ) -> Result<(), Cow<'static, str>> {
+        let value = pa.value();
+        //let _afi = full[0,1];
+        //let _safi = full[2];
+        //let _nhlen = full[3];
+        //let nh = full[4..4+nhlen]
+        //let _ = full[4+nhlen+1
+        //let nlri = full[4+nhlen+1..]
+
+        //why do we split out the NH again? why not keep it in an otherwise empty MP_REACH_NLRI (or in the NEXT_HOP attribute for conventional stuff)
+        let nhlen = usize::from(value[3]);
+        if !mp_nexthop.is_empty() {
+            // TODO error
+            todo!()
+        } else  {
+            if 4+nhlen == value.len() {
+                //eprintln!("{:?}", HexFormatted(full_pa));
+                return Err("no NLRI in MP_REACH_NLRI".into());
+            }
+            *mp_reach_afisafi = value[0..3].try_into().unwrap();
+            *mp_nexthop = value[4..4+nhlen+1].into();
+            *mp_reach = value[4+nhlen+1..].into();
+        }
+        Ok(())
+    }
+
+    fn _attr_mp_unreach(
+        pa: &RawPathAttribute,
+        mp_unreach_afisafi: &mut [u8; 3],
+        mp_unreach: &mut Vec<u8>,
+    ) {
+        let value = pa.value();
+        //let _afi = full[0,1];
+        //let _safi = full[2];
+        //let nlri = full[4+nhlen+1..]
+
+        if !mp_unreach.is_empty() {
+            // TODO error
+            todo!()
+        } else  {
+            *mp_unreach_afisafi = value[0..3].try_into().unwrap();
+            *mp_unreach = value[3..].into();
+        }
+    }
+
 
 
     pub fn into_checked_parts(&self, session_config: &SessionConfig) -> CheckedParts {
@@ -189,8 +239,18 @@ impl Update {
         let mut pab_mp: Option<PreppedAttributesBuilder> = None;
         let mut pab_conv: Option<PreppedAttributesBuilder> = None; 
 
+        let mut conv_nexthop: Option<[u8; 4]> = None;
+
+        let mut mp_reach_afisafi = [0u8; 3];
+        let mut mp_nexthop = Vec::new();
         let mut mp_reach = Vec::new();
+
+        let mut mp_unreach_afisafi = [0u8; 3];
         let mut mp_unreach = Vec::new();
+
+        let mut mp_nlri_hints = NlriHints::empty();
+        let mut conv_nlri_hints = NlriHints::empty();
+
         // TODO also return withdrawn and conv nlri here?
 
 
@@ -205,6 +265,10 @@ impl Update {
             // fill up checked_conventional
             // strip out MP_ attrs into mp_*
             // keep NEXT_HOP
+
+            if session_config.rx_addpath(AfiSafiType::Ipv4Unicast) {
+                conv_nlri_hints.set(NlriHints::ADDPATH);
+            }
             let mut also_mp = false;
             while let Some(r) = iter.next() {
                 match r {
@@ -214,19 +278,42 @@ impl Update {
                             PathAttributeType::MP_REACH_NLRI => {
                                 // TODO add check whether MP_REACH_NLRI is the first path
                                 // attribute, if not, mark in pa_hints
-                                mp_reach.extend_from_slice(pa.as_bytes());
+                                
+                                if let Err(e) = Self::_attr_mp_reach(
+                                    pa,
+                                    &mut mp_reach_afisafi,
+                                    &mut mp_nexthop,
+                                    &mut mp_reach
+                                ) {
+                                    eprintln!("{e}\n{:#?}", &self);
+                                }
+
+                                //mp_reach.extend_from_slice(pa.as_bytes());
+
                                 also_mp = true;
                                 // clone whatever we already collected for conventional into mp
                                 eprintln!("also_mp, extending from slice");
                                 pab_mp.get_or_insert_default().append(
                                     &pab_conv.get_or_insert_default().path_attributes()
                                 );
+
+                                // TODO impl From<[u8; 3]> on AfiSafiType
+                                // 
+                                //if session_config.rx_addpath(AfiSafiType::from(mp_reach_afisafi)) {
+                                //    mp_nlri_hints.set(NlriHints::ADDPATH);
+                                //}
                             }
                             PathAttributeType::MP_UNREACH_NLRI => {
-                                mp_unreach.extend_from_slice(pa.as_bytes());
+                                Self::_attr_mp_unreach(pa, &mut mp_unreach_afisafi, &mut mp_unreach);
                             }
                             PathAttributeType::NEXT_HOP => {
-                                pab_conv.get_or_insert_default().append(pa.as_bytes());
+                                //pab_conv.get_or_insert_default().append(pa.as_bytes());
+                                if pa.as_bytes().len() != 4 {
+                                    // TODO error on wrongly formatted NEXT_HOP
+                                } else {
+                                    conv_nexthop = Some(pa.as_bytes()[0..4].try_into().unwrap())
+                                }
+
                             }
                             PathAttributeType::AS_PATH => {
                                 Self::_attr_as_path(pa, session_config, pab_conv.get_or_insert_default());
@@ -274,10 +361,18 @@ impl Update {
                         //dbg!(pa);
                         match pa.pa_type {
                             PathAttributeType::MP_REACH_NLRI => {
-                                mp_reach.extend_from_slice(pa.as_bytes());
+                                //Self::_attr_mp_reach(pa, &mut mp_reach_afisafi, &mut mp_nexthop, &mut mp_reach);
+                                if let Err(e) = Self::_attr_mp_reach(
+                                    pa,
+                                    &mut mp_reach_afisafi,
+                                    &mut mp_nexthop,
+                                    &mut mp_reach
+                                ) {
+                                    eprintln!("{:#?}", &self);
+                                }
                             }
                             PathAttributeType::MP_UNREACH_NLRI => {
-                                mp_unreach.extend_from_slice(pa.as_bytes());
+                                Self::_attr_mp_unreach(pa, &mut mp_unreach_afisafi, &mut mp_unreach);
                             }
                             PathAttributeType::NEXT_HOP => {
                                 //dbg!("Unexpected NEXT_HOP in MP UPDATE");
@@ -306,10 +401,16 @@ impl Update {
         }
 
         CheckedParts {
+            mp_reach_afisafi,
+            mp_unreach_afisafi,
             checked_mp_attributes: pab_mp,
             checked_conv_attributes: pab_conv,
             mp_reach,
             mp_unreach,
+            mp_nexthop,
+            conv_nexthop,
+            mp_nlri_hints,
+            conv_nlri_hints,
         }
     }
 }
@@ -319,8 +420,14 @@ pub struct CheckedParts {
     pub checked_conv_attributes: Option<PreppedAttributesBuilder>,
     pub mp_reach: Vec<u8>,
     pub mp_unreach: Vec<u8>,
-}
+    pub mp_nexthop: Vec<u8>,
+    pub mp_reach_afisafi: [u8; 3],
+    pub mp_unreach_afisafi: [u8; 3],
+    pub mp_nlri_hints: NlriHints,
 
+    pub conv_nexthop: Option<[u8; 4]>,
+    pub conv_nlri_hints: NlriHints,
+}
 
 #[derive(IntoBytes, TryFromBytes, KnownLayout, Immutable)]
 #[repr(C, packed)]
@@ -462,6 +569,7 @@ mod tests{
             checked_conv_attributes,
             mp_reach,
             mp_unreach,
+            ..
         } = update.into_checked_parts(&sc);
         assert!(!checked_mp_attributes.as_ref().unwrap().as_ref().is_malformed());
         assert!(!mp_reach.is_empty());

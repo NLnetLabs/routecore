@@ -2,6 +2,8 @@ use std::fmt;
 
 use zerocopy::{byteorder, FromBytes, Immutable, IntoBytes, KnownLayout, NetworkEndian, TryFromBytes};
 
+use crate::bgp::types::AfiSafiType;
+
 pub const MIN_MSG_SIZE: usize = 19;
 pub const SEGMENT_TYPE_SEQUENCE: u8 = 2;
 
@@ -66,6 +68,11 @@ impl Default for SessionConfig {
 impl SessionConfig {
     pub fn four_octet_asns(&self) -> bool {
         self.four_octet_asns
+    }
+
+    pub fn rx_addpath(&self, afisafi: AfiSafiType) -> bool {
+        // TODO
+        false
     }
 }
 
