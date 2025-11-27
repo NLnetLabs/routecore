@@ -3,7 +3,7 @@ use std::borrow::Cow;
 
 use zerocopy::{byteorder, FromBytes, Immutable, IntoBytes, KnownLayout, NetworkEndian, TryFromBytes};
 
-use crate::bgp::{message_ng::{common::{Header, HexFormatted, MessageType, SessionConfig, SEGMENT_TYPE_SEQUENCE}, nlri::NlriHints, path_attributes::common::{PathAttributeType, PreppedAttributesBuilder, RawPathAttribute, UncheckedPathAttributes}}, types::AfiSafiType};
+use crate::bgp::{message_ng::{common::{Header, HexFormatted, MessageType, SessionConfig, SEGMENT_TYPE_SEQUENCE}, nlri::{NlriHints, NlriIter, PathId}, path_attributes::common::{PathAttributeType, PreppedAttributesBuilder, RawPathAttribute, UncheckedPathAttributes}}, types::AfiSafiType};
 
 /// Unchecked Update message without BGP header
 ///
@@ -102,8 +102,8 @@ impl Update {
         ]).into()
     }
 
-    pub fn withdrawn(&self) -> &Withdrawn {
-        todo!()
+    pub fn withdrawn(&self) -> &[u8] {
+        &self.contents[2..2+self.withdrawn_routes_len()]
     }
 
 
@@ -251,6 +251,9 @@ impl Update {
         let mut mp_nlri_hints = NlriHints::empty();
         let mut conv_nlri_hints = NlriHints::empty();
 
+        let conv_reach = self.conventional_nlri();
+        let conv_unreach = self.withdrawn();
+
         // TODO also return withdrawn and conv nlri here?
 
 
@@ -375,10 +378,8 @@ impl Update {
                                 Self::_attr_mp_unreach(pa, &mut mp_unreach_afisafi, &mut mp_unreach);
                             }
                             PathAttributeType::NEXT_HOP => {
-                                //dbg!("Unexpected NEXT_HOP in MP UPDATE");
-                                //dbg!(self.conventional_nlri());
+                                // TODO add proper warning of unexpected NEXT_HOP in MP UPDATE
                                 //hexprint(&self.contents);
-                                //panic!();
                             }
                             PathAttributeType::AS_PATH => {
                                 Self::_attr_as_path(pa, session_config, pab_mp.get_or_insert_default());
@@ -411,11 +412,13 @@ impl Update {
             conv_nexthop,
             mp_nlri_hints,
             conv_nlri_hints,
+            conv_reach,
+            conv_unreach,
         }
     }
 }
 
-pub struct CheckedParts {
+pub struct CheckedParts<'a> {
     pub checked_mp_attributes: Option<PreppedAttributesBuilder>,
     pub checked_conv_attributes: Option<PreppedAttributesBuilder>,
     pub mp_reach: Vec<u8>,
@@ -425,9 +428,70 @@ pub struct CheckedParts {
     pub mp_unreach_afisafi: [u8; 3],
     pub mp_nlri_hints: NlriHints,
 
+
+    pub conv_reach: &'a [u8],
+    pub conv_unreach: &'a [u8],
     pub conv_nexthop: Option<[u8; 4]>,
     pub conv_nlri_hints: NlriHints,
 }
+
+impl CheckedParts<'_> {
+    pub fn mp_reach_afisafi(&self) -> Option<[u8; 3]> {
+        if self.mp_reach_afisafi != [0,0,0] {
+            Some(self.mp_reach_afisafi)
+        } else {
+            None
+        }
+    }
+
+    // TODO somewhere (here or in NlriIter) we also need to have a path to get an iterator for
+    // afisafis where the nlri length is in bytes as opposed to bits (e.g. flowspec)
+    pub fn mp_reach_iter_raw(&self) -> impl Iterator<Item = (Option<PathId>, &[u8])> {
+        if self.mp_nlri_hints.get(NlriHints::ADDPATH) {
+            //NlriAddPathIter(self.mp_reach_afisafi, self.mp_reach)
+
+            todo!()
+        } else {
+            NlriIter::new(self.mp_reach_afisafi, &self.mp_reach)
+                .map(|nlri| (None, nlri))
+        }
+    }
+    // TODO do we also want special raw iters for nlri with RDs?
+   
+    pub fn conv_reach_iter_raw(&self) -> impl Iterator<Item = (Option<PathId>, &[u8])> {
+        if self.conv_nlri_hints.get(NlriHints::ADDPATH) {
+            todo!() // see above
+        } else {
+            // hardcoded Ipv4Unicast 
+            NlriIter::new([0, 0x1, 0x1], self.conv_reach)
+                .map(|nlri| (None, nlri))
+        }
+    }
+
+    pub fn mp_unreach_iter_raw(&self) -> impl Iterator<Item = (Option<PathId>, &[u8])> {
+        if self.mp_nlri_hints.get(NlriHints::ADDPATH) {
+            //NlriAddPathIter(self.mp_reach_afisafi, self.mp_reach)
+
+            todo!()
+        } else {
+            NlriIter::new(self.mp_unreach_afisafi, &self.mp_unreach)
+                .map(|nlri| (None, nlri))
+        }
+    }
+
+    pub fn conv_unreach_iter_raw(&self) -> impl Iterator<Item = (Option<PathId>, &[u8])> {
+        if self.conv_nlri_hints.get(NlriHints::ADDPATH) {
+            todo!() // see above
+        } else {
+            // hardcoded Ipv4Unicast 
+            NlriIter::new([0, 0x1, 0x1], self.conv_unreach)
+                .map(|nlri| (None, nlri))
+        }
+    }
+
+
+}
+
 
 #[derive(IntoBytes, TryFromBytes, KnownLayout, Immutable)]
 #[repr(C, packed)]
@@ -761,5 +825,129 @@ mod tests{
         //eprintln!("{:?}", &routedb_val);
         //eprintln!("{:#?}", &routedb_val);
     }
+
+
+    #[test]
+    fn mp_reach_iter() {
+        // BGP UPDATE message containing MP_REACH_NLRI path attribute,
+        // comprising 5 IPv6 NLRIs
+        let raw = vec![
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0x00, 0x88, 0x02, 0x00, 0x00, 0x00, 0x71, 0x80,
+            0x0e, 0x5a, 0x00, 0x02, 0x01, 0x20, 0xfc, 0x00,
+            0x00, 0x10, 0x00, 0x01, 0x00, 0x10, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0xfe, 0x80,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x80,
+            0xfc, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10,
+            0x40, 0x20, 0x01, 0x0d, 0xb8, 0xff, 0xff, 0x00,
+            0x00, 0x40, 0x20, 0x01, 0x0d, 0xb8, 0xff, 0xff,
+            0x00, 0x01, 0x40, 0x20, 0x01, 0x0d, 0xb8, 0xff,
+            0xff, 0x00, 0x02, 0x40, 0x20, 0x01, 0x0d, 0xb8,
+            0xff, 0xff, 0x00, 0x03, 0x40, 0x01, 0x01, 0x00,
+            0x40, 0x02, 0x06, 0x02, 0x01, 0x00, 0x00, 0x00,
+            0xc8, 0x80, 0x04, 0x04, 0x00, 0x00, 0x00, 0x00
+        ];
+
+        let update = Update::try_from_full_pdu(&raw).unwrap();
+        let sc = SessionConfig::default();
+        let update = update.into_checked_parts(&sc);
+
+        assert_eq!(update.mp_reach_iter_raw().count(), 5);
+        for (path_id, nlri) in update.mp_reach_iter_raw() {
+            assert!(path_id.is_none());
+            //eprintln!("{:?}", HexFormatted(nlri));
+        }
+    }
+
+    #[test]
+    fn conv_reach_iter() {
+        // BGP UPDATE with 2 conventional announcements:
+        // 10.10.10.9/32 and 192.168.97.0/30
+        let raw = vec![
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0x00, 0x3c, 0x02, 0x00, 0x00, 0x00, 0x1b, 0x40,
+            0x01, 0x01, 0x00, 0x40, 0x02, 0x06, 0x02, 0x01,
+            0x00, 0x01, 0x00, 0x00, 0x40, 0x03, 0x04, 0x0a,
+            0xff, 0x00, 0x65, 0x80, 0x04, 0x04, 0x00, 0x00,
+            0x07, 0x6c, 0x20, 0x0a, 0x0a, 0x0a, 0x09, 0x1e,
+            0xc0, 0xa8, 0x61, 0x00
+        ];
+
+        let update = Update::try_from_full_pdu(&raw).unwrap();
+        let sc = SessionConfig::default();
+        let update = update.into_checked_parts(&sc);
+
+        
+        assert_eq!(update.conv_reach_iter_raw().count(), 2);
+        for (path_id, nlri) in update.conv_reach_iter_raw() {
+            assert!(path_id.is_none());
+            eprintln!("{:?}", HexFormatted(nlri));
+        }
+
+    }
+
+
+    #[test]
+    fn mp_unreach_iter() {
+        // BGP UPDATE with 4 MP_UNREACH_NLRI
+        let raw = vec![
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0x00, 0x41, 0x02, 0x00, 0x00, 0x00, 0x2a, 0x80,
+            0x0f, 0x27, 0x00, 0x02, 0x01, 0x40, 0x20, 0x01,
+            0x0d, 0xb8, 0xff, 0xff, 0x00, 0x00, 0x40, 0x20,
+            0x01, 0x0d, 0xb8, 0xff, 0xff, 0x00, 0x01, 0x40,
+            0x20, 0x01, 0x0d, 0xb8, 0xff, 0xff, 0x00, 0x02,
+            0x40, 0x20, 0x01, 0x0d, 0xb8, 0xff, 0xff, 0x00,
+            0x03
+        ];
+
+        let update = Update::try_from_full_pdu(&raw).unwrap();
+        let sc = SessionConfig::default();
+        let update = update.into_checked_parts(&sc);
+
+        
+        assert_eq!(update.mp_unreach_iter_raw().count(), 4);
+        for (path_id, nlri) in update.mp_unreach_iter_raw() {
+            assert!(path_id.is_none());
+            eprintln!("{:?}", HexFormatted(nlri));
+        }
+
+    }
+
+
+    #[test]
+    fn conv_unreach_iter() {
+        // BGP UPDATE with 12 conventional withdrawals
+        let raw = vec![
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0x00, 0x53, 0x02, 0x00, 0x3c, 0x20, 0x0a, 0x0a,
+            0x0a, 0x0a, 0x1e, 0xc0, 0xa8, 0x00, 0x1c, 0x20,
+            0x0a, 0x0a, 0x0a, 0x65, 0x1e, 0xc0, 0xa8, 0x00,
+            0x18, 0x20, 0x0a, 0x0a, 0x0a, 0x09, 0x20, 0x0a,
+            0x0a, 0x0a, 0x08, 0x1e, 0xc0, 0xa8, 0x61, 0x00,
+            0x20, 0x0a, 0x0a, 0x0a, 0x66, 0x1e, 0xc0, 0xa8,
+            0x00, 0x20, 0x1e, 0xc0, 0xa8, 0x62, 0x00, 0x1e,
+            0xc0, 0xa8, 0x00, 0x10, 0x1e, 0xc0, 0xa8, 0x63,
+            0x00, 0x00, 0x00
+        ];
+
+        let update = Update::try_from_full_pdu(&raw).unwrap();
+        let sc = SessionConfig::default();
+        let update = update.into_checked_parts(&sc);
+
+        
+        assert_eq!(update.conv_unreach_iter_raw().count(), 12);
+        for (path_id, nlri) in update.conv_unreach_iter_raw() {
+            assert!(path_id.is_none());
+            eprintln!("{:?}", HexFormatted(nlri));
+        }
+    }
+
 }
 

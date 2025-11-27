@@ -17,37 +17,53 @@ impl NlriHints {
         self.0 |= hint.0
     }
 
+    pub fn get(&self, hint: NlriHints) -> bool {
+        self.0 & hint.0 == hint.0
+    }
+
     pub fn empty() -> Self {
         Self(0)
     }
 }
 
-//impl From<u8> for NlriHints {
-//    fn from(value: u8) -> Self {
-//        Self(value)
-//    }
-//}
-//impl PartialEq<u8> for NlriHints {
-//    fn eq(&self, other: &u8) -> bool {
-//        self.0 == *other
-//    }
-//}
-//impl std::ops::BitOr<u8> for NlriHints {
-//    type Output = Self;
-//
-//    fn bitor(self, rhs: u8) -> Self::Output {
-//        Self(self.0 | rhs)
-//    }
-//}
-//impl std::ops::BitOrAssign<u8> for NlriHints {
-//    fn bitor_assign(&mut self, rhs: u8) {
-//        self.0 |= rhs
-//    }
-//}
-//impl std::ops::BitAnd<u8> for NlriHints {
-//    type Output = Self;
-//
-//    fn bitand(self, rhs: u8) -> Self::Output {
-//        Self(self.0 & rhs)
-//    }
-//}
+pub struct PathId([u8; 4]);
+
+
+pub fn bits_to_bytes(bits: u8) -> usize {
+    usize::from((bits + 7) >> 3)
+}
+
+pub struct NlriIter<'a> {
+    afisafi: [u8; 3],
+    raw: &'a [u8],
+}
+
+impl<'a> NlriIter<'a> {
+    pub fn new(afisafi: [u8; 3], raw: &'a [u8]) -> Self {
+        Self {
+            afisafi,
+            raw,
+        }
+    }
+}
+
+impl<'a> Iterator for NlriIter<'a> {
+    type Item = &'a [u8];
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.raw.len() == 0 {
+            return None
+        }
+
+
+        let len_bytes = bits_to_bytes(self.raw[0]);
+        if self.raw.len() < 1 + len_bytes {
+            // TODO error
+        }
+
+        let res = Some(&self.raw[..1+len_bytes]);
+        self.raw = &self.raw[1+len_bytes..];
+
+        res
+    }
+}
