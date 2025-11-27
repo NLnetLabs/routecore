@@ -42,11 +42,19 @@ pub struct NlriIter<'a> {
 }
 
 impl<'a> NlriIter<'a> {
-    pub fn new(afisafi: AfiSafiType, raw: &'a [u8]) -> Self {
+    pub fn unchecked(afisafi: AfiSafiType, raw: &'a [u8]) -> Self {
         Self {
             afisafi,
             raw,
         }
+    }
+    pub fn new_checked(afisafi: AfiSafiType, raw: &'a [u8])
+        -> Result<NlriIter<'a>, (NlriIter<'a>, &'a [u8])>
+    {
+        Self {
+            afisafi,
+            raw,
+        }.check()
     }
 
     pub const fn empty() -> Self {
@@ -55,6 +63,27 @@ impl<'a> NlriIter<'a> {
             raw: &[]
         }
 
+    }
+
+    fn check(self) -> Result<NlriIter<'a>, (NlriIter<'a>, &'a [u8])> {
+        let mut cursor = 0;
+        while cursor < self.raw.len() {
+            let len_bytes = bits_to_bytes(self.raw[cursor]);
+            if cursor + 1 + len_bytes > self.raw.len() {
+                return Err((
+                    NlriIter {
+                        afisafi: self.afisafi,
+                        raw: &self.raw[0..cursor]
+                    },
+                    &self.raw[cursor..]
+                ))
+            }
+            cursor += 1+len_bytes;
+        }
+        Ok(NlriIter {
+            afisafi: self.afisafi,
+            raw: self.raw
+        })
     }
 }
 
@@ -66,12 +95,9 @@ impl<'a> Iterator for NlriIter<'a> {
             return None
         }
 
-
         let len_bytes = bits_to_bytes(self.raw[0]);
-        if self.raw.len() < 1 + len_bytes {
-            // TODO error
-            return None;
-        }
+        
+        debug_assert!(self.raw.len() >= 1 + len_bytes, "illegal NLRI length");
 
         let res = Some(&self.raw[..1+len_bytes]);
         self.raw = &self.raw[1+len_bytes..];
@@ -80,17 +106,27 @@ impl<'a> Iterator for NlriIter<'a> {
     }
 }
 
+
 pub struct NlriAddPathIter<'a> {
     afisafi: AfiSafiType,
     raw: &'a [u8],
 }
 
 impl<'a> NlriAddPathIter<'a> {
-    pub fn new(afisafi: AfiSafiType, raw: &'a [u8]) -> Self {
+    pub fn unchecked(afisafi: AfiSafiType, raw: &'a [u8]) -> Self {
         Self {
             afisafi,
             raw,
         }
+    }
+
+    pub fn new_checked(afisafi: AfiSafiType, raw: &'a [u8])
+        -> Result<NlriAddPathIter<'a>, (NlriAddPathIter<'a>, &'a [u8])>
+    {
+        Self {
+            afisafi,
+            raw,
+        }.check()
     }
 
     pub const fn empty() -> Self {
@@ -98,6 +134,38 @@ impl<'a> NlriAddPathIter<'a> {
             afisafi: AfiSafiType::RESERVED,
             raw: &[]
         }
+    }
+
+    fn check(self) -> Result<NlriAddPathIter<'a>, (NlriAddPathIter<'a>, &'a [u8])> {
+        let mut cursor = 0;
+        while cursor < self.raw.len() {
+            if self.raw.len() < 5 {
+                // not enough bytes for PathId (4)
+                // and length byte (1) of an NLRI
+                return Err((
+                        NlriAddPathIter {
+                            afisafi: self.afisafi,
+                            raw: &self.raw[0..cursor]
+                        },
+                        &self.raw[cursor..]
+                ));  
+            }
+            let len_bytes = bits_to_bytes(self.raw[cursor + 4]);
+            if cursor + 4 + 1 + len_bytes > self.raw.len() {
+                return Err((
+                    NlriAddPathIter {
+                        afisafi: self.afisafi,
+                        raw: &self.raw[0..cursor]
+                    },
+                    &self.raw[cursor..]
+                ))
+            }
+            cursor += 4+1+len_bytes;
+        }
+        Ok(NlriAddPathIter {
+            afisafi: self.afisafi,
+            raw: self.raw
+        })
     }
 }
 
@@ -109,17 +177,10 @@ impl<'a> Iterator for NlriAddPathIter<'a> {
             return None
         }
 
-        if self.raw.len() < 5 {
-            // TODO error
-            // not enough bytes for PathId+ nlri length byte
-        }
-
         let pathid = PathId(self.raw[..4].try_into().unwrap());
 
         let len_bytes = bits_to_bytes(self.raw[4]);
-        if self.raw.len() < 4 + 1 + len_bytes {
-            // TODO error
-        }
+        debug_assert!(self.raw.len() >= 4 + 1 + len_bytes, "illegal NLRI length");
 
         let res = Some((pathid, &self.raw[4..4+1+len_bytes]));
         self.raw = &self.raw[4+1+len_bytes..];

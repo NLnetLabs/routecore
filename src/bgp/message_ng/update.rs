@@ -185,7 +185,7 @@ impl Update {
     fn _attr_mp_reach<'a>(
         pa: &'a RawPathAttribute,
         session_config: &SessionConfig,
-        mp_nlri_hints: &mut NlriHints,
+        mp_reach_hints: &mut NlriHints,
         mp_reach_afisafi: &mut AfiSafiType,
         mp_nexthop: &mut &'a [u8],
         mp_reach: &mut &'a [u8],
@@ -197,24 +197,40 @@ impl Update {
         //let nh = full[4..4+nhlen]
         //let _ = full[4+nhlen+1
         //let nlri = full[4+nhlen+1..]
+        
 
-        //why do we split out the NH again? why not keep it in an otherwise empty MP_REACH_NLRI (or in the NEXT_HOP attribute for conventional stuff)
+        //why do we split out the NH again? why not keep it in an otherwise empty MP_REACH_NLRI (or
+        //in the NEXT_HOP attribute for conventional stuff)
+        
         let nhlen = usize::from(value[3]);
         if !mp_nexthop.is_empty() {
-            // TODO error
-            todo!()
-        } else  {
-            if 4+nhlen == value.len() {
-                //eprintln!("{:?}", HexFormatted(full_pa));
-                return Err("no NLRI in MP_REACH_NLRI".into());
-            }
-            // TODO what do when we do not recognize the afisafi?
-            *mp_reach_afisafi = value[0..3].try_into().unwrap();
-            *mp_nexthop = &value[4..4+nhlen+1];
-            *mp_reach = &value[4+nhlen+1..];
+            return Err("multiple MP_REACH_NLRI in single PDU".into());
         }
+        if 4+nhlen == value.len() {
+            //eprintln!("{:?}", HexFormatted(full_pa));
+            return Err("no NLRI in MP_REACH_NLRI".into());
+        }
+        // TODO what do when we do not recognize the afisafi?
+        *mp_reach_afisafi = value[0..3].try_into().unwrap();
+        *mp_nexthop = &value[4..4+nhlen+1];
+        *mp_reach = &value[4+nhlen+1..];
+
         if session_config.addpath_rx(AfiSafiType::from(*mp_reach_afisafi)) {
-            mp_nlri_hints.set(NlriHints::ADDPATH);
+            mp_reach_hints.set(NlriHints::ADDPATH);
+            if let Err(_e) = NlriAddPathIter::new_checked(*mp_reach_afisafi, mp_reach) {
+                return Err(
+                    format!("Invalid MP_REACH_NLRI (+ADDPATH) for afisafi {}",
+                    mp_reach_afisafi
+                ).into())
+            }
+        } else {
+            if let Err(_e) = NlriIter::new_checked(*mp_reach_afisafi, mp_reach) {
+                return Err(
+                    format!("Invalid MP_REACH_NLRI for afisafi {}",
+                    mp_reach_afisafi
+                ).into())
+            }
+
         }
 
         Ok(())
@@ -222,26 +238,44 @@ impl Update {
 
     fn _attr_mp_unreach<'a>(
         pa: &'a RawPathAttribute,
+        session_config: &SessionConfig,
+        mp_unreach_hints: &mut NlriHints,
         mp_unreach_afisafi: &mut AfiSafiType,
         mp_unreach: &mut &'a [u8],
-    ) {
+    ) -> Result<(), Cow<'static, str>> {
         let value = pa.value();
         //let _afi = full[0,1];
         //let _safi = full[2];
         //let nlri = full[4+nhlen+1..]
 
         if !mp_unreach.is_empty() {
-            // TODO error
-            todo!()
-        } else  {
-            *mp_unreach_afisafi = value[0..3].try_into().unwrap();
-            *mp_unreach = &value[3..];
+            return Err("multiple MP_UNREACH_NLRI in single PDU".into());
         }
+
+        *mp_unreach_afisafi = value[0..3].try_into().unwrap();
+        *mp_unreach = &value[3..];
+        if session_config.addpath_rx(AfiSafiType::from(*mp_unreach_afisafi)) {
+            mp_unreach_hints.set(NlriHints::ADDPATH);
+            if let Err(_e) = NlriAddPathIter::new_checked(*mp_unreach_afisafi, mp_unreach) {
+                return Err(
+                    format!("Invalid MP_UNREACH_NLRI (+ADDPATH) for afisafi {}",
+                    mp_unreach_afisafi
+                ).into())
+            }
+        } else {
+            if let Err(_e) = NlriIter::new_checked(*mp_unreach_afisafi, mp_unreach) {
+                return Err(
+                    format!("Invalid MP_UNREACH_NLRI for afisafi {}",
+                    mp_unreach_afisafi
+                ).into())
+            }
+        }
+        Ok(())
     }
 
 
 
-    pub fn into_checked_parts(&self, session_config: &SessionConfig) -> CheckedParts<'_> {
+    pub fn into_checked_parts(&self, session_config: &SessionConfig) -> Result<CheckedParts<'_>, Cow<'static, str>> {
 
         let mut pab_mp: Option<PreppedAttributesBuilder> = None;
         let mut pab_conv: Option<PreppedAttributesBuilder> = None; 
@@ -255,20 +289,18 @@ impl Update {
         let mut mp_unreach_afisafi = AfiSafiType::RESERVED;
         let mut mp_unreach = &self.contents[0..0];
 
-        let mut mp_nlri_hints = NlriHints::empty();
+        let mut mp_reach_hints = NlriHints::empty();
+        let mut mp_unreach_hints = NlriHints::empty();
         let mut conv_nlri_hints = NlriHints::empty();
 
         let conv_reach = self.conventional_nlri();
         let conv_unreach = self.withdrawn();
 
-        // TODO also return withdrawn and conv nlri here?
+        let conventional_nlri_present = !conv_reach.is_empty();
+        let mut pa_iter = self.path_attributes().iter();
 
 
-        let conventional_nlri = !self.conventional_nlri().is_empty();
-        let mut iter = self.path_attributes().iter();
-
-
-        if conventional_nlri {
+        if conventional_nlri_present {
             // in this case, the PDU might still be mixed.
             // i.e. there can be MP_ attrs
             //
@@ -278,9 +310,22 @@ impl Update {
 
             if session_config.addpath_rx(AfiSafiType::IPV4UNICAST) {
                 conv_nlri_hints.set(NlriHints::ADDPATH);
+                if let Err(_e) = NlriAddPathIter::new_checked(AfiSafiType::IPV4UNICAST, conv_reach) {
+                    return Err(
+                        "invalid conventional NLRI (+ADDPATH) announcements"
+                        .into()
+                    )
+                }
+            } else {
+                if let Err(_e) = NlriIter::new_checked(AfiSafiType::IPV4UNICAST, conv_reach) {
+                    return Err(
+                        "invalid conventional NLRI announcements"
+                        .into()
+                    )
+                }
             }
             let mut also_mp = false;
-            while let Some(r) = iter.next() {
+            while let Some(r) = pa_iter.next() {
                 match r {
                     Ok(pa) => { 
                         //dbg!(pa);
@@ -292,12 +337,12 @@ impl Update {
                                 if let Err(e) = Self::_attr_mp_reach(
                                     pa,
                                     session_config,
-                                    &mut mp_nlri_hints,
+                                    &mut mp_reach_hints,
                                     &mut mp_reach_afisafi,
                                     &mut mp_nexthop,
                                     &mut mp_reach
                                 ) {
-                                    eprintln!("{e}\n{:#?}", &self);
+                                    return Err(e);
                                 }
 
                                 also_mp = true;
@@ -309,7 +354,15 @@ impl Update {
                                 );
                             }
                             PathAttributeType::MP_UNREACH_NLRI => {
-                                Self::_attr_mp_unreach(pa, &mut mp_unreach_afisafi, &mut mp_unreach);
+                                if let Err(e) = Self::_attr_mp_unreach(
+                                    pa,
+                                    session_config,
+                                    &mut mp_unreach_hints,
+                                    &mut mp_unreach_afisafi,
+                                    &mut mp_unreach
+                                ) {
+                                    return Err(e);
+                                }
                             }
                             PathAttributeType::NEXT_HOP => {
                                 //pab_conv.get_or_insert_default().append(pa.as_bytes());
@@ -360,26 +413,33 @@ impl Update {
             // so, we only fill up checked
             // strip out MP_ attrs into mp_*
             // strip NEXT_HOP
-            while let Some(r) = iter.next() {
+            while let Some(r) = pa_iter.next() {
                 match r {
                     Ok(pa) => { 
                         //dbg!(pa);
                         match pa.pa_type {
                             PathAttributeType::MP_REACH_NLRI => {
-                                //Self::_attr_mp_reach(pa, &mut mp_reach_afisafi, &mut mp_nexthop, &mut mp_reach);
                                 if let Err(e) = Self::_attr_mp_reach(
                                     pa,
                                     session_config,
-                                    &mut mp_nlri_hints,
+                                    &mut mp_reach_hints,
                                     &mut mp_reach_afisafi,
                                     &mut mp_nexthop,
                                     &mut mp_reach
                                 ) {
-                                    eprintln!("{e}\n{:#?}", &self);
+                                    return Err(e);
                                 }
                             }
                             PathAttributeType::MP_UNREACH_NLRI => {
-                                Self::_attr_mp_unreach(pa, &mut mp_unreach_afisafi, &mut mp_unreach);
+                                if let Err(e) = Self::_attr_mp_unreach(
+                                    pa,
+                                    session_config,
+                                    &mut mp_unreach_hints,
+                                    &mut mp_unreach_afisafi,
+                                    &mut mp_unreach
+                                ) {
+                                    return Err(e);
+                                }
                             }
                             PathAttributeType::NEXT_HOP => {
                                 // TODO add proper warning of unexpected NEXT_HOP in MP UPDATE
@@ -405,7 +465,7 @@ impl Update {
             }
         }
 
-        CheckedParts {
+        Ok(CheckedParts {
             mp_reach_afisafi,
             mp_unreach_afisafi,
             checked_mp_attributes: pab_mp,
@@ -430,7 +490,8 @@ pub struct CheckedParts<'a> {
     pub mp_nexthop: &'a [u8],
     pub mp_reach_afisafi: AfiSafiType,
     pub mp_unreach_afisafi: AfiSafiType,
-    pub mp_nlri_hints: NlriHints,
+    pub mp_reach_hints: NlriHints,
+    pub mp_unreach_hints: NlriHints,
 
 
     pub conv_reach: &'a [u8],
@@ -451,14 +512,14 @@ impl CheckedParts<'_> {
     // TODO somewhere (here or in NlriIter) we also need to have a path to get an iterator for
     // afisafis where the nlri length is in bytes as opposed to bits (e.g. flowspec)
     pub fn mp_reach_iter_raw(&self) -> impl Iterator<Item = (Option<PathId>, &[u8])> {
-        let ap_iter = if self.mp_nlri_hints.get(NlriHints::ADDPATH) {
-            NlriAddPathIter::new(self.mp_reach_afisafi, self.mp_reach)
+        let ap_iter = if self.mp_reach_hints.get(NlriHints::ADDPATH) {
+            NlriAddPathIter::unchecked(self.mp_reach_afisafi, self.mp_reach)
         } else {
             NlriAddPathIter::empty()
         }.map(|(path_id, nlri)| (Some(path_id), nlri));
 
-        let normal_iter = if !self.mp_nlri_hints.get(NlriHints::ADDPATH) {
-            NlriIter::new(self.mp_reach_afisafi, self.mp_reach)
+        let normal_iter = if !self.mp_reach_hints.get(NlriHints::ADDPATH) {
+            NlriIter::unchecked(self.mp_reach_afisafi, self.mp_reach)
         } else {
             NlriIter::empty()
 
@@ -485,13 +546,13 @@ impl CheckedParts<'_> {
         //}
 
         let ap_iter = if self.conv_nlri_hints.get(NlriHints::ADDPATH) {
-            NlriAddPathIter::new(AfiSafiType::IPV4UNICAST, self.conv_reach)
+            NlriAddPathIter::unchecked(AfiSafiType::IPV4UNICAST, self.conv_reach)
         } else {
             NlriAddPathIter::empty()
         }.map(|(path_id, nlri)| (Some(path_id), nlri));
 
         let normal_iter = if !self.conv_nlri_hints.get(NlriHints::ADDPATH) {
-            NlriIter::new(AfiSafiType::IPV4UNICAST, self.conv_reach)
+            NlriIter::unchecked(AfiSafiType::IPV4UNICAST, self.conv_reach)
         } else {
             NlriIter::empty()
 
@@ -501,14 +562,14 @@ impl CheckedParts<'_> {
     }
 
     pub fn mp_unreach_iter_raw(&self) -> impl Iterator<Item = (Option<PathId>, &[u8])> {
-        let ap_iter = if self.mp_nlri_hints.get(NlriHints::ADDPATH) {
-            NlriAddPathIter::new(self.mp_unreach_afisafi, self.mp_unreach)
+        let ap_iter = if self.mp_reach_hints.get(NlriHints::ADDPATH) {
+            NlriAddPathIter::unchecked(self.mp_unreach_afisafi, self.mp_unreach)
         } else {
             NlriAddPathIter::empty()
         }.map(|(path_id, nlri)| (Some(path_id), nlri));
 
-        let normal_iter = if !self.mp_nlri_hints.get(NlriHints::ADDPATH) {
-            NlriIter::new(self.mp_unreach_afisafi, self.mp_unreach)
+        let normal_iter = if !self.mp_reach_hints.get(NlriHints::ADDPATH) {
+            NlriIter::unchecked(self.mp_unreach_afisafi, self.mp_unreach)
         } else {
             NlriIter::empty()
 
@@ -519,13 +580,13 @@ impl CheckedParts<'_> {
 
     pub fn conv_unreach_iter_raw(&self) -> impl Iterator<Item = (Option<PathId>, &[u8])> {
         let ap_iter = if self.conv_nlri_hints.get(NlriHints::ADDPATH) {
-            NlriAddPathIter::new(AfiSafiType::IPV4UNICAST, self.conv_unreach)
+            NlriAddPathIter::unchecked(AfiSafiType::IPV4UNICAST, self.conv_unreach)
         } else {
             NlriAddPathIter::empty()
         }.map(|(path_id, nlri)| (Some(path_id), nlri));
 
         let normal_iter = if !self.conv_nlri_hints.get(NlriHints::ADDPATH) {
-            NlriIter::new(AfiSafiType::IPV4UNICAST, self.conv_unreach)
+            NlriIter::unchecked(AfiSafiType::IPV4UNICAST, self.conv_unreach)
         } else {
             NlriIter::empty()
 
@@ -642,7 +703,7 @@ mod tests{
             mp_reach,
             mp_unreach,
             ..
-        } = update.into_checked_parts(&sc);
+        } = update.into_checked_parts(&sc).unwrap();
 
 
         //assert!(malformed_attributes.is_empty());
@@ -679,7 +740,7 @@ mod tests{
             mp_reach,
             mp_unreach,
             ..
-        } = update.into_checked_parts(&sc);
+        } = update.into_checked_parts(&sc).unwrap();
         assert!(!checked_mp_attributes.as_ref().unwrap().as_ref().is_malformed());
         assert!(!mp_reach.is_empty());
         assert!(mp_unreach.is_empty());
@@ -713,7 +774,7 @@ mod tests{
             checked_mp_attributes,
             mp_reach,
             ..
-        } = update.into_checked_parts(&sc);
+        } = update.into_checked_parts(&sc).unwrap();
         assert!(checked_mp_attributes.as_ref().unwrap().as_ref().is_malformed());
         assert!(mp_reach.is_empty());
         assert_eq!(checked_mp_attributes.unwrap().as_ref().origin_as(), byteorder::U32::<NetworkEndian>::new(0));
@@ -857,7 +918,7 @@ mod tests{
         let CheckedParts {
             checked_mp_attributes,
             ..
-        } = update.into_checked_parts(&sc);
+        } = update.into_checked_parts(&sc).unwrap();
 
         let owned = checked_mp_attributes.unwrap().into_vec();
         let zc = PreppedAttributes::try_ref_from_bytes(&owned[..]).unwrap();
@@ -898,7 +959,7 @@ mod tests{
 
         let update = Update::try_from_full_pdu(&raw).unwrap();
         let sc = SessionConfig::default();
-        let update = update.into_checked_parts(&sc);
+        let update = update.into_checked_parts(&sc).unwrap();
 
         assert_eq!(update.mp_reach_iter_raw().count(), 5);
         for (path_id, nlri) in update.mp_reach_iter_raw() {
@@ -924,7 +985,7 @@ mod tests{
 
         let update = Update::try_from_full_pdu(&raw).unwrap();
         let sc = SessionConfig::default();
-        let update = update.into_checked_parts(&sc);
+        let update = update.into_checked_parts(&sc).unwrap();
 
         
         assert_eq!(update.conv_reach_iter_raw().count(), 2);
@@ -953,7 +1014,7 @@ mod tests{
 
         let update = Update::try_from_full_pdu(&raw).unwrap();
         let sc = SessionConfig::default();
-        let update = update.into_checked_parts(&sc);
+        let update = update.into_checked_parts(&sc).unwrap();
 
         
         assert_eq!(update.mp_unreach_iter_raw().count(), 4);
@@ -984,7 +1045,7 @@ mod tests{
 
         let update = Update::try_from_full_pdu(&raw).unwrap();
         let sc = SessionConfig::default();
-        let update = update.into_checked_parts(&sc);
+        let update = update.into_checked_parts(&sc).unwrap();
 
         
         assert_eq!(update.conv_unreach_iter_raw().count(), 12);
@@ -1023,7 +1084,7 @@ mod tests{
         let mut sc = SessionConfig::default();
         sc.set_addpath_rx(AfiSafiType::IPV4UNICAST);
 
-        let update = update.into_checked_parts(&sc);
+        let update = update.into_checked_parts(&sc).unwrap();
         
         for (path_id, nlri) in update.conv_reach_iter_raw() {
             eprintln!("[{:?}] {:?}", path_id, HexFormatted(nlri));
@@ -1050,7 +1111,7 @@ mod tests{
         let mut sc = SessionConfig::default();
         sc.set_addpath_rx(AfiSafiType::IPV6UNICAST);
 
-        let update = update.into_checked_parts(&sc);
+        let update = update.into_checked_parts(&sc).unwrap();
         assert_eq!(update.mp_reach_afisafi, AfiSafiType::IPV6UNICAST);
         
         for (path_id, nlri) in update.mp_reach_iter_raw() {

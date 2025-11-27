@@ -104,6 +104,23 @@ impl TryFrom<&[u8]> for AfiSafiType {
     }
 }
 
+impl fmt::Display for AfiSafiType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        
+        match *self {
+            AfiSafiType::RESERVED => write!(f, "Reserved (0/0)"),
+            AfiSafiType::IPV4UNICAST => write!(f, "Ipv4Unicast"),
+            AfiSafiType::IPV6UNICAST => write!(f, "Ipv6Unicast"),
+            _ => {
+                write!(f,
+                    "Unrecognized AFI/SAFI {}/{}",
+                    u16::from_be_bytes([self.0[0], self.0[1]]), self.0[2]
+                )
+            }
+        }
+    }
+}
+
 #[allow(dead_code)] // just a helper for now
 pub fn hexprint(buf: impl AsRef<[u8]>) {
     for c in buf.as_ref().chunks(16) {

@@ -141,7 +141,7 @@ impl Pool {
                                     mp_reach,
                                     mp_unreach,
                                     ..
-                                } = update.into_checked_parts(&sc);
+                                } = update.into_checked_parts(&sc).unwrap();
 
                                 CNT_TOTAL.fetch_add(1, Ordering::Relaxed);
                                 if !checked_mp_attributes.is_none() && !checked_conv_attributes.is_none() {
