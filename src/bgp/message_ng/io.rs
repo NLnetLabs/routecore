@@ -199,6 +199,7 @@ mod tests {
     fn read_file_with_pool() {
         const FILENAME: &str = "/home/luuk/code/routecore.bak/examples/raw_bgp_updates";
         let f = File::open(FILENAME).unwrap();
+        eprintln!("processing {FILENAME}");
         let total_size = f.metadata().unwrap().len();
         let reader = BufReader::new(f);
         let pool = Pool::default();
@@ -232,10 +233,11 @@ mod tests {
             NOT_SINGLE_SEQ: {CNT_NOT_SINGLE_SEQ:?}, \
             MALFORMED: {CNT_MALFORMED:?}, \
             ");
-        eprintln!("{:.1}GiB in {:.2}s -> {:.2}GiB/s",
+        eprintln!("{:.1}GiB in {:.2}s -> {:.2}GiB/s or {:.2}Gbps",
             total_size as f64 / 2_f64.powf(30.0),
             Instant::now().duration_since(t0).as_secs_f64(),
             total_size as f64 / 2_f64.powf(30.0) / Instant::now().duration_since(t0).as_secs_f64(),
+            total_size as f64 / 2_f64.powf(27.0) / Instant::now().duration_since(t0).as_secs_f64(),
         );
     }
 }
