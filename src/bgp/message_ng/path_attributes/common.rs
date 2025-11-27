@@ -224,16 +224,23 @@ impl<'a> Iterator for UncheckedPathAttributesIter<'a> {
         let flags = self.raw[0];
         // typecode = [1]
         
+        // TODO create macro/fn for 'return Err and fuse'
 
         let res;
 
         if flags & EXTENDED_LEN == EXTENDED_LEN {
             if self.raw.len() < 4 {
-                return Some(Err(self.raw));
+                let res = Some(Err(self.raw));
+                // fuse
+                self.raw = &[];
+                return res;
             }
             let len: usize = u16::from_be_bytes([self.raw[2], self.raw[3]]).into();
             if self.raw.len() < 4 + len {
-                return Some(Err(self.raw));
+                let res =  Some(Err(self.raw));
+                //fuse
+                self.raw = &[];
+                return res;
             }
             
             res = RawPathAttribute::try_ref_from_bytes(&self.raw[..4+len])
@@ -242,16 +249,27 @@ impl<'a> Iterator for UncheckedPathAttributesIter<'a> {
 
         } else {
             if self.raw.len() < 3 {
-                return Some(Err(self.raw));
+                let res =  Some(Err(self.raw));
+                //fuse
+                self.raw = &[];
+                return res;
             }
             let len: usize = self.raw[2].into();
             if self.raw.len() < 3 + len {
-                return Some(Err(self.raw));
+                let res =  Some(Err(self.raw));
+                //fuse
+                self.raw = &[];
+                return res;
             }
 
             res = RawPathAttribute::try_ref_from_bytes(&self.raw[..3+len])
                 .map_err(|_| self.raw);
             self.raw = &self.raw[3+len..];
+        }
+
+        if res.is_err() {
+            //fuse
+            self.raw = &[];
         }
 
         Some(res)
