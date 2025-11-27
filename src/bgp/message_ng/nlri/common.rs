@@ -1,5 +1,7 @@
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
+use crate::bgp::message_ng::common::AfiSafiType;
+
 #[derive(IntoBytes, FromBytes, KnownLayout, Immutable)]
 #[derive(Copy, Clone, Debug, Default, Eq, Hash, PartialEq)]
 pub struct NlriHints(u8);
@@ -21,11 +23,12 @@ impl NlriHints {
         self.0 & hint.0 == hint.0
     }
 
-    pub fn empty() -> Self {
+    pub const fn empty() -> Self {
         Self(0)
     }
 }
 
+#[derive(Debug)]
 pub struct PathId([u8; 4]);
 
 
@@ -34,16 +37,24 @@ pub fn bits_to_bytes(bits: u8) -> usize {
 }
 
 pub struct NlriIter<'a> {
-    afisafi: [u8; 3],
+    afisafi: AfiSafiType,
     raw: &'a [u8],
 }
 
 impl<'a> NlriIter<'a> {
-    pub fn new(afisafi: [u8; 3], raw: &'a [u8]) -> Self {
+    pub fn new(afisafi: AfiSafiType, raw: &'a [u8]) -> Self {
         Self {
             afisafi,
             raw,
         }
+    }
+
+    pub const fn empty() -> Self {
+        Self {
+            afisafi: AfiSafiType::RESERVED,
+            raw: &[]
+        }
+
     }
 }
 
@@ -63,6 +74,54 @@ impl<'a> Iterator for NlriIter<'a> {
 
         let res = Some(&self.raw[..1+len_bytes]);
         self.raw = &self.raw[1+len_bytes..];
+
+        res
+    }
+}
+
+pub struct NlriAddPathIter<'a> {
+    afisafi: AfiSafiType,
+    raw: &'a [u8],
+}
+
+impl<'a> NlriAddPathIter<'a> {
+    pub fn new(afisafi: AfiSafiType, raw: &'a [u8]) -> Self {
+        Self {
+            afisafi,
+            raw,
+        }
+    }
+
+    pub const fn empty() -> Self {
+        Self {
+            afisafi: AfiSafiType::RESERVED,
+            raw: &[]
+        }
+    }
+}
+
+impl<'a> Iterator for NlriAddPathIter<'a> {
+    type Item = (PathId, &'a [u8]);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.raw.len() == 0 {
+            return None
+        }
+
+        if self.raw.len() < 5 {
+            // TODO error
+            // not enough bytes for PathId+ nlri length byte
+        }
+
+        let pathid = PathId(self.raw[..4].try_into().unwrap());
+
+        let len_bytes = bits_to_bytes(self.raw[4]);
+        if self.raw.len() < 4 + 1 + len_bytes {
+            // TODO error
+        }
+
+        let res = Some((pathid, &self.raw[4..4+1+len_bytes]));
+        self.raw = &self.raw[4+1+len_bytes..];
 
         res
     }

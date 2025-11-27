@@ -3,7 +3,7 @@ use std::borrow::Cow;
 
 use zerocopy::{byteorder, FromBytes, Immutable, IntoBytes, KnownLayout, NetworkEndian, TryFromBytes};
 
-use crate::bgp::{message_ng::{common::{Header, MessageType, SessionConfig, SEGMENT_TYPE_SEQUENCE}, nlri::{NlriHints, NlriIter, PathId}, path_attributes::common::{PathAttributeType, PreppedAttributesBuilder, RawPathAttribute, UncheckedPathAttributes}}, types::AfiSafiType};
+use crate::bgp::message_ng::{common::{AfiSafiType, Header, MessageType, SessionConfig, SEGMENT_TYPE_SEQUENCE}, nlri::{NlriAddPathIter, NlriHints, NlriIter, PathId}, path_attributes::common::{PathAttributeType, PreppedAttributesBuilder, RawPathAttribute, UncheckedPathAttributes}};
 
 /// Unchecked Update message without BGP header
 ///
@@ -184,7 +184,7 @@ impl Update {
 
     fn _attr_mp_reach<'a>(
         pa: &'a RawPathAttribute,
-        mp_reach_afisafi: &mut [u8; 3],
+        mp_reach_afisafi: &mut AfiSafiType,
         mp_nexthop: &mut &'a [u8],
         mp_reach: &mut &'a [u8],
     ) -> Result<(), Cow<'static, str>> {
@@ -206,6 +206,7 @@ impl Update {
                 //eprintln!("{:?}", HexFormatted(full_pa));
                 return Err("no NLRI in MP_REACH_NLRI".into());
             }
+            // TODO what do when we do not recognize the afisafi?
             *mp_reach_afisafi = value[0..3].try_into().unwrap();
             *mp_nexthop = &value[4..4+nhlen+1];
             *mp_reach = &value[4+nhlen+1..];
@@ -215,7 +216,7 @@ impl Update {
 
     fn _attr_mp_unreach<'a>(
         pa: &'a RawPathAttribute,
-        mp_unreach_afisafi: &mut [u8; 3],
+        mp_unreach_afisafi: &mut AfiSafiType,
         mp_unreach: &mut &'a [u8],
     ) {
         let value = pa.value();
@@ -241,11 +242,11 @@ impl Update {
 
         let mut conv_nexthop: Option<[u8; 4]> = None;
 
-        let mut mp_reach_afisafi = [0u8; 3];
+        let mut mp_reach_afisafi = AfiSafiType::RESERVED;
         let mut mp_nexthop = &self.contents[0..0];
         let mut mp_reach = &self.contents[0..0];
 
-        let mut mp_unreach_afisafi = [0u8; 3];
+        let mut mp_unreach_afisafi = AfiSafiType::RESERVED;
         let mut mp_unreach = &self.contents[0..0];
 
         let mut mp_nlri_hints = NlriHints::empty();
@@ -269,7 +270,7 @@ impl Update {
             // strip out MP_ attrs into mp_*
             // keep NEXT_HOP
 
-            if session_config.rx_addpath(AfiSafiType::Ipv4Unicast) {
+            if session_config.addpath_rx(AfiSafiType::IPV4UNICAST) {
                 conv_nlri_hints.set(NlriHints::ADDPATH);
             }
             let mut also_mp = false;
@@ -424,8 +425,8 @@ pub struct CheckedParts<'a> {
     pub mp_reach: &'a [u8],
     pub mp_unreach: &'a [u8],
     pub mp_nexthop: &'a [u8],
-    pub mp_reach_afisafi: [u8; 3],
-    pub mp_unreach_afisafi: [u8; 3],
+    pub mp_reach_afisafi: AfiSafiType,
+    pub mp_unreach_afisafi: AfiSafiType,
     pub mp_nlri_hints: NlriHints,
 
 
@@ -436,8 +437,8 @@ pub struct CheckedParts<'a> {
 }
 
 impl CheckedParts<'_> {
-    pub fn mp_reach_afisafi(&self) -> Option<[u8; 3]> {
-        if self.mp_reach_afisafi != [0,0,0] {
+    pub fn mp_reach_afisafi(&self) -> Option<AfiSafiType> {
+        if self.mp_reach_afisafi != AfiSafiType::RESERVED {
             Some(self.mp_reach_afisafi)
         } else {
             None
@@ -459,13 +460,33 @@ impl CheckedParts<'_> {
     // TODO do we also want special raw iters for nlri with RDs?
    
     pub fn conv_reach_iter_raw(&self) -> impl Iterator<Item = (Option<PathId>, &[u8])> {
-        if self.conv_nlri_hints.get(NlriHints::ADDPATH) {
-            todo!() // see above
+        // this won't compile: 'expected closure, found a different closure'
+        //if self.conv_nlri_hints.get(NlriHints::ADDPATH) {
+        //    NlriAddPathIter::new(AfiSafiType::IPV4UNICAST, self.conv_reach)
+        //        .map(|(path_id, nlri)| (Some(path_id), nlri))
+        //        .chain(NlriIter::empty().map(|nlri| (None, nlri)))
+        //} else {
+        //    NlriAddPathIter::empty()
+        //    .map(|(path_id, nlri)| (Some(path_id), nlri))
+        //    .chain(NlriIter::new(AfiSafiType::IPV4UNICAST, self.conv_reach)
+        //        .map(|nlri| (None, nlri))
+        //    )
+        //}
+
+        let ap_iter = if self.conv_nlri_hints.get(NlriHints::ADDPATH) {
+            NlriAddPathIter::new(AfiSafiType::IPV4UNICAST, self.conv_reach)
         } else {
-            // hardcoded Ipv4Unicast 
-            NlriIter::new([0, 0x1, 0x1], self.conv_reach)
-                .map(|nlri| (None, nlri))
-        }
+            NlriAddPathIter::empty()
+        }.map(|(path_id, nlri)| (Some(path_id), nlri));
+
+        let normal_iter = if !self.conv_nlri_hints.get(NlriHints::ADDPATH) {
+            NlriIter::new(AfiSafiType::IPV4UNICAST, self.conv_reach)
+        } else {
+            NlriIter::empty()
+
+        }.map(|nlri| (None, nlri));
+
+        ap_iter.chain(normal_iter)
     }
 
     pub fn mp_unreach_iter_raw(&self) -> impl Iterator<Item = (Option<PathId>, &[u8])> {
@@ -484,7 +505,7 @@ impl CheckedParts<'_> {
             todo!() // see above
         } else {
             // hardcoded Ipv4Unicast 
-            NlriIter::new([0, 0x1, 0x1], self.conv_unreach)
+            NlriIter::new(AfiSafiType::IPV4UNICAST, self.conv_unreach)
                 .map(|nlri| (None, nlri))
         }
     }
@@ -946,6 +967,42 @@ mod tests{
         for (path_id, nlri) in update.conv_unreach_iter_raw() {
             assert!(path_id.is_none());
             eprintln!("{:?}", HexFormatted(nlri));
+        }
+    }
+
+
+    #[test]
+    fn addpath() {
+        // BGP UPDATE with 9 path attributes for 1 conv v4 NLRI with Path Id,
+        // includes both normal communities and extended communities.
+        let raw = vec![
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0x00, 0x82, 0x02, 0x00, 0x00, 0x00, 0x62, 0x40,
+            0x01, 0x01, 0x00, 0x40, 0x02, 0x16, 0x02, 0x05,
+            0x00, 0x00, 0x00, 0x65, 0x00, 0x00, 0x01, 0x2d,
+            0x00, 0x00, 0x01, 0x2c, 0x00, 0x00, 0x02, 0x58,
+            0x00, 0x00, 0x02, 0xbc, 0x40, 0x03, 0x04, 0x0a,
+            0x01, 0x03, 0x01, 0x80, 0x04, 0x04, 0x00, 0x00,
+            0x00, 0x00, 0x40, 0x05, 0x04, 0x00, 0x00, 0x00,
+            0x64, 0xc0, 0x08, 0x0c, 0x00, 0x2a, 0x02, 0x06,
+            0xff, 0xff, 0xff, 0x01, 0xff, 0xff, 0xff, 0x03,
+            0xc0, 0x10, 0x10, 0x00, 0x06, 0x00, 0x00, 0x44,
+            0x9c, 0x40, 0x00, 0x40, 0x04, 0x00, 0x00, 0x44,
+            0x9c, 0x40, 0x00, 0x80, 0x0a, 0x04, 0x0a, 0x00,
+            0x00, 0x04, 0x80, 0x09, 0x04, 0x0a, 0x00, 0x00,
+            0x03, 0x00, 0x00, 0x00, 0x01, 0x19, 0xc6, 0x33,
+            0x64, 0x00
+        ];
+
+        let update = Update::try_from_full_pdu(&raw).unwrap();
+        let mut sc = SessionConfig::default();
+        sc.set_addpath_rx(AfiSafiType::IPV4UNICAST);
+
+        let update = update.into_checked_parts(&sc);
+        
+        for (path_id, nlri) in update.conv_reach_iter_raw() {
+            eprintln!("[{:?}] {:?}", path_id, HexFormatted(nlri));
         }
     }
 

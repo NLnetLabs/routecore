@@ -1,8 +1,6 @@
-use std::fmt;
+use std::{borrow::Cow, fmt};
 
 use zerocopy::{byteorder, FromBytes, Immutable, IntoBytes, KnownLayout, NetworkEndian, TryFromBytes};
-
-use crate::bgp::types::AfiSafiType;
 
 pub const MIN_MSG_SIZE: usize = 19;
 pub const SEGMENT_TYPE_SEQUENCE: u8 = 2;
@@ -55,13 +53,14 @@ impl fmt::Debug for MessageType {
 
 pub struct SessionConfig {
     four_octet_asns: bool,
-    //addpath_families: TODO
+    addpath_rx: Vec<AfiSafiType>,
     //max_pdu_size: TODO
 }
 impl Default for SessionConfig {
     fn default() -> Self {
         Self {
             four_octet_asns: true,
+            addpath_rx: Vec::new(),
         }
     }
 }
@@ -70,13 +69,40 @@ impl SessionConfig {
         self.four_octet_asns
     }
 
-    pub fn rx_addpath(&self, afisafi: AfiSafiType) -> bool {
-        // TODO
-        false
+    pub fn addpath_rx(&self, afisafi: AfiSafiType) -> bool {
+        self.addpath_rx.contains(&afisafi)
+
+    }
+    pub fn set_addpath_rx(&mut self, afisafi: AfiSafiType) {
+        if !self.addpath_rx(afisafi) {
+            self.addpath_rx.push(afisafi);
+        }
     }
 }
 
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+pub struct AfiSafiType([u8; 3]);
+impl AfiSafiType {
+    pub const RESERVED: Self = Self([0x00, 0x00, 0x00]);
+    pub const IPV4UNICAST: Self = Self([0x00, 0x01, 0x01]);
+    pub const IPV6UNICAST: Self = Self([0x00, 0x02, 0x01]);
+}
 
+impl TryFrom<&[u8]> for AfiSafiType {
+    type Error = Cow<'static, str>;
+
+    fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
+        if value.len() != 3 {
+            return Err("invalid length".into());
+        }
+        match value {
+            [0x00, 0x01, 0x01] => Ok(Self::IPV4UNICAST),
+            [0x00, 0x02, 0x01] => Ok(Self::IPV6UNICAST),
+
+            _ => Err(format!("unknown AFISAFI {:?}", value).into())
+        }
+    }
+}
 
 #[allow(dead_code)] // just a helper for now
 pub fn hexprint(buf: impl AsRef<[u8]>) {

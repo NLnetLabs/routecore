@@ -1,4 +1,4 @@
 mod common;
 
 
-pub use common::{NlriIter, NlriHints, PathId};
+pub use common::{NlriIter, NlriAddPathIter, NlriHints, PathId};
