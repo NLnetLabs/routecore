@@ -3,7 +3,7 @@ use std::borrow::Cow;
 
 use zerocopy::{byteorder, FromBytes, Immutable, IntoBytes, KnownLayout, NetworkEndian, TryFromBytes};
 
-use crate::bgp::{message_ng::{common::{Header, HexFormatted, MessageType, SessionConfig, SEGMENT_TYPE_SEQUENCE}, nlri::{NlriHints, NlriIter, PathId}, path_attributes::common::{PathAttributeType, PreppedAttributesBuilder, RawPathAttribute, UncheckedPathAttributes}}, types::AfiSafiType};
+use crate::bgp::{message_ng::{common::{Header, MessageType, SessionConfig, SEGMENT_TYPE_SEQUENCE}, nlri::{NlriHints, NlriIter, PathId}, path_attributes::common::{PathAttributeType, PreppedAttributesBuilder, RawPathAttribute, UncheckedPathAttributes}}, types::AfiSafiType};
 
 /// Unchecked Update message without BGP header
 ///
@@ -182,11 +182,11 @@ impl Update {
     }
 
 
-    fn _attr_mp_reach(
-        pa: &RawPathAttribute,
+    fn _attr_mp_reach<'a>(
+        pa: &'a RawPathAttribute,
         mp_reach_afisafi: &mut [u8; 3],
-        mp_nexthop: &mut Vec<u8>,
-        mp_reach: &mut Vec<u8>,
+        mp_nexthop: &mut &'a [u8],
+        mp_reach: &mut &'a [u8],
     ) -> Result<(), Cow<'static, str>> {
         let value = pa.value();
         //let _afi = full[0,1];
@@ -207,16 +207,16 @@ impl Update {
                 return Err("no NLRI in MP_REACH_NLRI".into());
             }
             *mp_reach_afisafi = value[0..3].try_into().unwrap();
-            *mp_nexthop = value[4..4+nhlen+1].into();
-            *mp_reach = value[4+nhlen+1..].into();
+            *mp_nexthop = &value[4..4+nhlen+1];
+            *mp_reach = &value[4+nhlen+1..];
         }
         Ok(())
     }
 
-    fn _attr_mp_unreach(
-        pa: &RawPathAttribute,
+    fn _attr_mp_unreach<'a>(
+        pa: &'a RawPathAttribute,
         mp_unreach_afisafi: &mut [u8; 3],
-        mp_unreach: &mut Vec<u8>,
+        mp_unreach: &mut &'a [u8],
     ) {
         let value = pa.value();
         //let _afi = full[0,1];
@@ -228,13 +228,13 @@ impl Update {
             todo!()
         } else  {
             *mp_unreach_afisafi = value[0..3].try_into().unwrap();
-            *mp_unreach = value[3..].into();
+            *mp_unreach = &value[3..];
         }
     }
 
 
 
-    pub fn into_checked_parts(&self, session_config: &SessionConfig) -> CheckedParts {
+    pub fn into_checked_parts(&self, session_config: &SessionConfig) -> CheckedParts<'_> {
 
         let mut pab_mp: Option<PreppedAttributesBuilder> = None;
         let mut pab_conv: Option<PreppedAttributesBuilder> = None; 
@@ -242,11 +242,11 @@ impl Update {
         let mut conv_nexthop: Option<[u8; 4]> = None;
 
         let mut mp_reach_afisafi = [0u8; 3];
-        let mut mp_nexthop = Vec::new();
-        let mut mp_reach = Vec::new();
+        let mut mp_nexthop = &self.contents[0..0];
+        let mut mp_reach = &self.contents[0..0];
 
         let mut mp_unreach_afisafi = [0u8; 3];
-        let mut mp_unreach = Vec::new();
+        let mut mp_unreach = &self.contents[0..0];
 
         let mut mp_nlri_hints = NlriHints::empty();
         let mut conv_nlri_hints = NlriHints::empty();
@@ -371,7 +371,7 @@ impl Update {
                                     &mut mp_nexthop,
                                     &mut mp_reach
                                 ) {
-                                    eprintln!("{:#?}", &self);
+                                    eprintln!("{e}\n{:#?}", &self);
                                 }
                             }
                             PathAttributeType::MP_UNREACH_NLRI => {
@@ -421,9 +421,9 @@ impl Update {
 pub struct CheckedParts<'a> {
     pub checked_mp_attributes: Option<PreppedAttributesBuilder>,
     pub checked_conv_attributes: Option<PreppedAttributesBuilder>,
-    pub mp_reach: Vec<u8>,
-    pub mp_unreach: Vec<u8>,
-    pub mp_nexthop: Vec<u8>,
+    pub mp_reach: &'a [u8],
+    pub mp_unreach: &'a [u8],
+    pub mp_nexthop: &'a [u8],
     pub mp_reach_afisafi: [u8; 3],
     pub mp_unreach_afisafi: [u8; 3],
     pub mp_nlri_hints: NlriHints,
@@ -521,7 +521,7 @@ pub struct MalformedPathAttributes {
 
 #[cfg(test)]
 mod tests{
-    use crate::bgp::message_ng::{common::RpkiInfo, path_attributes::common::{PreppedAttributes, EXTENDED_LEN}};
+    use crate::bgp::message_ng::{common::{HexFormatted, RpkiInfo}, path_attributes::common::{PreppedAttributes, EXTENDED_LEN}};
 
     use super::*;
 
@@ -858,7 +858,7 @@ mod tests{
         assert_eq!(update.mp_reach_iter_raw().count(), 5);
         for (path_id, nlri) in update.mp_reach_iter_raw() {
             assert!(path_id.is_none());
-            //eprintln!("{:?}", HexFormatted(nlri));
+            eprintln!("{:?}", HexFormatted(nlri));
         }
     }
 
