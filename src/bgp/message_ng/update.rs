@@ -474,11 +474,12 @@ impl Update {
             mp_unreach,
             mp_nexthop,
             conv_nexthop,
-            mp_nlri_hints,
+            mp_reach_hints,
+            mp_unreach_hints,
             conv_nlri_hints,
             conv_reach,
             conv_unreach,
-        }
+        })
     }
 }
 
