@@ -93,7 +93,7 @@ impl TryFrom<&[u8]> for AfiSafiType {
 
     fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
         if value.len() != 3 {
-            return Err("invalid length".into());
+            return Err("expecting 3 bytes for AFISAFI".into());
         }
         match value {
             [0x00, 0x01, 0x01] => Ok(Self::IPV4UNICAST),

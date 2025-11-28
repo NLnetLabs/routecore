@@ -33,7 +33,7 @@ pub struct PathId([u8; 4]);
 
 
 pub fn bits_to_bytes(bits: u8) -> usize {
-    usize::from((bits + 7) >> 3)
+    (usize::from(bits) + 7) >> 3
 }
 
 pub struct NlriIter<'a> {

@@ -198,6 +198,9 @@ impl Update {
         //let _ = full[4+nhlen+1
         //let nlri = full[4+nhlen+1..]
         
+        if value.len() < 4 {
+            return Err("too few bytes for valid MP_REACH_NLRI".into());
+        }
 
         //why do we split out the NH again? why not keep it in an otherwise empty MP_REACH_NLRI (or
         //in the NEXT_HOP attribute for conventional stuff)
@@ -210,8 +213,12 @@ impl Update {
             //eprintln!("{:?}", HexFormatted(full_pa));
             return Err("no NLRI in MP_REACH_NLRI".into());
         }
-        // TODO what do when we do not recognize the afisafi?
-        *mp_reach_afisafi = value[0..3].try_into().unwrap();
+        if 4+nhlen > value.len() {
+            return Err("illegal next hop length in MP_REACH_NLRI".into());
+        }
+        // Realistically, we can't say anything useful about a message with unrecognized afisafi,
+        // so just return an Err.
+        *mp_reach_afisafi = value[0..3].try_into().map_err(|e| format!("MP_REACH_NLRI: {e}"))?;
         *mp_nexthop = &value[4..4+nhlen+1];
         *mp_reach = &value[4+nhlen+1..];
 
@@ -246,13 +253,16 @@ impl Update {
         let value = pa.value();
         //let _afi = full[0,1];
         //let _safi = full[2];
-        //let nlri = full[4+nhlen+1..]
 
         if !mp_unreach.is_empty() {
             return Err("multiple MP_UNREACH_NLRI in single PDU".into());
         }
 
-        *mp_unreach_afisafi = value[0..3].try_into().unwrap();
+        if value.len() < 3 {
+            return Err("too few bytes for valid MP_UNREACH_NLRI".into());
+        }
+
+        *mp_unreach_afisafi = value[0..3].try_into().map_err(|e| format!("MP_UNREACH_NLRI: {e}"))?;
         *mp_unreach = &value[3..];
         if session_config.addpath_rx(AfiSafiType::from(*mp_unreach_afisafi)) {
             mp_unreach_hints.set(NlriHints::ADDPATH);
@@ -299,6 +309,22 @@ impl Update {
         let conventional_nlri_present = !conv_reach.is_empty();
         let mut pa_iter = self.path_attributes().iter();
 
+        if session_config.addpath_rx(AfiSafiType::IPV4UNICAST) {
+            conv_nlri_hints.set(NlriHints::ADDPATH);
+            if let Err(_e) = NlriAddPathIter::new_checked(AfiSafiType::IPV4UNICAST, conv_unreach) {
+                return Err(
+                    "invalid conventional NLRI (+ADDPATH) withdrawals"
+                    .into()
+                )
+            }
+        } else {
+            if let Err(_e) = NlriIter::new_checked(AfiSafiType::IPV4UNICAST, conv_unreach) {
+                return Err(
+                    "invalid conventional NLRI withdrawals"
+                    .into()
+                )
+            }
+        }
 
         if conventional_nlri_present {
             // in this case, the PDU might still be mixed.
@@ -348,7 +374,7 @@ impl Update {
                                 also_mp = true;
 
                                 // clone whatever we already collected for conventional into mp
-                                eprintln!("also_mp, extending from slice");
+                                //eprintln!("also_mp, extending from slice");
                                 pab_mp.get_or_insert_default().append(
                                     &pab_conv.get_or_insert_default().path_attributes()
                                 );
@@ -390,9 +416,6 @@ impl Update {
                         }
                     }                   
                     Err(e) => {
-                        //dbg!("malformed");
-                        //malformed_attributes = e.as_bytes().into();
-
                         //dbg!("malformed");
                         pab_conv.get_or_insert_default().append(e.as_bytes());
                         pab_conv.as_mut().unwrap().mark_malformed();
