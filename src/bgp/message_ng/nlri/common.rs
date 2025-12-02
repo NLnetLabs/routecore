@@ -62,7 +62,6 @@ impl<'a> NlriIter<'a> {
             afisafi: AfiSafiType::RESERVED,
             raw: &[]
         }
-
     }
 
     fn check(self) -> Result<NlriIter<'a>, (NlriIter<'a>, &'a [u8])> {
@@ -80,10 +79,11 @@ impl<'a> NlriIter<'a> {
             }
             cursor += 1+len_bytes;
         }
-        Ok(NlriIter {
-            afisafi: self.afisafi,
-            raw: self.raw
-        })
+        //Ok(NlriIter {
+        //    afisafi: self.afisafi,
+        //    raw: self.raw
+        //})
+        Ok(self)
     }
 }
 

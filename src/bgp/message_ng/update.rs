@@ -3,7 +3,7 @@ use std::borrow::Cow;
 
 use zerocopy::{byteorder, FromBytes, Immutable, IntoBytes, KnownLayout, NetworkEndian, TryFromBytes};
 
-use crate::bgp::message_ng::{common::{AfiSafiType, Header, MessageType, SessionConfig, SEGMENT_TYPE_SEQUENCE}, nlri::{NlriAddPathIter, NlriByteLengthIter, NlriHints, NlriIter, PathId}, path_attributes::common::{PathAttributeType, PreppedAttributesBuilder, RawPathAttribute, UncheckedPathAttributes}};
+use crate::bgp::message_ng::{common::{AfiSafiType, Header, MessageType, SessionConfig, SEGMENT_TYPE_SEQUENCE}, nlri::{CustomNlriAddPathIter, CustomNlriIter, NlriAddPathIter, NlriHints, NlriIter, PathId}, path_attributes::common::{PathAttributeType, PreppedAttributesBuilder, RawPathAttribute, UncheckedPathAttributes}};
 
 /// Unchecked Update message without BGP header
 ///
@@ -224,17 +224,25 @@ impl Update {
 
         if session_config.addpath_rx(AfiSafiType::from(*mp_reach_afisafi)) {
             mp_reach_hints.set(NlriHints::ADDPATH);
-            if let Err(_e) = NlriAddPathIter::new_checked(*mp_reach_afisafi, mp_reach) {
-                return Err(
-                    format!("Invalid MP_REACH_NLRI (+ADDPATH) for afisafi {}",
-                    mp_reach_afisafi
-                ).into())
+            if mp_reach_afisafi.is_custom() {
+                if let Err(_e) = CustomNlriAddPathIter::new_checked(*mp_reach_afisafi, mp_reach) {
+                    return Err(
+                        format!("Invalid MP_REACH_NLRI (+ADDPATH) for afisafi {}",
+                        mp_reach_afisafi
+                    ).into())
+                }
+            } else {
+                if let Err(_e) = NlriAddPathIter::new_checked(*mp_reach_afisafi, mp_reach) {
+                    return Err(
+                        format!("Invalid MP_REACH_NLRI (+ADDPATH) for afisafi {}",
+                        mp_reach_afisafi
+                    ).into())
+                }
             }
         } else {
             //if AfiSafiType::BYTE_LEN_NLRI.contains(mp_reach_afisafi) {
-            todo!(); //FIXME change to custom iter using closure
             if mp_reach_afisafi.is_custom() {
-                if let Err(_e) = NlriByteLengthIter::new_checked(*mp_reach_afisafi, mp_reach) {
+                if let Err(_e) = CustomNlriIter::new_checked(*mp_reach_afisafi, mp_reach) {
                     return Err(
                         format!("Invalid MP_REACH_NLRI for afisafi {}",
                         mp_reach_afisafi
@@ -551,6 +559,7 @@ impl CheckedParts<'_> {
         let normal_iter = if !self.mp_reach_afisafi.is_custom()
         {
             if !self.mp_reach_hints.get(NlriHints::ADDPATH) {
+                // XXX early return here?
                 NlriIter::unchecked(self.mp_reach_afisafi, self.mp_reach)
             } else {
                 NlriIter::empty()
@@ -560,16 +569,27 @@ impl CheckedParts<'_> {
         }.map(|nlri| (None, nlri));
 
         // For NLRI having their length expressed in bytes (e.g. FlowSpec)
-        let byte_length_iter = if 
+        //let byte_length_iter = if 
+        //    self.mp_reach_afisafi.is_custom()
+        //{
+        //    if !self.mp_reach_hints.get(NlriHints::ADDPATH) {
+        //        NlriByteLengthIter::unchecked(self.mp_reach_afisafi, self.mp_reach)
+        //    } else {
+        //        NlriByteLengthIter::empty()
+        //    }
+        //} else {
+        //    NlriByteLengthIter::empty()
+        //}.map(|nlri| (None, nlri));
+        let custom_iter= if 
             self.mp_reach_afisafi.is_custom()
         {
             if !self.mp_reach_hints.get(NlriHints::ADDPATH) {
-                NlriByteLengthIter::unchecked(self.mp_reach_afisafi, self.mp_reach)
+                CustomNlriIter::unchecked(self.mp_reach_afisafi, self.mp_reach)
             } else {
-                NlriByteLengthIter::empty()
+                CustomNlriIter::empty()
             }
         } else {
-            NlriByteLengthIter::empty()
+            CustomNlriIter::empty()
         }.map(|nlri| (None, nlri));
 
 
@@ -578,29 +598,40 @@ impl CheckedParts<'_> {
             !self.mp_reach_afisafi.is_custom()
         {
             if self.mp_reach_hints.get(NlriHints::ADDPATH) {
-                NlriByteLengthIter::unchecked(self.mp_reach_afisafi, self.mp_reach)
+                NlriAddPathIter::unchecked(self.mp_reach_afisafi, self.mp_reach)
             } else {
-                NlriByteLengthIter::empty()
+                NlriAddPathIter::empty()
             }
         } else {
-            NlriByteLengthIter::empty()
-        }.map(|nlri| (None, nlri));
+            NlriAddPathIter::empty()
+        }.map(|(path_id, nlri)| (Some(path_id), nlri));
 
         // For ADDPATH NLRI, length expressed in bytes
-        let ap_byte_length_iter = if 
+        //let ap_byte_length_iter = if 
+        //    self.mp_reach_afisafi.is_custom()
+        //{
+        //    if self.mp_reach_hints.get(NlriHints::ADDPATH) {
+        //        NlriByteLengthIter::unchecked(self.mp_reach_afisafi, self.mp_reach)
+        //    } else {
+        //        NlriByteLengthIter::empty()
+        //    }
+        //} else {
+        //    NlriByteLengthIter::empty()
+        //}.map(|nlri| (None, nlri));
+        let ap_custom_iter = if 
             self.mp_reach_afisafi.is_custom()
         {
             if self.mp_reach_hints.get(NlriHints::ADDPATH) {
-                NlriByteLengthIter::unchecked(self.mp_reach_afisafi, self.mp_reach)
+                CustomNlriAddPathIter::unchecked(self.mp_reach_afisafi, self.mp_reach)
             } else {
-                NlriByteLengthIter::empty()
+                CustomNlriAddPathIter::empty()
             }
         } else {
-            NlriByteLengthIter::empty()
-        }.map(|nlri| (None, nlri));
+            CustomNlriAddPathIter::empty()
+        }.map(|(path_id, nlri)| (Some(path_id), nlri));
 
 
-        ap_iter.chain(normal_iter).chain(byte_length_iter).chain(ap_byte_length_iter)
+        ap_iter.chain(normal_iter).chain(custom_iter).chain(ap_custom_iter)
 
 
     }

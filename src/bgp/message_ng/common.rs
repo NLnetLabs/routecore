@@ -101,7 +101,7 @@ macro_rules! afisafi{
             impl AfiSafiType {
                 $(pub const [<$name:upper>] : Self = Self($bytes);)*
                 $(pub const [<$name2:upper>] : Self = Self($bytes2);)*
-                pub fn nlri_fixed_size(&self) -> usize {
+                pub fn nlri_fixed_len(&self) -> usize {
                     match *self {
                         $(Self::$name2 => $static_len,)*
                             _ => usize::MAX
