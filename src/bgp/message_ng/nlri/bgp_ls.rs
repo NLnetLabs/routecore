@@ -1,5 +1,3 @@
-use std::borrow::Cow;
-
 use crate::bgp::message_ng::{common::AfiSafiType, nlri::PathId};
 
 
@@ -30,36 +28,6 @@ impl<'a> CustomNlriIter<'a> {
             raw,
         }.check()
     }
-    //fn try_nlri_length(&self) -> Result<usize, Cow<'static, str>> {
-    //    match self.afisafi {
-    //        AfiSafiType::BGPLS => {
-    //            if self.raw.len() < 4 {
-    //                return Err("foo".into());
-    //            }
-    //            Ok(usize::from(u16::from_be_bytes([self.raw[2], self.raw[3]])))
-    //        },
-    //        _ => {
-    //            return Err(format!("No custom iterator support for {}", self.afisafi).into());
-    //        }
-    //    }
-    //}
-
-    //fn static_length(&self) -> usize {
-    //    match self.afisafi {
-    //        AfiSafiType::BGPLS => 4,
-    //        _ => usize::MAX, // this way, the other checks will fail 'gracefully'
-    //    }
-    //}
-
-    //// to be used in actual iteration
-    //fn unchecked_nlri_length(&self) -> usize {
-    //    match self.afisafi {
-    //        AfiSafiType::BGPLS => {
-    //            usize::from(u16::from_be_bytes([self.raw[2], self.raw[3]]))
-    //        }
-    //        _ => unreachable!()
-    //    }
-    //}
 
     fn check(self) -> Result<Self, (Self, &'a [u8])> {
         let mut cursor = 0;
@@ -139,36 +107,6 @@ impl<'a> CustomNlriAddPathIter<'a> {
             raw,
         }.check()
     }
-    //fn try_nlri_length(&self) -> Result<usize, Cow<'static, str>> {
-    //    match self.afisafi {
-    //        AfiSafiType::BGPLS => {
-    //            if self.raw.len() < 4 {
-    //                return Err("foo".into());
-    //            }
-    //            Ok(usize::from(u16::from_be_bytes([self.raw[2], self.raw[3]])))
-    //        },
-    //        _ => {
-    //            return Err(format!("No custom iterator support for {}", self.afisafi).into());
-    //        }
-    //    }
-    //}
-
-    //fn static_length(&self) -> usize {
-    //    match self.afisafi {
-    //        AfiSafiType::BGPLS => 4,
-    //        _ => usize::MAX, // this way, the other checks will fail 'gracefully'
-    //    }
-    //}
-
-    //// to be used in actual iteration
-    //fn unchecked_nlri_length(&self) -> usize {
-    //    match self.afisafi {
-    //        AfiSafiType::BGPLS => {
-    //            usize::from(u16::from_be_bytes([self.raw[2], self.raw[3]]))
-    //        }
-    //        _ => unreachable!()
-    //    }
-    //}
 
     fn check(self) -> Result<Self, (Self, &'a [u8])> {
         let mut cursor = 0;
@@ -215,11 +153,6 @@ impl<'a> Iterator for CustomNlriAddPathIter<'a> {
         let fixed_len = self.afisafi.nlri_fixed_len();
         
         debug_assert!(self.raw.len() >= fixed_len + len_bytes, "illegal NLRI length");
-
-        //let res = Some(&self.raw[..fixed_len+len_bytes]);
-        //self.raw = &self.raw[fixed_len+len_bytes..];
-
-        //res
 
         let res = Some((pathid, &self.raw[4..4+fixed_len+len_bytes]));
         self.raw = &self.raw[4+fixed_len+len_bytes..];

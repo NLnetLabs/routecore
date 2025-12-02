@@ -79,10 +79,7 @@ impl<'a> NlriIter<'a> {
             }
             cursor += 1+len_bytes;
         }
-        //Ok(NlriIter {
-        //    afisafi: self.afisafi,
-        //    raw: self.raw
-        //})
+
         Ok(self)
     }
 }
@@ -162,10 +159,8 @@ impl<'a> NlriAddPathIter<'a> {
             }
             cursor += 4+1+len_bytes;
         }
-        Ok(NlriAddPathIter {
-            afisafi: self.afisafi,
-            raw: self.raw
-        })
+
+        Ok(self)
     }
 }
 

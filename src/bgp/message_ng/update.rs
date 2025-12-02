@@ -240,7 +240,6 @@ impl Update {
                 }
             }
         } else {
-            //if AfiSafiType::BYTE_LEN_NLRI.contains(mp_reach_afisafi) {
             if mp_reach_afisafi.is_custom() {
                 if let Err(_e) = CustomNlriIter::new_checked(*mp_reach_afisafi, mp_reach) {
                     return Err(
@@ -568,18 +567,7 @@ impl CheckedParts<'_> {
             NlriIter::empty()
         }.map(|nlri| (None, nlri));
 
-        // For NLRI having their length expressed in bytes (e.g. FlowSpec)
-        //let byte_length_iter = if 
-        //    self.mp_reach_afisafi.is_custom()
-        //{
-        //    if !self.mp_reach_hints.get(NlriHints::ADDPATH) {
-        //        NlriByteLengthIter::unchecked(self.mp_reach_afisafi, self.mp_reach)
-        //    } else {
-        //        NlriByteLengthIter::empty()
-        //    }
-        //} else {
-        //    NlriByteLengthIter::empty()
-        //}.map(|nlri| (None, nlri));
+        // For NLRI having their length expressed other than unicast et al
         let custom_iter= if 
             self.mp_reach_afisafi.is_custom()
         {
@@ -606,18 +594,7 @@ impl CheckedParts<'_> {
             NlriAddPathIter::empty()
         }.map(|(path_id, nlri)| (Some(path_id), nlri));
 
-        // For ADDPATH NLRI, length expressed in bytes
-        //let ap_byte_length_iter = if 
-        //    self.mp_reach_afisafi.is_custom()
-        //{
-        //    if self.mp_reach_hints.get(NlriHints::ADDPATH) {
-        //        NlriByteLengthIter::unchecked(self.mp_reach_afisafi, self.mp_reach)
-        //    } else {
-        //        NlriByteLengthIter::empty()
-        //    }
-        //} else {
-        //    NlriByteLengthIter::empty()
-        //}.map(|nlri| (None, nlri));
+        // For ADDPATH NLRI, length expressed other than unicast et al
         let ap_custom_iter = if 
             self.mp_reach_afisafi.is_custom()
         {
@@ -667,6 +644,7 @@ impl CheckedParts<'_> {
         ap_iter.chain(normal_iter)
     }
 
+    // TODO incorporate the CustomNlriIters here
     pub fn mp_unreach_iter_raw(&self) -> impl Iterator<Item = (Option<PathId>, &[u8])> {
         let ap_iter = if self.mp_reach_hints.get(NlriHints::ADDPATH) {
             NlriAddPathIter::unchecked(self.mp_unreach_afisafi, self.mp_unreach)
@@ -725,9 +703,6 @@ pub struct CheckedPathAttributes {
 pub struct MalformedPathAttributes {
     path_attributes: [u8],
 }
-
-
-
 
 
 
