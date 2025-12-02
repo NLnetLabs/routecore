@@ -1,47 +1,13 @@
-use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
+use crate::bgp::message_ng::{common::AfiSafiType, nlri::PathId};
 
-use crate::bgp::message_ng::common::AfiSafiType;
-
-#[derive(IntoBytes, FromBytes, KnownLayout, Immutable)]
-#[derive(Copy, Clone, Debug, Default, Eq, Hash, PartialEq)]
-pub struct NlriHints(u8);
-
-impl NlriHints {
-    // For now, we use the same bits as defined in path_attributes.
-    // We need to double check whether these hints make actual sense for path attributes at all.
-    // Perhaps ADDPATH and MULTILABEL don't make sense there.
-    pub const ADDPATH:              Self = Self(0b0000_0100);
-    pub const MULTILABEL:           Self = Self(0b0000_1000);
-    pub const MALFORMED:            Self = Self(0b0001_0000);
-    pub const HINT_UNRECOGNIZED:    Self = Self(0b0010_0000);
-
-    pub fn set(&mut self, hint: NlriHints) {
-        self.0 |= hint.0
-    }
-
-    pub fn get(&self, hint: NlriHints) -> bool {
-        self.0 & hint.0 == hint.0
-    }
-
-    pub const fn empty() -> Self {
-        Self(0)
-    }
-}
 
 #[derive(Debug)]
-pub struct PathId(pub [u8; 4]);
-
-
-pub fn bits_to_bytes(bits: u8) -> usize {
-    (usize::from(bits) + 7) >> 3
-}
-
-pub struct NlriIter<'a> {
+pub struct NlriByteLengthIter<'a> {
     afisafi: AfiSafiType,
     raw: &'a [u8],
 }
 
-impl<'a> NlriIter<'a> {
+impl<'a> NlriByteLengthIter<'a> {
     pub fn unchecked(afisafi: AfiSafiType, raw: &'a [u8]) -> Self {
         Self {
             afisafi,
@@ -49,7 +15,7 @@ impl<'a> NlriIter<'a> {
         }
     }
     pub fn new_checked(afisafi: AfiSafiType, raw: &'a [u8])
-        -> Result<NlriIter<'a>, (NlriIter<'a>, &'a [u8])>
+        -> Result<NlriByteLengthIter<'a>, (NlriByteLengthIter<'a>, &'a [u8])>
     {
         Self {
             afisafi,
@@ -65,13 +31,13 @@ impl<'a> NlriIter<'a> {
 
     }
 
-    fn check(self) -> Result<NlriIter<'a>, (NlriIter<'a>, &'a [u8])> {
+    fn check(self) -> Result<NlriByteLengthIter<'a>, (NlriByteLengthIter<'a>, &'a [u8])> {
         let mut cursor = 0;
         while cursor < self.raw.len() {
-            let len_bytes = bits_to_bytes(self.raw[cursor]);
+            let len_bytes = usize::from(self.raw[cursor]);
             if cursor + 1 + len_bytes > self.raw.len() {
                 return Err((
-                    NlriIter {
+                    NlriByteLengthIter {
                         afisafi: self.afisafi,
                         raw: &self.raw[0..cursor]
                     },
@@ -80,14 +46,14 @@ impl<'a> NlriIter<'a> {
             }
             cursor += 1+len_bytes;
         }
-        Ok(NlriIter {
+        Ok(NlriByteLengthIter {
             afisafi: self.afisafi,
             raw: self.raw
         })
     }
 }
 
-impl<'a> Iterator for NlriIter<'a> {
+impl<'a> Iterator for NlriByteLengthIter<'a> {
     type Item = &'a [u8];
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -95,7 +61,7 @@ impl<'a> Iterator for NlriIter<'a> {
             return None
         }
 
-        let len_bytes = bits_to_bytes(self.raw[0]);
+        let len_bytes = usize::from(self.raw[0]);
         
         debug_assert!(self.raw.len() >= 1 + len_bytes, "illegal NLRI length");
 
@@ -106,22 +72,21 @@ impl<'a> Iterator for NlriIter<'a> {
     }
 }
 
-
-pub struct NlriAddPathIter<'a> {
+#[derive(Debug)]
+pub struct NlriAddPathByteLengthIter<'a> {
     afisafi: AfiSafiType,
     raw: &'a [u8],
 }
 
-impl<'a> NlriAddPathIter<'a> {
+impl<'a> NlriAddPathByteLengthIter<'a> {
     pub fn unchecked(afisafi: AfiSafiType, raw: &'a [u8]) -> Self {
         Self {
             afisafi,
             raw,
         }
     }
-
     pub fn new_checked(afisafi: AfiSafiType, raw: &'a [u8])
-        -> Result<NlriAddPathIter<'a>, (NlriAddPathIter<'a>, &'a [u8])>
+        -> Result<NlriAddPathByteLengthIter<'a>, (NlriAddPathByteLengthIter<'a>, &'a [u8])>
     {
         Self {
             afisafi,
@@ -134,26 +99,27 @@ impl<'a> NlriAddPathIter<'a> {
             afisafi: AfiSafiType::RESERVED,
             raw: &[]
         }
+
     }
 
-    fn check(self) -> Result<NlriAddPathIter<'a>, (NlriAddPathIter<'a>, &'a [u8])> {
+    fn check(self) -> Result<NlriAddPathByteLengthIter<'a>, (NlriAddPathByteLengthIter<'a>, &'a [u8])> {
         let mut cursor = 0;
         while cursor < self.raw.len() {
             if self.raw.len() < 5 {
                 // not enough bytes for PathId (4)
                 // and length byte (1) of an NLRI
                 return Err((
-                        NlriAddPathIter {
+                        NlriAddPathByteLengthIter {
                             afisafi: self.afisafi,
                             raw: &self.raw[0..cursor]
                         },
                         &self.raw[cursor..]
                 ));  
             }
-            let len_bytes = bits_to_bytes(self.raw[cursor + 4]);
+            let len_bytes = usize::from(self.raw[cursor]);
             if cursor + 4 + 1 + len_bytes > self.raw.len() {
                 return Err((
-                    NlriAddPathIter {
+                    NlriAddPathByteLengthIter {
                         afisafi: self.afisafi,
                         raw: &self.raw[0..cursor]
                     },
@@ -162,14 +128,14 @@ impl<'a> NlriAddPathIter<'a> {
             }
             cursor += 4+1+len_bytes;
         }
-        Ok(NlriAddPathIter {
+        Ok(NlriAddPathByteLengthIter {
             afisafi: self.afisafi,
             raw: self.raw
         })
     }
 }
 
-impl<'a> Iterator for NlriAddPathIter<'a> {
+impl<'a> Iterator for NlriAddPathByteLengthIter<'a> {
     type Item = (PathId, &'a [u8]);
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -178,8 +144,8 @@ impl<'a> Iterator for NlriAddPathIter<'a> {
         }
 
         let pathid = PathId(self.raw[..4].try_into().unwrap());
-
-        let len_bytes = bits_to_bytes(self.raw[4]);
+        let len_bytes = usize::from(self.raw[0]);
+        
         debug_assert!(self.raw.len() >= 4 + 1 + len_bytes, "illegal NLRI length");
 
         let res = Some((pathid, &self.raw[4..4+1+len_bytes]));

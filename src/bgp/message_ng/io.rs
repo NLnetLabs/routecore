@@ -198,6 +198,7 @@ mod tests {
     #[test]
     fn read_file_with_pool() {
         const FILENAME: &str = "/home/luuk/code/routecore.bak/examples/raw_bgp_updates";
+        //const FILENAME: &str = "/tmp/raw_bgp_updates";
         let f = File::open(FILENAME).unwrap();
         eprintln!("processing {FILENAME}");
         let total_size = f.metadata().unwrap().len();

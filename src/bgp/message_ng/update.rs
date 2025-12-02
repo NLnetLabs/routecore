@@ -3,7 +3,7 @@ use std::borrow::Cow;
 
 use zerocopy::{byteorder, FromBytes, Immutable, IntoBytes, KnownLayout, NetworkEndian, TryFromBytes};
 
-use crate::bgp::message_ng::{common::{AfiSafiType, Header, MessageType, SessionConfig, SEGMENT_TYPE_SEQUENCE}, nlri::{NlriAddPathIter, NlriHints, NlriIter, PathId}, path_attributes::common::{PathAttributeType, PreppedAttributesBuilder, RawPathAttribute, UncheckedPathAttributes}};
+use crate::bgp::message_ng::{common::{AfiSafiType, Header, MessageType, SessionConfig, SEGMENT_TYPE_SEQUENCE}, nlri::{NlriAddPathIter, NlriByteLengthIter, NlriHints, NlriIter, PathId}, path_attributes::common::{PathAttributeType, PreppedAttributesBuilder, RawPathAttribute, UncheckedPathAttributes}};
 
 /// Unchecked Update message without BGP header
 ///
@@ -231,11 +231,22 @@ impl Update {
                 ).into())
             }
         } else {
-            if let Err(_e) = NlriIter::new_checked(*mp_reach_afisafi, mp_reach) {
-                return Err(
-                    format!("Invalid MP_REACH_NLRI for afisafi {}",
-                    mp_reach_afisafi
-                ).into())
+            //if AfiSafiType::BYTE_LEN_NLRI.contains(mp_reach_afisafi) {
+            todo!(); //FIXME change to custom iter using closure
+            if mp_reach_afisafi.is_custom() {
+                if let Err(_e) = NlriByteLengthIter::new_checked(*mp_reach_afisafi, mp_reach) {
+                    return Err(
+                        format!("Invalid MP_REACH_NLRI for afisafi {}",
+                        mp_reach_afisafi
+                    ).into())
+                }
+            } else {
+                if let Err(_e) = NlriIter::new_checked(*mp_reach_afisafi, mp_reach) {
+                    return Err(
+                        format!("Invalid MP_REACH_NLRI for afisafi {}",
+                        mp_reach_afisafi
+                    ).into())
+                }
             }
 
         }
@@ -536,20 +547,60 @@ impl CheckedParts<'_> {
     // TODO somewhere (here or in NlriIter) we also need to have a path to get an iterator for
     // afisafis where the nlri length is in bytes as opposed to bits (e.g. flowspec)
     pub fn mp_reach_iter_raw(&self) -> impl Iterator<Item = (Option<PathId>, &[u8])> {
-        let ap_iter = if self.mp_reach_hints.get(NlriHints::ADDPATH) {
-            NlriAddPathIter::unchecked(self.mp_reach_afisafi, self.mp_reach)
-        } else {
-            NlriAddPathIter::empty()
-        }.map(|(path_id, nlri)| (Some(path_id), nlri));
-
-        let normal_iter = if !self.mp_reach_hints.get(NlriHints::ADDPATH) {
-            NlriIter::unchecked(self.mp_reach_afisafi, self.mp_reach)
+        // For NLRI having their length expressed in bits (e.g. Ipv6Unicast)
+        let normal_iter = if !self.mp_reach_afisafi.is_custom()
+        {
+            if !self.mp_reach_hints.get(NlriHints::ADDPATH) {
+                NlriIter::unchecked(self.mp_reach_afisafi, self.mp_reach)
+            } else {
+                NlriIter::empty()
+            }
         } else {
             NlriIter::empty()
-
         }.map(|nlri| (None, nlri));
 
-        ap_iter.chain(normal_iter)
+        // For NLRI having their length expressed in bytes (e.g. FlowSpec)
+        let byte_length_iter = if 
+            self.mp_reach_afisafi.is_custom()
+        {
+            if !self.mp_reach_hints.get(NlriHints::ADDPATH) {
+                NlriByteLengthIter::unchecked(self.mp_reach_afisafi, self.mp_reach)
+            } else {
+                NlriByteLengthIter::empty()
+            }
+        } else {
+            NlriByteLengthIter::empty()
+        }.map(|nlri| (None, nlri));
+
+
+        // For NLRI with length in bits, ADD_PATH
+        let ap_iter = if 
+            !self.mp_reach_afisafi.is_custom()
+        {
+            if self.mp_reach_hints.get(NlriHints::ADDPATH) {
+                NlriByteLengthIter::unchecked(self.mp_reach_afisafi, self.mp_reach)
+            } else {
+                NlriByteLengthIter::empty()
+            }
+        } else {
+            NlriByteLengthIter::empty()
+        }.map(|nlri| (None, nlri));
+
+        // For ADDPATH NLRI, length expressed in bytes
+        let ap_byte_length_iter = if 
+            self.mp_reach_afisafi.is_custom()
+        {
+            if self.mp_reach_hints.get(NlriHints::ADDPATH) {
+                NlriByteLengthIter::unchecked(self.mp_reach_afisafi, self.mp_reach)
+            } else {
+                NlriByteLengthIter::empty()
+            }
+        } else {
+            NlriByteLengthIter::empty()
+        }.map(|nlri| (None, nlri));
+
+
+        ap_iter.chain(normal_iter).chain(byte_length_iter).chain(ap_byte_length_iter)
 
 
     }

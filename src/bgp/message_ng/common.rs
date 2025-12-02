@@ -1,5 +1,6 @@
 use std::{borrow::Cow, fmt};
 
+use paste::paste;
 use zerocopy::{byteorder, FromBytes, Immutable, IntoBytes, KnownLayout, NetworkEndian, TryFromBytes};
 
 pub const MIN_MSG_SIZE: usize = 19;
@@ -80,14 +81,137 @@ impl SessionConfig {
     }
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-pub struct AfiSafiType([u8; 3]);
-impl AfiSafiType {
-    pub const RESERVED: Self = Self([0x00, 0x00, 0x00]);
-    pub const IPV4UNICAST: Self = Self([0x00, 0x01, 0x01]);
-    pub const IPV6UNICAST: Self = Self([0x00, 0x02, 0x01]);
+// TODO:
+//
+// instead of uppercase, pass in camel case
+// make const names using paste crate ($var:upper)
+// add Display impl (and use camel case in there)
+// add TryFrom? or similar, to check whether we support the afisafi
+// performance test, somehow, the complex afisafis
+
+macro_rules! afisafi{
+    ({
+        $($name:ident => $bytes:expr),* $(,)*
+    }
+    {
+        $($name2:ident => $bytes2:expr, $static_len:expr, $length_fn:expr),* $(,)*
+    }
+    ) => {
+        paste! {
+            impl AfiSafiType {
+                $(pub const [<$name:upper>] : Self = Self($bytes);)*
+                $(pub const [<$name2:upper>] : Self = Self($bytes2);)*
+                pub fn nlri_fixed_size(&self) -> usize {
+                    match *self {
+                        $(Self::$name2 => $static_len,)*
+                            _ => usize::MAX
+                    }
+                }
+                pub fn nlri_length(&self, raw: &[u8]) -> usize {
+                    match *self {
+                        $(Self::[<$name2:upper>] => { $length_fn(raw)})*
+                            _ => usize::MAX
+                    }
+                }
+
+                pub fn is_custom(&self) -> bool {
+                    match *self {
+                        $(Self::[<$name:upper>] => false,)*
+                        $(Self::[<$name2:upper>] => true,)*
+                        _ => unreachable!()
+                    }
+
+                }
+            }
+        }
+
+        paste! {
+            impl fmt::Display for AfiSafiType {
+                fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+
+                    match *self {
+                        $(AfiSafiType::[<$name:upper>] => write!(f, "$name"),)*
+                        $(AfiSafiType::[<$name2:upper>] => write!(f, "$name2"),)*
+                        _ => {
+                            write!(f,
+                                "Unrecognized AFI/SAFI {}/{}",
+                                u16::from_be_bytes([self.0[0], self.0[1]]), self.0[2]
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
+afisafi! [
+{
+    RESERVED => [0,0,0],
+    IPV4UNICAST => [0, 1, 1],
+    IPV6UNICAST => [0, 2, 1],
+}
+{
+    FLOWSPEC => [0, 1, 133], 1, |raw: &[u8]| usize::from(raw[0]),
+    BGPLS => [0x40, 0x04, 71], 4, |raw: &[u8]| usize::from(u16::from_be_bytes([raw[2], raw[3]])),
+}
+];
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+pub struct AfiSafiType([u8; 3]);
+//impl AfiSafiType {
+//    pub const RESERVED: Self = Self([0x00, 0x00, 0x00]);
+//    pub const IPV4UNICAST: Self = Self([0x00, 0x01, 0x01]);
+//    pub const IPV6UNICAST: Self = Self([0x00, 0x02, 0x01]);
+//
+//    pub const FLOWSPEC: Self = Self([0x00, 0x01, 133]);
+//    pub const BGPLS: Self = Self([0x40, 0x04, 71]);
+//
+//    pub const BYTE_LEN_NLRI: [Self; 1] = [Self::FLOWSPEC];
+//
+//    pub fn nlri_len_in_bytes(&self) -> bool {
+//        match *self {
+//            Self::FLOWSPEC => true,
+//            _ => false,
+//        }
+//    }
+//    const T: () = const {
+//        assert!(
+//            AfiSafiType::BGPLS.nlri_fixed_size() != usize::MAX
+//            && AfiSafiType::FLOWSPEC.nlri_fixed_size() != usize::MAX
+//        );
+//    };
+//}
+
+impl AfiSafiType {
+    // 
+    //pub const fn nlri_fixed_size(&self) -> usize {
+    //    match *self {
+    //        Self::BGPLS => 4,
+    //        Self::FLOWSPEC => 1,
+    //        _ => usize::MAX,
+    //    }
+    //}
+
+    //pub fn nlri_length2(&self) -> impl FnOnce(&[u8]) -> usize {
+    //    match *self {
+    //        Self::FLOWSPEC => { |raw: &[u8]| usize::from(raw[0]) },
+    //        Self::BGPLS => { |raw: &[u8]| usize::from(u16::from_be_bytes([raw[2], raw[3]])) },
+    //        _ => |_: &[u8]| usize::MAX
+    //    }
+    //}
+
+    //pub fn nlri_length(&self, raw: &[u8]) -> usize {
+    //    match *self {
+    //        Self::FLOWSPEC => { usize::from(raw[0]) },
+    //        Self::BGPLS => { usize::from(u16::from_be_bytes([raw[2], raw[3]])) },
+    //        _ =>  usize::MAX
+    //    }
+    //}
+}
+
+// XXX so this try from does not do any conversion, technically.
+// it is useful/necessary to have a 'do we recognize this' though.
 impl TryFrom<&[u8]> for AfiSafiType {
     type Error = Cow<'static, str>;
 
@@ -98,28 +222,30 @@ impl TryFrom<&[u8]> for AfiSafiType {
         match value {
             [0x00, 0x01, 0x01] => Ok(Self::IPV4UNICAST),
             [0x00, 0x02, 0x01] => Ok(Self::IPV6UNICAST),
+            [0x00, 0x01, 133] => Ok(Self::FLOWSPEC),
 
             _ => Err(format!("unknown AFISAFI {:?}", value).into())
         }
     }
 }
 
-impl fmt::Display for AfiSafiType {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        
-        match *self {
-            AfiSafiType::RESERVED => write!(f, "Reserved (0/0)"),
-            AfiSafiType::IPV4UNICAST => write!(f, "Ipv4Unicast"),
-            AfiSafiType::IPV6UNICAST => write!(f, "Ipv6Unicast"),
-            _ => {
-                write!(f,
-                    "Unrecognized AFI/SAFI {}/{}",
-                    u16::from_be_bytes([self.0[0], self.0[1]]), self.0[2]
-                )
-            }
-        }
-    }
-}
+//impl fmt::Display for AfiSafiType {
+//    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+//
+//        match *self {
+//            AfiSafiType::RESERVED => write!(f, "Reserved (0/0)"),
+//            AfiSafiType::IPV4UNICAST => write!(f, "Ipv4Unicast"),
+//            AfiSafiType::IPV6UNICAST => write!(f, "Ipv6Unicast"),
+//            AfiSafiType::FLOWSPEC => write!(f, "Ipv4Flowspec"),
+//            _ => {
+//                write!(f,
+//                    "Unrecognized AFI/SAFI {}/{}",
+//                    u16::from_be_bytes([self.0[0], self.0[1]]), self.0[2]
+//                )
+//            }
+//        }
+//    }
+//}
 
 #[allow(dead_code)] // just a helper for now
 pub fn hexprint(buf: impl AsRef<[u8]>) {
