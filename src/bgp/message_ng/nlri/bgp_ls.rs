@@ -1,168 +1,64 @@
-use crate::bgp::message_ng::{common::AfiSafiType, nlri::PathId};
+use std::borrow::Cow;
+
+use crate::bgp::message_ng::{common::AfiSafiType, nlri::{CustomNlriIter, Nlri, NlriIterator}};
 
 
-#[derive(Debug)]
-pub struct CustomNlriIter<'a> {
-    afisafi: AfiSafiType,
+pub struct BgpLsNlri<'a> {
     raw: &'a [u8],
 }
 
-impl<'a> CustomNlriIter<'a> {
-    pub const fn empty() -> Self {
-        Self {
-            afisafi: AfiSafiType::RESERVED,
-            raw: &[]
+impl<'a> BgpLsNlri<'a> {
+
+}
+
+impl<'a> Nlri<'a> for BgpLsNlri<'a> {
+    const AFI_SAFI_TYPE: AfiSafiType = AfiSafiType::BGPLS;
+    type Iterator = BgpLsNlriIter<'a>;
+
+}
+
+impl<'a> NlriIterator<'a> for BgpLsNlriIter<'a> {
+    fn empty() -> Self {
+        Self { 
+            custom_iter: CustomNlriIter::empty_for_afisafi(AfiSafiType::BGPLS),
         }
     }
 
-    pub fn unchecked(afisafi: AfiSafiType, raw: &'a [u8]) -> Self {
+    fn for_slice(raw: &'a [u8]) -> Self {
         Self {
-            afisafi,
-            raw,
+            custom_iter: CustomNlriIter::unchecked(AfiSafiType::BGPLS, raw)
         }
-    }
-
-    pub fn new_checked(afisafi: AfiSafiType, raw: &'a [u8]) -> Result<Self, (Self, &'a [u8])> {
-        Self {
-            afisafi,
-            raw,
-        }.check()
-    }
-
-    fn check(self) -> Result<Self, (Self, &'a [u8])> {
-        let mut cursor = 0;
-        while cursor < self.raw.len() {
-            // Not enough bytes to read length of NLRI
-            let fixed_len = self.afisafi.nlri_fixed_len();
-            if self.raw[cursor..].len() <= fixed_len {
-                return Err((
-                    Self {
-                        afisafi: self.afisafi,
-                        raw: &self.raw[0..cursor]
-                    },
-                    &self.raw[cursor..]
-                ))
-            }
-            let len_bytes = self.afisafi.nlri_length(&self.raw[cursor..]);
-            if cursor + fixed_len + len_bytes > self.raw.len() {
-                return Err((
-                    Self {
-                        afisafi: self.afisafi,
-                        raw: &self.raw[0..cursor]
-                    },
-                    &self.raw[cursor..]
-                ))
-            }
-            cursor += fixed_len + len_bytes;
-        }
-        Ok(self)
     }
 }
 
+impl<'a> TryFrom<&'a [u8]> for BgpLsNlri<'a> {
+    type Error = Cow<'static, str>;
 
-impl<'a> Iterator for CustomNlriIter<'a> {
-    type Item = &'a [u8];
+    fn try_from(value: &'a [u8]) -> Result<Self, Self::Error> {
+        Ok(BgpLsNlri { raw: value} )
+    }
+}
+
+pub struct BgpLsNlriIter<'a> {
+    custom_iter: CustomNlriIter<'a>,
+}
+
+impl<'a> Iterator for BgpLsNlriIter<'a> {
+    type Item = BgpLsNlri<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.raw.len() == 0 {
-            return None
-        }
-
-        let len_bytes = &self.afisafi.nlri_length(&self.raw);
-        let fixed_len = self.afisafi.nlri_fixed_len();
-        
-        debug_assert!(self.raw.len() >= fixed_len + len_bytes, "illegal NLRI length");
-
-        let res = Some(&self.raw[..fixed_len+len_bytes]);
-        self.raw = &self.raw[fixed_len+len_bytes..];
-
-        res
-    }
-}
-
-#[derive(Debug)]
-pub struct CustomNlriAddPathIter<'a> {
-    afisafi: AfiSafiType,
-    raw: &'a [u8],
-}
-
-impl<'a> CustomNlriAddPathIter<'a> {
-    pub const fn empty() -> Self {
-        Self {
-            afisafi: AfiSafiType::RESERVED,
-            raw: &[]
-        }
-    }
-
-    pub fn unchecked(afisafi: AfiSafiType, raw: &'a [u8]) -> Self {
-        Self {
-            afisafi,
-            raw,
-        }
-    }
-
-    pub fn new_checked(afisafi: AfiSafiType, raw: &'a [u8]) -> Result<Self, (Self, &'a [u8])> {
-        Self {
-            afisafi,
-            raw,
-        }.check()
-    }
-
-    fn check(self) -> Result<Self, (Self, &'a [u8])> {
-        let mut cursor = 0;
-        while cursor < self.raw.len() {
-            // Not enough bytes to read length of NLRI
-            let fixed_len = self.afisafi.nlri_fixed_len();
-            if self.raw[cursor..].len() <= 4 + fixed_len {
-                return Err((
-                    Self {
-                        afisafi: self.afisafi,
-                        raw: &self.raw[0..cursor]
-                    },
-                    &self.raw[cursor..]
-                ))
-            }
-            let len_bytes = self.afisafi.nlri_length(&self.raw[cursor..]);
-            if cursor + 4 + fixed_len + len_bytes > self.raw.len() {
-                return Err((
-                    Self {
-                        afisafi: self.afisafi,
-                        raw: &self.raw[0..cursor]
-                    },
-                    &self.raw[cursor..]
-                ))
-            }
-            cursor += 4 + fixed_len + len_bytes;
-        }
-        Ok(self)
+        self.custom_iter.next().map(|raw_nlri|
+           raw_nlri.try_into().unwrap() 
+        )
     }
 }
 
 
-impl<'a> Iterator for CustomNlriAddPathIter<'a> {
-    type Item = (PathId, &'a [u8]);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.raw.len() == 0 {
-            return None
-        }
-
-        let pathid = PathId(self.raw[..4].try_into().unwrap());
-
-        let len_bytes = &self.afisafi.nlri_length(&self.raw);
-        let fixed_len = self.afisafi.nlri_fixed_len();
-        
-        debug_assert!(self.raw.len() >= fixed_len + len_bytes, "illegal NLRI length");
-
-        let res = Some((pathid, &self.raw[4..4+fixed_len+len_bytes]));
-        self.raw = &self.raw[4+fixed_len+len_bytes..];
-
-        res
-    }
-}
 
 #[cfg(test)]
 mod tests {
+    use crate::bgp::message_ng::{common::AfiSafiType, nlri::CustomNlriIter};
+
     use super::*;
 
     #[test]

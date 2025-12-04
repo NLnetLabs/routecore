@@ -3,7 +3,7 @@ use std::borrow::Cow;
 
 use zerocopy::{byteorder, FromBytes, Immutable, IntoBytes, KnownLayout, NetworkEndian, TryFromBytes};
 
-use crate::bgp::message_ng::{common::{AfiSafiType, Header, MessageType, SessionConfig, SEGMENT_TYPE_SEQUENCE}, nlri::{CustomNlriAddPathIter, CustomNlriIter, NlriAddPathIter, NlriHints, NlriIter, PathId}, path_attributes::common::{PathAttributeType, PreppedAttributesBuilder, RawPathAttribute, UncheckedPathAttributes}};
+use crate::bgp::message_ng::{common::{AfiSafiType, Header, MessageType, SessionConfig, SEGMENT_TYPE_SEQUENCE}, nlri::{CustomNlriAddPathIter, CustomNlriIter, Nlri, NlriAddPathIter, NlriHints, NlriIter, NlriIterator, PathId}, path_attributes::common::{PathAttributeType, PreppedAttributesBuilder, RawPathAttribute, UncheckedPathAttributes}};
 
 /// Unchecked Update message without BGP header
 ///
@@ -542,7 +542,7 @@ pub struct CheckedParts<'a> {
     pub conv_nlri_hints: NlriHints,
 }
 
-impl CheckedParts<'_> {
+impl<'a> CheckedParts<'a> {
     pub fn mp_reach_afisafi(&self) -> Option<AfiSafiType> {
         if self.mp_reach_afisafi != AfiSafiType::RESERVED {
             Some(self.mp_reach_afisafi)
@@ -612,6 +612,20 @@ impl CheckedParts<'_> {
 
 
     }
+
+    // TODO how do we return iters with PathIds.. make one function that chains both non-addpath
+    // and addpath and return and Iterator<Item = (Option<PathId>, N)> ?
+    pub fn mp_reach_iter_typed<N: Nlri<'a>>(&self) -> N::Iterator {
+        if self.mp_reach_afisafi == N::AFI_SAFI_TYPE {
+           //N::Iterator::try_from(self.mp_reach).unwrap()
+           N::Iterator::for_slice(self.mp_reach)
+        } else  {
+           N::Iterator::empty() 
+        }
+    }
+
+
+
     // TODO do we also want special raw iters for nlri with RDs?
    
     pub fn conv_reach_iter_raw(&self) -> impl Iterator<Item = (Option<PathId>, &[u8])> {
@@ -708,7 +722,7 @@ pub struct MalformedPathAttributes {
 
 #[cfg(test)]
 mod tests{
-    use crate::bgp::message_ng::{common::{HexFormatted, RpkiInfo}, path_attributes::common::{PreppedAttributes, EXTENDED_LEN}};
+    use crate::bgp::message_ng::{common::{HexFormatted, RpkiInfo}, nlri::FlowSpecNlri, path_attributes::common::{PreppedAttributes, EXTENDED_LEN}};
 
     use super::*;
 

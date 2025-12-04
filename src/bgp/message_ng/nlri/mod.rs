@@ -1,9 +1,11 @@
 mod common;
 
+mod ipv6unicast;
 mod flowspec;
 mod bgp_ls;
 
+pub use ipv6unicast::*;
 pub use flowspec::*;
-pub use bgp_ls::*; // XXX move CustomNlriIter elsewhere eventually
+pub use bgp_ls::*;
 
-pub use common::{NlriIter, NlriAddPathIter, NlriHints, PathId};
+pub use common::{Nlri, NlriIter, NlriIterator, NlriAddPathIter, NlriHints, CustomNlriIter, CustomNlriAddPathIter, PathId};
