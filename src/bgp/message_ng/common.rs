@@ -125,6 +125,27 @@ macro_rules! afisafi{
             }
         }
 
+
+
+        // XXX so this try from does not do any conversion, technically.
+        // it is useful/necessary to have a 'do we recognize this' though.
+        paste! {
+            impl TryFrom<&[u8]> for AfiSafiType {
+                type Error = Cow<'static, str>;
+
+                fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
+                    if value.len() != 3 {
+                        return Err("expecting 3 bytes for AFISAFI".into());
+                    }
+                    match value {
+                        $($bytes => Ok(AfiSafiType::[<$name:upper>]),)*
+                        $($bytes2 => Ok(AfiSafiType::[<$name2:upper>]),)*
+                        _ => Err(format!("unknown AFISAFI {:?}", value).into())
+                    }
+                }
+            }
+        }
+
         paste! {
             impl fmt::Display for AfiSafiType {
                 fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -159,28 +180,6 @@ afisafi! [
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct AfiSafiType([u8; 3]);
-
-
-// XXX so this try from does not do any conversion, technically.
-// it is useful/necessary to have a 'do we recognize this' though.
-// TODO add to macro
-impl TryFrom<&[u8]> for AfiSafiType {
-    type Error = Cow<'static, str>;
-
-    fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
-        if value.len() != 3 {
-            return Err("expecting 3 bytes for AFISAFI".into());
-        }
-        match value {
-            [0x00, 0x01, 0x01] => Ok(Self::IPV4UNICAST),
-            [0x00, 0x02, 0x01] => Ok(Self::IPV6UNICAST),
-            [0x00, 0x01, 133] => Ok(Self::FLOWSPEC),
-
-            _ => Err(format!("unknown AFISAFI {:?}", value).into())
-        }
-    }
-}
-
 
 #[allow(dead_code)] // just a helper for now
 pub fn hexprint(buf: impl AsRef<[u8]>) {
