@@ -3,7 +3,7 @@ use std::borrow::Cow;
 
 use zerocopy::{byteorder, FromBytes, Immutable, IntoBytes, KnownLayout, NetworkEndian, TryFromBytes};
 
-use crate::bgp::message_ng::{common::{AfiSafiType, Header, MessageType, SessionConfig, SEGMENT_TYPE_SEQUENCE}, nlri::{CustomNlriAddPathIter, CustomNlriIter, Nlri, NlriAddPathIter, NlriHints, NlriIter, NlriIterator, PathId}, path_attributes::common::{PathAttributeType, PreppedAttributesBuilder, RawPathAttribute, UncheckedPathAttributes}};
+use crate::bgp::message_ng::{common::{AfiSafiType, Header, MessageType, SessionConfig, SEGMENT_TYPE_SEQUENCE}, nlri::{CustomNlriAddPathIter, CustomNlriIter, Ipv4UnicastNlriIter, Nlri, NlriAddPathIter, NlriHints, NlriIter, NlriIterator, PathId}, path_attributes::common::{PathAttributeType, PreppedAttributesBuilder, RawPathAttribute, UncheckedPathAttributes}};
 
 /// Unchecked Update message without BGP header
 ///
@@ -657,6 +657,14 @@ impl<'a> CheckedParts<'a> {
 
         ap_iter.chain(normal_iter)
     }
+
+    // TODO how do we return iters with PathIds.. make one function that chains both non-addpath
+    // and addpath and return and Iterator<Item = (Option<PathId>, N)> ?
+    pub fn conv_reach_iter(&self) -> Ipv4UnicastNlriIter<'a> {
+        Ipv4UnicastNlriIter::for_slice(self.conv_reach)
+    }
+
+
 
     // TODO incorporate the CustomNlriIters here
     pub fn mp_unreach_iter_raw(&self) -> impl Iterator<Item = (Option<PathId>, &[u8])> {
