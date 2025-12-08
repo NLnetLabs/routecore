@@ -148,7 +148,7 @@ impl PreppedAttributesBuilder {
         h.origin_as = origin_as;
     }
 
-    pub(crate) fn into_vec(self) -> Vec<u8> {
+    pub fn into_vec(self) -> Vec<u8> {
         self.buf
     }
     pub(crate) fn path_attributes(&self) -> &[u8] {

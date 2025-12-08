@@ -195,6 +195,7 @@ mod tests {
 
     use std::time::Instant;
 
+    #[ignore]
     #[test]
     fn read_file_with_pool() {
         const FILENAME: &str = "/home/luuk/code/routecore.bak/examples/raw_bgp_updates";

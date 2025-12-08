@@ -1,0 +1,200 @@
+use routecore::bgp::message_ng::{common::{Header, MessageType, SessionConfig, MIN_MSG_SIZE}, update::{CheckedParts, Update}};
+use zerocopy::TryFromBytes;
+
+use std::time::Instant;
+use std::{borrow::Cow, collections::VecDeque, io::Read, sync::{atomic::{AtomicUsize, Ordering}, Arc, RwLock}, thread, time::Duration};
+use std::{fs::File, io::BufReader};
+
+struct MessageIter<R: Read, const B: usize> {
+    reader: R,
+    buf: [u8; B],
+    buf_cursor: usize,
+    buf_end: usize,
+}
+
+impl<R: Read, const B: usize, > MessageIter<R, B> {
+    pub fn new(reader: R) -> Self {
+        Self {
+            reader,
+            buf: [0u8; B],
+            buf_cursor: 0,
+            buf_end: 0,
+        }
+    }
+
+    fn read_into_buf(&mut self) -> Result<Option<usize>, Cow<'static, str>> {
+        //eprintln!("read_into_buf");
+        // shift the remainder to the front of the buf
+        self.buf.copy_within(self.buf_cursor..self.buf_end, 0);
+        self.buf_end = self.buf_end - self.buf_cursor;
+        self.buf_cursor = 0;
+
+        // and then read in as much as we can
+        match self.reader.read(&mut self.buf[self.buf_end..]) {
+            Ok(0) => {
+                eprintln!("EOF");
+                Ok(None)
+            }
+            Err(e) => {
+                Err(e.to_string().into())
+            }
+            Ok(n)  => {
+                //eprintln!("read {n} bytes into buf");
+                self.buf_end += n;
+                Ok(Some(n))
+            }
+        }
+    }
+
+    fn get_many(&mut self)  -> Result<Vec<u8>, Cow<'static, str>> {
+        //eprintln!("get_many");
+        let res_start = self.buf_cursor;
+        while self.buf_end-self.buf_cursor >= MIN_MSG_SIZE {
+            let (header, _) = Header::try_ref_from_prefix(&self.buf[self.buf_cursor..]).unwrap();
+            if header.marker != [0xff; 16] {
+                return Err("invalid marker".into());
+            }
+            let len: usize = header.length.into();
+            if self.buf_cursor + len <= self.buf_end {
+                self.buf_cursor += len;
+            } else {
+                break
+            }
+        }
+        Ok(self.buf[res_start..self.buf_cursor].into())
+    }
+}
+
+//#[derive(Default)]
+pub struct Pool {
+    queue: Arc<RwLock<VecDeque<Vec<u8>>>>,
+}
+impl Default for Pool {
+    fn default() -> Self {
+        Self { queue: Arc::new(RwLock::new(Vec::with_capacity(1024).into()))  }
+    }
+}
+
+static UPDATES_TOTAL: AtomicUsize = AtomicUsize::new(0);
+static NLRI_TOTAL: AtomicUsize = AtomicUsize::new(0);
+static PA_BYTES_SUM: AtomicUsize = AtomicUsize::new(0);
+static PA_BYTES_REDUNDANT_SUM: AtomicUsize = AtomicUsize::new(0);
+
+impl Pool {
+    pub fn start_processing(self) -> Arc<RwLock<VecDeque<Vec<u8>>>> {
+        let pool = rayon::ThreadPoolBuilder::new().num_threads(6).build().unwrap();
+        let queue = self.queue.clone();
+        let sc = Arc::new(SessionConfig::default());
+        for _ in 0..dbg!(pool.current_num_threads()) {
+            //s.spawn(|_s2| {
+            let queue = queue.clone();
+            let sc = sc.clone();
+            pool.spawn(move || {
+                eprintln!("[{:?}] spawned", thread::current().id());
+                loop {
+                    let Some(buf) = queue.write().unwrap().pop_front() else {
+                        thread::park_timeout(Duration::from_millis(1));
+                        //hint::spin_loop();
+                        continue;
+                    };
+                    let mut buf_cursor = 0;
+                    while buf_cursor < buf.len() {
+                        let (header, _) = Header::try_ref_from_prefix(&buf[buf_cursor..]).unwrap();
+                        let len: usize = header.length.into();
+                        let msg = &buf[buf_cursor+19..buf_cursor+len];
+                        match header.msg_type {
+                            MessageType::UPDATE => {
+                                UPDATES_TOTAL.fetch_add(1, Ordering::Relaxed);
+                                let update = Update::try_from_raw(msg).unwrap();
+                                let mut update = update.into_checked_parts(&sc).unwrap();
+
+                                // conv stuff
+                                if let Some(attributes) = update.take_conv_attributes() {
+                                    // So we have path attributes for conventional NLRI
+                                    
+                                    let conv_iter = update.conv_reach_iter_raw();
+                                    //routedb.insert_batch(attributes, conv_iter)
+
+                                    let nlri_count = conv_iter.count();
+                                    NLRI_TOTAL.fetch_add(nlri_count, Ordering::Relaxed);
+                                    PA_BYTES_SUM.fetch_add(attributes.len(), Ordering::Relaxed);
+                                    PA_BYTES_REDUNDANT_SUM.fetch_add(attributes.len() * (nlri_count - 1), Ordering::Relaxed);
+                                }
+
+                                // mp stuff
+                                if let Some(attributes) = update.take_mp_attributes() {
+                                    // So we have path attributes for mpentional NLRI
+                                    
+                                    let mp_iter = update.mp_reach_iter_raw();
+                                    //routedb.insert_batch(attributes, mp_iter)
+
+                                    let nlri_count = mp_iter.count();
+                                    NLRI_TOTAL.fetch_add(nlri_count, Ordering::Relaxed);
+                                    PA_BYTES_SUM.fetch_add(attributes.len(), Ordering::Relaxed);
+                                    PA_BYTES_REDUNDANT_SUM.fetch_add(attributes.len() * (nlri_count - 1), Ordering::Relaxed);
+                                }
+
+
+
+                            },
+                            MessageType::OPEN => { },
+                            _ => { }
+                        }
+
+                        buf_cursor += len;
+                    }
+                }
+            });
+        }
+        queue
+    }
+}
+
+fn main() {
+    const FILENAME: &str = "/home/luuk/code/routecore.bak/examples/raw_bgp_updates";
+    //const FILENAME: &str = "/tmp/raw_bgp_updates";
+    let f = File::open(FILENAME).unwrap();
+    eprintln!("processing {FILENAME}");
+    let total_size = f.metadata().unwrap().len();
+    let reader = BufReader::new(f);
+    let pool = Pool::default();
+    let queue = pool.start_processing();
+
+    let mut iter = MessageIter::<_, {2<<18}>::new(reader);
+    let mut _last_capacity = queue.read().unwrap().capacity();
+    let t0 = Instant::now();
+    loop {
+        if let Ok(Some(_)) = iter.read_into_buf() {
+            if let Ok(msgs) = iter.get_many() {
+                queue.write().unwrap().push_back(msgs);
+                //let current_cap = queue.read().unwrap().capacity();
+                //if current_cap != last_capacity {
+                //    eprintln!("new cap {current_cap}");
+                //    last_capacity = current_cap;
+                //}
+            }
+        } else {
+            break
+        }
+
+    }
+    while !queue.read().unwrap().is_empty() {
+        //std::hint::spin_loop();
+        thread::sleep(Duration::from_millis(100));
+    }
+    eprintln!("Done, CNT: {UPDATES_TOTAL:?}, \
+            NLRI: {NLRI_TOTAL:?}, \
+            PA_BYTES_SUM: {PA_BYTES_SUM:?}, \
+            PA_BYTES_REDUNDANT_SUM: {:.2}MiB, \
+            % of raw: {:.2}%
+            ",
+            PA_BYTES_REDUNDANT_SUM.load(Ordering::Relaxed) as f64 / 2_f64.powf(20.0),
+            (PA_BYTES_REDUNDANT_SUM.load(Ordering::Relaxed) as f64 / total_size as f64) * 100.0
+            );
+    eprintln!("{:.1}GiB in {:.2}s -> {:.2}GiB/s or {:.2}Gbps",
+        total_size as f64 / 2_f64.powf(30.0),
+        Instant::now().duration_since(t0).as_secs_f64(),
+        total_size as f64 / 2_f64.powf(30.0) / Instant::now().duration_since(t0).as_secs_f64(),
+        total_size as f64 / 2_f64.powf(27.0) / Instant::now().duration_since(t0).as_secs_f64(),
+    );
+}

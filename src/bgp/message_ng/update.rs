@@ -67,7 +67,7 @@ impl Update {
     // `raw` should be the message content after the header
     // so, 19 bytes after the start of the full PDU
     // TODO pass in session config to properly set const usize A
-    pub(crate) fn try_from_raw(raw: &[u8]) -> Result<&Update, Cow<'static, str>> {
+    pub fn try_from_raw(raw: &[u8]) -> Result<&Update, Cow<'static, str>> {
         // The smallest UPDATE has
         // - two bytes withdraw len
         // - two bytes total path attributes len
@@ -543,6 +543,15 @@ pub struct CheckedParts<'a> {
 }
 
 impl<'a> CheckedParts<'a> {
+
+    pub fn take_conv_attributes(&mut self) -> Option<Vec<u8>> {
+        self.checked_conv_attributes.take().map(|pa| pa.into_vec())
+    }
+
+    pub fn take_mp_attributes(&mut self) -> Option<Vec<u8>> {
+        self.checked_mp_attributes.take().map(|pa| pa.into_vec())
+    }
+
     pub fn mp_reach_afisafi(&self) -> Option<AfiSafiType> {
         if self.mp_reach_afisafi != AfiSafiType::RESERVED {
             Some(self.mp_reach_afisafi)
@@ -551,8 +560,7 @@ impl<'a> CheckedParts<'a> {
         }
     }
 
-    // TODO somewhere (here or in NlriIter) we also need to have a path to get an iterator for
-    // afisafis where the nlri length is in bytes as opposed to bits (e.g. flowspec)
+    // TODO do we also want special raw iters for nlri with RDs?
     pub fn mp_reach_iter_raw(&self) -> impl Iterator<Item = (Option<PathId>, &[u8])> {
         // For NLRI having their length expressed in bits (e.g. Ipv6Unicast)
         let normal_iter = if !self.mp_reach_afisafi.is_custom()
@@ -615,6 +623,17 @@ impl<'a> CheckedParts<'a> {
 
     // TODO how do we return iters with PathIds.. make one function that chains both non-addpath
     // and addpath and return and Iterator<Item = (Option<PathId>, N)> ?
+    // maybe do a similar thing as in raw: always return the tuple so that the caller is forced to
+    // handle it.
+    // Alternatives:
+    // - return an iter without PathIds while they are in the PDU: then the iterator will yield
+    // duplicate NLRI, confusing.
+    // - return an empty iter when there are PathIds and the caller doesn't ask for them: then the
+    // caller is forced to check whether there is a hint for PathIds in CheckedParts. Cumbersome,
+    // and not sure whether there is an actual loss in performance when we just always cook up a
+    // tuple with Option<PathIds>, possibly None, and just return it.
+    //
+    // Question then becomes, how to fit in AddPath'd iters into the new Nlri trait etc
     pub fn mp_reach_iter_typed<N: Nlri<'a>>(&self) -> N::Iterator {
         if self.mp_reach_afisafi == N::AFI_SAFI_TYPE {
            //N::Iterator::try_from(self.mp_reach).unwrap()
@@ -623,25 +642,8 @@ impl<'a> CheckedParts<'a> {
            N::Iterator::empty() 
         }
     }
-
-
-
-    // TODO do we also want special raw iters for nlri with RDs?
    
     pub fn conv_reach_iter_raw(&self) -> impl Iterator<Item = (Option<PathId>, &[u8])> {
-        // this won't compile: 'expected closure, found a different closure'
-        //if self.conv_nlri_hints.get(NlriHints::ADDPATH) {
-        //    NlriAddPathIter::new(AfiSafiType::IPV4UNICAST, self.conv_reach)
-        //        .map(|(path_id, nlri)| (Some(path_id), nlri))
-        //        .chain(NlriIter::empty().map(|nlri| (None, nlri)))
-        //} else {
-        //    NlriAddPathIter::empty()
-        //    .map(|(path_id, nlri)| (Some(path_id), nlri))
-        //    .chain(NlriIter::new(AfiSafiType::IPV4UNICAST, self.conv_reach)
-        //        .map(|nlri| (None, nlri))
-        //    )
-        //}
-
         let ap_iter = if self.conv_nlri_hints.get(NlriHints::ADDPATH) {
             NlriAddPathIter::unchecked(AfiSafiType::IPV4UNICAST, self.conv_reach)
         } else {
