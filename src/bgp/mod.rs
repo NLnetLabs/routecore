@@ -8,6 +8,7 @@ pub mod path_selection;
 pub mod types;
 
 pub mod message;
+pub mod message_ng;
 
 pub mod workshop;
 
