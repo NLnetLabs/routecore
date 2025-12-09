@@ -7,6 +7,11 @@ use zerocopy::{
 };
 
 
+// Zero-sized marker structs for versioned message types
+pub struct V3;
+pub struct V4;
+
+
 #[derive(IntoBytes, FromBytes, KnownLayout, Immutable)]
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub struct Asn(byteorder::U32::<NetworkEndian>);

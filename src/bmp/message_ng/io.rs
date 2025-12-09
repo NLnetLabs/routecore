@@ -105,7 +105,9 @@ impl Pool {
                         match header.msg_type {
                             MessageType::ROUTE_MONITORING => {
                                 UPDATES_TOTAL.fetch_add(1, Ordering::Relaxed);
+                                //let rm = RouteMonitoring::try_v4_from_full_pdu(msg).unwrap();
                                 let rm = RouteMonitoring::try_from_full_pdu(msg).unwrap();
+                                let _pph = rm.per_peer_header();
                                 let update = rm.bgp_update().unwrap();
                                 let mut update = update.into_checked_parts(&sc).unwrap();
 

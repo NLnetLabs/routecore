@@ -2,24 +2,28 @@ use std::borrow::Cow;
 
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, TryFromBytes};
 
-use crate::{bgp::message_ng::Update, bmp::message_ng::common::{CommonHeader, PerPeerHeader, Tlvs}};
+use crate::{bgp::message_ng::Update, bmp::message_ng::common::{CommonHeader, PerPeerHeader, Tlvs, V3, V4}};
 
 #[derive(TryFromBytes, Immutable, KnownLayout)]
 #[repr(C, packed)]
-pub struct PeerDownNotification {
+pub struct PeerDownNotification<V> {
+    _version: std::marker::PhantomData<V>,
     pub common: CommonHeader,
     pub pph: PerPeerHeader,
     pub reason: PeerDownReason,
     pub data: [u8],
 }
-impl PeerDownNotification {
+
+impl<V> PeerDownNotification<V> {
+    pub fn reason(&self) -> PeerDownReason {
+        self.reason
+    }
+}
+
+impl PeerDownNotification<V3> {
     pub fn try_from_full_pdu(raw: &[u8]) -> Result<&Self, Cow<'static, str>> {
         //TODO all kinds of length checks
         Self::try_ref_from_bytes(&raw).map_err(|e| e.to_string().into())
-    }
-
-    pub fn reason(&self) -> PeerDownReason {
-        self.reason
     }
 
     pub fn notification(&self) -> Option<Result<&Update, Cow<'static, str>>> {
@@ -30,9 +34,21 @@ impl PeerDownNotification {
         } else {
             None
         }
-
     }
 }
+
+impl PeerDownNotification<V4> {
+    pub fn try_v4_from_full_pdu(raw: &[u8]) -> Result<&Self, Cow<'static, str>> {
+        //TODO all kinds of length checks
+        Self::try_ref_from_bytes(&raw).map_err(|e| e.to_string().into())
+    }
+
+    pub fn notification(&self) -> Option<Result<&Update, Cow<'static, str>>> {
+        todo!("get from TLV");
+    }
+}
+
+
 
 #[derive(IntoBytes, FromBytes, KnownLayout, Immutable)]
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
