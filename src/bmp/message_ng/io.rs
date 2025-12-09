@@ -2,7 +2,7 @@ use std::{borrow::Cow, collections::VecDeque, io::Read, sync::{atomic::{AtomicUs
 
 use zerocopy::TryFromBytes;
 
-use crate::{bgp::message_ng::common::SessionConfig, bmp::message_ng::{common::{CommonHeader, MessageType}, peer_up_notification::PeerUpNotification, route_monitoring::RouteMonitoring}};
+use crate::{bgp::message_ng::common::SessionConfig, bmp::message_ng::{common::{CommonHeader, MessageType}, initiation::InitiationMessage, peer_down_notification::PeerDownNotification, peer_up_notification::PeerUpNotification, route_monitoring::RouteMonitoring, statistics_report::StatisticsReport}};
 
 
 pub const MIN_MSG_SIZE: usize = std::mem::size_of::<CommonHeader>();
@@ -135,14 +135,23 @@ impl Pool {
                                     PA_BYTES_REDUNDANT_SUM.fetch_add(attributes.len() * (nlri_count - 1), Ordering::Relaxed);
                                 }
 
-                            },
+                            }
                             MessageType::PEER_UP_NOTIFICATION => {
                                 let peerup = PeerUpNotification::try_from_full_pdu(msg).unwrap();
                                 let (bgp_open_sent, bgp_open_rcvd) = peerup.bgp_opens().unwrap();
                                 bgp_open_sent.capabilities().count();
                                 bgp_open_rcvd.capabilities().count();
                             }
-                            _ => { }
+                            MessageType::INITIATION => {
+                                let _init = InitiationMessage::try_from_full_pdu(msg).unwrap();
+                            }
+                            MessageType::PEER_DOWN_NOTIFICATION => {
+                                let _pd = PeerDownNotification::try_from_full_pdu(msg).unwrap();
+                            }
+                            MessageType::STATISTICS_REPORT => {
+                                let _sr = StatisticsReport::try_from_full_pdu(msg).unwrap();
+                            }
+                            m => { todo!("implement msg type {m:?}"); }
                         }
 
                         buf_cursor += len;

@@ -17,15 +17,6 @@ impl InitiationMessage {
         //TODO all kinds of length checks
         Self::try_ref_from_bytes(&raw).map_err(|e| e.to_string().into())
     }
-
-    //pub fn try_from<R>(raw: &R) -> Result<&Self, Cow<'static, str>>
-    //    where R: AsRef<[u8]>
-    //{
-    //    match InitiationMessage::try_ref_from_prefix(raw.as_ref()) {
-    //        Ok((init_msg, _)) => Ok(init_msg),
-    //        Err(e) => Err(e.to_string().into()),
-    //    }
-    //}
 }
 
 #[cfg(test)]
