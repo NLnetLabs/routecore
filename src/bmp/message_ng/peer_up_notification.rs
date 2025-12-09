@@ -2,14 +2,14 @@ use std::borrow::Cow;
 
 use zerocopy::{byteorder, Immutable, KnownLayout, NetworkEndian, TryFromBytes};
 
-use crate::{bgp::message_ng::Open, bmp::message_ng::common::{CommonHeader, PerPeerHeader, Tlvs}};
+use crate::{bgp::message_ng::Open, bmp::message_ng::common::{CommonHeader, PerPeerHeaderV3, Tlvs}};
 
 
 #[derive(TryFromBytes, Immutable, KnownLayout)]
 #[repr(C, packed)]
 pub struct PeerUpNotification {
     pub common: CommonHeader,
-    pub pph: PerPeerHeader,
+    pub pph: PerPeerHeaderV3,
     pub local_addr: [u8; 16],
     pub local_port: byteorder::U16<NetworkEndian>,
     pub remote_port: byteorder::U16<NetworkEndian>,

@@ -2,42 +2,44 @@ use std::borrow::Cow;
 
 use zerocopy::{Immutable, KnownLayout, TryFromBytes};
 
-use crate::{bgp::message_ng::Update, bmp::message_ng::common::{CommonHeader, PerPeerHeader, V3, V4}};
+use crate::{bgp::message_ng::Update, bmp::message_ng::common::{CommonHeader, PerPeerHeaderV3, PerPeerHeaderV4}};
 
 // TODO make v3 and v4 versions
 // based on generic const u8?
 #[derive(TryFromBytes, Immutable, KnownLayout)]
 #[repr(C, packed)]
-//pub struct RouteMonitoring<const V: u8 = 3> {
-pub struct RouteMonitoring<V> {
-    _version: std::marker::PhantomData<V>,
+pub struct RouteMonitoringV3 {
     pub common: CommonHeader,
-    pub pph: PerPeerHeader,
-    bgp_update: [u8], // if we keep one struct (generic over V) for both v3 and v4, change this
-                      // into 'bgp_update_or_tlvs' or something
+    pub per_peer_header: PerPeerHeaderV3,
+    bgp_update: [u8],
 }
 
-impl<V> RouteMonitoring<V> {
-    pub fn per_peer_header(&self) -> &PerPeerHeader {
-        &self.pph
-    }
+#[derive(TryFromBytes, Immutable, KnownLayout)]
+#[repr(C, packed)]
+pub struct RouteMonitoringV4 {
+    pub common: CommonHeader,
+    pub per_peer_header: PerPeerHeaderV4,
+    tlvs: [u8],
 }
-impl RouteMonitoring<V3> {
 
-    // The default for now is still v3. Whenever that changes, we move this method to
-    // RouteMonitoring<V4>.
-    pub fn try_from_full_pdu(raw: &[u8]) -> Result<&RouteMonitoring<V3>, Cow<'static, str>> {
-        RouteMonitoring::<V3>::try_v3_from_full_pdu(&raw)
-    }
+//impl<V> RouteMonitoring<V> {
+//    pub fn per_peer_header(&self) -> &PerPeerHeaderV3 {
+//        &self.pph
+//    }
+//}
 
-    pub fn try_v3_from_full_pdu(raw: &[u8]) -> Result<&RouteMonitoring<V3>, Cow<'static, str>> {
+impl RouteMonitoringV3 {
+
+    pub fn try_from_full_pdu(raw: &[u8]) -> Result<&Self, Cow<'static, str>> {
         //TODO all kinds of length checks
 
         let (ch, _) = CommonHeader::try_ref_from_prefix(&raw).map_err(|_| "can't parse Common Header")?;
         if ch.version != 3 {
+            // TODO introduce a proper "mismatched version" error so the caller can try with
+            // another version if wanted.
             return Err(format!("expected version 3, got {}", ch.version).into());
         }
-        RouteMonitoring::try_ref_from_bytes(&raw).map_err(|e| e.to_string().into())
+        Self::try_ref_from_bytes(&raw).map_err(|e| e.to_string().into())
     }
 
     pub fn bgp_update(&self) -> Result<&Update, Cow<'static, str>> {
@@ -45,15 +47,15 @@ impl RouteMonitoring<V3> {
     }
 }
 
-impl RouteMonitoring<V4> {
-    pub fn try_v4_from_full_pdu(raw: &[u8]) -> Result<&RouteMonitoring<V4>, Cow<'static, str>> {
+impl RouteMonitoringV4 {
+    pub fn try_from_full_pdu(raw: &[u8]) -> Result<&Self, Cow<'static, str>> {
         //TODO all kinds of length checks
 
         let (ch, _) = CommonHeader::try_ref_from_prefix(&raw).map_err(|_| "can't parse Common Header")?;
         if ch.version != 4 {
             return Err(format!("expected version 4, got {}", ch.version).into());
         }
-        RouteMonitoring::try_ref_from_bytes(&raw).map_err(|e| e.to_string().into())
+        Self::try_ref_from_bytes(&raw).map_err(|e| e.to_string().into())
     }
 
     pub fn bgp_update(&self) -> Result<&Update, Cow<'static, str>> {
@@ -90,7 +92,7 @@ mod tests {
             0x00, 0x01, 0x20, 0x0a, 0x0a, 0x0a, 0x02
         ]; 
 
-        let rm = RouteMonitoring::try_v3_from_full_pdu(&raw).unwrap();
+        let rm = RouteMonitoringV3::try_from_full_pdu(&raw).unwrap();
         let update = rm.bgp_update().unwrap();
         let update = update.into_checked_parts(&SessionConfig::default()).unwrap();
         assert_eq!(update.conv_reach_iter().count(), 1);

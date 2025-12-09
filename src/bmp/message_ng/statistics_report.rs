@@ -3,14 +3,14 @@ use std::borrow::Cow;
 
 use zerocopy::{byteorder, Immutable, KnownLayout, NetworkEndian, TryFromBytes};
 
-use crate::bmp::message_ng::common::{CommonHeader, PerPeerHeader, Tlvs};
+use crate::bmp::message_ng::common::{CommonHeader, PerPeerHeaderV3, Tlvs};
 
 
 #[derive(TryFromBytes, Immutable, KnownLayout)]
 #[repr(C, packed)]
 pub struct StatisticsReport {
     pub common: CommonHeader,
-    pub pph: PerPeerHeader,
+    pub pph: PerPeerHeaderV3,
     pub stats_count: byteorder::U32<NetworkEndian>,
     pub stats: [u8],
 }

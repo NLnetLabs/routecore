@@ -7,11 +7,6 @@ use zerocopy::{
 };
 
 
-// Zero-sized marker structs for versioned message types
-pub struct V3;
-pub struct V4;
-
-
 #[derive(IntoBytes, FromBytes, KnownLayout, Immutable)]
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub struct Asn(byteorder::U32::<NetworkEndian>);
@@ -62,7 +57,7 @@ impl MessageType {
 
 #[derive(IntoBytes, FromBytes, KnownLayout, Immutable)]
 #[repr(C, packed)]
-pub struct PerPeerHeader {
+pub struct PerPeerHeaderV3 {
     pub peer_type: PeerType,
     pub flags: u8,
     pub distinguisher: [u8; 8],
@@ -72,6 +67,24 @@ pub struct PerPeerHeader {
     pub timestamp_sec: byteorder::U32<NetworkEndian>,
     pub timestamp_usec: byteorder::U32<NetworkEndian>,
 }
+
+//pub type PerPeerHeader = PerPeerHeaderV3;
+
+// XXX this is a non-standardized, imaginary Per Peer Header for BMP v4, merely here for trying out
+// what the API could look like.
+#[derive(IntoBytes, FromBytes, KnownLayout, Immutable)]
+#[repr(C, packed)]
+pub struct PerPeerHeaderV4 {
+    pub peer_type: PeerType,
+    pub flags: u16,
+    pub distinguisher: [u8; 8],
+    pub address: [u8; 16],
+    pub asn: Asn,
+    pub bgp_id: [u8; 4],
+    pub timestamp_sec: byteorder::U32<NetworkEndian>,
+    pub timestamp_usec: byteorder::U32<NetworkEndian>,
+}
+
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, FromBytes, IntoBytes, KnownLayout, Immutable)]
 pub struct PeerType(u8);
@@ -92,7 +105,8 @@ pub enum RibType {
     LocRib,
 }
 
-impl PerPeerHeader {
+
+impl PerPeerHeaderV3 {
     pub fn peer_type(&self) -> PeerType {
         self.peer_type
     }

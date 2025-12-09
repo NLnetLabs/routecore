@@ -2,33 +2,35 @@ use std::borrow::Cow;
 
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, TryFromBytes};
 
-use crate::{bgp::message_ng::Update, bmp::message_ng::common::{CommonHeader, PerPeerHeader, Tlvs, V3, V4}};
+use crate::{bgp::message_ng::Update, bmp::message_ng::common::{CommonHeader, PerPeerHeaderV3, PerPeerHeaderV4, Tlvs}};
 
 #[derive(TryFromBytes, Immutable, KnownLayout)]
 #[repr(C, packed)]
-pub struct PeerDownNotification<V> {
-    _version: std::marker::PhantomData<V>,
+pub struct PeerDownNotificationV3 {
     pub common: CommonHeader,
-    pub pph: PerPeerHeader,
+    pub pph: PerPeerHeaderV3,
     pub reason: PeerDownReason,
     pub data: [u8],
 }
 
-impl<V> PeerDownNotification<V> {
-    pub fn reason(&self) -> PeerDownReason {
-        self.reason
-    }
+#[derive(TryFromBytes, Immutable, KnownLayout)]
+#[repr(C, packed)]
+pub struct PeerDownNotificationV4 {
+    pub common: CommonHeader,
+    pub pph: PerPeerHeaderV4,
+    pub reason: PeerDownReason,
+    pub data: [u8],
 }
 
-impl PeerDownNotification<V3> {
+impl PeerDownNotificationV3 {
     pub fn try_from_full_pdu(raw: &[u8]) -> Result<&Self, Cow<'static, str>> {
         //TODO all kinds of length checks
         Self::try_ref_from_bytes(&raw).map_err(|e| e.to_string().into())
     }
 
     pub fn notification(&self) -> Option<Result<&Update, Cow<'static, str>>> {
-        if self.reason() == PeerDownReason::LOCAL_NOTIFICATION ||
-            self.reason() == PeerDownReason::REMOTE_NOTIFICATION
+        if self.reason == PeerDownReason::LOCAL_NOTIFICATION ||
+            self.reason == PeerDownReason::REMOTE_NOTIFICATION
         {
             Some(Update::try_from_full_pdu(&self.data))
         } else {
@@ -37,8 +39,8 @@ impl PeerDownNotification<V3> {
     }
 }
 
-impl PeerDownNotification<V4> {
-    pub fn try_v4_from_full_pdu(raw: &[u8]) -> Result<&Self, Cow<'static, str>> {
+impl PeerDownNotificationV4 {
+    pub fn try_from_full_pdu(raw: &[u8]) -> Result<&Self, Cow<'static, str>> {
         //TODO all kinds of length checks
         Self::try_ref_from_bytes(&raw).map_err(|e| e.to_string().into())
     }
@@ -81,8 +83,8 @@ mod tests {
             0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
             0xff, 0x00, 0x15, 0x03, 0x06, 0x02
         ];
-        let msg = PeerDownNotification::try_from_full_pdu(&buf).unwrap();
-        assert_eq!(msg.reason(), PeerDownReason::REMOTE_NOTIFICATION);
+        let msg = PeerDownNotificationV3::try_from_full_pdu(&buf).unwrap();
+        assert_eq!(msg.reason, PeerDownReason::REMOTE_NOTIFICATION);
         assert!(msg.notification().is_some());
         //assert_eq!(msg.fsm(), None);
 

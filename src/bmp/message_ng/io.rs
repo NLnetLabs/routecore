@@ -2,7 +2,7 @@ use std::{borrow::Cow, collections::VecDeque, io::Read, sync::{atomic::{AtomicUs
 
 use zerocopy::TryFromBytes;
 
-use crate::{bgp::message_ng::common::SessionConfig, bmp::message_ng::{common::{CommonHeader, MessageType}, initiation::InitiationMessage, peer_down_notification::PeerDownNotification, peer_up_notification::PeerUpNotification, route_monitoring::RouteMonitoring, statistics_report::StatisticsReport}};
+use crate::{bgp::message_ng::common::SessionConfig, bmp::message_ng::{common::{CommonHeader, MessageType}, initiation::InitiationMessage, peer_down_notification::PeerDownNotificationV3, peer_up_notification::PeerUpNotification, route_monitoring::RouteMonitoringV3, statistics_report::StatisticsReport}};
 
 
 pub const MIN_MSG_SIZE: usize = std::mem::size_of::<CommonHeader>();
@@ -105,9 +105,7 @@ impl Pool {
                         match header.msg_type {
                             MessageType::ROUTE_MONITORING => {
                                 UPDATES_TOTAL.fetch_add(1, Ordering::Relaxed);
-                                //let rm = RouteMonitoring::try_v4_from_full_pdu(msg).unwrap();
-                                let rm = RouteMonitoring::try_from_full_pdu(msg).unwrap();
-                                let _pph = rm.per_peer_header();
+                                let rm = RouteMonitoringV3::try_from_full_pdu(msg).unwrap();
                                 let update = rm.bgp_update().unwrap();
                                 let mut update = update.into_checked_parts(&sc).unwrap();
 
@@ -148,7 +146,7 @@ impl Pool {
                                 let _init = InitiationMessage::try_from_full_pdu(msg).unwrap();
                             }
                             MessageType::PEER_DOWN_NOTIFICATION => {
-                                let _pd = PeerDownNotification::try_from_full_pdu(msg).unwrap();
+                                let _pd = PeerDownNotificationV3::try_from_full_pdu(msg).unwrap();
                             }
                             MessageType::STATISTICS_REPORT => {
                                 let _sr = StatisticsReport::try_from_full_pdu(msg).unwrap();
