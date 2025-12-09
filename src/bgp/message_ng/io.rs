@@ -107,33 +107,6 @@ impl Pool {
                         match header.msg_type {
                             MessageType::UPDATE => {
                                 let update = Update::try_from_raw(msg).unwrap();
-                                //let CheckedParts{pa_hints, origin_as, mp_attributes, mp_reach, mp_unreach, conventional_attributes, malformed_attributes} = update.into_checked_parts(&sc);
-                                //CNT_TOTAL.fetch_add(1, Ordering::Relaxed);
-                                //if !mp_attributes.is_empty() && !conventional_attributes.is_empty() {
-                                //    CNT_COMBINED.fetch_add(1, Ordering::Relaxed);
-                                //}
-                                //if !mp_reach.is_empty() && !mp_unreach.is_empty() {
-                                //    CNT_MP_R_U.fetch_add(1, Ordering::Relaxed);
-                                //}
-                                //if !malformed_attributes.is_empty() {
-                                //    CNT_MALFORMED.fetch_add(1, Ordering::Relaxed);
-                                //}
-                                //if !conventional_attributes.is_empty() {
-                                //    assert!(!update.conventional_nlri().is_empty());
-                                //} else {
-                                //    assert!(update.conventional_nlri().is_empty());
-                                //}
-                                //if pa_hints & HINT_SINGLE_SEQ == HINT_SINGLE_SEQ {
-                                //    // then we should have a non-zero ASN:
-                                //    assert!(origin_as != 0);
-                                //} else {
-                                //    if !mp_attributes.is_empty() || !conventional_attributes.is_empty() {
-                                //        CNT_NOT_SINGLE_SEQ.fetch_add(1, Ordering::Relaxed);
-                                //    }
-                                //    assert!(origin_as == 0);
-                                //    //dbg!(&update);
-                                //    //panic!();
-                                //}
 
                                 let CheckedParts {
                                     checked_mp_attributes,

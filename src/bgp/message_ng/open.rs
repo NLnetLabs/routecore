@@ -54,6 +54,31 @@ impl Open {
         Ok(res)
     }
 
+    pub fn try_from_prefix(raw: &[u8]) -> Result<(&Open, &[u8]), Cow<'static, str>> {
+        if raw.len() < 29 {
+            return Err("minimal size of OPEN PDU is 29 bytes".into());
+        }
+        let Ok((header, _)) = Header::try_ref_from_prefix(&raw.as_ref()) else {
+            return Err("invalid header".into());
+        };
+
+        if header.marker != [0xff; 16] {
+            return Err("invalid marker".into());
+        }
+
+        if header.msg_type == MessageType::OPEN {
+            Ok(
+                (
+                    Open::try_from_raw(&raw[19..usize::from(header.length)])?,
+                    &raw[usize::from(header.length)..]
+                )
+            )
+        } else {
+            Err("not an OPEN".into())
+        }
+
+    }
+
     pub fn capabilities(&self) -> impl Iterator<Item = Result<&RawCapability, &[u8]>> {
         UncheckedOptionalParameterIter {
             raw: self.optional_parameters.as_bytes(),
