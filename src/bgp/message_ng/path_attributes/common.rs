@@ -112,8 +112,8 @@ impl std::ops::BitAnd<u8> for PathAttributeHints {
 #[allow(unused)]
 impl PreppedAttributesBuilder {
     pub(crate) fn new() -> Self {
-        let buf = Vec::from(PreppedAttributesHeader::default().as_bytes());
-        assert_eq!(buf.len(), std::mem::size_of::<PreppedAttributesHeader>());
+        let mut buf = Vec::with_capacity(128);
+        buf.extend_from_slice(PreppedAttributesHeader::default().as_bytes());
         Self {
             buf,
         }
@@ -122,7 +122,7 @@ impl PreppedAttributesBuilder {
         // XXX at some point, measure how often buf needs to grow (thus causing allocations)
         // and figure out whether there is a sane, safe with_capacity we could use in new() to
         // prevent those allocations
-        self.buf.extend_from_slice(bytes);
+        self.buf.extend(bytes);
     }
 
     pub(crate) fn set_rpki_info(&mut self, rpki_info: RpkiInfo) {
