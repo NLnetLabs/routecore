@@ -8,7 +8,7 @@ use zerocopy::{
 
 
 #[derive(IntoBytes, FromBytes, KnownLayout, Immutable)]
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub struct Asn(byteorder::U32::<NetworkEndian>);
 //impl From<byteorder::U32::<NetworkEndian>> for Asn {
 //    fn from(value: byteorder::U32::<NetworkEndian>) -> Self {
@@ -38,6 +38,7 @@ pub struct CommonHeader {
 
 impl CommonHeader {
     pub fn length(&self) -> usize {
+        // FIXME this pops up in flame graph
         usize::try_from(u32::from(self.length)).unwrap()
     }
 }
@@ -55,6 +56,7 @@ impl MessageType {
     pub const ROUTE_MIRRORING:          Self = Self(0);
 }
 
+#[derive(Eq, PartialEq, Ord, PartialOrd)]
 #[derive(IntoBytes, FromBytes, KnownLayout, Immutable)]
 #[repr(C, packed)]
 pub struct PerPeerHeaderV3 {
@@ -86,7 +88,7 @@ pub struct PerPeerHeaderV4 {
 }
 
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, FromBytes, IntoBytes, KnownLayout, Immutable)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, FromBytes, IntoBytes, KnownLayout, Immutable)]
 pub struct PeerType(u8);
 impl PeerType {
     pub const GLOBAL_INSTANCE:      Self = Self(0);
@@ -94,6 +96,12 @@ impl PeerType {
     pub const LOCAL_INSTANCE:       Self = Self(2);
     pub const LOCAL_RIB_INSTANCE:   Self = Self(3);
     pub const RESERVED:             Self = Self(255);
+}
+
+impl From<PeerType> for u8 {
+    fn from(value: PeerType) -> Self {
+        value.0
+    }
 }
 
 /// Specify which RIB the contents of a message originated from.
@@ -107,6 +115,11 @@ pub enum RibType {
 
 
 impl PerPeerHeaderV3 {
+    pub fn without_type_and_flags(&self) -> &[u8] {
+         //FIXME this also needs to strip out timestamps!!!
+         // make a dedicated zerocopy struct for this
+        &self.as_bytes()[2..34]
+    }
     pub fn peer_type(&self) -> PeerType {
         self.peer_type
     }

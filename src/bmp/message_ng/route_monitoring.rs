@@ -2,7 +2,7 @@ use std::borrow::Cow;
 
 use zerocopy::{Immutable, KnownLayout, TryFromBytes};
 
-use crate::{bgp::message_ng::Update, bmp::message_ng::common::{CommonHeader, PerPeerHeaderV3, PerPeerHeaderV4}};
+use crate::{bgp::message_ng::Update, bmp::message_ng::{common::{CommonHeader, PerPeerHeaderV3, PerPeerHeaderV4}, io::Parseable}};
 
 // TODO make v3 and v4 versions
 // based on generic const u8?
@@ -22,15 +22,9 @@ pub struct RouteMonitoringV4 {
     tlvs: [u8],
 }
 
-//impl<V> RouteMonitoring<V> {
-//    pub fn per_peer_header(&self) -> &PerPeerHeaderV3 {
-//        &self.pph
-//    }
-//}
 
-impl RouteMonitoringV3 {
-
-    pub fn try_from_full_pdu(raw: &[u8]) -> Result<&Self, Cow<'static, str>> {
+impl Parseable for RouteMonitoringV3 {
+    fn try_from_full_pdu(raw: &[u8]) -> Result<&Self, Cow<'static, str>> {
         //TODO all kinds of length checks
 
         let (ch, _) = CommonHeader::try_ref_from_prefix(&raw).map_err(|_| "can't parse Common Header")?;
@@ -41,14 +35,32 @@ impl RouteMonitoringV3 {
         }
         Self::try_ref_from_bytes(&raw).map_err(|e| e.to_string().into())
     }
+}
+impl RouteMonitoringV3 {
+
+    //pub fn try_from_full_pdu(raw: &[u8]) -> Result<&Self, Cow<'static, str>> {
+    //    //TODO all kinds of length checks
+
+    //    let (ch, _) = CommonHeader::try_ref_from_prefix(&raw).map_err(|_| "can't parse Common Header")?;
+    //    if ch.version != 3 {
+    //        // TODO introduce a proper "mismatched version" error so the caller can try with
+    //        // another version if wanted.
+    //        return Err(format!("expected version 3, got {}", ch.version).into());
+    //    }
+    //    Self::try_ref_from_bytes(&raw).map_err(|e| e.to_string().into())
+    //}
 
     pub fn bgp_update(&self) -> Result<&Update, Cow<'static, str>> {
         Update::try_from_full_pdu(&self.bgp_update)
     }
+
+    pub fn per_peer_header(&self) -> &PerPeerHeaderV3 {
+        &self.per_peer_header
+    }
 }
 
-impl RouteMonitoringV4 {
-    pub fn try_from_full_pdu(raw: &[u8]) -> Result<&Self, Cow<'static, str>> {
+impl Parseable for RouteMonitoringV4 {
+    fn try_from_full_pdu(raw: &[u8]) -> Result<&Self, Cow<'static, str>> {
         //TODO all kinds of length checks
 
         let (ch, _) = CommonHeader::try_ref_from_prefix(&raw).map_err(|_| "can't parse Common Header")?;
@@ -57,6 +69,18 @@ impl RouteMonitoringV4 {
         }
         Self::try_ref_from_bytes(&raw).map_err(|e| e.to_string().into())
     }
+}
+
+impl RouteMonitoringV4 {
+    //pub fn try_from_full_pdu(raw: &[u8]) -> Result<&Self, Cow<'static, str>> {
+    //    //TODO all kinds of length checks
+
+    //    let (ch, _) = CommonHeader::try_ref_from_prefix(&raw).map_err(|_| "can't parse Common Header")?;
+    //    if ch.version != 4 {
+    //        return Err(format!("expected version 4, got {}", ch.version).into());
+    //    }
+    //    Self::try_ref_from_bytes(&raw).map_err(|e| e.to_string().into())
+    //}
 
     pub fn bgp_update(&self) -> Result<&Update, Cow<'static, str>> {
         todo!(); // TODO get PDU from TLV

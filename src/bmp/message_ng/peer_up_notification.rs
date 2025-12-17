@@ -9,7 +9,7 @@ use crate::{bgp::message_ng::Open, bmp::message_ng::common::{CommonHeader, PerPe
 #[repr(C, packed)]
 pub struct PeerUpNotification {
     pub common: CommonHeader,
-    pub pph: PerPeerHeaderV3,
+    pub per_peer_header: PerPeerHeaderV3,
     pub local_addr: [u8; 16],
     pub local_port: byteorder::U16<NetworkEndian>,
     pub remote_port: byteorder::U16<NetworkEndian>,
@@ -23,6 +23,10 @@ impl PeerUpNotification {
     pub fn try_from_full_pdu(raw: &[u8]) -> Result<&Self, Cow<'static, str>> {
         //TODO all kinds of length checks
         Self::try_ref_from_bytes(&raw).map_err(|e| e.to_string().into())
+    }
+
+    pub fn per_peer_header(&self) -> &PerPeerHeaderV3 {
+        &self.per_peer_header
     }
 
     pub fn bgp_opens(&self) -> Result<(&Open, &Open), Cow<'static, str>> {
@@ -87,23 +91,23 @@ mod tests {
             MessageType::PEER_UP_NOTIFICATION
         );
         assert_eq!(
-            bmp.pph.peer_type,
+            bmp.per_peer_header.peer_type,
             PeerType::GLOBAL_INSTANCE
         );
-        assert!(bmp.pph.is_ipv4());
-        assert_eq!(bmp.pph.distinguisher(), [0; 8]);
+        assert!(bmp.per_peer_header.is_ipv4());
+        assert_eq!(bmp.per_peer_header.distinguisher(), [0; 8]);
         assert_eq!(
-            bmp.pph.address(),
+            bmp.per_peer_header.address(),
             IpAddr::from_str("10.255.0.101").unwrap()
         );
 
-        assert_eq!(bmp.pph.asn(), Asn::from_u32(64496));
-        assert_eq!(bmp.pph.bgp_id(), [0x0a, 0x0a, 0x0a, 0x1]);
-        assert_eq!(bmp.pph.ts_seconds(), 1419906571);
-        assert_eq!(bmp.pph.ts_micros(), 920608);
+        assert_eq!(bmp.per_peer_header.asn(), Asn::from_u32(64496));
+        assert_eq!(bmp.per_peer_header.bgp_id(), [0x0a, 0x0a, 0x0a, 0x1]);
+        assert_eq!(bmp.per_peer_header.ts_seconds(), 1419906571);
+        assert_eq!(bmp.per_peer_header.ts_micros(), 920608);
 
         assert_eq!(
-            bmp.pph.timestamp().to_string(),
+            bmp.per_peer_header.timestamp().to_string(),
             "2014-12-30 02:29:31.920608 UTC"
         );
 

@@ -8,7 +8,7 @@ use crate::bmp::message_ng::common::{CommonHeader, Tlvs};
 #[derive(TryFromBytes, Immutable, KnownLayout)]
 #[repr(C, packed)]
 pub struct InitiationMessage {
-    common: CommonHeader,
+    pub common: CommonHeader,
     tlvs: Tlvs,
 }
 
