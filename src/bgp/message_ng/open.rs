@@ -79,7 +79,7 @@ impl Open {
             Ok(
                 (
                     Open::try_from_raw(&raw[19..msg_len])?,
-                    &raw[msg_len-1..]
+                    &raw[msg_len..]
                 )
             )
         } else {
