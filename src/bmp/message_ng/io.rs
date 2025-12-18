@@ -6,7 +6,7 @@ use crate::{bgp::message_ng::common::{HexFormatted, SessionConfig}, bmp::message
 
 
 pub const MIN_MSG_SIZE: usize = std::mem::size_of::<CommonHeader>();
-pub const MANY_MSGS_BUF_SIZE: usize = 2 << 18;
+pub const MANY_MSGS_BUF_SIZE: usize = 1 << 18;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub struct BmpVersion(u8);
@@ -125,7 +125,7 @@ impl<R: Read, const B: usize, > MessageIter<R, B> {
 
 
 pub struct Pool {
-    queue: Arc<RwLock<VecDeque<ManyMessages>>>,
+    queue: Arc<RwLock<VecDeque<(Vec<u8>, SessionConfig)>>>,
 }
 impl Default for Pool {
     fn default() -> Self {
@@ -141,7 +141,7 @@ static PA_BYTES_REDUNDANT_SUM: AtomicUsize = AtomicUsize::new(0);
 
 
 impl Pool {
-    pub fn start_processing(self) -> Arc<RwLock<VecDeque<ManyMessages>>> {
+    pub fn start_processing(self) -> Arc<RwLock<VecDeque<(Vec<u8>, SessionConfig)>>> {
         let pool = rayon::ThreadPoolBuilder::new().num_threads(6).build().unwrap();
         let queue = self.queue.clone();
         let sc = Arc::new(SessionConfig::default());
@@ -151,97 +151,50 @@ impl Pool {
             pool.spawn(move || {
                 eprintln!("[{:?}] spawned", thread::current().id());
                 loop {
-                    let Some(ManyMessages{version, msgs: buf}) = queue.write().unwrap().pop_front() else {
+                    //let Some(ManyMessages{version, msgs: buf}) = queue.write().unwrap().pop_front() else {
+                    let Some((msg, sc)) = queue.write().unwrap().pop_front() else {
                         thread::park_timeout(Duration::from_millis(1));
                         //hint::spin_loop();
                         continue;
                     };
-                    // buf is a Vec<u8> with many unchecked BMP PDUs
-                    let mut buf_cursor = 0;
                     
-                    //let mut handler = BmpV3Handler::new(std::io::Cursor::new(vec![]));
-                    while buf_cursor < buf.len() {
-                        let (header, _) = CommonHeader::try_ref_from_prefix(&buf[buf_cursor..]).unwrap();
-                        //if header.version == 4 {
-                        //    handler = handler.upgrade_to_v4();
-                        //}
-                        let len: usize = header.length();
-                        let msg = &buf[buf_cursor..buf_cursor+len];
+                    // TODO branch on version somewhere, somehow
+                    //assert!(version == BmpVersion(3));
 
-                        // TODO branch on version
-                        assert!(version == BmpVersion(3));
+                    // we know that msg is a ROUTE_MONITORING
                         
-                        match header.msg_type {
-                            MessageType::ROUTE_MONITORING => {
-                                //UPDATES_TOTAL.fetch_add(1, Ordering::Relaxed);
-                                let rm = RouteMonitoringV3::try_from_full_pdu(msg).unwrap();
-                                let _pph = rm.per_peer_header();
-                                //let rm = handler.version.try_routemon(msg).unwrap();
-                                let update = rm.bgp_update().unwrap();
-                                let mut update = update.into_checked_parts(&sc).unwrap();
+                    let rm = RouteMonitoringV3::try_from_full_pdu(&msg).unwrap();
+                    let update = rm.bgp_update().unwrap();
+                    let mut update = update.into_checked_parts(&sc).unwrap();
 
-                                // conv stuff
-                                if let Some(attributes) = update.take_conv_attributes() {
-                                    // So we have path attributes for conventional NLRI
-                                    
-                                    let conv_iter = update.conv_reach_iter_raw();
-                                    //routedb.insert_batch(attributes, conv_iter)
+                    // conv stuff
+                    if let Some(attributes) = update.take_conv_attributes() {
+                        // So we have path attributes for conventional NLRI
 
-                                    let _nlri_count = conv_iter.count();
-                                    //NLRI_TOTAL.fetch_add(nlri_count, Ordering::Relaxed);
-                                    //PA_BYTES_SUM.fetch_add(attributes.len(), Ordering::Relaxed);
-                                    //PA_BYTES_REDUNDANT_SUM.fetch_add(attributes.len() * (nlri_count - 1), Ordering::Relaxed);
+                        let conv_iter = update.conv_reach_iter_raw();
+                        //routedb.insert_batch(attributes, conv_iter)
 
-                                    //pph_register.get(&pph).unwrap();
-                                }
+                        let _nlri_count = conv_iter.count();
+                        //NLRI_TOTAL.fetch_add(nlri_count, Ordering::Relaxed);
+                        //PA_BYTES_SUM.fetch_add(attributes.len(), Ordering::Relaxed);
+                        //PA_BYTES_REDUNDANT_SUM.fetch_add(attributes.len() * (nlri_count - 1), Ordering::Relaxed);
 
-                                // mp stuff
-                                if let Some(attributes) = update.take_mp_attributes() {
-                                    // So we have path attributes for mpentional NLRI
-                                    
-                                    let mp_iter = update.mp_reach_iter_raw();
-                                    //routedb.insert_batch(attributes, mp_iter)
-
-                                    let _nlri_count = mp_iter.count();
-                                    //NLRI_TOTAL.fetch_add(nlri_count, Ordering::Relaxed);
-                                    //PA_BYTES_SUM.fetch_add(attributes.len(), Ordering::Relaxed);
-                                    //PA_BYTES_REDUNDANT_SUM.fetch_add(attributes.len() * (nlri_count - 1), Ordering::Relaxed);
-                                }
-
-                            }
-                            MessageType::PEER_UP_NOTIFICATION => {
-                                let peerup = PeerUpNotification::try_from_full_pdu(msg).unwrap();
-                                let pph = peerup.per_peer_header();
-                                let (bgp_open_sent, bgp_open_rcvd) = peerup.bgp_opens().unwrap();
-                                bgp_open_sent.capabilities().count();
-                                bgp_open_rcvd.capabilities().count();
-
-                                // now, check existence of the pph in the (local?) btreemap
-                                // this is executed in the thread pool
-                                // so we need an Arc to the original handler?
-                                // but we also need to add new PPHs to it
-                                // so Arc<RwLock> ?
-                                // perhaps batch up PeerUps, lock once, batch insert?
-                                
-                                //assert!(
-                                //    pph_register.insert(&pph, SessionConfig::default()).is_none()
-                                //);
-                            }
-                            MessageType::INITIATION => {
-                                // This is not (should not be) the very first Initiation message.
-                                let _init = InitiationMessage::try_from_full_pdu(msg).unwrap();
-                            }
-                            MessageType::PEER_DOWN_NOTIFICATION => {
-                                let _pd = PeerDownNotificationV3::try_from_full_pdu(msg).unwrap();
-                            }
-                            MessageType::STATISTICS_REPORT => {
-                                let _sr = StatisticsReport::try_from_full_pdu(msg).unwrap();
-                            }
-                            m => { todo!("implement msg type {m:?}"); }
-                        }
-
-                        buf_cursor += len;
+                        //pph_register.get(&pph).unwrap();
                     }
+
+                    // mp stuff
+                    if let Some(attributes) = update.take_mp_attributes() {
+                        // So we have path attributes for mpentional NLRI
+
+                        let mp_iter = update.mp_reach_iter_raw();
+                        //routedb.insert_batch(attributes, mp_iter)
+
+                        let _nlri_count = mp_iter.count();
+                        //NLRI_TOTAL.fetch_add(nlri_count, Ordering::Relaxed);
+                        //PA_BYTES_SUM.fetch_add(attributes.len(), Ordering::Relaxed);
+                        //PA_BYTES_REDUNDANT_SUM.fetch_add(attributes.len() * (nlri_count - 1), Ordering::Relaxed);
+                    }
+
                 }
             });
         }
@@ -475,7 +428,7 @@ impl<R: Read> BmpV3Handler<R> {
     pub fn process<F>(&mut self,
         func: F,
     )
-    where F: Fn(ManyMessages) -> ()
+    where F: Fn(&RouteMonitoringV3, SessionConfig) -> ()
     
     {
         loop {
@@ -485,18 +438,18 @@ impl<R: Read> BmpV3Handler<R> {
             // e.g. only PeerUps, only PeerDowns, or only 'other'
             //print!("\r{i}");i+=1;
             if let Ok(Some(_)) = self.msg_iter.read_into_buf() {
-                if let Ok(buf) = self.msg_iter.get_many() {
+                while let Ok(msg) = self.msg_iter.get_one() {
                     // buf is a Vec<u8> with many unchecked BMP PDUs
-                    let mut buf_cursor = 0;
+                    //let mut buf_cursor = 0;
                     
                     //let mut handler = BmpV3Handler::new(std::io::Cursor::new(vec![]));
-                    while buf_cursor < buf.len() {
-                        let (header, _) = CommonHeader::try_ref_from_prefix(&buf[buf_cursor..]).unwrap();
+                    //while buf_cursor < buf.len() {
+                        let (header, _) = CommonHeader::try_ref_from_prefix(&msg).unwrap();
                         //if header.version == 4 {
                         //    handler = handler.upgrade_to_v4();
                         //}
-                        let len: usize = header.length();
-                        let msg = &buf[buf_cursor..buf_cursor+len];
+                        //let len: usize = header.length();
+                        //let msg = &msg[buf_cursor..buf_cursor+len];
 
                         match header.msg_type {
                             MessageType::ROUTE_MONITORING => {
@@ -515,7 +468,7 @@ impl<R: Read> BmpV3Handler<R> {
                                             self.pph_register.get(&pph).unwrap()
                                         } else {
                                             eprintln!("RouteMon for which no PeerUp was received");
-                                            buf_cursor += len;
+                                            //buf_cursor += len;
                                             continue;
                                             // TODO put in some queue?
                                             // try to process anyway?
@@ -527,6 +480,10 @@ impl<R: Read> BmpV3Handler<R> {
 
                                 //eprint!("_");
                                 //let rm = handler.version.try_routemon(msg).unwrap();
+                                //let sc2 = sc.clone();
+                                //func(rm, sc.clone());
+
+                                
                                 let update = rm.bgp_update().unwrap();
                                 let mut update = update.into_checked_parts(&sc).unwrap();
 
@@ -552,10 +509,12 @@ impl<R: Read> BmpV3Handler<R> {
                                     //routedb.insert_batch(attributes, mp_iter)
 
                                     let _nlri_count = mp_iter.count();
+
                                     //NLRI_TOTAL.fetch_add(nlri_count, Ordering::Relaxed);
                                     //PA_BYTES_SUM.fetch_add(attributes.len(), Ordering::Relaxed);
                                     //PA_BYTES_REDUNDANT_SUM.fetch_add(attributes.len() * (nlri_count - 1), Ordering::Relaxed);
                                 }
+                                
 
                             }
                             MessageType::PEER_UP_NOTIFICATION => {
@@ -589,16 +548,7 @@ impl<R: Read> BmpV3Handler<R> {
                             }
                             m => { todo!("implement msg type {m:?}"); }
                         }
-
-                        buf_cursor += len;
                     }
-                   
-                    //func(ManyMessages {
-                    //    version: BmpVersion(3),
-                    //    //pph_register: self.pph_register.clone(),
-                    //    msgs
-                    //})
-                }
             } else {
                 break
             }
@@ -654,55 +604,55 @@ mod tests {
     use std::{fs::File, io::BufReader, time::Instant};
 
 
-    #[test]
-    fn read_from_file() {
-        const FILENAME: &str = "/home/luuk/code/rotonda/test-data/rotonda_startup_500kpkts.bin.trimmed";
-        //const FILENAME: &str = "/home/luuk/code/rotonda/reeds/pcaps/amsix_rs_tshoot.bmp";
-        let f = File::open(FILENAME).unwrap();
-        eprintln!("processing {FILENAME}");
-        let total_size = f.metadata().unwrap().len();
-        let reader = BufReader::new(f);
-        let pool = Pool::default();
-        let queue = pool.start_processing();
+    //#[test]
+    //fn read_from_file() {
+    //    const FILENAME: &str = "/home/luuk/code/rotonda/test-data/rotonda_startup_500kpkts.bin.trimmed";
+    //    //const FILENAME: &str = "/home/luuk/code/rotonda/reeds/pcaps/amsix_rs_tshoot.bmp";
+    //    let f = File::open(FILENAME).unwrap();
+    //    eprintln!("processing {FILENAME}");
+    //    let total_size = f.metadata().unwrap().len();
+    //    let reader = BufReader::new(f);
+    //    let pool = Pool::default();
+    //    let queue = pool.start_processing();
 
-        let mut iter = MessageIter::<_, {2<<18}>::new(reader);
-        let mut _last_capacity = queue.read().unwrap().capacity();
-        let t0 = Instant::now();
-        loop {
-            if let Ok(Some(_)) = iter.read_into_buf() {
-                if let Ok(msgs) = iter.get_many() {
-                    queue.write().unwrap().push_back(ManyMessages{ version: BmpVersion(3), msgs});
-                    //let current_cap = queue.read().unwrap().capacity();
-                    //if current_cap != last_capacity {
-                    //    eprintln!("new cap {current_cap}");
-                    //    last_capacity = current_cap;
-                    //}
-                }
-            } else {
-                break
-            }
+    //    let mut iter = MessageIter::<_, {2<<18}>::new(reader);
+    //    let mut _last_capacity = queue.read().unwrap().capacity();
+    //    let t0 = Instant::now();
+    //    loop {
+    //        if let Ok(Some(_)) = iter.read_into_buf() {
+    //            if let Ok(msgs) = iter.get_many() {
+    //                queue.write().unwrap().push_back(ManyMessages{ version: BmpVersion(3), msgs});
+    //                //let current_cap = queue.read().unwrap().capacity();
+    //                //if current_cap != last_capacity {
+    //                //    eprintln!("new cap {current_cap}");
+    //                //    last_capacity = current_cap;
+    //                //}
+    //            }
+    //        } else {
+    //            break
+    //        }
 
-        }
-        while !queue.read().unwrap().is_empty() {
-            //std::hint::spin_loop();
-            thread::sleep(Duration::from_millis(100));
-        }
-        eprintln!("Done, CNT: {UPDATES_TOTAL:?}, \
-                NLRI: {NLRI_TOTAL:?}, \
-                PA_BYTES_SUM: {PA_BYTES_SUM:?}, \
-                PA_BYTES_REDUNDANT_SUM: {:.2}MiB, \
-                % of raw: {:.2}%
-                ",
-                PA_BYTES_REDUNDANT_SUM.load(Ordering::Relaxed) as f64 / 2_f64.powf(20.0),
-                (PA_BYTES_REDUNDANT_SUM.load(Ordering::Relaxed) as f64 / total_size as f64) * 100.0
-                );
-        eprintln!("{:.1}GiB in {:.2}s -> {:.2}GiB/s or {:.2}Gbps",
-            total_size as f64 / 2_f64.powf(30.0),
-            Instant::now().duration_since(t0).as_secs_f64(),
-            total_size as f64 / 2_f64.powf(30.0) / Instant::now().duration_since(t0).as_secs_f64(),
-            total_size as f64 / 2_f64.powf(27.0) / Instant::now().duration_since(t0).as_secs_f64(),
-        );
-    }
+    //    }
+    //    while !queue.read().unwrap().is_empty() {
+    //        //std::hint::spin_loop();
+    //        thread::sleep(Duration::from_millis(100));
+    //    }
+    //    eprintln!("Done, CNT: {UPDATES_TOTAL:?}, \
+    //            NLRI: {NLRI_TOTAL:?}, \
+    //            PA_BYTES_SUM: {PA_BYTES_SUM:?}, \
+    //            PA_BYTES_REDUNDANT_SUM: {:.2}MiB, \
+    //            % of raw: {:.2}%
+    //            ",
+    //            PA_BYTES_REDUNDANT_SUM.load(Ordering::Relaxed) as f64 / 2_f64.powf(20.0),
+    //            (PA_BYTES_REDUNDANT_SUM.load(Ordering::Relaxed) as f64 / total_size as f64) * 100.0
+    //            );
+    //    eprintln!("{:.1}GiB in {:.2}s -> {:.2}GiB/s or {:.2}Gbps",
+    //        total_size as f64 / 2_f64.powf(30.0),
+    //        Instant::now().duration_since(t0).as_secs_f64(),
+    //        total_size as f64 / 2_f64.powf(30.0) / Instant::now().duration_since(t0).as_secs_f64(),
+    //        total_size as f64 / 2_f64.powf(27.0) / Instant::now().duration_since(t0).as_secs_f64(),
+    //    );
+    //}
 
     #[test]
     fn handler() {
@@ -724,7 +674,9 @@ mod tests {
                 //v3handler.process_stream_batched(|msgs|
                 //    queue.write().unwrap().push_back(msgs)
                 //);
-                v3handler.process(|_| { });
+                v3handler.process(|rm, sc| {
+                    //queue.write().unwrap().push_back((rm.as_bytes().to_vec(), sc));
+                });
 
             }
 

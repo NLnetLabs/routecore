@@ -1,12 +1,12 @@
 use std::borrow::Cow;
 
-use zerocopy::{Immutable, KnownLayout, TryFromBytes};
+use zerocopy::{Immutable, IntoBytes, KnownLayout, TryFromBytes};
 
 use crate::{bgp::message_ng::Update, bmp::message_ng::{common::{CommonHeader, PerPeerHeaderV3, PerPeerHeaderV4}, io::Parseable}};
 
 // TODO make v3 and v4 versions
 // based on generic const u8?
-#[derive(TryFromBytes, Immutable, KnownLayout)]
+#[derive(TryFromBytes, IntoBytes, Immutable, KnownLayout)]
 #[repr(C, packed)]
 pub struct RouteMonitoringV3 {
     pub common: CommonHeader,
