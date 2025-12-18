@@ -333,10 +333,6 @@ impl PphRegister {
         ;
         //eprintln!("entries: {}", map.len());
         map.get(pph.without_type_and_flags())
-            //TODO hier verder: we moeten de ordering van de tcp stream handhaven.
-            //Dus, of alles single-threaded tot we echt jobs obv een CheckedParts in een pool kunnen gooien
-            //Of, een threadpool met meerdere queues en zorgen dat alles dat (volgorde-)afhankelijk is  in één en dezelfde queue terechtkomt. Bijv op basis van de V-flag in de PPH alle messages richting een queue sturen.
-            //Hoe dan ook, zorgen dat we nog steeds many messages uit de tcp rx buffer lezen en daar overheen rennen, ongeacht de gekozen aanpak.
     }
 
     pub fn find_other_ribviews(&self, pph: &PerPeerHeaderV3) -> Option<&(IngressId, SessionConfig)> {
@@ -352,26 +348,26 @@ impl PphRegister {
         None
     }
 
-    // search entries based on the PPH minus the peer type and peer flags
-    // this is useful for the 'nulled flag' workaround, i.e. looking whether we have seen PeerUps
-    // from a peer for different rib views than the one a routemon msg comes from.
-    //pub fn get_for_
-
     pub fn insert(&mut self, pph: &PerPeerHeaderV3, session_config: SessionConfig) -> Option<(IngressId, SessionConfig)> {
-        // for now assume this is actually new
-        //let peer_id = self.ingress_register.register();
-        // TODO when inserting multiple different ribviews for one and the same session/peer,
-        // make sure the peer_id is the same. In other words, we want to be able to distinguish
-        // multiple views from a single peer by the last so many bits of the MUI.
-        let peer_id: u16 = PEER_ID.fetch_add(1, Ordering::Relaxed);
+        // Check whether we already registered a peer_id in the ingress::Register, by going over
+        // our own cache.
+        let peer_id = if let Some((ingress_id, _)) = self.find_other_ribviews(&pph) {
+            eprintln!("found peer_id for this peer: {}", ingress_id.peer_id());
+            ingress_id.peer_id()
+        } else {
+            // TODO this should be a call to ingress::Register
+            PEER_ID.fetch_add(1, Ordering::Relaxed)
+        };
         
         // TODO move this into the ingress::Register, that is responsible and authoritative for
         // this kind of logic
         let mui = u32::from(peer_id) << 16 | u32::from(u8::from(pph.peer_type)) << 8 | u32::from(pph.flags);
+
         eprintln!("inserting into partition 0x{:x} , 0x{:x}\n{:?}",
             u8::from(pph.peer_type), pph.flags,
             HexFormatted(pph.without_type_and_flags())
             );
+
         self
             .per_peer_type[u8::from(pph.peer_type) as usize]
             .per_rib_view[pph.flags.reverse_bits() as usize]
