@@ -66,11 +66,20 @@ impl Open {
             return Err("invalid marker".into());
         }
 
+        let msg_len = usize::from(header.length);
+        if msg_len > raw.len() {
+            return Err("invalid length, exceeds PDU".into());
+        }
+
+        if msg_len < 29 {
+            return Err("invalid length, too small for valid OPEN".into());
+        }
+
         if header.msg_type == MessageType::OPEN {
             Ok(
                 (
-                    Open::try_from_raw(&raw[19..usize::from(header.length)])?,
-                    &raw[usize::from(header.length)..]
+                    Open::try_from_raw(&raw[19..msg_len])?,
+                    &raw[msg_len-1..]
                 )
             )
         } else {
@@ -129,14 +138,18 @@ impl<'a> Iterator for UncheckedOptionalParameterIter<'a> {
 
         // Not enough bytes for an actual Optional Parameter
         if self.raw.len() < 2 {
-            return Some(Err(self.raw));
+            let res = Some(Err(self.raw));
+            self.raw = &[];
+            return res;
         }
 
         let len = usize::from(self.raw[1]);
         
         // Length of this Optional Parameter exceeds the PDU
         if 2 + len > self.raw.len() {
-            return Some(Err(self.raw));
+            let res = Some(Err(self.raw));
+            self.raw = &[];
+            return res;
         }
 
         let res = RawOptionalParameter::try_ref_from_bytes(&self.raw[..2+len])
@@ -189,14 +202,18 @@ impl<'a> Iterator for UncheckedCapabilityIter<'a> {
 
         // Not enough bytes for an actual Capability
         if self.raw.len() < 2 {
-            return Some(Err(self.raw));
+            let res = Some(Err(self.raw));
+            self.raw = &[];
+            return res;
         }
 
         let len = usize::from(self.raw[1]);
         
         // Length of this Capability exceeds the Optional Parameter
         if 2 + len > self.raw.len() {
-            return Some(Err(self.raw));
+            let res = Some(Err(self.raw));
+            self.raw = &[];
+            return res;
         }
 
         let res = RawCapability::try_ref_from_bytes(&self.raw[..2+len])
