@@ -52,6 +52,7 @@ impl fmt::Debug for MessageType {
 }
 
 
+#[derive(Clone, Debug)]
 pub struct SessionConfig {
     four_octet_asns: bool,
     addpath_rx: Vec<AfiSafiType>,
