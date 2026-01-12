@@ -142,15 +142,17 @@ impl Update {
         session_config: &SessionConfig,
         builder: &mut PreppedAttributesBuilder,
     ) {
-        let value_len = pa.value().len();
+        let value = pa.value();
+        let value_len = value.len();
+
 
         // Check whether we have at least a segment with one 16 bit ASN,
         // which would be represented by 1 byte segment type, 1 byte number of ASNs, and two
         // bytes for the single ASN.
         // We leverage the check for 4 bytes while setting the origin as.
         // Also, check if this segment is of type AS_SEQUENCE.
-        if value_len >= 4 && pa.value()[0] == SEGMENT_TYPE_SEQUENCE {
-            let num_asns = pa.value()[1];
+        if value_len >= 4 && value[0] == SEGMENT_TYPE_SEQUENCE {
+            let num_asns = value[1];
             let segment_size = if session_config.four_octet_asns() {
                 4
             } else {
@@ -163,18 +165,14 @@ impl Update {
                 // XXX can/should we make this faster? we know we have 4 bytes at least, and
                 // we're indexing already anyway.
                 if session_config.four_octet_asns() {
-                    builder.set_origin_as(byteorder::U32::from_bytes([
-                        pa.value()[value_len-4],
-                        pa.value()[value_len-3],
-                        pa.value()[value_len-2],
-                        pa.value()[value_len-1],
-                    ]));
+                    let (r,_) = byteorder::U32::<NetworkEndian>::try_read_from_prefix(&value[value_len-4..]).unwrap();
+                    builder.set_origin_as(r);
                 } else {
                     builder.set_origin_as(byteorder::U32::from_bytes([
                         0,
                         0,
-                        pa.value()[value_len-2],
-                        pa.value()[value_len-1],
+                        value[value_len-2],
+                        value[value_len-1],
                     ]));
                 }
             }

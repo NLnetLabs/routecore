@@ -216,6 +216,7 @@ pub struct UncheckedPathAttributesIter<'a> {
 impl<'a> Iterator for UncheckedPathAttributesIter<'a> {
     type Item = Result<&'a RawPathAttribute, &'a [u8]>;
 
+    // 'slow' version
     fn next(&mut self) -> Option<Self::Item> {
         if self.raw.is_empty() {
             return None;
@@ -274,6 +275,229 @@ impl<'a> Iterator for UncheckedPathAttributesIter<'a> {
 
         Some(res)
     }
+
+    // not much faster version
+    //fn next(&mut self) -> Option<Self::Item> {
+
+    //    // do one 'rough' check up front, so we need less branching later on
+    //    // The only time this is 'more expensive' is at the very last path attribute within the
+    //    // blob, so the overall savings should be worth it.
+    //    if self.raw.is_empty() {
+    //        return None;
+    //    }
+    //    if self.raw.len() < 4 {
+
+    //        let flags = self.raw[0];
+    //        let res;
+
+    //        if flags & EXTENDED_LEN == EXTENDED_LEN {
+    //            // this one will always be false
+    //            // if we have < 4 bytes left, EXTENDED will be invalid anyway
+    //            if self.raw.len() < 4 {
+    //                let res = Some(Err(self.raw));
+    //                // fuse
+    //                self.raw = &[];
+    //                return res;
+    //            }
+    //            let len: usize = u16::from_be_bytes([self.raw[2], self.raw[3]]).into();
+    //            if self.raw.len() < 4 + len {
+    //                let res =  Some(Err(self.raw));
+    //                //fuse
+    //                self.raw = &[];
+    //                return res;
+    //            }
+    //            
+    //            res = RawPathAttribute::try_ref_from_bytes(&self.raw[..4+len])
+    //                .map_err(|_| self.raw);
+    //            self.raw = &self.raw[4+len..];
+
+    //        } else {
+    //            if self.raw.len() < 3 {
+    //                let res =  Some(Err(self.raw));
+    //                //fuse
+    //                self.raw = &[];
+    //                return res;
+    //            }
+    //            let len: usize = self.raw[2].into();
+    //            if self.raw.len() < 3 + len {
+    //                let res =  Some(Err(self.raw));
+    //                //fuse
+    //                self.raw = &[];
+    //                return res;
+    //            }
+
+    //            res = RawPathAttribute::try_ref_from_bytes(&self.raw[..3+len])
+    //                .map_err(|_| self.raw);
+    //            self.raw = &self.raw[3+len..];
+    //        }
+    //        if res.is_err() {
+    //            //fuse
+    //            self.raw = &[];
+    //        }
+
+    //        return Some(res);
+
+    //    }
+
+
+    //    // SAFETY:
+    //    // The length of raw is either less than 4 but not empty, or greater than or equal to 4.
+    //    // So at this point, we can do get_unchecked for 0..3, inclusive.
+
+    //    let flags = unsafe { *self.raw.get_unchecked(0) };
+    //    
+    //    // TODO create macro/fn for 'return Err and fuse'
+
+    //    let res;
+
+    //    if flags & EXTENDED_LEN == EXTENDED_LEN {
+    //        let len: usize = u16::from_be_bytes([
+    //            unsafe { *self.raw.get_unchecked(2) },
+    //            unsafe { *self.raw.get_unchecked(3) },
+    //        ]
+    //            ).into();
+    //        if self.raw.len() < 4 + len {
+    //            let res =  Some(Err(self.raw));
+    //            //fuse
+    //            self.raw = &[];
+    //            return res;
+    //        }
+    //        
+    //        res = RawPathAttribute::try_ref_from_bytes(
+    //            unsafe { self.raw.get_unchecked(..4+len) }
+    //        )
+    //            .map_err(|_| self.raw);
+    //        self.raw = &self.raw[4+len..];
+
+    //    } else {
+    //        let len: usize = usize::from(
+    //            unsafe { *self.raw.get_unchecked(2) }
+    //        );
+    //        if self.raw.len() < 3 + len {
+    //            let res =  Some(Err(self.raw));
+    //            //fuse
+    //            self.raw = &[];
+    //            return res;
+    //        }
+
+    //        res = RawPathAttribute::try_ref_from_bytes(
+    //            unsafe { self.raw.get_unchecked(..3+len) }
+    //        )
+    //            .map_err(|_| self.raw);
+    //        self.raw = &self.raw[3+len..];
+    //    }
+
+    //    if res.is_err() {
+    //        //fuse
+    //        self.raw = &[];
+    //    }
+
+    //    Some(res)
+    //}
+
+    // somewhat branchless version
+    //fn next(&mut self) -> Option<Self::Item> {
+
+    //    // do one 'rough' check up front, so we need less branching later on
+    //    // The only time this is 'more expensive' is at the very last path attribute within the
+    //    // blob, so the overall savings should be worth it.
+    //    if self.raw.is_empty() {
+    //        return None;
+    //    }
+    //    if self.raw.len() < 4 {
+
+    //        let flags = self.raw[0];
+    //        let res;
+
+    //        if flags & EXTENDED_LEN == EXTENDED_LEN {
+    //            // this one will always be false
+    //            // if we have < 4 bytes left, EXTENDED will be invalid anyway
+    //            if self.raw.len() < 4 {
+    //                let res = Some(Err(self.raw));
+    //                // fuse
+    //                self.raw = &[];
+    //                return res;
+    //            }
+    //            let len: usize = u16::from_be_bytes([self.raw[2], self.raw[3]]).into();
+    //            if self.raw.len() < 4 + len {
+    //                let res =  Some(Err(self.raw));
+    //                //fuse
+    //                self.raw = &[];
+    //                return res;
+    //            }
+    //            
+    //            res = RawPathAttribute::try_ref_from_bytes(&self.raw[..4+len])
+    //                .map_err(|_| self.raw);
+    //            self.raw = &self.raw[4+len..];
+
+    //        } else {
+    //            if self.raw.len() < 3 {
+    //                let res =  Some(Err(self.raw));
+    //                //fuse
+    //                self.raw = &[];
+    //                return res;
+    //            }
+    //            let len: usize = self.raw[2].into();
+    //            if self.raw.len() < 3 + len {
+    //                let res =  Some(Err(self.raw));
+    //                //fuse
+    //                self.raw = &[];
+    //                return res;
+    //            }
+
+    //            res = RawPathAttribute::try_ref_from_bytes(&self.raw[..3+len])
+    //                .map_err(|_| self.raw);
+    //            self.raw = &self.raw[3+len..];
+    //        }
+    //        if res.is_err() {
+    //            //fuse
+    //            self.raw = &[];
+    //        }
+
+    //        return Some(res);
+
+    //    }
+
+
+    //    // SAFETY:
+    //    // The length of raw is either less than 4 but not empty, or greater than or equal to 4.
+    //    // So at this point, we can do get_unchecked for 0..3, inclusive.
+
+    //    let flags = unsafe { *self.raw.get_unchecked(0) };
+    //    
+    //    // TODO create macro/fn for 'return Err and fuse'
+
+    //    let res;
+
+
+    //    let mut l = (flags & EXTENDED_LEN) >> 1;
+    //    let mask: u16 = (0x00ff << l) | 0x00ff;
+    //    l >>= 3;
+    //    let offset = l as usize;
+    //    let p = unsafe { self.raw.as_ptr().add(1+offset) as *const u16 };
+    //    let tmp = unsafe { p.read_unaligned() }.to_be();
+    //    let len = (tmp & mask) as usize;
+    //    if self.raw.len() < 3 + offset + len {
+    //        let res =  Some(Err(self.raw));
+    //        //fuse
+    //        self.raw = &[];
+    //        return res;
+    //    }
+
+    //    res = RawPathAttribute::try_ref_from_bytes(
+    //        unsafe { self.raw.get_unchecked(..3+offset+len) }
+    //    )
+    //        .map_err(|_| self.raw);
+    //    self.raw = &self.raw[3+offset+len..];
+
+    //    if res.is_err() {
+    //        //fuse
+    //        self.raw = &[];
+    //    }
+
+    //    Some(res)
+
+    //}
 }
 
 
