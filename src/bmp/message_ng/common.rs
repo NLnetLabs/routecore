@@ -168,7 +168,7 @@ impl PerPeerHeaderV3 {
         if let LocalResult::Single(ts) = Utc.timestamp_opt(s, us * 1000) {
             ts
         } else {
-            todo!("return error?");
+            //todo!("return error?");
             warn!(
                 "invalid timestamp in Per-peer header: {}.{},\
                  returning epoch",

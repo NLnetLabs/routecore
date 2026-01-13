@@ -2,7 +2,7 @@ use std::borrow::Cow;
 
 use zerocopy::{byteorder, Immutable, KnownLayout, NetworkEndian, TryFromBytes};
 
-use crate::{bgp::message_ng::Open, bmp::message_ng::common::{CommonHeader, PerPeerHeaderV3, Tlvs}};
+use crate::{bgp::message_ng::Open, bmp::message_ng::common::{CommonHeader, PerPeerHeaderV3}};
 
 
 #[derive(TryFromBytes, Immutable, KnownLayout)]
@@ -39,7 +39,7 @@ impl PeerUpNotification {
 
 #[cfg(test)]
 mod tests {
-    use std::{net::{IpAddr, Ipv4Addr}, str::FromStr};
+    use std::{net::{IpAddr}, str::FromStr};
 
     use crate::bmp::message_ng::common::{Asn, MessageType, PeerType};
 

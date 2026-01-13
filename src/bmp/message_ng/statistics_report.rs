@@ -3,7 +3,7 @@ use std::borrow::Cow;
 
 use zerocopy::{byteorder, Immutable, KnownLayout, NetworkEndian, TryFromBytes};
 
-use crate::bmp::message_ng::common::{CommonHeader, PerPeerHeaderV3, Tlvs};
+use crate::bmp::message_ng::common::{CommonHeader, PerPeerHeaderV3};
 
 
 #[derive(TryFromBytes, Immutable, KnownLayout)]

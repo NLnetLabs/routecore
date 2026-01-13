@@ -2,7 +2,7 @@ use std::borrow::Cow;
 
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, TryFromBytes};
 
-use crate::{bgp::message_ng::Update, bmp::message_ng::common::{CommonHeader, PerPeerHeaderV3, PerPeerHeaderV4, Tlvs}};
+use crate::{bgp::message_ng::Update, bmp::message_ng::common::{CommonHeader, PerPeerHeaderV3, PerPeerHeaderV4}};
 
 #[derive(TryFromBytes, Immutable, KnownLayout)]
 #[repr(C, packed)]

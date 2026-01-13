@@ -1,6 +1,9 @@
+#![allow(dead_code)] // XXX this module is currently a mix of things of which many will go
+                     // (elsewhere).
+
 use std::{borrow::Cow, collections::{BTreeMap, VecDeque}, io::Read, sync::{atomic::{AtomicU16, AtomicUsize, Ordering}, Arc, RwLock}, thread, time::Duration};
 
-use zerocopy::{IntoBytes, TryFromBytes};
+use zerocopy::TryFromBytes;
 
 use crate::{bgp::message_ng::common::{HexFormatted, SessionConfig}, bmp::message_ng::{common::{CommonHeader, MessageType, PerPeerHeaderV3}, initiation::InitiationMessage, peer_down_notification::PeerDownNotificationV3, peer_up_notification::PeerUpNotification, route_monitoring::RouteMonitoringV3, statistics_report::StatisticsReport}};
 
@@ -147,7 +150,7 @@ impl Pool {
         let sc = Arc::new(SessionConfig::default());
         for _ in 0..dbg!(pool.current_num_threads()) {
             let queue = queue.clone();
-            let sc = sc.clone();
+            let _sc = sc.clone();
             pool.spawn(move || {
                 eprintln!("[{:?}] spawned", thread::current().id());
                 loop {
@@ -168,7 +171,7 @@ impl Pool {
                     let mut update = update.into_checked_parts(&sc).unwrap();
 
                     // conv stuff
-                    if let Some(attributes) = update.take_conv_attributes() {
+                    if let Some(_attributes) = update.take_conv_attributes() {
                         // So we have path attributes for conventional NLRI
 
                         let conv_iter = update.conv_reach_iter_raw();
@@ -183,7 +186,7 @@ impl Pool {
                     }
 
                     // mp stuff
-                    if let Some(attributes) = update.take_mp_attributes() {
+                    if let Some(_attributes) = update.take_mp_attributes() {
                         // So we have path attributes for mpentional NLRI
 
                         let mp_iter = update.mp_reach_iter_raw();
@@ -422,7 +425,7 @@ impl<R: Read> BmpV3Handler<R> {
 
 
     pub fn process<F>(&mut self,
-        func: F,
+        _func: F,
     )
     where F: Fn(&RouteMonitoringV3, SessionConfig) -> ()
     
@@ -453,7 +456,7 @@ impl<R: Read> BmpV3Handler<R> {
                                 let rm = RouteMonitoringV3::try_from_full_pdu(msg).unwrap();
                                 let pph = rm.per_peer_header();
 
-                                let (ingress_id, sc) = {
+                                let (_ingress_id, sc) = {
                                     if let Some(x) = self.pph_register.get(&pph) {
                                         x
                                     } else {
@@ -484,7 +487,7 @@ impl<R: Read> BmpV3Handler<R> {
                                 let mut update = update.into_checked_parts(&sc).unwrap();
 
                                 // conv stuff
-                                if let Some(attributes) = update.take_conv_attributes() {
+                                if let Some(_attributes) = update.take_conv_attributes() {
                                     // So we have path attributes for conventional NLRI
 
                                     let conv_iter = update.conv_reach_iter_raw();
@@ -498,7 +501,7 @@ impl<R: Read> BmpV3Handler<R> {
                                 }
 
                                 // mp stuff
-                                if let Some(attributes) = update.take_mp_attributes() {
+                                if let Some(_attributes) = update.take_mp_attributes() {
                                     // So we have path attributes for mpentional NLRI
 
                                     let mp_iter = update.mp_reach_iter_raw();
@@ -670,7 +673,7 @@ mod tests {
                 //v3handler.process_stream_batched(|msgs|
                 //    queue.write().unwrap().push_back(msgs)
                 //);
-                v3handler.process(|rm, sc| {
+                v3handler.process(|_rm, _sc| {
                     //queue.write().unwrap().push_back((rm.as_bytes().to_vec(), sc));
                 });
 

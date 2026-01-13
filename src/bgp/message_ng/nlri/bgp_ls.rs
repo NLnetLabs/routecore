@@ -59,8 +59,6 @@ impl<'a> Iterator for BgpLsNlriIter<'a> {
 mod tests {
     use crate::bgp::message_ng::{common::AfiSafiType, nlri::CustomNlriIter};
 
-    use super::*;
-
     #[test]
     fn parse_multiple_nlri() {
         let raw: [u8; _] = [
