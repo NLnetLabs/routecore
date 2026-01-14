@@ -1549,7 +1549,7 @@ mod tests {
         let mut pa_iter = pas.into_iter();
 
         let pa1 = pa_iter.next().unwrap().unwrap();
-        assert_eq!(pa1.type_code(), PathAttributeType::Origin.into());
+        assert_eq!(pa1.type_code(), u8::from(PathAttributeType::Origin));
         assert_eq!(pa1.flags(), 0x40.into());
         assert!(!pa1.flags().is_optional());
         assert!(pa1.flags().is_transitive());
@@ -1559,7 +1559,7 @@ mod tests {
         assert_eq!(pa1.length(), 1);
 
         let pa2 = pa_iter.next().unwrap().unwrap();
-        assert_eq!(pa2.type_code(), PathAttributeType::AsPath.into());
+        assert_eq!(pa2.type_code(), u8::from(PathAttributeType::AsPath));
         assert_eq!(pa2.flags(), 0x40.into());
         assert_eq!(pa2.length(), 6);
 
@@ -1572,7 +1572,7 @@ mod tests {
         assert_eq!(update.aspath().unwrap().unwrap(), asp);
 
         let pa3 = pa_iter.next().unwrap().unwrap();
-        assert_eq!(pa3.type_code(), PathAttributeType::ConventionalNextHop.into());
+        assert_eq!(pa3.type_code(), u8::from(PathAttributeType::ConventionalNextHop));
         assert_eq!(pa3.flags(), 0x40.into());
         assert_eq!(pa3.length(), 4);
         //assert_eq!(pa3.as_ref(), &[10, 255, 0, 101]);
@@ -1582,7 +1582,7 @@ mod tests {
             );
 
         let pa4 = pa_iter.next().unwrap().unwrap();
-        assert_eq!(pa4.type_code(), PathAttributeType::MultiExitDisc.into());
+        assert_eq!(pa4.type_code(), u8::from(PathAttributeType::MultiExitDisc));
         assert_eq!(pa4.flags(), 0x80.into());
         assert!( pa4.flags().is_optional());
         assert!(!pa4.flags().is_transitive());
@@ -1920,7 +1920,7 @@ mod tests {
 
         update.path_attributes().iter();//.count();
         if let Some(Ok(aspath)) = update.path_attributes().unwrap()
-            .find(|pa| pa.as_ref().unwrap().type_code() == PathAttributeType::AsPath.into())
+            .find(|pa| pa.as_ref().unwrap().type_code() == u8::from(PathAttributeType::AsPath))
         {
             assert_eq!(aspath.flags(), 0x50.into());
             assert!(aspath.flags().is_transitive());
@@ -1932,7 +1932,7 @@ mod tests {
         }
 
         if let Some(Ok(as4path)) = update.path_attributes().unwrap()
-            .find(|pa| pa.as_ref().unwrap().type_code() == PathAttributeType::As4Path.into())
+            .find(|pa| pa.as_ref().unwrap().type_code() == u8::from(PathAttributeType::As4Path))
         {
             assert_eq!(as4path.flags(), 0xd0.into());
             assert_eq!(as4path.length(), 42);

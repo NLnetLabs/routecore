@@ -1668,7 +1668,7 @@ mod tests {
             assert_eq!(pdu.communities().unwrap().unwrap().count(), 300);
         }
 
-        assert_eq!(a_cnt, prefixes_num.try_into().unwrap());
+        assert_eq!(a_cnt, usize::try_from(prefixes_num).unwrap());
     }
 
 

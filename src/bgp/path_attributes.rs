@@ -989,7 +989,7 @@ impl<'a, Octs: Octets> PathAttributes<'a, Octs> {
     {
         let mut iter = *self;
         iter.find(|pa|
-              pa.as_ref().is_ok_and(|pa| pa.type_code() == pat.into())
+              pa.as_ref().is_ok_and(|pa| pa.type_code() == u8::from(pat))
         ).map(|res| res.unwrap()) // res is Ok(pa), so we can unwrap.
     }
 }
