@@ -503,7 +503,7 @@ impl<'a> MrtFile<'a> {
                             //println!("peer entry {pe:?}");
                             peer_index.push(pe);
                         }
-                        assert_eq!(peer_index.len(), pit.peer_count().into());
+                        assert_eq!(peer_index.len(), usize::from(pit.peer_count()));
                         Ok(peer_index)
                     },
                     _ => {
