@@ -8,6 +8,10 @@ pub struct Ipv4UnicastNlri<'a> {
 }
 
 impl<'a> Ipv4UnicastNlri<'a> {
+    pub fn prefix_len(&self) -> u8 {
+        self.raw[0]
+    }
+
     pub fn to_fixed(&self) -> [u8; 5] {
         let mut res = [0; 5];
         res[..self.raw.len()].copy_from_slice(&self.raw);
@@ -28,31 +32,58 @@ impl fmt::Display for Ipv4UnicastNlri<'_> {
         if len == 0 {
             return write!(f, "0.0.0.0/0")
         }
-        let (full, rem) = (len / 8, len % 8);
-        let mut zeroes = 4 - full;
-        match full {
-            0 => write!(f, "{}.0.0.0/{len}", self.raw[1] >> (8 - rem) << (8 - rem))?,
-            1 => write!(f, "{}", self.raw[1])?,
-            2 => write!(f, "{}.{}", self.raw[1], self.raw[2])?,
-            3 => write!(f, "{}.{}.{}", self.raw[1], self.raw[2], self.raw[3])?,
-            4 => { return write!(f, "{}.{}.{}.{}/32", self.raw[1], self.raw[2], self.raw[3], self.raw[4]); }
-            _ => return write!(f, "illegal IPv4 prefix length {len}"),
-        }
 
-        if rem > 0 {
-            write!(f, ".{}", self.raw[usize::from(full)+1] >> (8 - rem) << (8 - rem))?;
-            zeroes -= 1;
-        }
-        for _ in 0..zeroes {
-            write!(f, ".0")?;
-        }
-        write!(f, "/{len}")
+        let mut buf = [0u8; 4];
+        buf[.. self.raw.len() - 1].copy_from_slice(&self.raw[1..]);
+        let addr = std::net::Ipv4Addr::from_octets(buf);
+        write!(f, "{addr}/{len}")
+    }
+
+    // attempt at a non-std implementation 
+    //fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    //    let len = self.raw[0];
+    //    if len == 0 {
+    //        return write!(f, "0.0.0.0/0")
+    //    }
+    //    let (full, rem) = (len / 8, len % 8);
+    //    let mut zeroes = 4 - full;
+    //    match full {
+    //        0 => write!(f, "{}.0.0.0/{len}", self.raw[1] >> (8 - rem) << (8 - rem))?,
+    //        1 => write!(f, "{}", self.raw[1])?,
+    //        2 => write!(f, "{}.{}", self.raw[1], self.raw[2])?,
+    //        3 => write!(f, "{}.{}.{}", self.raw[1], self.raw[2], self.raw[3])?,
+    //        4 => { return write!(f, "{}.{}.{}.{}/32", self.raw[1], self.raw[2], self.raw[3], self.raw[4]); }
+    //        _ => return write!(f, "illegal IPv4 prefix length {len}"),
+    //    }
+
+    //    if rem > 0 {
+    //        write!(f, ".{}", self.raw[usize::from(full)+1] >> (8 - rem) << (8 - rem))?;
+    //        zeroes -= 1;
+    //    }
+    //    for _ in 0..zeroes {
+    //        write!(f, ".0")?;
+    //    }
+    //    write!(f, "/{len}")
+    //}
+}
+
+impl serde::Serialize for Ipv4UnicastNlri<'_> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer {
+        serializer.collect_str(self)
     }
 }
 
 impl<'a> Nlri<'a> for Ipv4UnicastNlri<'a> {
     const AFI_SAFI_TYPE: AfiSafiType = AfiSafiType::IPV6UNICAST;
     type Iterator = Ipv4UnicastNlriIter<'a>;
+}
+
+impl AsRef<[u8]> for Ipv4UnicastNlri<'_> {
+    fn as_ref(&self) -> &[u8] {
+        &self.raw
+    }
 }
 
 impl<'a> NlriIterator<'a> for Ipv4UnicastNlriIter<'a> {
