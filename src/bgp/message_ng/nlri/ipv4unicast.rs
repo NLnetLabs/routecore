@@ -3,11 +3,16 @@ use std::{borrow::Cow, fmt};
 use crate::bgp::message_ng::{common::AfiSafiType, nlri::{common::Nlri, NlriIter, NlriIterator}};
 
 
+#[derive(Copy, Clone, Debug)]
 pub struct Ipv4UnicastNlri<'a> {
     raw: &'a [u8],
 }
 
 impl<'a> Ipv4UnicastNlri<'a> {
+    pub(crate) fn for_slice(raw: &'a [u8])  -> Self {
+        Self { raw }
+    }
+
     pub fn prefix_len(&self) -> u8 {
         self.raw[0]
     }
