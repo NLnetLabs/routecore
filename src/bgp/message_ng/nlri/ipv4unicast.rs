@@ -26,6 +26,12 @@ impl<'a> Ipv4UnicastNlri<'a> {
     }
 }
 
+impl<'a> Nlri<'a> for Ipv4UnicastNlri<'a> {
+    const AFI_SAFI_TYPE: AfiSafiType = AfiSafiType::IPV6UNICAST;
+    type Iterator = Ipv4UnicastNlriIter<'a>;
+}
+
+
 impl fmt::Display for Ipv4UnicastNlri<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let len = self.raw[0];
@@ -38,33 +44,6 @@ impl fmt::Display for Ipv4UnicastNlri<'_> {
         let addr = std::net::Ipv4Addr::from_octets(buf);
         write!(f, "{addr}/{len}")
     }
-
-    // attempt at a non-std implementation 
-    //fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    //    let len = self.raw[0];
-    //    if len == 0 {
-    //        return write!(f, "0.0.0.0/0")
-    //    }
-    //    let (full, rem) = (len / 8, len % 8);
-    //    let mut zeroes = 4 - full;
-    //    match full {
-    //        0 => write!(f, "{}.0.0.0/{len}", self.raw[1] >> (8 - rem) << (8 - rem))?,
-    //        1 => write!(f, "{}", self.raw[1])?,
-    //        2 => write!(f, "{}.{}", self.raw[1], self.raw[2])?,
-    //        3 => write!(f, "{}.{}.{}", self.raw[1], self.raw[2], self.raw[3])?,
-    //        4 => { return write!(f, "{}.{}.{}.{}/32", self.raw[1], self.raw[2], self.raw[3], self.raw[4]); }
-    //        _ => return write!(f, "illegal IPv4 prefix length {len}"),
-    //    }
-
-    //    if rem > 0 {
-    //        write!(f, ".{}", self.raw[usize::from(full)+1] >> (8 - rem) << (8 - rem))?;
-    //        zeroes -= 1;
-    //    }
-    //    for _ in 0..zeroes {
-    //        write!(f, ".0")?;
-    //    }
-    //    write!(f, "/{len}")
-    //}
 }
 
 impl serde::Serialize for Ipv4UnicastNlri<'_> {
@@ -75,16 +54,25 @@ impl serde::Serialize for Ipv4UnicastNlri<'_> {
     }
 }
 
-impl<'a> Nlri<'a> for Ipv4UnicastNlri<'a> {
-    const AFI_SAFI_TYPE: AfiSafiType = AfiSafiType::IPV6UNICAST;
-    type Iterator = Ipv4UnicastNlriIter<'a>;
-}
-
 impl AsRef<[u8]> for Ipv4UnicastNlri<'_> {
     fn as_ref(&self) -> &[u8] {
         &self.raw
     }
 }
+
+
+impl<'a> TryFrom<&'a [u8]> for Ipv4UnicastNlri<'a> {
+    type Error = Cow<'static, str>;
+
+    fn try_from(value: &'a [u8]) -> Result<Self, Self::Error> {
+        Ok(Ipv4UnicastNlri { raw: value} )
+    }
+}
+
+pub struct Ipv4UnicastNlriIter<'a> {
+    iter: NlriIter<'a>,
+}
+
 
 impl<'a> NlriIterator<'a> for Ipv4UnicastNlriIter<'a> {
     fn empty() -> Self {
@@ -98,18 +86,6 @@ impl<'a> NlriIterator<'a> for Ipv4UnicastNlriIter<'a> {
             iter: NlriIter::unchecked(AfiSafiType::IPV6UNICAST, raw)
         }
     }
-}
-
-impl<'a> TryFrom<&'a [u8]> for Ipv4UnicastNlri<'a> {
-    type Error = Cow<'static, str>;
-
-    fn try_from(value: &'a [u8]) -> Result<Self, Self::Error> {
-        Ok(Ipv4UnicastNlri { raw: value} )
-    }
-}
-
-pub struct Ipv4UnicastNlriIter<'a> {
-    iter: NlriIter<'a>,
 }
 
 impl<'a> Iterator for Ipv4UnicastNlriIter<'a> {
