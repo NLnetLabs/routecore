@@ -3,6 +3,8 @@
 //! 
 
 
+use std::fmt;
+
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 use crate::bgp::message_ng::common::AfiSafiType;
@@ -36,7 +38,7 @@ impl NlriHints {
 #[derive(Debug)]
 pub struct PathId(pub [u8; 4]);
 
-pub trait Nlri<'a> {
+pub trait Nlri<'a>: fmt::Display + serde::Serialize {
     const AFI_SAFI_TYPE: AfiSafiType;
     type Iterator: NlriIterator<'a>; // + TryFrom<&'a [u8]>;
 }

@@ -1,4 +1,4 @@
-use std::borrow::Cow;
+use std::{borrow::Cow, fmt};
 
 use crate::bgp::message_ng::{common::AfiSafiType, nlri::{common::Nlri, CustomNlriIter, NlriIterator}};
 
@@ -28,17 +28,23 @@ impl<'a> Nlri<'a> for FlowSpecNlri<'a> {
 
 }
 
-impl<'a> NlriIterator<'a> for FlowSpecNlriIter<'a> {
-    fn empty() -> Self {
-        Self { 
-            custom_iter: CustomNlriIter::empty_for_afisafi(AfiSafiType::FLOWSPEC),
-        }
+impl fmt::Display for FlowSpecNlri<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        todo!()
     }
+}
 
-    fn for_slice(raw: &'a [u8]) -> Self {
-        Self {
-            custom_iter: CustomNlriIter::unchecked(AfiSafiType::FLOWSPEC, raw)
-        }
+impl serde::Serialize for FlowSpecNlri<'_> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer {
+        todo!()
+    }
+}
+
+impl AsRef<[u8]> for FlowSpecNlri<'_> {
+    fn as_ref(&self) -> &[u8] {
+        &self.raw
     }
 }
 
@@ -53,6 +59,21 @@ impl<'a> TryFrom<&'a [u8]> for FlowSpecNlri<'a> {
 pub struct FlowSpecNlriIter<'a> {
     custom_iter: CustomNlriIter<'a>,
 }
+
+impl<'a> NlriIterator<'a> for FlowSpecNlriIter<'a> {
+    fn empty() -> Self {
+        Self { 
+            custom_iter: CustomNlriIter::empty_for_afisafi(AfiSafiType::FLOWSPEC),
+        }
+    }
+
+    fn for_slice(raw: &'a [u8]) -> Self {
+        Self {
+            custom_iter: CustomNlriIter::unchecked(AfiSafiType::FLOWSPEC, raw)
+        }
+    }
+}
+
 
 impl<'a> Iterator for FlowSpecNlriIter<'a> {
     type Item = FlowSpecNlri<'a>;

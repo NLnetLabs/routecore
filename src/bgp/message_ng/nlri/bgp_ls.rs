@@ -1,4 +1,4 @@
-use std::borrow::Cow;
+use std::{borrow::Cow, fmt};
 
 use crate::bgp::message_ng::{common::AfiSafiType, nlri::{CustomNlriIter, Nlri, NlriIterator}};
 
@@ -15,6 +15,26 @@ impl<'a> Nlri<'a> for BgpLsNlri<'a> {
     const AFI_SAFI_TYPE: AfiSafiType = AfiSafiType::BGPLS;
     type Iterator = BgpLsNlriIter<'a>;
 
+}
+
+impl fmt::Display for BgpLsNlri<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        todo!()
+    }
+}
+
+impl serde::Serialize for BgpLsNlri<'_> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer {
+        todo!()
+    }
+}
+
+impl AsRef<[u8]> for BgpLsNlri<'_> {
+    fn as_ref(&self) -> &[u8] {
+        &self.raw
+    }
 }
 
 impl<'a> NlriIterator<'a> for BgpLsNlriIter<'a> {
