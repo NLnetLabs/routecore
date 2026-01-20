@@ -17,7 +17,8 @@ use crate::bgp::message::update_builder::{
     StandardCommunitiesList
 };
 use crate::bgp::communities::StandardCommunity;
-use crate::bgp::nlri::afisafi::NlriCompose;
+use crate::bgp::nlri::afisafi::{AfiSafiType, NlriCompose};
+use crate::bgp::types::NextHop;
 use crate::util::parser::{ParseError, parse_ipv4addr};
 
 
@@ -195,9 +196,7 @@ impl PaMap {
         let mut pa_map = Self::empty();
         for pa in pdu.path_attributes()? {
             if let Ok(pa) = pa {
-                if pa.type_code() != MpReachNlriBuilder::<()>::TYPE_CODE
-                    && pa.type_code() != MpUnreachNlriBuilder::<()>::TYPE_CODE
-                {
+                if pa.type_code() != MpUnreachNlriBuilder::<()>::TYPE_CODE {
                     if let PathAttributeType::Invalid(n) = pa.type_code().into() {
                         warn!("invalid PA {}:\n{}", n, pdu.fmt_pcap_string());
                     }
@@ -235,6 +234,7 @@ impl PaMap {
             PathAttribute::StandardCommunities(a) => self.set(a).map(Into::into),
             PathAttribute::OriginatorId(a) => self.set(a).map(Into::into),
             PathAttribute::ClusterList(a) => self.set(a).map(Into::into),
+            PathAttribute::MpReachNlri(a) => self.set(a).map(Into::into),
             PathAttribute::ExtendedCommunities(a) => self.set(a).map(Into::into),
             PathAttribute::As4Path(a) => self.set(a).map(Into::into),
             PathAttribute::As4Aggregator(a) => self.set(a).map(Into::into),
@@ -336,6 +336,7 @@ impl PaMap {
     // Length of the Path attributes in bytes
     pub fn bytes_len(&self) -> usize {
         self.attributes.values()
+            .filter(|pa| pa.type_code() != MpReachNextHop::TYPE_CODE)
             .fold(0, |sum, a| sum + a.compose_len())
     }
 }
@@ -780,7 +781,7 @@ path_attributes!(
     8   => StandardCommunities(crate::bgp::message::update_builder::StandardCommunitiesList), Flags::OPT_TRANS,
     9   => OriginatorId(crate::bgp::types::OriginatorId), Flags::OPT_NON_TRANS,
     10  => ClusterList(crate::bgp::path_attributes::ClusterIds), Flags::OPT_NON_TRANS,
-    //14  => MpReachNlri(crate::bgp::message::update_builder::MpReachNlriBuilder), Flags::OPT_NON_TRANS,
+    14  => MpReachNlri(MpReachNextHop), Flags::OPT_NON_TRANS,
     //15  => MpUnreachNlri(crate::bgp::message::update_builder::MpUnreachNlriBuilder), Flags::OPT_NON_TRANS,
     16  => ExtendedCommunities(crate::bgp::path_attributes::ExtendedCommunitiesList), Flags::OPT_TRANS,
     17  => As4Path(crate::bgp::types::As4Path), Flags::OPT_TRANS,
@@ -1469,6 +1470,55 @@ impl Attribute for ClusterIds {
         Ok(())
     }
 }
+
+//--- MpReachNextHop
+
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "serde", serde(rename_all = "camelCase"))] 
+pub struct MpReachNextHop {
+    next_hop: NextHop,
+}
+
+impl Attribute for MpReachNextHop {
+    fn value_len(&self) -> usize {
+        todo!()
+    }
+
+    fn compose_value<Target: OctetsBuilder>(&self, _target: &mut Target)
+        -> Result<(), Target::AppendError> {
+        todo!()
+    }
+
+    fn validate<Octs: Octets>(
+        _flags: Flags,
+        parser: &mut Parser<'_, Octs>,
+        _ppi: PduParseInfo
+    )
+        -> Result<(), ParseError> {
+        
+        let afi = parser.parse_u16_be()?;
+        let safi= parser.parse_u8()?;
+        let afisafi = AfiSafiType::from((afi, safi));
+        let _next_hop = crate::bgp::types::NextHop::parse(parser, afisafi)?;
+        Ok(())
+    }
+
+    fn parse<'a, Octs: 'a + Octets>(parser: &mut Parser<'a, Octs>, _ppi: PduParseInfo) 
+        -> Result<Self, ParseError>
+    where 
+        Self: Sized,
+        Vec<u8>: OctetsFrom<Octs::Range<'a>>
+     {
+        let afi = parser.parse_u16_be()?;
+        let safi= parser.parse_u8()?;
+        let afisafi = AfiSafiType::from((afi, safi));
+        let next_hop = crate::bgp::types::NextHop::parse(parser, afisafi)?;
+        Ok(MpReachNextHop{next_hop})
+    }
+}
+
 
 //--- MpReachNlri
 impl<A> AttributeHeader for MpReachNlriBuilder<A> {
