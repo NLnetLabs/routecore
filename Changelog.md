@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased version
+## 0.6.1
 
 Released yyyy-mm-dd.
 
@@ -9,6 +9,7 @@ Breaking changes
 
 New
 
+* Keep the 'NextHop' information from the `MP_REACH_NLRI` path attribute.
 
 Bug fixes
 
