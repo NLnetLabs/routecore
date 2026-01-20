@@ -1,27 +1,45 @@
-# Change Log
+# Changelog
 
-## Unreleased new version
+## 0.6.1
 
-Release yyyy-mm-yy.
+Released yyyy-mm-dd.
 
 Breaking changes
 
-* MSRV bumped to 1.81
-
-* Serialisation of the different community types (BGP path attributes) now uses
-  their Display` implementations
 
 New
 
+* Keep the 'NextHop' information from the `MP_REACH_NLRI` path attribute.
+
 Bug fixes
 
-* Fix TLV iterator on BMP PeerUpNotification messages
 
 Other changes
 
-* Fine-tuned the warnings for unknown TLV types on BMP PeerUpNotifications
 
-Known limitations
+Known issues
+
+
+
+## 0.6.0
+
+Released 2025-09-29.
+
+Breaking changes
+
+* MSRV bumped to 1.81.
+
+* Serialisation of the different community types (BGP path attributes) now uses
+  their `Display` implementations.
+
+Bug fixes
+
+* Fix TLV iterator on BMP PeerUpNotification messages.
+
+Other changes
+
+* Fine-tuned the warnings for unknown TLV types on BMP PeerUpNotifications.
+
 
 
 ## 0.5.2

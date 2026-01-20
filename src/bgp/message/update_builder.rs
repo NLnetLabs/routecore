@@ -9,7 +9,7 @@ use crate::bgp::aspath::HopPath;
 use crate::bgp::communities::StandardCommunity;
 use crate::bgp::message::{Header, MsgType, UpdateMessage, SessionConfig};
 use crate::bgp::nlri::afisafi::{AfiSafiNlri, NlriParse, NlriCompose};
-use crate::bgp::path_attributes::{Attribute, PaMap, PathAttributeType};
+use crate::bgp::path_attributes::{Attribute, AttributeHeader, MpReachNextHop, PaMap, PathAttributeType};
 use crate::bgp::types::{AfiSafiType, NextHop};
 use crate::util::parser::ParseError;
 
@@ -179,7 +179,7 @@ where
         if let Some(ref mut a) = self.announcements.as_mut() {
             a.set_nexthop_ll_addr(addr);
         } else {
-            let nexthop = NextHop::Ipv6LL(Ipv6Addr::from(0), addr);
+            let nexthop = NextHop::Ipv6LL{global: Ipv6Addr::from(0), link_local: addr};
             self.announcements =
                 Some(MpReachNlriBuilder::for_nexthop(nexthop))
             ;
@@ -654,6 +654,7 @@ where
         self.attributes
             .attributes()
             .iter()
+            .filter(|(tc, _pa)| **tc != MpReachNextHop::TYPE_CODE)
             .try_for_each(|(_tc, pa)| pa.compose(&mut self.target))?;
 
 
@@ -841,10 +842,10 @@ impl<A: AfiSafiNlri + NlriCompose> MpReachNlriBuilder<A> {
     pub fn set_nexthop_ll_addr(&mut self, addr: Ipv6Addr) {
         match self.nexthop {
             NextHop::Unicast(IpAddr::V6(a)) => {
-                self.nexthop = NextHop::Ipv6LL(a, addr);
+                self.nexthop = NextHop::Ipv6LL{global: a, link_local: addr};
             }
-            NextHop::Ipv6LL(a, _ll) => {
-                self.nexthop = NextHop::Ipv6LL(a, addr);
+            NextHop::Ipv6LL{global, ..} => {
+                self.nexthop = NextHop::Ipv6LL{global, link_local: addr};
             }
             _ => unreachable!()
         }
@@ -1063,7 +1064,7 @@ impl NextHop {
         1 + match *self {
             NextHop::Unicast(IpAddr::V4(_)) | NextHop::Multicast(IpAddr::V4(_)) => 4, 
             NextHop::Unicast(IpAddr::V6(_)) | NextHop::Multicast(IpAddr::V6(_)) => 16, 
-            NextHop::Ipv6LL(_, _) => 32,
+            NextHop::Ipv6LL{..} => 32,
             NextHop::MplsVpnUnicast(_rd, IpAddr::V4(_)) => 8 + 4,
             NextHop::MplsVpnUnicast(_rd, IpAddr::V6(_)) => 8 + 16,
             NextHop::Empty => 0, // FlowSpec
@@ -1086,9 +1087,9 @@ impl NextHop {
                 target.append_slice(&a.octets())?,
             NextHop::Unicast(IpAddr::V6(a)) | NextHop::Multicast(IpAddr::V6(a)) => 
                 target.append_slice(&a.octets())?,
-            NextHop::Ipv6LL(a, ll) => {
-                target.append_slice(&a.octets())?;
-                target.append_slice(&ll.octets())?;
+            NextHop::Ipv6LL{global, link_local} => {
+                target.append_slice(&global.octets())?;
+                target.append_slice(&link_local.octets())?;
             }
             NextHop::MplsVpnUnicast(rd, IpAddr::V4(a)) => {
                 target.append_slice(rd.as_ref())?;
@@ -1668,7 +1669,7 @@ mod tests {
             assert_eq!(pdu.communities().unwrap().unwrap().count(), 300);
         }
 
-        assert_eq!(a_cnt, prefixes_num.try_into().unwrap());
+        assert_eq!(a_cnt, usize::try_from(prefixes_num).unwrap());
     }
 
 
