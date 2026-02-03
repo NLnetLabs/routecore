@@ -470,10 +470,9 @@ impl<'a> MrtFile<'a> {
         let peer_index = Self::extract_peer_index_table(&mut parser).unwrap();
 
         let tables = TableDumpIterator::new(peer_index, parser);
-        let iter = tables.par_bridge().map(|(_fam, reh)|{
+        tables.par_bridge().map(|(_fam, reh)|{
             SingleEntryIterator::new(reh)
-        }).flat_map_iter(|e| e.into_iter());
-        iter
+        }).flat_map_iter(|e| e.into_iter())
     }
 
     pub fn tables(
