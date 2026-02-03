@@ -197,16 +197,5 @@ mod tests {
             ).unwrap(),
             "{\"ipv6LL\":{\"global\":\"2001:db8:abcd::\",\"linkLocal\":\"fe80::\"}}"
         );
-
-        //eprintln!("{}", serde_json::to_string(&NextHop::Unicast("1.2.3.4".parse().unwrap())).unwrap());
-        //eprintln!("{}", serde_json::to_string(&NextHop::Unicast("2001:db8:abcd::".parse().unwrap())).unwrap());
-        //eprintln!("{}", 
-        //    serde_json::to_string(
-        //        &NextHop::Ipv6LL{
-        //                global: "2001:db8:abcd::".parse().unwrap(),
-        //                link_local: "fe80::".parse().unwrap(),
-        //            }
-        //    ).unwrap(),
-        //);
     }
 }
