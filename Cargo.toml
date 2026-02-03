@@ -1,13 +1,13 @@
 [package]
 name = "routecore"
-version = "0.6.1-dev"
+version = "0.7.0-dev"
 authors = ["NLnet Labs <routing-team@nlnetlabs.nl>"]
 categories = ["network-programming"]
 description = "A Library with Building Blocks for BGP Routing"
 documentation = "https://docs.rs/routecore/"
 repository = "https://github.com/NLnetLabs/routecore"
-edition = "2021"
-rust-version = "1.81"
+edition = "2024"
+rust-version = "1.85"
 keywords = ["routing", "bgp"]
 license = "BSD-3-Clause"
 
@@ -27,6 +27,7 @@ serde_with = "3.14.0"
 
 [dev-dependencies]
 memmap2         = "0.9"
+serde_json      = "1"
 serde_test      = "1"
 
 [features]

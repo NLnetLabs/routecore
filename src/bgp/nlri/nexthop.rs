@@ -11,14 +11,26 @@ use super::afisafi::AfiSafiType as AfiSafi;
 
 /// Conventional and BGP-MP Next Hop variants.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde", serde(rename_all = "camelCase"))] 
 pub enum NextHop {
-    Unicast(IpAddr),
     Multicast(IpAddr),
-    Ipv6LL(Ipv6Addr, Ipv6Addr), // is this always unicast?
+    #[cfg_attr(feature = "serde", serde(rename_all = "camelCase"))] 
+    Ipv6LL{global: Ipv6Addr, link_local: Ipv6Addr}, // is this always unicast?
     MplsVpnUnicast(RouteDistinguisher, IpAddr),
     Empty, // FlowSpec
     Unimplemented(AfiSafi),
+    #[cfg_attr(feature = "serde", serde(untagged, serialize_with = "serialize_unicast"))]
+    Unicast(IpAddr),
+}
+
+#[cfg(feature = "serde")]
+fn serialize_unicast<S>(ip: &IpAddr, s: S) -> Result<S::Ok, S::Error> where S: serde::Serializer {
+    match ip {
+        IpAddr::V4(v4) => s.serialize_newtype_variant("Afisafi", 0, "ipv4Unicast", &v4),
+        IpAddr::V6(v6) => s.serialize_newtype_variant("Afisafi", 1, "ipv6Unicast", &v6),
+    }
 }
 
 impl NextHop {
@@ -57,7 +69,7 @@ impl std::fmt::Display for NextHop {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Unicast(ip) | Self::Multicast(ip)  => write!(f, "{}", ip),
-            Self::Ipv6LL(ip1, ip2) => write!(f, "{} {} ", ip1, ip2),
+            Self::Ipv6LL{global, link_local} => write!(f, "{} {} ", global, link_local),
             Self::MplsVpnUnicast(rd, ip) => write!(f, "rd {} {}", rd, ip),
             Self::Empty => write!(f, "empty"),
             Self::Unimplemented(afisafi) => {
@@ -97,10 +109,10 @@ impl NextHop {
             Ipv6Unicast => {
                 match len {
                     16 => NextHop::Unicast(parse_ipv6addr(parser)?.into()),
-                    32 => NextHop::Ipv6LL(
-                        parse_ipv6addr(parser)?,
-                        parse_ipv6addr(parser)?
-                    ),
+                    32 => NextHop::Ipv6LL{
+                        global: parse_ipv6addr(parser)?,
+                        link_local: parse_ipv6addr(parser)?,
+                    },
                     _ => error!()
                 }
             }
@@ -155,3 +167,35 @@ impl NextHop {
     }
 }
 
+
+#[cfg(test)]
+mod tests {
+    #[allow(unused_imports)]
+    use super::*;
+
+    #[cfg(feature = "serde")]
+    #[test]
+    fn nexthop_serialize() {
+        assert_eq!(
+            serde_json::to_string(
+                &NextHop::Unicast("1.2.3.4".parse().unwrap()))
+            .unwrap(),
+            "{\"ipv4Unicast\":\"1.2.3.4\"}"
+        );
+        assert_eq!(
+            serde_json::to_string(
+                &NextHop::Unicast("2001:db8:abcd::".parse().unwrap())
+            ).unwrap(),
+            "{\"ipv6Unicast\":\"2001:db8:abcd::\"}"
+        );
+        assert_eq!(
+            serde_json::to_string(
+                &NextHop::Ipv6LL{
+                        global: "2001:db8:abcd::".parse().unwrap(),
+                        link_local: "fe80::".parse().unwrap(),
+                    }
+            ).unwrap(),
+            "{\"ipv6LL\":{\"global\":\"2001:db8:abcd::\",\"linkLocal\":\"fe80::\"}}"
+        );
+    }
+}

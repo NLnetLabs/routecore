@@ -1,22 +1,18 @@
 # Changelog
 
-## Unreleased version
+## 0.7.0
 
 Released yyyy-mm-dd.
-
-Breaking changes
 
 
 New
 
-
-Bug fixes
-
-
-Other changes
+* Keep the 'NextHop' information from the `MP_REACH_NLRI` path attribute.
 
 
-Known issues
+Breaking changes
+
+* Rust Edition bumped to 2024, and with that, the MSRV to 1.85.
 
 
 
