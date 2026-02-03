@@ -2,7 +2,7 @@
 
 ## 0.7.0
 
-Released yyyy-mm-dd.
+Released 2026-02-03.
 
 
 New
