@@ -733,7 +733,12 @@ impl<Octs: Octets> PeerDownNotification<Octs> {
     //pub fn fsm(&self) -> Option(Bgp::FsmEvent) {
     pub fn fsm(&self) -> Option<u16> {
         if self.reason() == PeerDownReason::LocalFsm {
-            Some(u16::from_be_bytes(self.as_ref()[1..=2].try_into().unwrap()))
+            if self.as_ref().len() < COFF + 3 {
+                // Expected 2 bytes for FSM Event, but they are not in the PDU 
+                None
+            } else {
+                Some(u16::from_be_bytes(self.as_ref()[COFF+1..COFF+3].try_into().unwrap()))
+            }
         } else {
             None
         }
