@@ -1390,7 +1390,7 @@ impl<Octs: Octets> Ipv6ExtCommunityIter<Octs> {
         let res = Ipv6ExtendedCommunity::from_raw(
             self.slice.as_ref()[self.pos..self.pos+20].try_into().expect("parsed before")
             );
-        self.pos += 8;
+        self.pos += 20;
         res
     }
 }
