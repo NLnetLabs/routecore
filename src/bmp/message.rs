@@ -1480,7 +1480,7 @@ impl<'a> InformationIter<'a> {
                 &self.octets[self.pos+4..self.pos+4+len as usize]
                 )
                 .into_owned();
-            self.pos += len as usize;
+            self.pos += 4 + len as usize;
             return TerminationInformation::CustomString(s)
         }
         let val = u16::from_be_bytes(self.octets[self.pos+4..self.pos+4+len as usize].try_into().unwrap());
