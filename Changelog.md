@@ -1,7 +1,7 @@
 # Changelog
 
 
-## Unreleased version
+## Unreleased version (0.7.1)
 
 
 Released yyyy-mm-dd.
@@ -9,9 +9,17 @@ Released yyyy-mm-dd.
 
 New
 
+* Several helpers with regards to BGP Capabilities are added, enabling access
+  to local/remote Capabilities for a session.
 
 Bug fixes
 
+* Several fixes for bugs reported by Denys Fedoryshchenko in
+  [#70](https://github.com/NLnetLabs/routecore/issues/70) (thank you!):
+  * Path attribute type Ipv6 Extended Communities iterator logic fix
+  * BGP session buffer allocation performance fix
+  * BMP PeerDownNotification type 2 FSM event logic fix
+  * BMP TerminationMessage iterator logic fix
 
 Breaking changes
 
