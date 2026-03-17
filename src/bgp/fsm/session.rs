@@ -1873,7 +1873,7 @@ impl Connection {
         Self {
             remote_addr: tcp_in.peer_addr().unwrap(),
             tcp_in,
-            buffer: BytesMut::with_capacity(2 ^ 20),
+            buffer: BytesMut::with_capacity(2 << 20),
             session_config: SessionConfig::modern(),
         }
     }
