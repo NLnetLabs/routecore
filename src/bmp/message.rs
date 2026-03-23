@@ -733,7 +733,12 @@ impl<Octs: Octets> PeerDownNotification<Octs> {
     //pub fn fsm(&self) -> Option(Bgp::FsmEvent) {
     pub fn fsm(&self) -> Option<u16> {
         if self.reason() == PeerDownReason::LocalFsm {
-            Some(u16::from_be_bytes(self.as_ref()[1..=2].try_into().unwrap()))
+            if self.as_ref().len() < COFF + 3 {
+                // Expected 2 bytes for FSM Event, but they are not in the PDU 
+                None
+            } else {
+                Some(u16::from_be_bytes(self.as_ref()[COFF+1..COFF+3].try_into().unwrap()))
+            }
         } else {
             None
         }
@@ -1475,7 +1480,7 @@ impl<'a> InformationIter<'a> {
                 &self.octets[self.pos+4..self.pos+4+len as usize]
                 )
                 .into_owned();
-            self.pos += len as usize;
+            self.pos += 4 + len as usize;
             return TerminationInformation::CustomString(s)
         }
         let val = u16::from_be_bytes(self.octets[self.pos+4..self.pos+4+len as usize].try_into().unwrap());
@@ -1930,6 +1935,23 @@ mod tests {
             bgp_notification.details(),
             CeaseSubcode::AdministrativeShutdown.into()
         );
+    }
+
+    #[test]
+    fn peer_down_local_fsm() {
+        let buf = vec![
+            0x03, 0x00, 0x00, 0x00, 0x33, 0x02, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 127, 0, 0, 1,
+            0x00, 0x01, 0x0, 0x0, 127, 0, 0, 1,
+            0x69, 0xb9, 0x45, 0x2f, 0x00, 0x0d, 0x1c, 0x73,
+            0x02, 0x01, 0x02
+        ];
+        let bmp: PeerDownNotification<_> = Message::from_octets(&buf).unwrap().try_into().unwrap();
+        assert_eq!(bmp.reason(), PeerDownReason::LocalFsm);
+        assert!(bmp.notification().is_none());
+        assert_eq!(bmp.fsm(), Some(0x0102));
     }
 
 

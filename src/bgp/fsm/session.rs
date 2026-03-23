@@ -43,6 +43,9 @@ pub struct Session<C> {
     /// Negotiated configuration
     negotiated: Option<NegotiatedConfig>,
 
+    /// Local capabilities
+    local_capabilities: Vec<u8>,
+
     /// Parameters and FSM
     attributes: SessionAttributes, // contains the actual FSM
 
@@ -130,6 +133,7 @@ impl<C: BgpConfig + Send> Session<C> {
             delay_open_timer: Timer::new(u64::from(
                 attributes.delay_open_time(),
             )),
+            local_capabilities: vec![], // set in Self::send_open()
         }
     }
 
@@ -367,7 +371,7 @@ impl<C: BgpConfig + Send> Session<C> {
         }
     }
 
-    pub fn send_open(&self) {
+    pub fn send_open(&mut self) {
         let mut openbuilder =
             OpenBuilder::from_target(BytesMut::new()).unwrap();
         openbuilder.set_asn(self.config.local_asn());
@@ -387,8 +391,24 @@ impl<C: BgpConfig + Send> Session<C> {
         // and for our bgpsink, we should copy all the capabilities
         // from the received OPEN
 
-        //self.send_raw(openbuilder.finish());
-        self.send_pdu(BgpMsg::Open(openbuilder.into_message()));
+        // Currently, we only support the few 'hardcoded' capabilities above.
+        // Eventually, the construction of the OPEN PDU will become more
+        // complex and the local Capabilities will be set based on
+        // more configuration. But for now, we simply derive the Capabilities
+        // from the constructed message again, just so everything happens in
+        // one single place and things don't get out of sync.
+
+        let open_msg = openbuilder.into_message();
+        self.set_local_capabilities(open_msg.capabilities_as_vec());
+        self.send_pdu(BgpMsg::Open(open_msg));
+    }
+
+    fn set_local_capabilities(&mut self, capabilities: Vec<u8>) {
+        self.local_capabilities = capabilities;
+    }
+
+    fn local_capabilities(&self) -> &[u8] {
+        self.local_capabilities.as_ref()
     }
 
     fn send_notification<S>(&self, subcode: S)
@@ -968,6 +988,8 @@ impl<C: BgpConfig + Send> Session<C> {
                     // XXX yeah..
                     remote_addr: self.connection.as_ref().unwrap().remote_addr(),
                     addpath: intersection,
+                    local_capabilities: self.local_capabilities().to_vec(),
+                    remote_capabilities: open_msg.capabilities_as_vec(),
                 };
                 self.send_open();
                 self.set_negotiated_config(negotiated.clone());
@@ -1265,6 +1287,8 @@ impl<C: BgpConfig + Send> Session<C> {
                     // XXX yeah..
                     remote_addr: self.connection.as_ref().unwrap().remote_addr(),
                     addpath: intersection,
+                    local_capabilities: self.local_capabilities().to_vec(),
+                    remote_capabilities: open_msg.capabilities_as_vec(),
                 };
 
                 debug!(
@@ -1873,7 +1897,7 @@ impl Connection {
         Self {
             remote_addr: tcp_in.peer_addr().unwrap(),
             tcp_in,
-            buffer: BytesMut::with_capacity(2 ^ 20),
+            buffer: BytesMut::with_capacity(2 << 20),
             session_config: SessionConfig::modern(),
         }
     }
@@ -2052,6 +2076,8 @@ pub struct NegotiatedConfig {
     remote_asn: Asn,
     remote_addr: IpAddr,
     addpath: Vec<AddpathFamDir>,
+    local_capabilities: Vec<u8>,
+    remote_capabilities: Vec<u8>,
 }
 
 impl NegotiatedConfig {
@@ -2063,6 +2089,14 @@ impl NegotiatedConfig {
         self.remote_addr
     }
 
+    pub fn local_capabilities(&self) -> &[u8] {
+        self.local_capabilities.as_ref()
+    }
+
+    pub fn remote_capabilities(&self) -> &[u8] {
+        self.remote_capabilities.as_ref()
+    }
+
     /// Dummy constructor, only useful for testing.
     pub fn dummy() -> Self {
         Self {
@@ -2071,6 +2105,8 @@ impl NegotiatedConfig {
             remote_asn: Asn::from_u32(12345),
             remote_addr: IpAddr::V4([1, 2, 3, 4].into()),
             addpath: vec![],
+            local_capabilities: vec![],
+            remote_capabilities: vec![],
         }
     }
 }

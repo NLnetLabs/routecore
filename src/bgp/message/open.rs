@@ -151,6 +151,19 @@ impl<Octs: Octets> OpenMessage<Octs> {
         )
 	}
 
+    /// Returns all Capabilities as wireformat in a single vec
+    // Capabilities can be scattered across multiple Optional Parameters,
+    // so for iteration, there is no guarantee we are working with a (single)
+    // contiguous piece of the PDU. As such, we can not `as_ref<[u8]>` on
+    // `CapabilitiesIter`. This method is our second-best option.
+    pub fn capabilities_as_vec(&self) -> Vec<u8> {
+        self.capabilities()
+            .fold(vec![], |mut acc, e| {
+                acc.extend_from_slice(e.as_ref());
+                acc 
+            })
+    }
+
     // This is the conventional, two-octet Asn. Possibly, the Capabilities at
     // the end of the OPEN message list the actual (4-byte) ASN.
     // If so, and the 4-byte ASN is non-mappable (i.e it can not be
@@ -606,6 +619,13 @@ impl<Octs: Octets> AsRef<[u8]> for Capability<Octs> {
 /// Iterator for BGP OPEN Capabilities.
 pub struct CapabilitiesIter<'a, Ref> {
     parser: Parser<'a, Ref>,
+}
+
+pub struct Capabilities<'a>(pub &'a [u8]);
+impl Capabilities<'_> {
+    pub fn iter(&self) -> CapabilitiesIter<'_, &[u8]> {
+        CapabilitiesIter { parser: Parser::from_ref(&self.0) }
+    }
 }
 
 impl<'a, Ref: Octets> Iterator for CapabilitiesIter<'a, Ref> {
