@@ -1,10 +1,10 @@
 # Changelog
 
 
-## Unreleased version (0.7.1)
+## 0.7.1
 
 
-Released yyyy-mm-dd.
+Released 2026-03-23.
 
 
 New
@@ -20,12 +20,6 @@ Bug fixes
   * BGP session buffer allocation performance fix
   * BMP PeerDownNotification type 2 FSM event logic fix
   * BMP TerminationMessage iterator logic fix
-
-Breaking changes
-
-
-Other changes
-
 
 
 ## 0.7.0
