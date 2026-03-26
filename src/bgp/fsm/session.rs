@@ -11,7 +11,7 @@ use crate::bgp::message::notification::{
     CeaseSubcode, Details, FiniteStateMachineSubcode, NotificationBuilder,
     OpenMessageSubcode,
 };
-use crate::bgp::message::open::{Capability, OpenBuilder};
+use crate::bgp::message::open::{Capabilities, Capability, CapabilityType, OpenBuilder};
 use crate::bgp::message::{
     Message as BgpMsg, NotificationMessage, SessionConfig, UpdateMessage,
 };
@@ -265,6 +265,16 @@ impl<C: BgpConfig + Send> Session<C> {
                     }
                     Command::GetAttributes{resp} => {
                         let _ = resp.send(self.attributes);
+                    }
+                    Command::GetSessionConfig{resp} => {
+                        // TODO get rid of clone ideally
+                        let _ = resp.send(self.negotiated.as_ref()
+                            .map(|n| SessionConfig::from(n.clone()))
+                            .unwrap_or_else(||{
+                                warn!("defaulting to modern()");
+                                SessionConfig::modern()
+                            })
+                        );
                     }
                     Command::Disconnect(reason) => {
                         self.disconnect(reason);
@@ -979,6 +989,7 @@ impl<C: BgpConfig + Send> Session<C> {
                 debug!("addpath intersection: {:?}", &intersection);
 
 
+                self.send_open();
                 let negotiated = NegotiatedConfig {
                     hold_time: std::cmp::min(open_msg.holdtime(), self.hold_time()),
                     // TODO rename .identifier() and its return type in
@@ -991,7 +1002,7 @@ impl<C: BgpConfig + Send> Session<C> {
                     local_capabilities: self.local_capabilities().to_vec(),
                     remote_capabilities: open_msg.capabilities_as_vec(),
                 };
-                self.send_open();
+
                 self.set_negotiated_config(negotiated.clone());
                 debug!(
                     "Negotiated: {}@{} id {:?}, hold time {}s",
@@ -1845,6 +1856,9 @@ pub enum Command {
     GetAttributes {
         resp: oneshot::Sender<SessionAttributes>,
     },
+    GetSessionConfig {
+        resp: oneshot::Sender<SessionConfig>,
+    },
     Disconnect(DisconnectReason),
     ForcedKeepalive,
     //RawUpdate(UpdateMessage<Vec<u8>>),
@@ -2078,6 +2092,39 @@ pub struct NegotiatedConfig {
     addpath: Vec<AddpathFamDir>,
     local_capabilities: Vec<u8>,
     remote_capabilities: Vec<u8>,
+    // TODO keep the intersection of MP AFISAFIs?
+}
+
+impl From<NegotiatedConfig> for SessionConfig {
+    fn from(value: NegotiatedConfig) -> Self {
+        debug!("{:?}", value.local_capabilities);
+        debug!("{:?}", value.remote_capabilities);
+        let local_caps = Capabilities(&value.local_capabilities);
+        let remote_caps = Capabilities(&value.remote_capabilities);
+
+
+        let mut session_config = if
+        local_caps.iter().any(|c| c.typ() == CapabilityType::FourOctetAsn) &&
+        remote_caps.iter().any(|c| c.typ() == CapabilityType::FourOctetAsn) {
+            debug!("found FourOctetAsn in both capabilities: modern()");
+            SessionConfig::modern() 
+        } else {
+            debug!("did not find FourOctetAsn in both capabilities: legacy()");
+            SessionConfig::legacy()
+        };
+
+        let local_mp_fams = local_caps.multiprotocol_ids().collect::<std::collections::HashSet<_>>();
+        let remote_mp_fams = remote_caps.multiprotocol_ids().collect::<std::collections::HashSet<_>>();
+        let mp_fams_intersect = local_mp_fams.intersection(&remote_mp_fams).cloned().collect::<Vec<AfiSafiType>>();
+        if mp_fams_intersect.contains(&AfiSafiType::Ipv4Unicast) {
+            session_config.set_ipv4unicast_in_mp();
+        }
+        for ap in value.addpath.iter() {
+            session_config.add_famdir(*ap);
+        }
+
+        session_config
+    }
 }
 
 impl NegotiatedConfig {

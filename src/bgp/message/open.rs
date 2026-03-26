@@ -626,6 +626,22 @@ impl Capabilities<'_> {
     pub fn iter(&self) -> CapabilitiesIter<'_, &[u8]> {
         CapabilitiesIter { parser: Parser::from_ref(&self.0) }
     }
+
+    /// Returns an iterator over `AfiSafiType`s listed as MultiProtocol
+    /// Capabilities 
+    pub fn multiprotocol_ids(&self) -> impl Iterator<Item = AfiSafiType> + '_ {
+        self.iter().filter(|c|
+            c.typ() == CapabilityType::MultiProtocol
+        ).map(|mp_cap| {
+            let afi = u16::from_be_bytes([
+                mp_cap.value()[0],
+                mp_cap.value()[1]
+            ]);
+            let safi = mp_cap.value()[3];
+            (afi, safi).into()
+        })
+    }
+
 }
 
 impl<'a, Ref: Octets> Iterator for CapabilitiesIter<'a, Ref> {

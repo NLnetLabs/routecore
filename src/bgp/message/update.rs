@@ -1047,6 +1047,8 @@ pub struct SessionConfig {
     four_octet_asns: FourOctetAsns,
     ipv4unicast_in_mp: Ipv4UnicastInMp,
     addpath_fams: SessionAddpaths,
+    // TODO keep track of enabled MP AFISAFIs?
+    // see intersection in From<NegotiatedConfig> for SessionConfig in session.rs
 }
 
 /// Configuration parameters (state) to parse an individual UPDATE message.
@@ -1226,6 +1228,10 @@ impl SessionConfig {
     /// Returns true if IPv4 Unicast is carried as MultiProtocol attribute.
     pub fn ipv4_unicast_in_mp(&self) -> bool {
         self.ipv4unicast_in_mp.0
+    }
+
+    pub fn set_ipv4unicast_in_mp(&mut self) {
+        self.ipv4unicast_in_mp = Ipv4UnicastInMp(true)
     }
 
     /// Returns the FourOctetAsns setting.
