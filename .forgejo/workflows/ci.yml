@@ -74,8 +74,6 @@ jobs:
         uses: https://github.com/cargo-bins/cargo-binstall@main
       - name: Install audit, shear
         run: cargo binstall --no-confirm cargo-audit cargo-shear
-      - name: where does cargo live?
-        run: which cargo
       - uses: actions/cache/save@v5
         with:
           path: |
@@ -94,7 +92,7 @@ jobs:
             ~/.cargo/bin/
 
         # RUSTSEC-2024-0436: paste - no longer maintained
-      - run: cargo audit --ignore RUSTSEC-2024-0436
+      - run: ~/.cargo/bin/cargo audit --ignore RUSTSEC-2024-0436
 
   shear:
     name: Cargo shear
@@ -106,4 +104,4 @@ jobs:
           key: ${{ runner.os }}-cargo-binstall
           path: |
             ~/.cargo/bin/
-      - run: cargo shear
+      - run: ~/.cargo/bin/cargo shear
