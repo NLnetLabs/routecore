@@ -46,5 +46,4 @@ jobs:
         with:
           toolchain: stable
           components: clippy
-      - run: cargo clippy --all -W clippy::cargo ${{ matrix.args }}
-      # -D warnings ?
+      - run: cargo clippy --all ${{ matrix.args }} -- -W clippy::cargo # -D warnings
