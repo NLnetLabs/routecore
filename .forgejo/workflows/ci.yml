@@ -52,3 +52,18 @@ jobs:
           toolchain: stable
           components: clippy
       - run: cargo clippy --all ${{ matrix.args }} -- -W clippy::cargo # -D warnings
+
+  audit:
+    name: cargo audit
+    runs-on: docker
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install Rust
+        uses: https://github.com/dtolnay/rust-toolchain@v1
+        with:
+          toolchain: stable
+          # RUSTSEC-2024-0436: paste - no longer maintained
+      - run: cargo audit --ignore RUSTSEC-2024-0436
