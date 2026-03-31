@@ -22,14 +22,15 @@ jobs:
           targets: ${{ matrix.target }}
       - run: cargo build --target=${{ matrix.target }} --verbose ${{ matrix.args }}
       - run: cargo test --target=${{ matrix.target }} --verbose ${{ matrix.args }}
-      ## Test using minimal dependency versions from Cargo.toml
-      #- if: matrix.rust != 'beta'
-      #  name: Check and test with minimal-versions
-      #  run: |
-      #    rustup toolchain install nightly
-      #    cargo +nightly update -Z minimal-versions
-      #    cargo build --verbose --all --all-features
-      #    cargo test --verbose --all --all-features
+      # Test using minimal dependency versions from Cargo.toml
+      - if: matrix.rust != 'beta'
+        name: Check and test with minimal-versions
+        with:
+          toolchain: nightly
+        run: |
+          cargo +nightly update -Z minimal-versions
+          cargo build --verbose --all --all-features
+          cargo test --verbose --all --all-features
 
   clippy:
     name: clippy (${{ matrix.args }})
