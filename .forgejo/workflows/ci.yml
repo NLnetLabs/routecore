@@ -74,6 +74,8 @@ jobs:
         uses: https://github.com/cargo-bins/cargo-binstall@main
       - name: Install audit, shear
         run: cargo binstall --no-confirm cargo-audit cargo-shear
+      - name: where does cargo live?
+        run: which cargo
       - uses: actions/cache/save@v5
         with:
           path: |
