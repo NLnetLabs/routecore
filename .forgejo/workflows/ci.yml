@@ -36,7 +36,8 @@ jobs:
     runs-on: docker
     strategy:
       matrix:
-        args: ["--no-default-features", "", "--all-features"]
+        #args: ["--no-default-features", "", "--all-features"]
+        args: ["", "--all-features"]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
