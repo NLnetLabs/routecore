@@ -3,7 +3,7 @@ on: [push, pull_request]
 jobs:
   checks:
     name: All checks
-    needs: [test, clippy, audit, shear]
+    needs: [test, clippy, audit]
     runs-on: docker
 
   test:
@@ -58,8 +58,8 @@ jobs:
           components: clippy
       - run: cargo clippy --all ${{ matrix.args }} -- -W clippy::cargo # -D warnings
 
-  cargo-binstall:
-    name: Cargo binstall
+  audit:
+    name: Cargo audit+shear
     runs-on: docker
     steps:
       - name: Checkout repository
@@ -72,39 +72,16 @@ jobs:
           toolchain: stable
       - name: Install cargo-binstall
         uses: https://github.com/cargo-bins/cargo-binstall@main
-      - name: Install audit, shear
+      - name: Install cargo-audit
         run: cargo binstall --no-confirm cargo-audit cargo-shear
-      - uses: actions/cache/save@v5
-        with:
-          path: |
-            ~/.rustup
-            ~/.cargo/bin/
-          key: ${{ runner.os }}-cargo-binstall
-
-  audit:
-    name: Cargo audit
-    runs-on: docker
-    needs: [cargo-binstall]
-    steps:
-      - uses: actions/cache/restore@v5
-        with:
-          key: ${{ runner.os }}-cargo-binstall
-          path: |
-            ~/.rustup
-            ~/.cargo/bin/
-
         # RUSTSEC-2024-0436: paste - no longer maintained
-      - run: ~/.cargo/bin/cargo audit --ignore RUSTSEC-2024-0436
-
-  shear:
-    name: Cargo shear
-    runs-on: docker
-    needs: [cargo-binstall]
-    steps:
-      - uses: actions/cache/restore@v5
-        with:
-          key: ${{ runner.os }}-cargo-binstall
-          path: |
-            ~/.rustup
-            ~/.cargo/bin/
-      - run: ~/.cargo/bin/cargo shear
+      - id: audit
+        run: cargo audit --ignore RUSTSEC-2024-0436
+        continue-on-error: true
+      - id: shear
+        run: cargo shear
+        continue-on-error: true
+      # now check the outcomes of all individual 'run's
+      - name: Check all
+        if: steps.audit.outcome != 'success' || steps.shear.outcome != 'success'
+        run: exit 1
