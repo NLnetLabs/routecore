@@ -1,0 +1,50 @@
+name: ci
+on: [push, pull_request]
+jobs:
+  test:
+    name: test (${{ matrix.rust }}, ${{ matrix.args }}) 
+    runs-on: docker
+    strategy:
+      matrix:
+        rust: [1.85, stable, beta]
+        args: ["--no-default-features", "", "--all-features"]
+        target: [x86_64-unknown-linux-gnu]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install Rust
+        uses: https://github.com/dtolnay/rust-toolchain@v1
+        with:
+          toolchain: ${{ matrix.rust }}
+          targets: ${{ matrix.target }}
+      - run: cargo build --target=${{ matrix.target }} --verbose ${{ matrix.args }}
+      - run: cargo test --target=${{ matrix.target }} --verbose ${{ matrix.args }}
+      ## Test using minimal dependency versions from Cargo.toml
+      #- if: matrix.rust != 'beta'
+      #  name: Check and test with minimal-versions
+      #  run: |
+      #    rustup toolchain install nightly
+      #    cargo +nightly update -Z minimal-versions
+      #    cargo build --verbose --all --all-features
+      #    cargo test --verbose --all --all-features
+
+  clippy:
+    name: clippy (${{ matrix.args }})
+    runs-on: docker
+    strategy:
+      matrix:
+        args: ["--no-default-features", "", "--all-features"]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install Rust
+        uses: https://github.com/dtolnay/rust-toolchain@v1
+        with:
+          toolchain: stable
+          components: clippy
+      - run: cargo clippy --all -W clippy::cargo ${{ matrix.args }}
+      # -D warnings ?
