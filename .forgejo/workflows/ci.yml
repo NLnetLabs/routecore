@@ -74,7 +74,7 @@ jobs:
       # now check the outcomes of all individual 'run's
       - name: Check all
         if: |
-          || steps.minversions.outcome != 'success'
+          steps.minversions.outcome != 'success'
           || steps.audit.outcome != 'success'
           || steps.shear.outcome != 'success'
           
