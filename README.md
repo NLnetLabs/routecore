@@ -1,3 +1,11 @@
+# Moved to [Codeberg](https://codeberg.org/NLnetLabs/routecore)
+
+> [!IMPORTANT]
+> Please note that this repository is archived and is **not** mirrored from
+> Codeberg.
+
+---
+
 # routecore – A Library with Building Blocks for BGP Routing
 
 This crate aims to provide fundamental building blocks, i.e. Types and
