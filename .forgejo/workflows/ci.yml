@@ -1,10 +1,10 @@
 name: ci
 on: [push, pull_request]
 jobs:
-  checks:
-    name: All checks
-    needs: [test, clippy, audit]
-    runs-on: docker
+  #checks:
+  #  name: All checks
+  #  needs: [test, clippy, audit]
+  #  runs-on: docker
 
   test:
     name: Test ${{ matrix.rust }} ${{ matrix.args }}
@@ -25,12 +25,22 @@ jobs:
         with:
           toolchain: ${{ matrix.rust }}
           targets: ${{ matrix.target }}
-      - name: cargo build --target=${{ matrix.target }} --verbose ${{ matrix.args }}
-        run: cargo build --target=${{ matrix.target }} --verbose ${{ matrix.args }}
+          components: clippy
+
+      - run: cargo build --target=${{ matrix.target }} --verbose ${{ matrix.args }}
       - run: cargo test --target=${{ matrix.target }} --verbose ${{ matrix.args }}
+
+      - name: cargo clippy 
+        id: clippy
+        if: matrix.rust == 'stable'
+        run: cargo clippy --all ${{ matrix.args }} -- -W clippy::cargo # -D warnings
+        continue-on-error: true
+      
       # Test using minimal dependency versions from Cargo.toml
       - name: Check and test with minimal-versions
+        id: minversions
         if: matrix.rust != 'beta'
+        continue-on-error: true
         uses: https://github.com/dtolnay/rust-toolchain@v1
         with:
           toolchain: nightly
@@ -38,50 +48,71 @@ jobs:
             cargo +nightly update -Z minimal-versions
             cargo build --verbose --all --all-features
             cargo test --verbose --all --all-features
-
-  clippy:
-    name: Clippy ${{ matrix.args }}
-    runs-on: docker
-    strategy:
-      matrix:
-        #args: ["--no-default-features", "", "--all-features"]
-        args: ["", "--all-features"]
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-      - name: Install Rust
-        uses: https://github.com/dtolnay/rust-toolchain@v1
-        with:
-          toolchain: stable
-          components: clippy
-      - run: cargo clippy --all ${{ matrix.args }} -- -W clippy::cargo # -D warnings
-
-  audit:
-    name: Cargo audit+shear
-    runs-on: docker
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-      - name: Install Rust
-        uses: https://github.com/dtolnay/rust-toolchain@v1
-        with:
-          toolchain: stable
       - name: Install cargo-binstall
         uses: https://github.com/cargo-bins/cargo-binstall@main
-      - name: Install cargo-audit
+      - name: Install cargo-{audit,shear}
         run: cargo binstall --no-confirm cargo-audit cargo-shear
         # RUSTSEC-2024-0436: paste - no longer maintained
       - id: audit
+        if: matrix.rust == 'stable'
         run: cargo audit --ignore RUSTSEC-2024-0436
         continue-on-error: true
       - id: shear
+        if: matrix.rust == 'stable'
         run: cargo shear
         continue-on-error: true
       # now check the outcomes of all individual 'run's
       - name: Check all
-        if: steps.audit.outcome != 'success' || steps.shear.outcome != 'success'
+        if: |
+          steps.clippy.outcome != 'success'
+          || steps.minversions.outcome != 'success'
+          || steps.audit.outcome != 'success'
+          || steps.shear.outcome != 'success'
         run: exit 1
+
+  #clippy:
+  #  name: Clippy ${{ matrix.args }}
+  #  runs-on: docker
+  #  strategy:
+  #    matrix:
+  #      #args: ["--no-default-features", "", "--all-features"]
+  #      args: ["", "--all-features"]
+  #  steps:
+  #    - name: Checkout repository
+  #      uses: actions/checkout@v4
+  #      with:
+  #        persist-credentials: false
+  #    - name: Install Rust
+  #      uses: https://github.com/dtolnay/rust-toolchain@v1
+  #      with:
+  #        toolchain: stable
+  #        components: clippy
+  #    - run: cargo clippy --all ${{ matrix.args }} -- -W clippy::cargo # -D warnings
+
+  #audit:
+  #  name: Cargo audit+shear
+  #  runs-on: docker
+  #  steps:
+  #    - name: Checkout repository
+  #      uses: actions/checkout@v4
+  #      with:
+  #        persist-credentials: false
+  #    - name: Install Rust
+  #      uses: https://github.com/dtolnay/rust-toolchain@v1
+  #      with:
+  #        toolchain: stable
+  #    - name: Install cargo-binstall
+  #      uses: https://github.com/cargo-bins/cargo-binstall@main
+  #    - name: Install cargo-{audit,shear}
+  #      run: cargo binstall --no-confirm cargo-audit cargo-shear
+  #      # RUSTSEC-2024-0436: paste - no longer maintained
+  #    - id: audit
+  #      run: cargo audit --ignore RUSTSEC-2024-0436
+  #      continue-on-error: true
+  #    - id: shear
+  #      run: cargo shear
+  #      continue-on-error: true
+  #    # now check the outcomes of all individual 'run's
+  #    - name: Check all
+  #      if: steps.audit.outcome != 'success' || steps.shear.outcome != 'success'
+  #      run: exit 1
