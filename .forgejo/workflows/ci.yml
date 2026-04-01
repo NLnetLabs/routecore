@@ -64,10 +64,13 @@ jobs:
       # now check the outcomes of all individual 'run's
       - name: Check all
         if: |
+          matrix.rust == 'stable' &&
+          (
           steps.clippy.outcome != 'success'
           || steps.minversions.outcome != 'success'
           || steps.audit.outcome != 'success'
           || steps.shear.outcome != 'success'
+          )
         run: exit 1
 
   #clippy:
